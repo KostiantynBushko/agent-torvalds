@@ -306,3 +306,97 @@ def git_init_and_commit(path: str, message: str) -> bool:
     except subprocess.CalledProcessError as e:
         print(f"Error initializing and committing: {e}")
         return False
+
+def git_remote_add(path: str, name: str, url: str) -> bool:
+    """
+    Add a remote repository.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        name (str): Name of the remote (e.g., 'origin')
+        url (str): URL of the remote repository
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        cmd = ['git', 'remote', 'add', name, url]
+        result = subprocess.run(cmd, cwd=path, capture_output=True, text=True, check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error adding remote: {e}")
+        return False
+
+def git_push(path: str, remote: str = "origin", branch: str = "main", set_upstream: bool = False) -> bool:
+    """
+    Push changes to a remote repository.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        remote (str): Name of the remote repository (default: 'origin')
+        branch (str): Branch name to push (default: 'main')
+        set_upstream (bool): Whether to set upstream tracking (default: False)
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # If we need to set upstream
+        if set_upstream:
+            cmd = ['git', 'push', '--set-upstream', remote, branch]
+        else:
+            cmd = ['git', 'push', remote, branch]
+            
+        result = subprocess.run(cmd, cwd=path, capture_output=True, text=True, check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error pushing to remote: {e}")
+        return False
+
+def git_remote_get(path: str) -> list[dict]:
+    """
+    Get list of configured remotes.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        
+    Returns:
+        list[dict]: List of dictionaries containing remote information
+    """
+    try:
+        result = subprocess.run(['git', 'remote', '-v'], 
+                               cwd=path, capture_output=True, text=True, check=True)
+        
+        remotes = []
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    name = parts[0]
+                    url = parts[1]
+                    remotes.append({'name': name, 'url': url})
+        
+        return remotes
+    except subprocess.CalledProcessError as e:
+        print(f"Error getting remotes: {e}")
+        return []
+
+def git_set_upstream(path: str, remote: str, branch: str) -> bool:
+    """
+    Set upstream tracking for a branch.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        remote (str): Name of the remote repository
+        branch (str): Branch name to set upstream for
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        cmd = ['git', 'branch', '--set-upstream-to', f'{remote}/{branch}']
+        result = subprocess.run(cmd, cwd=path, capture_output=True, text=True, check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error setting upstream: {e}")
+        return False
