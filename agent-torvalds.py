@@ -17,6 +17,7 @@ agent = FunctionAgent(
     tools=[add, multiply, divide,
            git_get_latest_commit, git_init_repo, git_add_files, git_commit, git_get_status, git_generate_changelog,
            git_get_recent_changes, git_update_changelog, git_get_email, git_init_and_commit,
+           git_remote_add, git_push, git_remote_get, git_set_upstream,
            pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info,
            postgres_tool, mysql_tool],
     llm=llm,
