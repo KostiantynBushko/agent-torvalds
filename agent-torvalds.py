@@ -11,48 +11,66 @@ from agent_db_toolkit import *
 from agent_math_toolkit import *
 
 REQUEST_TIMEOUT = 99999
-llm = Ollama(model="qwen3-coder:latest", request_timeout=99999)
+llm = Ollama(model="qwen3-coder:latest", request_timeout=REQUEST_TIMEOUT)
+
+# agent_tools = [add, multiply, divide, subtract,
+#          pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info]
+
+agent_tools = [add, multiply, divide,
+         git_get_latest_commit, git_init_repo, git_add_files, git_commit, git_get_status, git_generate_changelog,
+         git_get_recent_changes, git_update_changelog, git_get_email, git_init_and_commit,
+         git_remote_add, git_push, git_remote_get, git_set_upstream,
+         pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info,
+         run_postgres_query, run_mysql_query]
+
+wrapped_tools = [FunctionTool.from_defaults(fn) for fn in agent_tools]
+
+pwd_tool = FunctionTool.from_defaults(pwd)
 
 agent = FunctionAgent(
-    tools=[add, multiply, divide,
-           git_get_latest_commit, git_init_repo, git_add_files, git_commit, git_get_status, git_generate_changelog,
-           git_get_recent_changes, git_update_changelog, git_get_email, git_init_and_commit,
-           git_remote_add, git_push, git_remote_get, git_set_upstream,
-           pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info,
-           postgres_tool, mysql_tool],
+    tools=wrapped_tools,
     llm=llm,
     max_iterations=10000,
-    memory=agent_chat_memory.chat_memory,
+    # memory=agent_chat_memory.chat_memory,
     system_prompt=(
-        "Your name is **Torvald** – an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
-        ""
+        "Your name is Torvald an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
         "Core capabilities"
-        "- **OS‑level access**: browse file systems, run shell commands, launch/manage processes, work with network shares, containers, VMs, etc."
-        "- **Database work**: execute SQL queries (PostgreSQL, MySQL, SQLite, Snowflake, BigQuery, …) and inspect schemas."
-        "- **Technical & scientific tasks**: math, statistics, data analysis (pandas/NumPy), plotting, physics/engineering calculations."
-        "- **Software development & architecture**: generate/refactor code (Python, JavaScript, Go, Java, …), run tests, linting, build automation, create diagrams, and provide architectural advice."
+        "OS‑level access: browse file systems, run shell commands, launch/manage processes, work with network shares, containers, VMs, etc."
+        "Database work: execute SQL queries (PostgreSQL, MySQL, SQLite, Snowflake, BigQuery, …) and inspect schemas."
+        "Technical & scientific tasks**: math, statistics, data analysis (pandas/NumPy), plotting, physics/engineering calculations."
+        "Software development & architecture**: generate/refactor code (Python, JavaScript, Go, Java, …), run tests, linting, build automation, create diagrams, and provide architectural advice."
         ""
         "Operational guidelines"
-        "- **Tool‑first**: always use the provided functions/tools for calculations, file ops, SQL, etc. – never simulate results."
-        "- **Safety first**: before any destructive action (delete, drop, modify production data, etc.) ask for explicit confirmation and, when possible, offer a dry‑run preview."
-        "- **Clarity & transparency**: state what you’re doing, why, and what the expected outcome is. Surface exact error messages and suggest remediation."
-        "- **Context awareness**: keep track of the current directory, active databases, running processes, and any in‑progress scripts to avoid repetitive prompts."
-        "- **Documentation**: when you create code or scripts, also generate a short README or comment block explaining purpose, usage, and prerequisites."
+        "Tool‑first: always use the provided functions/tools for calculations, file ops, SQL, etc. – never simulate results."
+        "Safety first: before any destructive action (delete, drop, modify production data, etc.) ask for explicit confirmation and, when possible, offer a dry‑run preview."
+        "Clarity & transparency: state what you’re doing, why, and what the expected outcome is. Surface exact error messages and suggest remediation."
+        "Context awareness**: keep track of the current directory, active databases, running processes, and any in‑progress scripts to avoid repetitive prompts."
+        "Documentation: when you create code or scripts, also generate a short README or comment block explaining purpose, usage, and prerequisites."
         ""
-        "# Optional output‑format comment – keep it concise unless the user asks for a specific style."
+        "Optional output‑format comment – keep it concise unless the user asks for a specific style."
     ),
 )
+
+# pwd_tool = FunctionTool.from_defaults(pwd)
+#
+# agent = FunctionAgent(
+#     tools=[pwd_tool],
+#     llm=llm,  # your LLM instance
+#     system_prompt="You are assistant with OS tools."
+# )
 
 console = Console()
 
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.ERROR)
 
 async def prompt_handler(cmd: str) -> str:
     try:
-        result = await agent.run(cmd, memory=agent_chat_memory.chat_memory,
-                                 max_iterations=10000,
-                                 early_stopping_method="generate")
+        # result = await agent.run(cmd, memory=agent_chat_memory.chat_memory,
+        #                          max_iterations=10000)
+
+        result = await agent.run(cmd, max_iterations=10000)
+
         if isinstance(result, dict):
             return result.get("output") or result.get("text") or str(result)
         return str(result)
@@ -79,4 +97,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    print(pwd())
     asyncio.run(main())
