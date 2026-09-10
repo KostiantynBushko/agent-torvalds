@@ -1,5 +1,6 @@
 import asyncio
 from llama_index.core.agent.workflow import FunctionAgent
+from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.llms.ollama import Ollama
 from rich.console import Console
 
@@ -9,19 +10,24 @@ from agent_git_toolkit import *
 from agent_os_toolkit import *
 from agent_db_toolkit import *
 from agent_math_toolkit import *
+from agent_linux_toolkit import *
 
 REQUEST_TIMEOUT = 99999
-llm = Ollama(model="qwen3-coder:latest", request_timeout=REQUEST_TIMEOUT)
+MODEL="richardyoung/qwen3.6-27b-abliterated:Q4_K_M"
 
-# agent_tools = [add, multiply, divide, subtract,
-#          pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info]
+llm = Ollama(model=MODEL, request_timeout=REQUEST_TIMEOUT)
+
+# Agent chat memory
+# chat_memory = ChatMemoryBuffer.from_defaults(token_limit=40000)
+chat_memory =  agent_chat_memory.chat_memory
 
 agent_tools = [add, multiply, divide,
          git_get_latest_commit, git_init_repo, git_add_files, git_commit, git_get_status, git_generate_changelog,
          git_get_recent_changes, git_update_changelog, git_get_email, git_init_and_commit,
          git_remote_add, git_push, git_remote_get, git_set_upstream,
          pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info,
-         run_postgres_query, run_mysql_query]
+         run_postgres_query, run_mysql_query,
+         execute_shell_command, execute_multiple_commands, parse_command_output, check_file_permissions, run_command_with_env]
 
 wrapped_tools = [FunctionTool.from_defaults(fn) for fn in agent_tools]
 
@@ -31,7 +37,7 @@ agent = FunctionAgent(
     tools=wrapped_tools,
     llm=llm,
     max_iterations=10000,
-    # memory=agent_chat_memory.chat_memory,
+    memory=chat_memory,
     system_prompt=(
         "Your name is Torvald an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
         "Core capabilities"

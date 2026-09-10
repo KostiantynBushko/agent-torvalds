@@ -10,5 +10,5 @@ chat_store = PostgresChatStore.from_uri(
 chat_memory = ChatMemoryBuffer.from_defaults(
     token_limit=3000,
     chat_store=chat_store,
-    chat_store_key="user1",  # unique key per conversation
+    chat_store_key="user1-abliterated",  # unique key per conversation
 )
