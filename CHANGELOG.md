@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-10
+
+- [feature] add Linux shell command toolkit and enable chat memory (2026-09-10)
+
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
