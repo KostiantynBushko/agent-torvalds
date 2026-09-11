@@ -1,6 +1,7 @@
 import asyncio
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.memory import ChatMemoryBuffer
+from llama_index.core.tools import FunctionTool
 from llama_index.llms.ollama import Ollama
 from rich.console import Console
 
@@ -21,13 +22,20 @@ llm = Ollama(model=MODEL, request_timeout=REQUEST_TIMEOUT)
 # chat_memory = ChatMemoryBuffer.from_defaults(token_limit=40000)
 chat_memory =  agent_chat_memory.chat_memory
 
-agent_tools = [add, multiply, divide,
-         git_get_latest_commit, git_init_repo, git_add_files, git_commit, git_get_status, git_generate_changelog,
-         git_get_recent_changes, git_update_changelog, git_get_email, git_init_and_commit,
-         git_remote_add, git_push, git_remote_get, git_set_upstream,
-         pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info,
-         run_postgres_query, run_mysql_query,
-         execute_shell_command, execute_multiple_commands, parse_command_output, check_file_permissions, run_command_with_env]
+agent_tools = [
+    # Math tools
+    add, multiply, divide, subtract, power, modulo, sqrt, sin, cos, tan, log, log10, factorial, evaluate_rpn,
+    # Git tools
+    git_get_latest_commit, git_init_repo, git_add_files, git_commit, git_get_status, git_generate_changelog,
+    git_get_recent_changes, git_update_changelog, git_get_email, git_init_and_commit,
+    git_remote_add, git_push, git_remote_get, git_set_upstream,
+    # OS/File tools
+    pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info,
+    # DB tools
+    run_postgres_query, run_mysql_query,
+    # Shell tools
+    execute_shell_command, execute_multiple_commands, parse_command_output, check_file_permissions, run_command_with_env
+]
 
 wrapped_tools = [FunctionTool.from_defaults(fn) for fn in agent_tools]
 
@@ -75,7 +83,7 @@ async def prompt_handler(cmd: str) -> str:
         # result = await agent.run(cmd, memory=agent_chat_memory.chat_memory,
         #                          max_iterations=10000)
 
-        result = await agent.run(cmd, max_iterations=10000)
+        result = await agent.run(cmd, memory=chat_memory, max_iterations=10000)
 
         if isinstance(result, dict):
             return result.get("output") or result.get("text") or str(result)
