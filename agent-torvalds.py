@@ -20,8 +20,8 @@ MODEL="richardyoung/qwen3.6-27b-abliterated:Q4_K_M"
 llm = Ollama(model=MODEL, request_timeout=REQUEST_TIMEOUT)
 
 # Agent chat memory
-chat_memory = ChatMemoryBuffer.from_defaults(token_limit=TOKEN_LIMITS)
-# chat_memory =  agent_chat_memory.chat_memory
+# chat_memory = ChatMemoryBuffer.from_defaults(token_limit=TOKEN_LIMITS)
+chat_memory =  agent_chat_memory.chat_memory
 
 agent_tools = [
     # Math tools
