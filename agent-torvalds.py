@@ -47,7 +47,7 @@ agent = FunctionAgent(
     max_iterations=10000,
     memory=chat_memory,
     system_prompt=(
-        "Your name is Torvald an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
+        "Your name is Torvalds an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
         "Core capabilities"
         "OS‑level access: browse file systems, run shell commands, launch/manage processes, work with network shares, containers, VMs, etc."
         "Database work: execute SQL queries (PostgreSQL, MySQL, SQLite, Snowflake, BigQuery, …) and inspect schemas."
