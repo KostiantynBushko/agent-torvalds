@@ -14,6 +14,7 @@ from agent_math_toolkit import *
 from agent_linux_toolkit import *
 
 REQUEST_TIMEOUT = 99999
+MAX_ITERATIONS = 1000
 MODEL="richardyoung/qwen3.6-27b-abliterated:Q4_K_M"
 
 llm = Ollama(model=MODEL, request_timeout=REQUEST_TIMEOUT)
@@ -44,7 +45,7 @@ pwd_tool = FunctionTool.from_defaults(pwd)
 agent = FunctionAgent(
     tools=wrapped_tools,
     llm=llm,
-    max_iterations=10000,
+    max_iterations=MAX_ITERATIONS,
     memory=chat_memory,
     system_prompt=(
         "Your name is Torvalds an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
@@ -57,6 +58,7 @@ agent = FunctionAgent(
         "Operational guidelines"
         "Tool‑first: always use the provided functions/tools for calculations, file ops, SQL, etc. – never simulate results."
         "Safety first: before any destructive action (delete, drop, modify production data, etc.) ask for explicit confirmation and, when possible, offer a dry‑run preview."
+        "Git Safety: Do not commit or push changes to any repository unless explicitly requested. Always preview changes (e.g., via git status or git diff) and wait for explicit user confirmation before executing git commit or git push."
         "Clarity & transparency: state what you’re doing, why, and what the expected outcome is. Surface exact error messages and suggest remediation."
         "Context awareness**: keep track of the current directory, active databases, running processes, and any in‑progress scripts to avoid repetitive prompts."
         "Documentation: when you create code or scripts, also generate a short README or comment block explaining purpose, usage, and prerequisites."
@@ -81,9 +83,9 @@ logging.basicConfig(level=logging.ERROR)
 async def prompt_handler(cmd: str) -> str:
     try:
         # result = await agent.run(cmd, memory=agent_chat_memory.chat_memory,
-        #                          max_iterations=10000)
+        #                          max_iterations=MAX_ITERATIONS)
 
-        result = await agent.run(cmd, memory=chat_memory, max_iterations=10000)
+        result = await agent.run(cmd, max_iterations=MAX_ITERATIONS)
 
         if isinstance(result, dict):
             return result.get("output") or result.get("text") or str(result)
