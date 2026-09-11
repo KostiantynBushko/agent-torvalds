@@ -1,7 +1,6 @@
 import asyncio
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.memory import ChatMemoryBuffer
-from llama_index.core.tools import FunctionTool
 from llama_index.llms.ollama import Ollama
 from rich.console import Console
 
@@ -15,13 +14,14 @@ from agent_linux_toolkit import *
 
 REQUEST_TIMEOUT = 99999
 MAX_ITERATIONS = 1000
+TOKEN_LIMITS=4000
 MODEL="richardyoung/qwen3.6-27b-abliterated:Q4_K_M"
 
 llm = Ollama(model=MODEL, request_timeout=REQUEST_TIMEOUT)
 
 # Agent chat memory
-# chat_memory = ChatMemoryBuffer.from_defaults(token_limit=40000)
-chat_memory =  agent_chat_memory.chat_memory
+chat_memory = ChatMemoryBuffer.from_defaults(token_limit=TOKEN_LIMITS)
+# chat_memory =  agent_chat_memory.chat_memory
 
 agent_tools = [
     # Math tools
@@ -67,14 +67,6 @@ agent = FunctionAgent(
     ),
 )
 
-# pwd_tool = FunctionTool.from_defaults(pwd)
-#
-# agent = FunctionAgent(
-#     tools=[pwd_tool],
-#     llm=llm,  # your LLM instance
-#     system_prompt="You are assistant with OS tools."
-# )
-
 console = Console()
 
 import logging
@@ -82,10 +74,7 @@ logging.basicConfig(level=logging.ERROR)
 
 async def prompt_handler(cmd: str) -> str:
     try:
-        # result = await agent.run(cmd, memory=agent_chat_memory.chat_memory,
-        #                          max_iterations=MAX_ITERATIONS)
-
-        result = await agent.run(cmd, max_iterations=MAX_ITERATIONS)
+        result = await agent.run(cmd, memory=chat_memory, max_iterations=MAX_ITERATIONS)
 
         if isinstance(result, dict):
             return result.get("output") or result.get("text") or str(result)
@@ -113,5 +102,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    print(pwd())
     asyncio.run(main())
