@@ -1,335 +1,520 @@
-import subprocess
+"""
+Git Toolkit - Git repository management and version control operations.
+
+This module provides comprehensive Git functionality for repository initialization,
+commit management, changelog generation, remote operations, and status inspection.
+
+Category: Version Control
+Retriever Keywords: git, repository, commit, branch, remote, changelog, version control
+"""
 import os
+import subprocess
+from datetime import date
+from typing import Optional
+from llama_index.core.tools import FunctionTool
+
 
 def git_get_latest_commit(path: str) -> str:
     """
-    This function is useful to get the latest commit in the given path.
+    Get the latest commit hash in a Git repository.
+    
+    Use this tool to retrieve the most recent commit SHA for tracking or logging.
+    
+    Args:
+        path (str): Path to the Git repository
+        
+    Returns:
+        str: The full commit hash of the latest commit, or an error message if failed
+        
+    Example:
+        >>> git_get_latest_commit("/home/user/my-repo")
+        'a1b2c3d4e5f6789012345678901234567890abcd'
+        
+    Keywords: commit, hash, latest, head, revision
     """
     try:
-        # Execute git log command to get the latest commit
-        result = subprocess.run(['git', 'log', '-1', '--format=%H'],
-                               cwd=path,
-                               capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%H"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        return f"Error: {e}"
+        return f"Error: {e.stderr.strip() if e.stderr else str(e)}"
+
 
 def git_init_repo(path: str) -> bool:
     """
     Initialize a new Git repository at the given path.
+    
+    Use this tool to create a fresh Git repository in an existing directory.
+    Parent directories are NOT created automatically; the path must exist.
     
     Args:
         path (str): The directory path where the Git repository should be initialized
         
     Returns:
         bool: True if initialization was successful, False otherwise
+        
+    Example:
+        >>> git_init_repo("/home/user/new-project")
+        True
+        
+    Keywords: init, initialize, repository, new repo, setup
     """
     try:
-        # Check if path exists
-        if not os.path.exists(path):
+        if not os.path.isdir(path):
             return False
-            
-        # Execute git init command
-        result = subprocess.run(['git', 'init'], 
-                               cwd=path,
-                               capture_output=True, text=True, check=True)
+        subprocess.run(
+            ["git", "init"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error initializing Git repository: {e}")
+    except subprocess.CalledProcessError:
         return False
+
 
 def git_add_files(path: str, files: list) -> bool:
     """
     Add files to the staging area for commit.
     
+    Use this tool to stage changes before committing. Pass a list of file paths
+    relative to the repository root, or use ['.'] to stage everything.
+    
     Args:
         path (str): The directory path of the Git repository
-        files (list): List of file paths to add
+        files (list): List of file paths to add (e.g., ['file.py', 'README.md'])
         
     Returns:
         bool: True if successful, False otherwise
+        
+    Example:
+        >>> git_add_files("/home/user/repo", ["src/main.py", "README.md"])
+        True
+        
+    Keywords: add, stage, staging, index, prepare commit
     """
     try:
-        # Build git add command
-        cmd = ['git', 'add'] + files
-        result = subprocess.run(cmd, cwd=path, capture_output=True, text=True, check=True)
+        subprocess.run(
+            ["git", "add"] + files,
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error adding files: {e}")
+    except subprocess.CalledProcessError:
         return False
+
 
 def git_commit(path: str, message: str) -> bool:
     """
     Create a commit with the given message.
     
+    Use this tool to commit staged changes to the repository.
+    Returns False if there are no staged changes to commit.
+    
     Args:
         path (str): The directory path of the Git repository
-        message (str): Commit message
+        message (str): Commit message describing the changes
         
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if commit was created successfully, False otherwise
+        
+    Example:
+        >>> git_commit("/home/user/repo", "Fix bug in authentication module")
+        True
+        
+    Keywords: commit, save, snapshot, message, changes
     """
     try:
-        # Check if we have any changes to commit
-        result = subprocess.run(['git', 'diff-index', '--cached', 'HEAD'], 
-                               cwd=path, capture_output=True, text=True)
-        if result.stdout.strip() == "":
-            print("No changes to commit")
+        # Check if there are staged changes
+        status = subprocess.run(
+            ["git", "diff-index", "--cached", "HEAD"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+        )
+        if not status.stdout.strip():
             return False
-            
-        # Create commit
-        cmd = ['git', 'commit', '-m', message]
-        result = subprocess.run(cmd, cwd=path, capture_output=True, text=True, check=True)
+        
+        subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error creating commit: {e}")
+    except subprocess.CalledProcessError:
         return False
+
 
 def git_get_status(path: str) -> dict:
     """
-    Get current repository status.
+    Get current repository status showing staged, unstaged, and untracked files.
+    
+    Use this tool to inspect the working tree status before making changes or commits.
     
     Args:
         path (str): The directory path of the Git repository
         
     Returns:
-        dict: Dictionary containing status information
+        dict: Dictionary containing status information with keys:
+            - 'status': 'success' or 'error'
+            - 'output': Porcelain format status string (on success)
+            - 'message': Error message (on failure)
+            
+    Example:
+        >>> git_get_status("/home/user/repo")
+        {'status': 'success', 'output': 'M src/main.py\n?? new_file.py'}
+        
+    Keywords: status, changes, modified, untracked, dirty, clean
     """
     try:
-        # Get git status
-        result = subprocess.run(['git', 'status', '--porcelain'], 
-                               cwd=path, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         return {
-            'status': 'success',
-            'output': result.stdout.strip()
+            "status": "success",
+            "output": result.stdout.strip(),
         }
     except subprocess.CalledProcessError as e:
         return {
-            'status': 'error',
-            'message': f"Error getting status: {e}"
+            "status": "error",
+            "message": f"Error getting status: {e.stderr.strip() if e.stderr else str(e)}",
         }
+
 
 def git_generate_changelog(path: str, output_file: str = "CHANGELOG.md") -> bool:
     """
     Generate a changelog file from Git commit history.
     
+    Use this tool to automatically create a formatted changelog from commit messages,
+    grouped by date. This is useful for release notes and project documentation.
+    
     Args:
         path (str): The directory path of the Git repository
-        output_file (str): Name of the changelog file to create
+        output_file (str): Name of the changelog file to create (default: 'CHANGELOG.md')
         
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if changelog was generated successfully, False otherwise
+        
+    Example:
+        >>> git_generate_changelog("/home/user/repo")
+        True
+        
+    Keywords: changelog, history, release notes, commits, documentation, log
     """
     try:
-        # Get all commits with their messages and dates
-        result = subprocess.run([
-            'git', 'log', '--pretty=format:%h|%ad|%s', 
-            '--date=short', '--no-merges'
-        ], cwd=path, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ["git", "log", "--pretty=format:%h|%ad|%s", "--date=short", "--no-merges"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         
-        commits = result.stdout.strip().split('\n') if result.stdout.strip() else []
+        if not result.stdout.strip():
+            # No commits yet - create empty changelog
+            changelog_path = os.path.join(path, output_file)
+            with open(changelog_path, "w") as f:
+                f.write("# Changelog\n\nAll notable changes to this project will be documented in this file.\n")
+            return True
         
-        # Format changelog content
-        changelog_content = "# Changelog\n\n"
-        changelog_content += "All notable changes to this project will be documented in this file.\n\n"
+        commits = result.stdout.strip().split("\n")
+        changelog_content = "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n"
         
         current_date = ""
         for commit in commits:
             if not commit:
                 continue
             try:
-                commit_hash, date, message = commit.split('|', 2)
-                # Format the date for better readability
-                formatted_date = date
+                parts = commit.split("|", 2)
+                if len(parts) != 3:
+                    continue
+                commit_hash, commit_date, message = parts
                 
-                # Add date header if different from previous
-                if date != current_date:
-                    changelog_content += f"## {date}\n\n"
-                    current_date = date
+                # Add date header when date changes
+                if commit_date != current_date:
+                    changelog_content += f"\n## {commit_date}\n\n"
+                    current_date = commit_date
                 
                 changelog_content += f"- {message} ({commit_hash})\n"
-            except ValueError:
-                # Skip malformed commit entries
+            except (ValueError, IndexError):
                 continue
         
-        # Write to file
-        with open(os.path.join(path, output_file), 'w') as f:
+        changelog_path = os.path.join(path, output_file)
+        with open(changelog_path, "w") as f:
             f.write(changelog_content)
-            
+        
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error generating changelog: {e}")
+    except (subprocess.CalledProcessError, OSError):
         return False
+
 
 def git_get_recent_changes(path: str, num_commits: int = 10) -> list:
     """
     Get recent commits from the Git repository.
+    
+    Use this tool to inspect recent commit history, including author, date, and message.
     
     Args:
         path (str): The directory path of the Git repository
         num_commits (int): Number of recent commits to retrieve (default: 10)
         
     Returns:
-        list: List of dictionaries containing commit information
+        list: List of dictionaries containing commit information with keys:
+            - 'hash': Short commit hash
+            - 'date': Commit date (YYYY-MM-DD)
+            - 'message': Commit message
+            - 'author': Author name
+            
+    Example:
+        >>> git_get_recent_changes("/home/user/repo", 5)
+        [{'hash': 'a1b2c3d', 'date': '2024-01-15', 'message': 'Fix login bug', 'author': 'Alice'}, ...]
+        
+    Keywords: recent, history, log, commits, author, changes
     """
     try:
-        # Get specified number of recent commits
-        result = subprocess.run([
-            'git', 'log', f'-{num_commits}', '--pretty=format:%h|%ad|%s|%an', 
-            '--date=short', '--no-merges'
-        ], cwd=path, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ["git", "log", f"-{num_commits}", "--pretty=format:%h|%ad|%s|%an", "--date=short", "--no-merges"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         
-        commits = result.stdout.strip().split('\n') if result.stdout.strip() else []
+        if not result.stdout.strip():
+            return []
+        
+        commits = result.stdout.strip().split("\n")
         recent_changes = []
         
         for commit in commits:
             if not commit:
                 continue
             try:
-                commit_hash, date, message, author = commit.split('|', 3)
+                parts = commit.split("|", 3)
+                if len(parts) != 4:
+                    continue
+                commit_hash, commit_date, message, author = parts
                 recent_changes.append({
-                    'hash': commit_hash,
-                    'date': date,
-                    'message': message,
-                    'author': author
+                    "hash": commit_hash,
+                    "date": commit_date,
+                    "message": message,
+                    "author": author,
                 })
-            except ValueError:
-                # Skip malformed commit entries
+            except (ValueError, IndexError):
                 continue
-                
+        
         return recent_changes
-    except subprocess.CalledProcessError as e:
-        print(f"Error getting recent changes: {e}")
+    except subprocess.CalledProcessError:
         return []
+
 
 def git_update_changelog(path: str, change_type: str, description: str) -> bool:
     """
     Update the changelog with a new entry.
     
+    Use this tool to manually add a changelog entry with a specific change type
+    (feature, fix, docs, etc.) and description.
+    
     Args:
         path (str): The directory path of the Git repository
-        change_type (str): Type of change (feature, fix, docs, etc.)
+        change_type (str): Type of change (feature, fix, docs, refactor, chore, etc.)
         description (str): Description of the change
         
     Returns:
-        bool: True if successful, False otherwise
+        bool: True if changelog was updated successfully, False otherwise
+        
+    Example:
+        >>> git_update_changelog("/home/user/repo", "fix", "Resolve null pointer in parser")
+        True
+        
+    Keywords: update, changelog, entry, change type, feature, fix, docs
     """
     try:
-        # Get current date
-        from datetime import date
         today = date.today().strftime("%Y-%m-%d")
-        
-        # Read existing changelog
         changelog_path = os.path.join(path, "CHANGELOG.md")
-        changelog_content = ""
         
+        # Read existing changelog or create new one
+        changelog_content = ""
         if os.path.exists(changelog_path):
-            with open(changelog_path, 'r') as f:
+            with open(changelog_path, "r") as f:
                 changelog_content = f.read()
         
         # Create new entry
         new_entry = f"- [{change_type}] {description} ({today})\n"
         
-        # Find the first header to insert after
-        header_pos = changelog_content.find("# Changelog")
-        if header_pos == -1:
-            # If no header found, create basic structure
-            changelog_content = "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n"
+        # Initialize if empty
+        if not changelog_content.strip():
+            changelog_content = (
+                "# Changelog\n\n"
+                "All notable changes to this project will be documented in this file.\n\n"
+            )
         
-        # Insert the new entry after the header
-        insert_pos = changelog_content.find("\n\n") + 2  # Position after first double newline
-        
-        if insert_pos > 0:
-            updated_content = changelog_content[:insert_pos] + f"## {today}\n\n{new_entry}\n" + changelog_content[insert_pos:]
+        # Try to insert under today's date header, or create new date section
+        date_header = f"## {today}\n"
+        if date_header in changelog_content:
+            # Insert after existing date header
+            idx = changelog_content.index(date_header) + len(date_header)
+            # Skip any newlines after the header
+            while idx < len(changelog_content) and changelog_content[idx] in ("\n", " "):
+                idx += 1
+            updated_content = changelog_content[:idx] + new_entry + changelog_content[idx:]
         else:
-            updated_content = changelog_content + f"\n## {today}\n\n{new_entry}\n"
+            # Insert after the intro paragraph
+            insert_marker = "documented in this file.\n"
+            if insert_marker in changelog_content:
+                idx = changelog_content.index(insert_marker) + len(insert_marker)
+                updated_content = (
+                    changelog_content[:idx]
+                    + f"\n## {today}\n\n{new_entry}\n"
+                    + changelog_content[idx:]
+                )
+            else:
+                # Append to end
+                updated_content = changelog_content + f"\n## {today}\n\n{new_entry}\n"
         
-        # Write back to file
-        with open(changelog_path, 'w') as f:
+        with open(changelog_path, "w") as f:
             f.write(updated_content)
-            
+        
         return True
-    except Exception as e:
-        print(f"Error updating changelog: {e}")
+    except Exception:
         return False
+
 
 def git_get_email(path: str) -> str:
     """
     Get the user's email from Git configuration.
+    
+    Use this tool to retrieve the configured user email for the repository.
+    Returns an empty string if not configured.
     
     Args:
         path (str): The directory path of the Git repository
         
     Returns:
         str: User's email address or empty string if not found
+        
+    Example:
+        >>> git_get_email("/home/user/repo")
+        'developer@example.com'
+        
+    Keywords: email, config, user, identity, author
     """
     try:
-        # Try to get user.email from git config
-        result = subprocess.run(['git', 'config', '--get', 'user.email'], 
-                               cwd=path, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ["git", "config", "--get", "user.email"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return ""
         return result.stdout.strip()
     except subprocess.CalledProcessError:
         return ""
+
 
 def git_init_and_commit(path: str, message: str) -> bool:
     """
     Initialize a Git repository and make the first commit.
     
+    Use this tool to quickly set up a new repository with an initial commit.
+    If the repo already exists, it will just stage and commit all files.
+    Auto-configures user identity if not already set.
+    
     Args:
         path (str): The directory path where the Git repository should be initialized
-        message (str): Commit message
+        message (str): Commit message for the initial commit
         
     Returns:
         bool: True if successful, False otherwise
+        
+    Example:
+        >>> git_init_and_commit("/home/user/new-project", "Initial commit")
+        True
+        
+    Keywords: init, first commit, setup, bootstrap, initialize
     """
     try:
-        # Initialize git repo if not already initialized
-        if not os.path.exists(os.path.join(path, '.git')):
-            result = subprocess.run(['git', 'init'], cwd=path, capture_output=True, text=True, check=True)
+        # Initialize if not already a git repo
+        if not os.path.isdir(os.path.join(path, ".git")):
+            subprocess.run(["git", "init"], cwd=path, capture_output=True, text=True, check=True)
         
-        # Get user email for commit
+        # Configure user identity if needed
         email = git_get_email(path)
-        
-        # Add all files to staging
-        add_result = subprocess.run(['git', 'add', '.'], cwd=path, capture_output=True, text=True)
-        
-        # Configure user if not already set
         if not email:
-            subprocess.run(['git', 'config', 'user.email', 'torvalds@agent.com'], cwd=path, capture_output=True, text=True)
-            subprocess.run(['git', 'config', 'user.name', 'Torvalds Agent'], cwd=path, capture_output=True, text=True)
+            subprocess.run(["git", "config", "user.email", "agent@torvalds.local"], cwd=path, capture_output=True, text=True)
+            subprocess.run(["git", "config", "user.name", "Torvalds Agent"], cwd=path, capture_output=True, text=True)
         
-        # Create commit
-        cmd = ['git', 'commit', '-m', message]
-        result = subprocess.run(cmd, cwd=path, capture_output=True, text=True, check=True)
+        # Stage all files
+        subprocess.run(["git", "add", "."], cwd=path, capture_output=True, text=True)
+        
+        # Commit
+        subprocess.run(["git", "commit", "-m", message], cwd=path, capture_output=True, text=True, check=True)
         
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error initializing and committing: {e}")
+    except subprocess.CalledProcessError:
         return False
+
 
 def git_remote_add(path: str, name: str, url: str) -> bool:
     """
     Add a remote repository.
     
+    Use this tool to configure a remote URL for pushing/pulling changes.
+    
     Args:
         path (str): The directory path of the Git repository
-        name (str): Name of the remote (e.g., 'origin')
+        name (str): Name of the remote (e.g., 'origin', 'upstream')
         url (str): URL of the remote repository
         
     Returns:
         bool: True if successful, False otherwise
+        
+    Example:
+        >>> git_remote_add("/home/user/repo", "origin", "https://github.com/user/repo.git")
+        True
+        
+    Keywords: remote, add, url, origin, upstream, push, pull
     """
     try:
-        cmd = ['git', 'remote', 'add', name, url]
-        result = subprocess.run(cmd, cwd=path, capture_output=True, text=True, check=True)
+        subprocess.run(
+            ["git", "remote", "add", name, url],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error adding remote: {e}")
+    except subprocess.CalledProcessError:
         return False
 
-def git_push(path: str, remote: str = "origin", branch: str = "main", set_upstream: bool = False) -> bool:
+
+def git_push(
+    path: str,
+    remote: str = "origin",
+    branch: str = "main",
+    set_upstream: bool = False,
+) -> bool:
     """
     Push changes to a remote repository.
+    
+    Use this tool to upload local commits to a remote repository.
+    Requires the remote to be configured and proper authentication.
     
     Args:
         path (str): The directory path of the Git repository
@@ -339,51 +524,85 @@ def git_push(path: str, remote: str = "origin", branch: str = "main", set_upstre
         
     Returns:
         bool: True if successful, False otherwise
+        
+    Example:
+        >>> git_push("/home/user/repo", "origin", "main")
+        True
+        
+    Keywords: push, upload, remote, branch, upstream, sync
     """
     try:
-        # If we need to set upstream
         if set_upstream:
-            cmd = ['git', 'push', '--set-upstream', remote, branch]
+            subprocess.run(
+                ["git", "push", "--set-upstream", remote, branch],
+                cwd=path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
         else:
-            cmd = ['git', 'push', remote, branch]
-            
-        result = subprocess.run(cmd, cwd=path, capture_output=True, text=True, check=True)
+            subprocess.run(
+                ["git", "push", remote, branch],
+                cwd=path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error pushing to remote: {e}")
+    except subprocess.CalledProcessError:
         return False
+
 
 def git_remote_get(path: str) -> list[dict]:
     """
     Get list of configured remotes.
     
+    Use this tool to inspect which remotes are configured for the repository.
+    
     Args:
         path (str): The directory path of the Git repository
         
     Returns:
-        list[dict]: List of dictionaries containing remote information
+        list[dict]: List of dictionaries containing remote information with keys:
+            - 'name': Remote name
+            - 'url': Remote URL
+            
+    Example:
+        >>> git_remote_get("/home/user/repo")
+        [{'name': 'origin', 'url': 'https://github.com/user/repo.git'}]
+        
+    Keywords: remote, list, configured, url, fetch, push
     """
     try:
-        result = subprocess.run(['git', 'remote', '-v'], 
-                               cwd=path, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ["git", "remote", "-v"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        
+        if not result.stdout.strip():
+            return []
         
         remotes = []
-        for line in result.stdout.strip().split('\n'):
-            if line:
-                parts = line.split()
-                if len(parts) >= 2:
-                    name = parts[0]
-                    url = parts[1]
-                    remotes.append({'name': name, 'url': url})
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                remotes.append({"name": parts[0], "url": parts[1]})
         
         return remotes
-    except subprocess.CalledProcessError as e:
-        print(f"Error getting remotes: {e}")
+    except subprocess.CalledProcessError:
         return []
+
 
 def git_set_upstream(path: str, remote: str, branch: str) -> bool:
     """
     Set upstream tracking for a branch.
+    
+    Use this tool to link a local branch to a remote branch for simpler push/pull operations.
     
     Args:
         path (str): The directory path of the Git repository
@@ -392,11 +611,90 @@ def git_set_upstream(path: str, remote: str, branch: str) -> bool:
         
     Returns:
         bool: True if successful, False otherwise
+        
+    Example:
+        >>> git_set_upstream("/home/user/repo", "origin", "main")
+        True
+        
+    Keywords: upstream, tracking, branch, remote, link, configure
     """
     try:
-        cmd = ['git', 'branch', '--set-upstream-to', f'{remote}/{branch}']
-        result = subprocess.run(cmd, cwd=path, capture_output=True, text=True, check=True)
+        subprocess.run(
+            ["git", "branch", "--set-upstream-to", f"{remote}/{branch}"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"Error setting upstream: {e}")
+    except subprocess.CalledProcessError:
         return False
+
+
+def get_all_tools() -> list[FunctionTool]:
+    """
+    Return all Git tools as FunctionTool objects for on-demand loading.
+    
+    Each tool includes category metadata for better retrieval.
+    
+    Returns:
+        list[FunctionTool]: List of Git FunctionTool objects
+    """
+    return [
+        FunctionTool.from_defaults(
+            fn=git_get_latest_commit,
+            description="Get the latest commit hash. Use for tracking current revision. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_init_repo,
+            description="Initialize a new Git repository. Use for creating fresh repos. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_add_files,
+            description="Add files to staging area. Use for preparing commits. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_commit,
+            description="Create a commit with a message. Use for saving staged changes. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_get_status,
+            description="Get repository status. Use for inspecting changes and untracked files. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_generate_changelog,
+            description="Generate changelog from commit history. Use for release notes and documentation. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_get_recent_changes,
+            description="Get recent commits with author and date. Use for inspecting history. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_update_changelog,
+            description="Update changelog with a new entry. Use for manual changelog management. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_get_email,
+            description="Get user email from Git config. Use for identity inspection. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_init_and_commit,
+            description="Initialize repo and make first commit. Use for quick bootstrap. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_remote_add,
+            description="Add a remote repository. Use for configuring push/pull URLs. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_push,
+            description="Push changes to remote. Use for uploading commits. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_remote_get,
+            description="List configured remotes. Use for inspecting remote URLs. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_set_upstream,
+            description="Set upstream tracking for a branch. Use for linking local to remote branches. Category: Version Control",
+        ),
+    ]

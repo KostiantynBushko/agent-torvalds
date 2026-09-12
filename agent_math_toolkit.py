@@ -1,87 +1,350 @@
+"""
+Math Toolkit - Mathematical operations and calculations.
+
+This module provides essential mathematical functions for numerical computations,
+trigonometry, logarithms, and advanced expression evaluation.
+
+Category: Mathematics
+Retriever Keywords: calculation, math, arithmetic, trigonometry, logarithm, statistics
+"""
 import math
+from llama_index.core.tools import FunctionTool
+
+
+def add(a: float, b: float) -> float:
+    """
+    Add two numbers together.
+    
+    Use this tool for basic addition operations and summing values.
+    
+    Args:
+        a (float): First number to add
+        b (float): Second number to add
+        
+    Returns:
+        float: The sum of a and b
+        
+    Example:
+        >>> add(5, 3)
+        8
+        >>> add(-2, 7)
+        5
+        
+    Keywords: sum, plus, total, addition, arithmetic
+    """
+    return a + b
+
+
+def subtract(a: float, b: float) -> float:
+    """
+    Subtract the second number from the first number.
+    
+    Use this tool for subtraction operations and finding differences between values.
+    
+    Args:
+        a (float): Number to subtract from
+        b (float): Number to subtract
+        
+    Returns:
+        float: The difference (a - b)
+        
+    Example:
+        >>> subtract(10, 4)
+        6
+        >>> subtract(5, 8)
+        -3
+        
+    Keywords: minus, difference, subtract, arithmetic
+    """
+    return a - b
+
 
 def multiply(a: float, b: float) -> float:
     """
-    Useful for multiplying two numbers.
+    Multiply two numbers together.
+    
+    Use this tool for multiplication operations, scaling values, or calculating areas/volumes.
+    
+    Args:
+        a (float): First number to multiply
+        b (float): Second number to multiply
+        
+    Returns:
+        float: The product of a and b
+        
+    Example:
+        >>> multiply(4, 5)
+        20
+        >>> multiply(2.5, 3)
+        7.5
+        
+    Keywords: times, product, scale, area, volume, arithmetic
     """
-    print("Agent call multiply:")
     return a * b
+
 
 def divide(dividend: float, divisor: float) -> float:
     """
-    Useful to divide two numbers.
+    Divide the first number by the second number.
+    
+    Use this tool for division operations, calculating ratios, averages, or percentages.
+    
+    Args:
+        dividend (float): Number to be divided
+        divisor (float): Number to divide by (must not be zero)
+        
+    Returns:
+        float: The quotient (dividend / divisor)
+        
+    Example:
+        >>> divide(10, 2)
+        5.0
+        >>> divide(7, 3)
+        2.333...
+        
+    Keywords: quotient, ratio, average, percentage, split, arithmetic
     """
-    print("Agent call divide:")
     return dividend / divisor
 
-def add(a: float, b: float) -> float:
-    """Useful for addition two numbers."""
-    print("Agent call sum:")
-    return a + b
-
-def subtract(a: float, b: float) -> float:
-    """Useful for subtracting two numbers."""
-    print("Agent call subtract:")
-    return a - b
 
 def power(base: float, exponent: float) -> float:
-    """Useful for raising a number to a power."""
-    print("Agent call power:")
+    """
+    Raise a base number to the power of an exponent.
+    
+    Use this tool for exponential calculations, squaring, cubing, or compound interest.
+    
+    Args:
+        base (float): The base number
+        exponent (float): The power to raise the base to
+        
+    Returns:
+        float: base raised to the power of exponent
+        
+    Example:
+        >>> power(2, 3)
+        8
+        >>> power(5, 2)
+        25
+        >>> power(9, 0.5)
+        3
+        
+    Keywords: exponent, square, cube, exponential, compound, raise
+    """
     return base ** exponent
 
+
 def modulo(a: float, b: float) -> float:
-    """Useful for calculating the remainder."""
-    print("Agent call modulo:")
+    """
+    Calculate the remainder of dividing the first number by the second.
+    
+    Use this tool for finding remainders, checking divisibility, or cyclic operations.
+    
+    Args:
+        a (float): Dividend
+        b (float): Divisor (must not be zero)
+        
+    Returns:
+        float: The remainder when a is divided by b
+        
+    Example:
+        >>> modulo(10, 3)
+        1
+        >>> modulo(15, 4)
+        3
+        
+    Keywords: remainder, mod, divisibility, cyclic, cycle
+    """
     return a % b
 
+
 def sqrt(a: float) -> float:
-    """Useful for calculating the square root."""
-    print("Agent call sqrt:")
+    """
+    Calculate the square root of a number.
+    
+    Use this tool for finding square roots in geometry, statistics, or physics calculations.
+    
+    Args:
+        a (float): Number to find square root of (must be non-negative)
+        
+    Returns:
+        float: The square root of a
+        
+    Example:
+        >>> sqrt(16)
+        4
+        >>> sqrt(2)
+        1.414...
+        
+    Keywords: square root, geometry, distance, standard deviation
+    """
     return math.sqrt(a)
 
+
 def sin(a: float) -> float:
-    """Useful for calculating the sine (radians)."""
-    print("Agent call sin:")
+    """
+    Calculate the sine of an angle in radians.
+    
+    Use this tool for trigonometric calculations, wave functions, or periodic phenomena.
+    
+    Args:
+        a (float): Angle in radians
+        
+    Returns:
+        float: The sine of the angle
+        
+    Example:
+        >>> sin(0)
+        0
+        >>> sin(3.14159/2)  # π/2
+        1
+        
+    Keywords: sine, trigonometry, wave, periodic, radians, angle
+    """
     return math.sin(a)
 
+
 def cos(a: float) -> float:
-    """Useful for calculating the cosine (radians)."""
-    print("Agent call cos:")
+    """
+    Calculate the cosine of an angle in radians.
+    
+    Use this tool for trigonometric calculations, projections, or wave functions.
+    
+    Args:
+        a (float): Angle in radians
+        
+    Returns:
+        float: The cosine of the angle
+        
+    Example:
+        >>> cos(0)
+        1
+        >>> cos(3.14159)  # π
+        -1
+        
+    Keywords: cosine, trigonometry, projection, wave, radians, angle
+    """
     return math.cos(a)
 
+
 def tan(a: float) -> float:
-    """Useful for calculating the tangent (radians)."""
-    print("Agent call tan:")
+    """
+    Calculate the tangent of an angle in radians.
+    
+    Use this tool for trigonometric calculations, slopes, or angle relationships.
+    
+    Args:
+        a (float): Angle in radians
+        
+    Returns:
+        float: The tangent of the angle
+        
+    Example:
+        >>> tan(0)
+        0
+        >>> tan(3.14159/4)  # π/4
+        1
+        
+    Keywords: tangent, trigonometry, slope, angle, radians
+    """
     return math.tan(a)
 
+
 def log(a: float) -> float:
-    """Useful for calculating the natural logarithm."""
-    print("Agent call log:")
+    """
+    Calculate the natural logarithm (base e) of a number.
+    
+    Use this tool for exponential growth calculations, entropy, or scientific computations.
+    
+    Args:
+        a (float): Number to find logarithm of (must be positive)
+        
+    Returns:
+        float: The natural logarithm of a
+        
+    Example:
+        >>> log(2.71828)  # e
+        1
+        >>> log(1)
+        0
+        
+    Keywords: natural log, ln, exponential, entropy, scientific
+    """
     return math.log(a)
 
+
 def log10(a: float) -> float:
-    """Useful for calculating the base-10 logarithm."""
-    print("Agent call log10:")
+    """
+    Calculate the base-10 logarithm of a number.
+    
+    Use this tool for pH calculations, decibels, or order-of-magnitude comparisons.
+    
+    Args:
+        a (float): Number to find logarithm of (must be positive)
+        
+    Returns:
+        float: The base-10 logarithm of a
+        
+    Example:
+        >>> log10(100)
+        2
+        >>> log10(1000)
+        3
+        
+    Keywords: log10, base-10, pH, decibel, magnitude, scale
+    """
     return math.log10(a)
 
+
 def factorial(a: float) -> float:
-    """Useful for calculating the factorial (input treated as integer)."""
-    print("Agent call factorial:")
+    """
+    Calculate the factorial of a non-negative integer.
+    
+    Use this tool for permutations, combinations, probability calculations, or combinatorics.
+    
+    Args:
+        a (float): Non-negative integer (will be converted to int)
+        
+    Returns:
+        float: The factorial of a (a!)
+        
+    Example:
+        >>> factorial(5)
+        120
+        >>> factorial(0)
+        1
+        
+    Keywords: factorial, permutation, combination, probability, combinatorics
+    """
     return math.factorial(int(a))
+
 
 def evaluate_rpn(expression: str) -> float:
     """
-    Evaluates a Reverse Polish Notation (RPN) expression.
+    Evaluate a Reverse Polish Notation (RPN) expression.
     
-    This function reuses the existing math operations defined in this file.
+    Use this tool for complex mathematical expressions without parentheses.
+    RPN places operators after operands, eliminating the need for operator precedence rules.
     
     Supported Binary Operators: +, -, *, /, ^, %, pow
     Supported Unary Operators: sqrt, sin, cos, tan, log, log10, fact, factorial
     
+    Args:
+        expression (str): RPN expression with space-separated tokens
+        
+    Returns:
+        float: Result of the evaluated expression
+        
     Example:
-        "3 4 +" -> 7
-        "3 4 + 2 *" -> 14
-        "5 sqrt" -> 2.236...
+        >>> evaluate_rpn("3 4 +")
+        7
+        >>> evaluate_rpn("3 4 + 2 *")
+        14
+        >>> evaluate_rpn("5 sqrt")
+        2.236...
+        >>> evaluate_rpn("10 2 ^ 3 +")
+        13
+        
+    Keywords: RPN, reverse polish, expression, calculator, postfix
     """
     stack = []
     tokens = expression.split()
@@ -135,3 +398,72 @@ def evaluate_rpn(expression: str) -> float:
         raise ValueError("Invalid RPN expression (leftover operands on stack)")
         
     return stack[0]
+
+
+def get_all_tools() -> list[FunctionTool]:
+    """
+    Return all math tools as FunctionTool objects for on-demand loading.
+    
+    Each tool includes category metadata for better retrieval.
+    
+    Returns:
+        list[FunctionTool]: List of math FunctionTool objects
+    """
+    return [
+        FunctionTool.from_defaults(
+            fn=add,
+            description="Add two numbers together. Use for basic addition and summing values. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=subtract,
+            description="Subtract one number from another. Use for finding differences. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=multiply,
+            description="Multiply two numbers. Use for scaling, areas, volumes. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=divide,
+            description="Divide one number by another. Use for ratios, averages, percentages. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=power,
+            description="Raise a number to a power. Use for exponential calculations, squaring, cubing. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=modulo,
+            description="Calculate remainder of division. Use for checking divisibility. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=sqrt,
+            description="Calculate square root. Use for geometry, statistics, physics. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=sin,
+            description="Calculate sine of an angle in radians. Use for trigonometry and wave functions. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=cos,
+            description="Calculate cosine of an angle in radians. Use for trigonometry and projections. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=tan,
+            description="Calculate tangent of an angle in radians. Use for trigonometry and slopes. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=log,
+            description="Calculate natural logarithm (base e). Use for exponential growth and entropy. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=log10,
+            description="Calculate base-10 logarithm. Use for pH, decibels, magnitude comparisons. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=factorial,
+            description="Calculate factorial. Use for permutations, combinations, probability. Category: Mathematics",
+        ),
+        FunctionTool.from_defaults(
+            fn=evaluate_rpn,
+            description="Evaluate Reverse Polish Notation expressions. Use for complex math without parentheses. Category: Mathematics",
+        ),
+    ]
