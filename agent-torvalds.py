@@ -14,14 +14,14 @@ from agent_linux_toolkit import *
 
 REQUEST_TIMEOUT = 99999
 MAX_ITERATIONS = 1000
-TOKEN_LIMITS=4000
-MODEL="richardyoung/qwen3.6-27b-abliterated:Q4_K_M"
+TOKEN_LIMITS = 4000
+MODEL = "richardyoung/qwen3.6-27b-abliterated:Q4_K_M"
 
 llm = Ollama(model=MODEL, request_timeout=REQUEST_TIMEOUT)
 
 # Agent chat memory
 # chat_memory = ChatMemoryBuffer.from_defaults(token_limit=TOKEN_LIMITS)
-chat_memory =  agent_chat_memory.chat_memory
+chat_memory = agent_chat_memory.chat_memory
 
 agent_tools = [
     # Math tools
@@ -35,7 +35,7 @@ agent_tools = [
     # DB tools
     run_postgres_query, run_mysql_query,
     # Shell tools
-    execute_shell_command, execute_multiple_commands, parse_command_output, check_file_permissions, run_command_with_env
+    execute_shell_command, execute_multiple_commands, parse_command_output, check_file_permissions, run_command_with_env,
 ]
 
 wrapped_tools = [FunctionTool.from_defaults(fn) for fn in agent_tools]
@@ -59,7 +59,7 @@ agent = FunctionAgent(
         "Tool‑first: always use the provided functions/tools for calculations, file ops, SQL, etc. – never simulate results."
         "Safety first: before any destructive action (delete, drop, modify production data, etc.) ask for explicit confirmation and, when possible, offer a dry‑run preview."
         "Git Safety: Do not commit or push changes to any repository unless explicitly requested. Always preview changes (e.g., via git status or git diff) and wait for explicit user confirmation before executing git commit or git push."
-        "Clarity & transparency: state what you’re doing, why, and what the expected outcome is. Surface exact error messages and suggest remediation."
+        "Clarity & transparency: state what you're doing, why, and what the expected outcome is. Surface exact error messages and suggest remediation."
         "Context awareness**: keep track of the current directory, active databases, running processes, and any in‑progress scripts to avoid repetitive prompts."
         "Documentation: when you create code or scripts, also generate a short README or comment block explaining purpose, usage, and prerequisites."
         ""
