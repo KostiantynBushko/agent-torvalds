@@ -2,14 +2,14 @@
 Tool Retriever - On-demand tool loading for the Torvalds Agent.
 
 This module implements lazy loading of tools using Llama Index's
-VectorStoreIndex. Tools are indexed and retrieved semantically based
+ObjectIndex. Tools are indexed and retrieved semantically based
 on the user's query, reducing context window pollution.
 
 Category: Infrastructure
 Retriever Keywords: retriever, tool loading, lazy, vector index, semantic
 """
 from llama_index.core import Settings, VectorStoreIndex
-from llama_index.core.schema import Document
+from llama_index.core.objects import ObjectIndex
 from llama_index.core.tools import FunctionTool
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.embeddings.ollama import OllamaEmbedding
@@ -69,18 +69,14 @@ def build_tool_retriever(
         all_tools.extend(_get_cache())
 
     # -----------------------------------------------------------------------
-    # 2. Convert tools to documents and build vector index
+    # 2. Build ObjectIndex over tool objects for semantic retrieval
     # -----------------------------------------------------------------------
-    # Create documents from tool descriptions for semantic retrieval
-    tool_docs = [
-        Document(
-            text=t.metadata.description,
-            metadata={"tool_name": t.metadata.name}
-        )
-        for t in all_tools
-    ]
+    # ObjectIndex properly wraps tools and returns FunctionTool instances
+    tool_index = ObjectIndex.from_objects(
+        all_tools,
+        index_cls=VectorStoreIndex,
+    )
 
-    tool_index = VectorStoreIndex.from_documents(tool_docs)
     tool_retriever = tool_index.as_retriever(similarity_top_k=similarity_top_k)
 
     return tool_retriever, all_tools
