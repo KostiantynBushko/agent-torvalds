@@ -112,6 +112,47 @@ def git_add_files(path: str, files: list) -> bool:
         return False
 
 
+def _has_staged_changes(path: str) -> bool:
+    """
+    Check if there are staged changes ready to commit.
+    
+    Handles both the case where HEAD exists (normal commits) and where it doesn't
+    (first commit in a new repository).
+    
+    Args:
+        path (str): The directory path of the Git repository
+        
+    Returns:
+        bool: True if there are staged changes, False otherwise
+    """
+    # Check if HEAD exists
+    head_check = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=path,
+        capture_output=True,
+        text=True,
+    )
+    
+    if head_check.returncode != 0:
+        # No HEAD yet (first commit) — check if anything is staged
+        result = subprocess.run(
+            ["git", "diff-index", "--cached", "--quiet", "HEAD"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode != 0
+    
+    # HEAD exists — normal staged changes check
+    result = subprocess.run(
+        ["git", "diff-index", "--cached", "--quiet", "HEAD"],
+        cwd=path,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode != 0
+
+
 def git_commit(path: str, message: str) -> bool:
     """
     Create a commit with the given message.
@@ -134,13 +175,7 @@ def git_commit(path: str, message: str) -> bool:
     """
     try:
         # Check if there are staged changes
-        status = subprocess.run(
-            ["git", "diff-index", "--cached", "HEAD"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-        )
-        if not status.stdout.strip():
+        if not _has_staged_changes(path):
             return False
         
         subprocess.run(
@@ -463,8 +498,8 @@ def git_init_and_commit(path: str, message: str) -> bool:
         # Stage all files
         subprocess.run(["git", "add", "."], cwd=path, capture_output=True, text=True)
         
-        # Commit
-        subprocess.run(["git", "commit", "-m", message], cwd=path, capture_output=True, text=True, check=True)
+        # Commit (allow empty commits for fresh repos with no files)
+        subprocess.run(["git", "commit", "--allow-empty", "-m", message], cwd=path, capture_output=True, text=True, check=True)
         
         return True
     except subprocess.CalledProcessError:
