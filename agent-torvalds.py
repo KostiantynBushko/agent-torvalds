@@ -10,14 +10,18 @@ Usage:
     python agent-torvalds.py              # Default mode (retriever-based)
     python agent-torvalds.py --full       # Load all tools upfront
     python agent-torvalds.py --top-k 10   # Adjust retrieval count
+    python agent-torvalds.py --no-stats   # Disable request statistics
 """
 import asyncio
 import argparse
+import json
 import logging
 import os
 import sys
+import uuid
 from pathlib import Path
 
+from llama_index.core import CallbackManager
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.llms.ollama import Ollama
@@ -31,12 +35,30 @@ from agent_os_toolkit import get_all_tools as get_os_tools
 from agent_db_toolkit import get_all_tools as get_db_tools
 from agent_math_toolkit import get_all_tools as get_math_tools
 from agent_linux_toolkit import get_all_tools as get_linux_tools
-from agent_cache_system import get_all_tools as get_cache_tools, start_session, increment_session_commands
+from agent_cache_system import (
+    get_all_tools as get_cache_tools,
+    start_session,
+    increment_session_commands,
+    save_request_stats,
+    get_stats_summary,
+)
 
 # ---------------------------------------------------------------------------
 # Chat memory (PostgreSQL-backed with in-memory fallback)
 # ---------------------------------------------------------------------------
 import agent_chat_memory
+
+# ---------------------------------------------------------------------------
+# Stats handler
+# ---------------------------------------------------------------------------
+from agent_stats_handler import (
+    RequestStatsHandler,
+    StatsRenderer,
+    STATS_ENABLED,
+    STATS_PERSIST,
+    STATS_VERBOSE,
+    STATS_FORMAT,
+)
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -79,6 +101,7 @@ SYSTEM_PROMPT = (
 logging.basicConfig(level=logging.INFO)
 
 console = Console()
+stats_renderer = StatsRenderer(console)
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +177,11 @@ def parse_args():
         default=SIMILARITY_TOP_K,
         help="Number of tools to retrieve per query (default: %(default)s)",
     )
+    parser.add_argument(
+        "--no-stats",
+        action="store_true",
+        help="Disable request statistics display",
+    )
     return parser.parse_args()
 
 
@@ -161,29 +189,119 @@ def parse_args():
 # Runtime
 # ---------------------------------------------------------------------------
 
-async def prompt_handler(cmd: str, agent: FunctionAgent) -> str:
-    """Process a single command through the agent."""
+async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = True):
+    """
+    Process a single command through the agent.
+
+    Args:
+        cmd: User input string
+        agent: FunctionAgent instance
+        enable_stats: Whether to collect and return statistics
+
+    Returns:
+        tuple: (response_text, stats) if enable_stats else (response_text, None)
+    """
+    handler = None
+
+    if enable_stats:
+        request_id = str(uuid.uuid4())[:8]
+        handler = RequestStatsHandler(request_id=request_id, user_query=cmd)
+        callback_manager = CallbackManager([handler])
+    else:
+        callback_manager = CallbackManager([])
+
     try:
         chat_memory = agent_chat_memory.get_chat_memory()
         increment_session_commands()
-        result = await agent.run(cmd, memory=chat_memory, max_iterations=MAX_ITERATIONS)
 
-        if isinstance(result, dict):
-            return result.get("output") or result.get("text") or str(result)
-        return str(result)
+        result = await agent.run(
+            cmd,
+            memory=chat_memory,
+            max_iterations=MAX_ITERATIONS,
+            callback_manager=callback_manager,
+        )
+
+        response_text = (
+            result.get("output")
+            if isinstance(result, dict)
+            else str(result)
+        )
+
+        if handler:
+            stats = handler.finalize()
+            return response_text, stats
+
+        return response_text, None
+
     except Exception as e:
         import traceback
         from agent_cache_system import log_error
         log_error(str(e))
-        return f"Error: {e}\n{traceback.format_exc()}"
+
+        if handler:
+            stats = handler.finalize()
+            stats.errors.append(str(e))
+            return f"Error: {e}\n{traceback.format_exc()}", stats
+
+        return f"Error: {e}\n{traceback.format_exc()}", None
+
+
+def render_stats_summary(summary: dict) -> None:
+    """Render the stats summary table."""
+    if "message" in summary:
+        console.print(f"[dim]{summary['message']}[/dim]")
+        return
+
+    from rich.table import Table
+    from rich.panel import Panel
+
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column("Metric", style="dim cyan")
+    table.add_column("Value", style="bold white")
+
+    table.add_row("📊 Total Requests", str(summary.get("total_requests", 0)))
+    table.add_row("🔢 Total Tokens", f"{summary.get('total_tokens', 0):,}")
+    table.add_row("🔁 Total LLM Calls", f"{summary.get('total_llm_calls', 0):,}")
+    table.add_row("🛠️ Total Tool Calls", f"{summary.get('total_tool_calls', 0):,}")
+    table.add_row(
+        "📈 Avg Tokens/Request",
+        f"{summary.get('avg_tokens_per_request', 0):,.1f}",
+    )
+    table.add_row(
+        "⏱️ Avg Duration",
+        f"{summary.get('avg_duration_ms', 0):,.1f}ms",
+    )
+    table.add_row(
+        "🔁 Avg LLM Calls/Request",
+        f"{summary.get('avg_llm_calls_per_request', 0):,.1f}",
+    )
+    table.add_row("⚠️ Total Errors", str(summary.get("total_errors", 0)))
+
+    panel = Panel(
+        table,
+        title="[bold yellow]📊 Request Statistics Summary[/bold yellow]",
+        border_style="yellow",
+        padding=(1, 1),
+    )
+    console.print(panel)
 
 
 async def main():
     args = parse_args()
 
+    # Determine if stats are enabled (CLI flag overrides env var)
+    stats_enabled = STATS_ENABLED and not args.no_stats
+
     console.print("[cyan]Torvalds AI Agent[/cyan]")
     console.print(f"[dim]Model: {MODEL} | Max iterations: {MAX_ITERATIONS}[/dim]")
-    console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]\n")
+    if stats_enabled:
+        console.print(
+            f"[dim]Stats: enabled (format={STATS_FORMAT}, verbose={'on' if STATS_VERBOSE else 'off'})[/dim]"
+        )
+    else:
+        console.print("[dim]Stats: disabled[/dim]")
+    console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
+    console.print("[dim]Type '\\stats' to view statistics summary.[/dim]\n")
 
     # Start a cache session
     start_session()
@@ -199,18 +317,35 @@ async def main():
             console.print("[yellow]Goodbye![/yellow]")
             break
 
+        if cmd.lower() == "\\stats":
+            # Show statistics summary
+            summary = get_stats_summary()
+            render_stats_summary(summary)
+            continue
+
         if not cmd:
             continue
 
         with console.status("[yellow]Processing...[/yellow]", spinner="dots"):
             try:
-                response = await prompt_handler(cmd, agent)
+                response, stats = await prompt_handler(
+                    cmd, agent, enable_stats=stats_enabled
+                )
             except Exception as e:
                 response = f"[red]Error: {e}[/red]"
+                stats = None
 
         console.rule("[blue]Agent Response[/blue]")
         console.print(response, style="bold white")
         console.rule()
+
+        # Render stats if enabled and available
+        if stats_enabled and stats:
+            stats_renderer.render(stats)
+
+            # Persist stats to cache if configured
+            if STATS_PERSIST:
+                save_request_stats(stats.to_dict())
 
 
 if __name__ == "__main__":
