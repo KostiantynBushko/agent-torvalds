@@ -9,9 +9,12 @@ Retriever Keywords: git, repository, commit, branch, remote, changelog, version 
 """
 import os
 import subprocess
+import logging
 from datetime import date
 from typing import Optional
 from llama_index.core.tools import FunctionTool
+
+logger = logging.getLogger(__name__)
 
 
 def git_get_latest_commit(path: str) -> str:
@@ -32,6 +35,7 @@ def git_get_latest_commit(path: str) -> str:
         
     Keywords: commit, hash, latest, head, revision
     """
+    logger.info(f"git_get_latest_commit called with path: {path}")
     try:
         result = subprocess.run(
             ["git", "log", "-1", "--format=%H"],
@@ -64,6 +68,7 @@ def git_init_repo(path: str) -> bool:
         
     Keywords: init, initialize, repository, new repo, setup
     """
+    logger.info(f"git_init_repo called with path: {path}")
     try:
         if not os.path.isdir(path):
             return False
@@ -99,6 +104,7 @@ def git_add_files(path: str, files: list) -> bool:
         
     Keywords: add, stage, staging, index, prepare commit
     """
+    logger.info(f"git_add_files called with path: {path}, files: {files}")
     try:
         subprocess.run(
             ["git", "add"] + files,
@@ -125,6 +131,7 @@ def _has_staged_changes(path: str) -> bool:
     Returns:
         bool: True if there are staged changes, False otherwise
     """
+    logger.info(f"_has_staged_changes called with path: {path}")
     # Check if HEAD exists
     head_check = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -173,6 +180,7 @@ def git_commit(path: str, message: str) -> bool:
         
     Keywords: commit, save, snapshot, message, changes
     """
+    logger.info(f"git_commit called with path: {path}, message: {message}")
     try:
         # Check if there are staged changes
         if not _has_staged_changes(path):
@@ -211,6 +219,7 @@ def git_get_status(path: str) -> dict:
         
     Keywords: status, changes, modified, untracked, dirty, clean
     """
+    logger.info(f"git_get_status called with path: {path}")
     try:
         result = subprocess.run(
             ["git", "status", "--porcelain"],
@@ -250,6 +259,7 @@ def git_generate_changelog(path: str, output_file: str = "CHANGELOG.md") -> bool
         
     Keywords: changelog, history, release notes, commits, documentation, log
     """
+    logger.info(f"git_generate_changelog called with path: {path}, output_file: {output_file}")
     try:
         result = subprocess.run(
             ["git", "log", "--pretty=format:%h|%ad|%s", "--date=short", "--no-merges"],
@@ -320,6 +330,7 @@ def git_get_recent_changes(path: str, num_commits: int = 10) -> list:
         
     Keywords: recent, history, log, commits, author, changes
     """
+    logger.info(f"git_get_recent_changes called with path: {path}, num_commits: {num_commits}")
     try:
         result = subprocess.run(
             ["git", "log", f"-{num_commits}", "--pretty=format:%h|%ad|%s|%an", "--date=short", "--no-merges"],
@@ -378,6 +389,7 @@ def git_update_changelog(path: str, change_type: str, description: str) -> bool:
         
     Keywords: update, changelog, entry, change type, feature, fix, docs
     """
+    logger.info(f"git_update_changelog called with path: {path}, change_type: {change_type}, description: {description}")
     try:
         today = date.today().strftime("%Y-%m-%d")
         changelog_path = os.path.join(path, "CHANGELOG.md")
@@ -448,6 +460,7 @@ def git_get_email(path: str) -> str:
         
     Keywords: email, config, user, identity, author
     """
+    logger.info(f"git_get_email called with path: {path}")
     try:
         result = subprocess.run(
             ["git", "config", "--get", "user.email"],
@@ -484,6 +497,7 @@ def git_init_and_commit(path: str, message: str) -> bool:
         
     Keywords: init, first commit, setup, bootstrap, initialize
     """
+    logger.info(f"git_init_and_commit called with path: {path}, message: {message}")
     try:
         # Initialize if not already a git repo
         if not os.path.isdir(os.path.join(path, ".git")):
@@ -526,6 +540,7 @@ def git_remote_add(path: str, name: str, url: str) -> bool:
         
     Keywords: remote, add, url, origin, upstream, push, pull
     """
+    logger.info(f"git_remote_add called with path: {path}, name: {name}, url: {url}")
     try:
         subprocess.run(
             ["git", "remote", "add", name, url],
@@ -566,6 +581,7 @@ def git_push(
         
     Keywords: push, upload, remote, branch, upstream, sync
     """
+    logger.info(f"git_push called with path: {path}, remote: {remote}, branch: {branch}, set_upstream: {set_upstream}")
     try:
         if set_upstream:
             subprocess.run(
@@ -608,6 +624,7 @@ def git_remote_get(path: str) -> list[dict]:
         
     Keywords: remote, list, configured, url, fetch, push
     """
+    logger.info(f"git_remote_get called with path: {path}")
     try:
         result = subprocess.run(
             ["git", "remote", "-v"],
@@ -653,6 +670,7 @@ def git_set_upstream(path: str, remote: str, branch: str) -> bool:
         
     Keywords: upstream, tracking, branch, remote, link, configure
     """
+    logger.info(f"git_set_upstream called with path: {path}, remote: {remote}, branch: {branch}")
     try:
         subprocess.run(
             ["git", "branch", "--set-upstream-to", f"{remote}/{branch}"],
@@ -675,6 +693,7 @@ def get_all_tools() -> list[FunctionTool]:
     Returns:
         list[FunctionTool]: List of Git FunctionTool objects
     """
+    logger.info("get_all_tools called")
     return [
         FunctionTool.from_defaults(
             fn=git_get_latest_commit,

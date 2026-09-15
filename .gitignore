@@ -129,3 +129,6 @@ dmypy.json
 
 # Windows
 Thumbs.db
+
+# Self-development directory
+self-development/

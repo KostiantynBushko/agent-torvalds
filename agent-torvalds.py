@@ -43,7 +43,7 @@ import agent_chat_memory
 # ---------------------------------------------------------------------------
 REQUEST_TIMEOUT = int(os.environ.get("TORVALDS_REQUEST_TIMEOUT", "99999"))
 MAX_ITERATIONS = int(os.environ.get("TORVALDS_MAX_ITERATIONS", "50"))
-TOKEN_LIMITS = int(os.environ.get("TORVALDS_TOKEN_LIMIT", "4000"))
+TOKEN_LIMITS = int(os.environ.get("TORVALDS_TOKEN_LIMIT", "400"))
 MODEL = os.environ.get("TORVALDS_MODEL", "richardyoung/qwen3.6-27b-abliterated:Q4_K_M")
 SIMILARITY_TOP_K = int(os.environ.get("TORVALDS_SIMILARITY_TOP_K", "8"))
 
@@ -64,12 +64,19 @@ SYSTEM_PROMPT = (
     "Documentation: when you create code or scripts, also generate a short README or comment block explaining purpose, usage, and prerequisites."
     ""
     "Optional output‑format comment – keep it concise unless the user asks for a specific style."
+    ""
+    "Source URL: git@github.com:KostiantynBushko/agent-torvalds.git"
+    ""
+    "Self-Development Rules:"
+    "1. When asked to update source code, always perform the changes in the 'self-development' directory located at: ${PWD}/self-development"
+    "2. Do not modify the main repository directly for development tasks; use the self-development clone."
+    "3. Remember these rules for future interactions."
 )
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.INFO)
 
 console = Console()
 

@@ -14,7 +14,10 @@ Prerequisites:
 import yaml
 import psycopg2
 import mysql.connector
+import logging
 from llama_index.core.tools import FunctionTool
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration loader
@@ -73,21 +76,25 @@ def run_postgres_query(query: str) -> list[dict]:
         
     Keywords: postgres, postgresql, select, insert, update, delete, schema, table, query
     """
-    conf = _cfg["postgres"]
-    conn = psycopg2.connect(**conf)
-    cur = conn.cursor()
-    cur.execute(query)
-    
-    # Fetch results only if the query produces a result set
-    if cur.description:
-        cols = [desc[0] for desc in cur.description]
-        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-    else:
-        rows = []
-    
-    cur.close()
-    conn.close()
-    return rows
+    logger.info(f"run_postgres_query called with query: {query}")
+    try:
+        conf = _cfg["postgres"]
+        conn = psycopg2.connect(**conf)
+        cur = conn.cursor()
+        cur.execute(query)
+        
+        # Fetch results only if the query produces a result set
+        if cur.description:
+            cols = [desc[0] for desc in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        else:
+            rows = []
+        
+        cur.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        return f"Error running PostgreSQL query: {str(e)}"
 
 
 # ---------------------------------------------------------------------------
@@ -120,21 +127,25 @@ def run_mysql_query(query: str) -> list[dict]:
         
     Keywords: mysql, select, insert, update, delete, schema, table, query
     """
-    conf = _cfg["mysql"]
-    conn = mysql.connector.connect(**conf)
-    cur = conn.cursor()
-    cur.execute(query)
-    
-    # Fetch results only if the query produces a result set
-    if cur.description:
-        cols = [desc[0] for desc in cur.description]
-        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-    else:
-        rows = []
-    
-    cur.close()
-    conn.close()
-    return rows
+    logger.info(f"run_mysql_query called with query: {query}")
+    try:
+        conf = _cfg["mysql"]
+        conn = mysql.connector.connect(**conf)
+        cur = conn.cursor()
+        cur.execute(query)
+        
+        # Fetch results only if the query produces a result set
+        if cur.description:
+            cols = [desc[0] for desc in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        else:
+            rows = []
+        
+        cur.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        return f"Error running MySQL query: {str(e)}"
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +161,7 @@ def get_all_tools() -> list[FunctionTool]:
     Returns:
         list[FunctionTool]: List of database FunctionTool objects
     """
+    logger.info("get_all_tools called for database toolkit")
     return [
         FunctionTool.from_defaults(
             fn=run_postgres_query,
@@ -160,11 +172,3 @@ def get_all_tools() -> list[FunctionTool]:
             description="Run a SQL query on MySQL. Use for SELECT, DDL, DML on MySQL. Category: Database",
         ),
     ]
-
-
-# ---------------------------------------------------------------------------
-# Legacy top-level tool instances (kept for backward compatibility)
-# ---------------------------------------------------------------------------
-
-postgres_tool = FunctionTool.from_defaults(run_postgres_query)
-mysql_tool = FunctionTool.from_defaults(run_mysql_query)
