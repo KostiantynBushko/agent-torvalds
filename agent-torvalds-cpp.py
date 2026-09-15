@@ -10,7 +10,7 @@ from agent_db_toolkit import *
 from agent_math_toolkit import *
 
 # Path to your local GGUF model
-MODEL_PATH = "/home/kbush/ai-agent-investiagte/models/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf"
+MODEL_PATH = "${HOME}/ai-agent-investiagte/models/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf"
 
 from llama_index.llms.llama_cpp import LlamaCPP
 from llama_index.core.llms.function_calling import FunctionCallingLLM
@@ -30,8 +30,7 @@ llm = FunctionCallingLLM.from_llm(base_llm)
 agent = FunctionAgent(
     tools=[add, multiply, divide,
            git_get_latest_commit, git_init_repo,
-           pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info,
-           postgres_tool, mysql_tool],
+           pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info],
     llm=llm,
     memory=agent_chat_memory.chat_memory,
     system_prompt=(

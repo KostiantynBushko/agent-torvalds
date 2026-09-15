@@ -8,7 +8,10 @@ Category: Mathematics
 Retriever Keywords: calculation, math, arithmetic, trigonometry, logarithm, statistics
 """
 import math
+import logging
 from llama_index.core.tools import FunctionTool
+
+logger = logging.getLogger(__name__)
 
 
 def add(a: float, b: float) -> float:
@@ -32,7 +35,11 @@ def add(a: float, b: float) -> float:
         
     Keywords: sum, plus, total, addition, arithmetic
     """
-    return a + b
+    logger.info(f"add called with a={a}, b={b}")
+    try:
+        return a + b
+    except Exception as e:
+        return f"Error adding numbers: {str(e)}"
 
 
 def subtract(a: float, b: float) -> float:
@@ -56,7 +63,11 @@ def subtract(a: float, b: float) -> float:
         
     Keywords: minus, difference, subtract, arithmetic
     """
-    return a - b
+    logger.info(f"subtract called with a={a}, b={b}")
+    try:
+        return a - b
+    except Exception as e:
+        return f"Error subtracting numbers: {str(e)}"
 
 
 def multiply(a: float, b: float) -> float:
@@ -80,7 +91,11 @@ def multiply(a: float, b: float) -> float:
         
     Keywords: times, product, scale, area, volume, arithmetic
     """
-    return a * b
+    logger.info(f"multiply called with a={a}, b={b}")
+    try:
+        return a * b
+    except Exception as e:
+        return f"Error multiplying numbers: {str(e)}"
 
 
 def divide(dividend: float, divisor: float) -> float:
@@ -104,7 +119,15 @@ def divide(dividend: float, divisor: float) -> float:
         
     Keywords: quotient, ratio, average, percentage, split, arithmetic
     """
-    return dividend / divisor
+    logger.info(f"divide called with dividend={dividend}, divisor={divisor}")
+    try:
+        if divisor == 0:
+            return "Error: Division by zero"
+        return dividend / divisor
+    except ZeroDivisionError:
+        return "Error: Division by zero"
+    except Exception as e:
+        return f"Error dividing numbers: {str(e)}"
 
 
 def power(base: float, exponent: float) -> float:
@@ -130,7 +153,11 @@ def power(base: float, exponent: float) -> float:
         
     Keywords: exponent, square, cube, exponential, compound, raise
     """
-    return base ** exponent
+    logger.info(f"power called with base={base}, exponent={exponent}")
+    try:
+        return base ** exponent
+    except Exception as e:
+        return f"Error calculating power: {str(e)}"
 
 
 def modulo(a: float, b: float) -> float:
@@ -154,7 +181,15 @@ def modulo(a: float, b: float) -> float:
         
     Keywords: remainder, mod, divisibility, cyclic, cycle
     """
-    return a % b
+    logger.info(f"modulo called with a={a}, b={b}")
+    try:
+        if b == 0:
+            return "Error: Modulo by zero"
+        return a % b
+    except ZeroDivisionError:
+        return "Error: Modulo by zero"
+    except Exception as e:
+        return f"Error calculating modulo: {str(e)}"
 
 
 def sqrt(a: float) -> float:
@@ -177,7 +212,15 @@ def sqrt(a: float) -> float:
         
     Keywords: square root, geometry, distance, standard deviation
     """
-    return math.sqrt(a)
+    logger.info(f"sqrt called with a={a}")
+    try:
+        if a < 0:
+            return "Error: Cannot calculate square root of negative number"
+        return math.sqrt(a)
+    except ValueError as e:
+        return f"Error calculating square root: {str(e)}"
+    except Exception as e:
+        return f"Error calculating square root: {str(e)}"
 
 
 def sin(a: float) -> float:
@@ -200,7 +243,11 @@ def sin(a: float) -> float:
         
     Keywords: sine, trigonometry, wave, periodic, radians, angle
     """
-    return math.sin(a)
+    logger.info(f"sin called with a={a}")
+    try:
+        return math.sin(a)
+    except Exception as e:
+        return f"Error calculating sine: {str(e)}"
 
 
 def cos(a: float) -> float:
@@ -223,7 +270,11 @@ def cos(a: float) -> float:
         
     Keywords: cosine, trigonometry, projection, wave, radians, angle
     """
-    return math.cos(a)
+    logger.info(f"cos called with a={a}")
+    try:
+        return math.cos(a)
+    except Exception as e:
+        return f"Error calculating cosine: {str(e)}"
 
 
 def tan(a: float) -> float:
@@ -246,7 +297,11 @@ def tan(a: float) -> float:
         
     Keywords: tangent, trigonometry, slope, angle, radians
     """
-    return math.tan(a)
+    logger.info(f"tan called with a={a}")
+    try:
+        return math.tan(a)
+    except Exception as e:
+        return f"Error calculating tangent: {str(e)}"
 
 
 def log(a: float) -> float:
@@ -269,7 +324,15 @@ def log(a: float) -> float:
         
     Keywords: natural log, ln, exponential, entropy, scientific
     """
-    return math.log(a)
+    logger.info(f"log called with a={a}")
+    try:
+        if a <= 0:
+            return "Error: Logarithm undefined for non-positive numbers"
+        return math.log(a)
+    except ValueError as e:
+        return f"Error calculating logarithm: {str(e)}"
+    except Exception as e:
+        return f"Error calculating logarithm: {str(e)}"
 
 
 def log10(a: float) -> float:
@@ -292,7 +355,15 @@ def log10(a: float) -> float:
         
     Keywords: log10, base-10, pH, decibel, magnitude, scale
     """
-    return math.log10(a)
+    logger.info(f"log10 called with a={a}")
+    try:
+        if a <= 0:
+            return "Error: Logarithm undefined for non-positive numbers"
+        return math.log10(a)
+    except ValueError as e:
+        return f"Error calculating base-10 logarithm: {str(e)}"
+    except Exception as e:
+        return f"Error calculating base-10 logarithm: {str(e)}"
 
 
 def factorial(a: float) -> float:
@@ -315,7 +386,20 @@ def factorial(a: float) -> float:
         
     Keywords: factorial, permutation, combination, probability, combinatorics
     """
-    return math.factorial(int(a))
+    logger.info(f"factorial called with a={a}")
+    try:
+        a_int = int(a)
+        if a_int < 0:
+            return "Error: Factorial undefined for negative numbers"
+        if a_int != a and a < 0:
+            return "Error: Factorial requires a non-negative integer"
+        return math.factorial(a_int)
+    except ValueError as e:
+        return f"Error calculating factorial: {str(e)}"
+    except OverflowError:
+        return "Error: Factorial result too large"
+    except Exception as e:
+        return f"Error calculating factorial: {str(e)}"
 
 
 def evaluate_rpn(expression: str) -> float:
@@ -346,58 +430,62 @@ def evaluate_rpn(expression: str) -> float:
         
     Keywords: RPN, reverse polish, expression, calculator, postfix
     """
-    stack = []
-    tokens = expression.split()
-    
-    # Map operators to the functions defined above
-    binary_ops = {
-        '+': add,
-        '-': subtract,
-        '*': multiply,
-        '/': divide,
-        '^': power,
-        '%': modulo,
-        'pow': power,
-    }
-    
-    unary_ops = {
-        'sqrt': sqrt,
-        'sin': sin,
-        'cos': cos,
-        'tan': tan,
-        'log': log,
-        'log10': log10,
-        'fact': factorial,
-        'factorial': factorial,
-    }
-    
-    for token in tokens:
-        if token in binary_ops:
-            # Pop two operands for binary operations
-            if len(stack) < 2:
-                raise ValueError(f"Not enough operands for operator {token}")
-            b = stack.pop()
-            a = stack.pop()
-            result = binary_ops[token](a, b)
-            stack.append(result)
-        elif token in unary_ops:
-            # Pop one operand for unary operations
-            if len(stack) < 1:
-                raise ValueError(f"Not enough operands for operator {token}")
-            a = stack.pop()
-            result = unary_ops[token](a)
-            stack.append(result)
-        else:
-            # Try to parse as number
-            try:
-                stack.append(float(token))
-            except ValueError:
-                raise ValueError(f"Unknown token: {token}")
-                
-    if len(stack) != 1:
-        raise ValueError("Invalid RPN expression (leftover operands on stack)")
+    logger.info(f"evaluate_rpn called with expression: {expression}")
+    try:
+        stack = []
+        tokens = expression.split()
         
-    return stack[0]
+        # Map operators to the functions defined above
+        binary_ops = {
+            '+': add,
+            '-': subtract,
+            '*': multiply,
+            '/': divide,
+            '^': power,
+            '%': modulo,
+            'pow': power,
+        }
+        
+        unary_ops = {
+            'sqrt': sqrt,
+            'sin': sin,
+            'cos': cos,
+            'tan': tan,
+            'log': log,
+            'log10': log10,
+            'fact': factorial,
+            'factorial': factorial,
+        }
+        
+        for token in tokens:
+            if token in binary_ops:
+                # Pop two operands for binary operations
+                if len(stack) < 2:
+                    return f"Error: Not enough operands for operator {token}"
+                b = stack.pop()
+                a = stack.pop()
+                result = binary_ops[token](a, b)
+                stack.append(result)
+            elif token in unary_ops:
+                # Pop one operand for unary operations
+                if len(stack) < 1:
+                    return f"Error: Not enough operands for operator {token}"
+                a = stack.pop()
+                result = unary_ops[token](a)
+                stack.append(result)
+            else:
+                # Try to parse as number
+                try:
+                    stack.append(float(token))
+                except ValueError:
+                    return f"Error: Unknown token: {token}"
+                    
+        if len(stack) != 1:
+            return "Error: Invalid RPN expression (leftover operands on stack)"
+            
+        return stack[0]
+    except Exception as e:
+        return f"Error evaluating RPN expression: {str(e)}"
 
 
 def get_all_tools() -> list[FunctionTool]:
@@ -409,6 +497,7 @@ def get_all_tools() -> list[FunctionTool]:
     Returns:
         list[FunctionTool]: List of math FunctionTool objects
     """
+    logger.info("get_all_tools called for math toolkit")
     return [
         FunctionTool.from_defaults(
             fn=add,

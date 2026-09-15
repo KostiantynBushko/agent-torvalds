@@ -9,9 +9,12 @@ Retriever Keywords: file, directory, path, copy, move, delete, create, read, wri
 """
 import os
 import shutil
+import logging
 from pathlib import Path
 import platform
 from llama_index.core.tools import FunctionTool
+
+logger = logging.getLogger(__name__)
 
 
 def pwd() -> str:
@@ -29,6 +32,7 @@ def pwd() -> str:
         
     Keywords: current directory, working directory, location, path
     """
+    logger.info("pwd called")
     try:
         return os.getcwd()
     except Exception as e:
@@ -56,6 +60,7 @@ def ls(path: str = '.') -> list:
         
     Keywords: list, directory contents, files, folders, directory listing
     """
+    logger.info(f"ls called with path: {path}")
     try:
         return os.listdir(path)
     except FileNotFoundError:
@@ -85,6 +90,7 @@ def touch(abs_path: str) -> str:
         
     Keywords: create file, new file, empty file, timestamp
     """
+    logger.info(f"touch called with abs_path: {abs_path}")
     try:
         path = Path(abs_path).expanduser().resolve()
         # Ensure parent directories exist
@@ -121,6 +127,7 @@ def check_path_exists(abs_path: str) -> dict:
         
     Keywords: exists, check path, file check, directory check, verify
     """
+    logger.info(f"check_path_exists called with abs_path: {abs_path}")
     try:
         path = Path(abs_path).expanduser().resolve()
         return {
@@ -158,6 +165,7 @@ def mkdir(path: str) -> str:
         
     Keywords: create directory, mkdir, folder, new folder, create path
     """
+    logger.info(f"mkdir called with path: {path}")
     try:
         os.makedirs(path, exist_ok=True)
         return f"Directory created: {path}"
@@ -190,6 +198,7 @@ def rm(path: str) -> str:
     Keywords: delete, remove, delete file, delete directory, rm, destroy
     Safety: destructive, irreversible
     """
+    logger.info(f"rm called with path: {path}")
     try:
         if os.path.isfile(path):
             os.remove(path)
@@ -224,6 +233,7 @@ def cp(src: str, dst: str) -> str:
         
     Keywords: copy, duplicate, clone, backup, file copy, directory copy
     """
+    logger.info(f"cp called with src: {src}, dst: {dst}")
     try:
         if os.path.isfile(src):
             shutil.copy2(src, dst)
@@ -257,6 +267,7 @@ def mv(src: str, dst: str) -> str:
         
     Keywords: move, rename, relocate, move file, move directory, rename file
     """
+    logger.info(f"mv called with src: {src}, dst: {dst}")
     try:
         shutil.move(src, dst)
         return f"Moved: {src} -> {dst}"
@@ -283,6 +294,7 @@ def read_file(path: str) -> str:
         
     Keywords: read, file content, view file, cat, open file, text file
     """
+    logger.info(f"read_file called with path: {path}")
     try:
         with open(path, 'r') as f:
             return f.read()
@@ -310,6 +322,7 @@ def write_file(path: str, content: str) -> str:
         
     Keywords: write, save file, create file, overwrite, file content, text file
     """
+    logger.info(f"write_file called with path: {path}")
     try:
         with open(path, 'w') as f:
             f.write(content)
@@ -344,6 +357,7 @@ def get_system_info() -> dict:
         
     Keywords: system info, system details, OS, hardware, platform, user, diagnostics
     """
+    logger.info("get_system_info called")
     try:
         info = {
             "system": platform.system(),
@@ -371,6 +385,7 @@ def get_all_tools() -> list[FunctionTool]:
     Returns:
         list[FunctionTool]: List of OS/File FunctionTool objects
     """
+    logger.info("get_all_tools called")
     return [
         FunctionTool.from_defaults(
             fn=pwd,
