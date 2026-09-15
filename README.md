@@ -54,10 +54,30 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 - Token-limited memory buffers for conversation context
 - Integration with LlamaIndex for AI-powered memory management
 
-### 7. Main Orchestrator (`agent-torvalds.py`)
+### 7. Persistent Cache System (`agent_cache_system.py`)
+- JSON-based persistent cache for operational context between sessions
+- Stores session info, current directory, active databases, Git repos, error logs
+- Configurable cache location via `TORVALDS_CACHE_PATH` environment variable
+- Auto-load on startup, incremental updates, configurable retention
+
+### 8. Stats Handler (`agent_stats_handler.py`)
+- Per-request statistics collection using Llama Index callbacks
+- Tracks token usage (prompt/completion), LLM call count, tool invocations, timing, and errors
+- Rich console rendering of statistics after each agent response
+- Persistent stats history in cache (configurable max entries)
+- Configurable via environment variables (TORVALDS_STATS_ENABLED, TORVALDS_STATS_VERBOSE, etc.)
+
+### 9. Tool Retriever (`agent_tool_retriever.py`)
+- On-demand semantic tool loading using Llama Index ObjectIndex
+- Ollama embedding support (nomic-embed-text model)
+- Reduces context window pollution by loading only relevant tools per query
+- Configurable similarity_top_k for tool retrieval
+
+### 10. Main Orchestrator (`agent-torvalds.py`)
 - The actual **agent** that coordinates all toolkits
 - Provides unified interface to all capabilities
 - Handles request routing and response aggregation
+- Integrated stats rendering and caching
 
 ---
 
@@ -71,6 +91,9 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 | **Database Queries** | PostgreSQL & MySQL support with configurable connections |
 | **Git Management** | Full Git workflow: init, commit, push, changelog generation |
 | **Chat Memory** | Persistent conversation memory with LlamaIndex integration |
+| **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
+| **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
+| **On-Demand Tool Loading** | Semantic tool retrieval to reduce context window pollution |
 | **Technical Computing** | Engineering and scientific computation support |
 
 ---
@@ -104,6 +127,7 @@ pip install -r requirements.txt
 - PostgreSQL (optional, for database toolkit)
 - MySQL (optional, for database toolkit)
 - Git installed on the system
+- Ollama (optional, for on-demand tool retrieval with embeddings)
 
 ---
 
@@ -128,6 +152,24 @@ mysql:
   password: your_password
   database: your_database
 ```
+
+### Statistics Configuration
+
+Configure per-request statistics via environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `TORVALDS_STATS_ENABLED` | `true` | Enable/disable stats collection |
+| `TORVALDS_STATS_VERBOSE` | `false` | Show detailed per-tool timing |
+| `TORVALDS_STATS_PERSIST` | `true` | Save stats to cache for history |
+| `TORVALDS_STATS_MAX_HISTORY` | `500` | Max number of requests to retain |
+| `TORVALDS_STATS_FORMAT` | `compact` | Output format: `compact`, `detailed`, `json` |
+
+### Cache Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `TORVALDS_CACHE_PATH` | `~/.cache/torvalds/agent_cache.json` | Custom cache file location |
 
 ---
 
@@ -180,6 +222,29 @@ results = run_postgres_query("SELECT * FROM users LIMIT 10")
 results = run_mysql_query("SELECT COUNT(*) as total FROM orders")
 ```
 
+### Cache System
+```python
+from agent_cache_system import save_to_cache, load_from_cache, get_cache_status
+
+# Save operational context
+save_to_cache("context.current_directory", "/home/user/project")
+
+# Retrieve cached value
+cached_dir = load_from_cache("context.current_directory")
+
+# View cache status
+status = get_cache_status()
+```
+
+### Statistics
+```python
+from agent_stats_handler import RequestStatsHandler, StatsRenderer
+
+# Stats are automatically collected and rendered after each request
+# Use --no-stats CLI flag to disable
+# Use \stats command to view historical statistics summary
+```
+
 ---
 
 ## Project Structure
@@ -192,6 +257,9 @@ agent-torvalds/
 ├── agent_git_toolkit.py       # Git repository management toolkit
 ├── agent_db_toolkit.py        # Database query toolkit (PostgreSQL & MySQL)
 ├── agent_chat_memory.py       # Chat memory module with LlamaIndex
+├── agent_cache_system.py      # Persistent cache for operational context
+├── agent_stats_handler.py     # Per-request statistics collection and rendering
+├── agent_tool_retriever.py    # On-demand semantic tool loading
 ├── agent-torvalds.py          # Main orchestrator (the actual agent)
 ├── agent-torvalds-cpp.py      # C++ toolkit integration
 ├── db_toolkit_config.yaml     # Database configuration
@@ -204,7 +272,18 @@ agent-torvalds/
 ├── .git/                     # Git repository
 ├── .gitignore               # Git ignore rules
 ├── .idea/                    # IDE configuration
-└── assets/                   # Project assets
+├── docs/                     # Documentation and proposals
+│   └── proposals/            # Design proposals
+│       ├── agent_cache_system.md
+│       ├── extended_logging_statistics.md
+│       └── on_demand_tool_loading.md
+└── tests/                    # Test suite
+    ├── __init__.py
+    ├── test_cache_system.py
+    ├── test_git_toolkit.py
+    ├── test_linux_toolkit.py
+    ├── test_math_toolkit.py
+    └── test_os_toolkit.py
 ```
 
 ---
