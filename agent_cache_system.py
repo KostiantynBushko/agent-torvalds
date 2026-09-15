@@ -31,6 +31,7 @@ _CACHE_VERSION = "1.0"
 _MAX_ERROR_LOG = 100
 _MAX_SESSIONS = 50
 _MAX_FREQUENT_COMMANDS = 50
+_MAX_REQUEST_STATS = int(os.environ.get("TORVALDS_STATS_MAX_HISTORY", "500"))
 
 
 def _get_cache_path() -> Path:
@@ -66,6 +67,7 @@ def _get_default_cache() -> dict:
             "temp_files": [],
         },
         "error_log": [],
+        "request_stats": [],
     }
 
 
@@ -77,7 +79,7 @@ def _load_cache() -> dict:
             with open(cache_path, "r") as f:
                 data = json.load(f)
             # Validate structure — migrate if needed
-            for key in ("sessions", "context", "learnings", "state", "error_log"):
+            for key in ("sessions", "context", "learnings", "state", "error_log", "request_stats"):
                 if key not in data:
                     data[key] = _get_default_cache()[key]
             return data
@@ -212,6 +214,7 @@ def get_cache_status() -> dict:
                 "learnings_keys": len(cache.get("learnings", {})),
                 "state_keys": len(cache.get("state", {})),
                 "error_log_entries": len(cache.get("error_log", [])),
+                "request_stats_entries": len(cache.get("request_stats", [])),
             },
         }
     except Exception as e:
@@ -326,6 +329,84 @@ def increment_session_commands() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Request statistics persistence
+# ---------------------------------------------------------------------------
+
+def save_request_stats(stats_dict: dict) -> str:
+    """
+    Save request statistics to the cache for historical analysis.
+
+    Args:
+        stats_dict: Dictionary of request stats (from RequestStats.to_dict())
+
+    Returns:
+        str: Confirmation message
+
+    Keywords: stats, statistics, save, persist, history
+    """
+    try:
+        cache = _get_cache()
+        if "request_stats" not in cache:
+            cache["request_stats"] = []
+
+        cache["request_stats"].append({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_id": stats_dict.get("request_id"),
+            "duration_ms": stats_dict.get("total_duration_ms"),
+            "llm_calls": stats_dict.get("llm_call_count"),
+            "total_tokens": stats_dict.get("total_tokens"),
+            "prompt_tokens": stats_dict.get("total_prompt_tokens"),
+            "completion_tokens": stats_dict.get("total_completion_tokens"),
+            "tools_used": stats_dict.get("tools_used", []),
+            "tool_call_count": stats_dict.get("tool_call_count", 0),
+            "error_count": stats_dict.get("error_count", 0),
+        })
+
+        # Keep last N requests
+        cache["request_stats"] = cache["request_stats"][-_MAX_REQUEST_STATS:]
+        _save_cache(cache)
+        return f"Stats saved for request {stats_dict.get('request_id')}"
+    except Exception as e:
+        return f"Error saving stats: {e}"
+
+
+def get_stats_summary() -> dict:
+    """
+    Get summary statistics across all stored requests.
+
+    Returns:
+        dict: Aggregate statistics including totals and averages
+
+    Keywords: stats, statistics, summary, history, analytics
+    """
+    try:
+        cache = _get_cache()
+        stats_list = cache.get("request_stats", [])
+
+        if not stats_list:
+            return {"message": "No request statistics available yet."}
+
+        total_tokens = sum(s.get("total_tokens", 0) for s in stats_list)
+        total_duration = sum(s.get("duration_ms", 0) for s in stats_list)
+        total_llm_calls = sum(s.get("llm_calls", 0) for s in stats_list)
+        total_errors = sum(s.get("error_count", 0) for s in stats_list)
+        total_tool_calls = sum(s.get("tool_call_count", 0) for s in stats_list)
+
+        return {
+            "total_requests": len(stats_list),
+            "total_tokens": total_tokens,
+            "total_llm_calls": total_llm_calls,
+            "total_tool_calls": total_tool_calls,
+            "avg_tokens_per_request": round(total_tokens / len(stats_list), 1),
+            "avg_duration_ms": round(total_duration / len(stats_list), 1),
+            "avg_llm_calls_per_request": round(total_llm_calls / len(stats_list), 1),
+            "total_errors": total_errors,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------
 
@@ -385,6 +466,14 @@ def get_all_tools() -> list[FunctionTool]:
         FunctionTool.from_defaults(
             fn=end_session,
             description="End the current agent session. Use for session tracking. Category: Infrastructure",
+        ),
+        FunctionTool.from_defaults(
+            fn=save_request_stats,
+            description="Save request statistics to the cache for historical analysis. Category: Infrastructure",
+        ),
+        FunctionTool.from_defaults(
+            fn=get_stats_summary,
+            description="Get summary statistics across all stored requests. Category: Infrastructure",
         ),
     ]
 
