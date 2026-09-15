@@ -19,7 +19,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from llama_index.core.callbacks import BaseCallbackHandler
+from llama_index.core.callbacks.base import BaseCallbackHandler
 from llama_index.core.callbacks.schema import CBEventType, EventPayload
 from rich.console import Console
 from rich.table import Table
@@ -138,6 +138,14 @@ class RequestStatsHandler(BaseCallbackHandler):
 
     # --- Event start ---
 
+
+    def start_trace(self, trace_id: str = "") -> None:
+        """Start a trace (no-op for this handler)."""
+        pass
+
+    def end_trace(self, trace_id: str = "", **kwargs: Any) -> None:
+        """End a trace (no-op for this handler)."""
+        pass
     def on_event_start(
         self,
         event_type: CBEventType,

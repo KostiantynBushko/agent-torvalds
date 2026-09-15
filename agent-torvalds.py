@@ -21,7 +21,7 @@ import sys
 import uuid
 from pathlib import Path
 
-from llama_index.core import CallbackManager
+from llama_index.core.callbacks import CallbackManager
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.llms.ollama import Ollama
