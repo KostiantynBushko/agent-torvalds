@@ -100,6 +100,17 @@ class RequestStats:
 # Callback handler
 # ---------------------------------------------------------------------------
 
+# Events we care about
+EVENTS_OF_INTEREST = [
+    CBEventType.LLM,
+    CBEventType.FUNCTION_CALL,
+    CBEventType.EXCEPTION,
+]
+
+# All events minus those we care about (these we ignore)
+ALL_EVENTS = list(CBEventType)
+EVENTS_TO_IGNORE = [e for e in ALL_EVENTS if e not in EVENTS_OF_INTEREST]
+
 
 class RequestStatsHandler(BaseCallbackHandler):
     """
@@ -118,6 +129,11 @@ class RequestStatsHandler(BaseCallbackHandler):
     """
 
     def __init__(self, request_id: str, user_query: str):
+        # Call parent __init__ with ignore lists - this is REQUIRED for newer Llama Index versions
+        super().__init__(
+            event_starts_to_ignore=EVENTS_TO_IGNORE,
+            event_ends_to_ignore=EVENTS_TO_IGNORE,
+        )
         self.request_id = request_id
         self.user_query = user_query
         self.stats = RequestStats(
@@ -128,16 +144,7 @@ class RequestStatsHandler(BaseCallbackHandler):
         self._llm_start_times: Dict[str, float] = {}
         self._tool_start_times: Dict[str, tuple] = {}
 
-    def events_of_interest(self) -> List[CBEventType]:
-        """Return the event types this handler is interested in."""
-        return [
-            CBEventType.LLM,
-            CBEventType.FUNCTION_CALL,
-            CBEventType.EXCEPTION,
-        ]
-
     # --- Event start ---
-
 
     def start_trace(self, trace_id: str = "") -> None:
         """Start a trace (no-op for this handler)."""
@@ -146,6 +153,7 @@ class RequestStatsHandler(BaseCallbackHandler):
     def end_trace(self, trace_id: str = "", **kwargs: Any) -> None:
         """End a trace (no-op for this handler)."""
         pass
+
     def on_event_start(
         self,
         event_type: CBEventType,
@@ -157,7 +165,7 @@ class RequestStatsHandler(BaseCallbackHandler):
             self._llm_start_times[event_id] = time.monotonic()
         elif event_type == CBEventType.FUNCTION_CALL:
             tool_name = (
-                payload.get(EventPayload.TOOL_NAME, "unknown")
+                payload.get(EventPayload.TOOL, "unknown")
                 if payload
                 else "unknown"
             )
