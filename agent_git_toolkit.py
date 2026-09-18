@@ -2,7 +2,8 @@
 Git Toolkit - Git repository management and version control operations.
 
 This module provides comprehensive Git functionality for repository initialization,
-commit management, changelog generation, remote operations, and status inspection.
+commit management, changelog generation, remote operations, status inspection,
+and branch management.
 
 Category: Version Control
 Retriever Keywords: git, repository, commit, branch, remote, changelog, version control
@@ -684,6 +685,212 @@ def git_set_upstream(path: str, remote: str, branch: str) -> bool:
         return False
 
 
+# =============================================================================
+# Phase 1: Branch Management Tools (Tier 1)
+# =============================================================================
+
+def git_branch_list(path: str, remote: bool = False) -> list[str]:
+    """
+    List all branches in a Git repository.
+    
+    Use this tool to inspect available local or remote branches before
+    switching, creating, or deleting branches.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        remote (bool): If True, list remote-tracking branches instead of local ones.
+                      Default: False (list local branches).
+        
+    Returns:
+        list[str]: List of branch names. Returns empty list on error or no branches.
+        
+    Example:
+        >>> git_branch_list("/home/user/repo")
+        ['main', 'feature/auth', 'develop']
+        >>> git_branch_list("/home/user/repo", remote=True)
+        ['origin/main', 'origin/develop']
+        
+    Keywords: branch, list, branches, remote branches, local branches
+    """
+    logger.info(f"git_branch_list called with path: {path}, remote: {remote}")
+    try:
+        if remote:
+            result = subprocess.run(
+                ["git", "branch", "-r"],
+                cwd=path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        else:
+            result = subprocess.run(
+                ["git", "branch"],
+                cwd=path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        
+        if not result.stdout.strip():
+            return []
+        
+        branches = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            # Strip leading whitespace and asterisk (current branch marker)
+            branch_name = line.strip().lstrip("* ").strip()
+            if branch_name:
+                branches.append(branch_name)
+        return branches
+    except subprocess.CalledProcessError:
+        return []
+
+
+def git_branch_create(path: str, branch_name: str, start_point: str = "HEAD") -> bool:
+    """
+    Create a new branch in the Git repository.
+    
+    Use this tool to create feature, fix, or experiment branches before
+    making isolated changes.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        branch_name (str): Name for the new branch (e.g., 'feature/new-login')
+        start_point (str): The commit/branch to start from (default: 'HEAD')
+        
+    Returns:
+        bool: True if branch was created successfully, False otherwise
+        
+    Example:
+        >>> git_branch_create("/home/user/repo", "feature/auth")
+        True
+        >>> git_branch_create("/home/user/repo", "bugfix/typo", "main")
+        True
+        
+    Keywords: branch, create, new branch, feature branch, start point
+    """
+    logger.info(f"git_branch_create called with path: {path}, branch_name: {branch_name}, start_point: {start_point}")
+    try:
+        subprocess.run(
+            ["git", "branch", branch_name, start_point],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def git_branch_checkout(path: str, branch_name: str) -> bool:
+    """
+    Switch to an existing branch.
+    
+    Use this tool to change the working directory to a different branch.
+    Be cautious: uncommitted changes may cause conflicts.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        branch_name (str): Name of the branch to switch to
+        
+    Returns:
+        bool: True if checkout was successful, False otherwise
+        
+    Example:
+        >>> git_branch_checkout("/home/user/repo", "feature/auth")
+        True
+        
+    Keywords: branch, checkout, switch, change branch, working branch
+    """
+    logger.info(f"git_branch_checkout called with path: {path}, branch_name: {branch_name}")
+    try:
+        subprocess.run(
+            ["git", "checkout", branch_name],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def git_branch_delete(path: str, branch_name: str, force: bool = False) -> bool:
+    """
+    Delete a branch from the repository.
+    
+    Use this tool to clean up merged or abandoned branches.
+    By default, uses safe delete (prevents deleting unmerged branches).
+    Set force=True to delete regardless of merge status.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        branch_name (str): Name of the branch to delete
+        force (bool): If True, force-delete even if unmerged. Default: False.
+        
+    Returns:
+        bool: True if branch was deleted successfully, False otherwise
+        
+    Example:
+        >>> git_branch_delete("/home/user/repo", "feature/old-feature")
+        True
+        >>> git_branch_delete("/home/user/repo", "feature/unmerged", force=True)
+        True
+        
+    Keywords: branch, delete, remove, cleanup, force delete
+    """
+    logger.info(f"git_branch_delete called with path: {path}, branch_name: {branch_name}, force: {force}")
+    try:
+        flag = "-D" if force else "-d"
+        subprocess.run(
+            ["git", "branch", flag, branch_name],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def git_branch_rename(path: str, new_name: str) -> bool:
+    """
+    Rename the current branch.
+    
+    Use this tool to fix branch naming mistakes or standardize branch naming.
+    Only renames the currently checked-out branch.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        new_name (str): The new name for the current branch
+        
+    Returns:
+        bool: True if rename was successful, False otherwise
+        
+    Example:
+        >>> git_branch_rename("/home/user/repo", "feature/authentication")
+        True
+        
+    Keywords: branch, rename, current branch, rename branch
+    """
+    logger.info(f"git_branch_rename called with path: {path}, new_name: {new_name}")
+    try:
+        subprocess.run(
+            ["git", "branch", "-m", new_name],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
 def get_all_tools() -> list[FunctionTool]:
     """
     Return all Git tools as FunctionTool objects for on-demand loading.
@@ -750,5 +957,26 @@ def get_all_tools() -> list[FunctionTool]:
         FunctionTool.from_defaults(
             fn=git_set_upstream,
             description="Set upstream tracking for a branch. Use for linking local to remote branches. Category: Version Control",
+        ),
+        # Phase 1: Branch Management Tools
+        FunctionTool.from_defaults(
+            fn=git_branch_list,
+            description="List all branches (local or remote). Use for inspecting available branches. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_branch_create,
+            description="Create a new branch. Use for creating feature/fix branches. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_branch_checkout,
+            description="Switch to a branch. Use for changing the working branch. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_branch_delete,
+            description="Delete a branch. Use for cleaning up merged/abandoned branches. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_branch_rename,
+            description="Rename the current branch. Use for fixing branch naming. Category: Version Control",
         ),
     ]
