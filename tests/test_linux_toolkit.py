@@ -1,91 +1,94 @@
 """
-Test script for the Linux toolkit functionality.
+Unit tests for agent_linux_toolkit.
+
+Tests shell command execution and system operations including:
+- execute_shell_command, execute_multiple_commands
+- parse_command_output, get_system_info, check_file_permissions
 """
-
-import sys
+import unittest
 import os
+import sys
 
-# Add the current directory to Python path to import our module
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agent_linux_toolkit import (
     execute_shell_command,
     execute_multiple_commands,
+    parse_command_output,
     get_system_info,
-    check_file_permissions
+    check_file_permissions,
 )
 
-def test_basic_command():
-    """Test basic command execution."""
-    print("Testing basic command execution...")
-    
-    # Test a simple command
-    result = execute_shell_command('echo "Hello, Linux Toolkit!"')
-    
-    print(f"Command: echo \"Hello, Linux Toolkit!\"")
-    print(f"Success: {result['success']}")
-    print(f"Output: {result['stdout']}")
-    print(f"Error: {result['stderr']}")
-    print()
 
-def test_command_with_error():
-    """Test command that should fail."""
-    print("Testing command with expected error...")
-    
-    # Test a command that should fail
-    result = execute_shell_command('ls /nonexistent/directory')
-    
-    print(f"Command: ls /nonexistent/directory")
-    print(f"Success: {result['success']}")
-    print(f"Output: {result['stdout']}")
-    print(f"Error: {result['stderr']}")
-    print()
+class TestExecuteShellCommand(unittest.TestCase):
+    def test_successful_command(self):
+        result = execute_shell_command("echo hello")
+        self.assertTrue(result["success"])
+        self.assertIn("hello", result["stdout"])
+        self.assertEqual(result["returncode"], 0)
 
-def test_multiple_commands():
-    """Test execution of multiple commands."""
-    print("Testing multiple command execution...")
-    
-    commands = ['whoami', 'pwd', 'date']
-    results = execute_multiple_commands(commands)
-    
-    for i, (command, result) in enumerate(zip(commands, results)):
-        print(f"Command {i+1}: {command}")
-        print(f"  Success: {result['success']}")
-        print(f"  Output: {result['stdout'][:50]}...")
-        print()
+    def test_failed_command(self):
+        result = execute_shell_command("ls /nonexistent/path")
+        self.assertFalse(result["success"])
+        self.assertNotEqual(result["returncode"], 0)
 
-def test_system_info():
-    """Test system information gathering."""
-    print("Testing system info gathering...")
-    
-    sys_info = get_system_info()
-    
-    for key, value in sys_info.items():
-        print(f"{key}: {value[:100] if value else 'N/A'}")
-    print()
+    def test_returns_dict(self):
+        result = execute_shell_command("pwd")
+        self.assertIsInstance(result, dict)
+        self.assertIn("stdout", result)
+        self.assertIn("stderr", result)
+        self.assertIn("returncode", result)
+        self.assertIn("success", result)
 
-def test_file_permissions():
-    """Test file permission checking."""
-    print("Testing file permission checking...")
-    
-    # Test with current directory
-    result = check_file_permissions('.')
-    print(f"Current directory permissions: {result}")
-    print()
+
+class TestExecuteMultipleCommands(unittest.TestCase):
+    def test_multiple_commands(self):
+        commands = ["echo 1", "echo 2", "echo 3"]
+        results = execute_multiple_commands(commands)
+        self.assertEqual(len(results), 3)
+        for r in results:
+            self.assertTrue(r["success"])
+
+    def test_returns_list(self):
+        results = execute_multiple_commands(["pwd"])
+        self.assertIsInstance(results, list)
+
+
+class TestParseCommandOutput(unittest.TestCase):
+    def test_parse_output(self):
+        output = "line1\nline2\nline3"
+        result = parse_command_output(output)
+        self.assertEqual(result["count"], 3)
+        self.assertEqual(result["first_line"], "line1")
+        self.assertEqual(result["last_line"], "line3")
+        self.assertEqual(len(result["lines"]), 3)
+
+    def test_empty_output(self):
+        result = parse_command_output("")
+        self.assertEqual(result["count"], 0)
+        self.assertEqual(result["lines"], [])
+
+
+class TestGetSystemInfo(unittest.TestCase):
+    def test_returns_dict(self):
+        result = get_system_info()
+        self.assertIsInstance(result, dict)
+
+    def test_has_os_info(self):
+        result = get_system_info()
+        self.assertIn("os_info", result)
+
+
+class TestCheckFilePermissions(unittest.TestCase):
+    def test_existing_file(self):
+        result = check_file_permissions("/etc/passwd")
+        self.assertTrue(result["success"])
+        self.assertIn("permissions", result)
+
+    def test_nonexistent_file(self):
+        result = check_file_permissions("/nonexistent/file")
+        self.assertFalse(result["success"])
+
 
 if __name__ == "__main__":
-    print("Running Linux Toolkit Tests\n")
-    
-    try:
-        test_basic_command()
-        test_command_with_error()
-        test_multiple_commands()
-        test_system_info()
-        test_file_permissions()
-        
-        print("All tests completed successfully!")
-        
-    except Exception as e:
-        print(f"Test failed with error: {e}")
-        import traceback
-        traceback.print_exc()
+    unittest.main()

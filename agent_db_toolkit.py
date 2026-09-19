@@ -1,54 +1,174 @@
+"""
+Database Toolkit - SQL query execution for PostgreSQL and MySQL.
+
+This module provides functions to run SQL queries against PostgreSQL and MySQL
+databases using connection parameters loaded from a YAML configuration file.
+
+Category: Database
+Retriever Keywords: sql, postgres, mysql, query, database, schema, rows
+
+Prerequisites:
+    - db_toolkit_config.yaml must exist in the working directory
+    - psycopg2 (for PostgreSQL) and mysql-connector-python (for MySQL) must be installed
+"""
 import yaml
 import psycopg2
 import mysql.connector
+import logging
 from llama_index.core.tools import FunctionTool
 
-# Load config once
-with open("db_toolkit_config.yaml") as f:
-    """
-    postgres:
-        host: 127.0.0.1
-        port: 5432
-        user: llama
-        password: secret123
-        database: llama_index_db
+logger = logging.getLogger(__name__)
 
-    mysql:
-        host: 127.0.0.1
-        port: 3306
-        user: llama
-        password: secret123
-        database: llama_index_db
+# ---------------------------------------------------------------------------
+# Configuration loader
+# ---------------------------------------------------------------------------
+
+_DEFAULT_CONFIG_PATH = "db_toolkit_config.yaml"
+
+def _load_config(path: str = _DEFAULT_CONFIG_PATH) -> dict:
     """
-    cfg = yaml.safe_load(f)
+    Load database configuration from a YAML file.
+    
+    Args:
+        path: Path to the YAML config file (default: 'db_toolkit_config.yaml')
+        
+    Returns:
+        dict: Parsed configuration dictionary
+        
+    Raises:
+        FileNotFoundError: If config file does not exist
+        yaml.YAMLError: If the file is not valid YAML
+    """
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+# Load config once at import time (lazy reload available via _load_config)
+_cfg = _load_config()
+
+# ---------------------------------------------------------------------------
+# PostgreSQL
+# ---------------------------------------------------------------------------
 
 def run_postgres_query(query: str) -> list[dict]:
     """
-    Run a SQL query on Postgres and return rows as dicts.
+    Run a SQL query on PostgreSQL and return rows as a list of dictionaries.
+    
+    Use this tool for executing SELECT queries, schema inspection, data retrieval,
+    or DDL/DML operations on a PostgreSQL database.
+    
+    Connection parameters are read from `db_toolkit_config.yaml` under the
+    `postgres` key.
+    
+    Args:
+        query (str): SQL query string to execute
+        
+    Returns:
+        list[dict]: List of rows where each row is a dict mapping column names
+                    to values. Returns an empty list for non-SELECT queries.
+        
+    Example:
+        >>> run_postgres_query("SELECT id, name FROM users LIMIT 5")
+        [{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}, ...]
+        
+        >>> run_postgres_query("CREATE TABLE test (id INT)")
+        []
+        
+    Keywords: postgres, postgresql, select, insert, update, delete, schema, table, query
     """
-    conf = cfg["postgres"]
-    conn = psycopg2.connect(**conf)
-    cur = conn.cursor()
-    cur.execute(query)
-    cols = [desc[0] for desc in cur.description] if cur.description else []
-    rows = [dict(zip(cols, row)) for row in cur.fetchall()] if cols else []
-    cur.close()
-    conn.close()
-    return rows
+    logger.info(f"run_postgres_query called with query: {query}")
+    try:
+        conf = _cfg["postgres"]
+        conn = psycopg2.connect(**conf)
+        cur = conn.cursor()
+        cur.execute(query)
+        
+        # Fetch results only if the query produces a result set
+        if cur.description:
+            cols = [desc[0] for desc in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        else:
+            rows = []
+        
+        cur.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        return f"Error running PostgreSQL query: {str(e)}"
+
+
+# ---------------------------------------------------------------------------
+# MySQL
+# ---------------------------------------------------------------------------
 
 def run_mysql_query(query: str) -> list[dict]:
     """
-    Run a SQL query on MySQL and return rows as dicts.
+    Run a SQL query on MySQL and return rows as a list of dictionaries.
+    
+    Use this tool for executing SELECT queries, schema inspection, data retrieval,
+    or DDL/DML operations on a MySQL database.
+    
+    Connection parameters are read from `db_toolkit_config.yaml` under the
+    `mysql` key.
+    
+    Args:
+        query (str): SQL query string to execute
+        
+    Returns:
+        list[dict]: List of rows where each row is a dict mapping column names
+                    to values. Returns an empty list for non-SELECT queries.
+        
+    Example:
+        >>> run_mysql_query("SELECT id, name FROM users LIMIT 5")
+        [{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}, ...]
+        
+        >>> run_mysql_query("CREATE TABLE test (id INT)")
+        []
+        
+    Keywords: mysql, select, insert, update, delete, schema, table, query
     """
-    conf = cfg["mysql"]
-    conn = mysql.connector.connect(**conf)
-    cur = conn.cursor()
-    cur.execute(query)
-    cols = [desc[0] for desc in cur.description] if cur.description else []
-    rows = [dict(zip(cols, row)) for row in cur.fetchall()] if cols else []
-    cur.close()
-    conn.close()
-    return rows
+    logger.info(f"run_mysql_query called with query: {query}")
+    try:
+        conf = _cfg["mysql"]
+        conn = mysql.connector.connect(**conf)
+        cur = conn.cursor()
+        cur.execute(query)
+        
+        # Fetch results only if the query produces a result set
+        if cur.description:
+            cols = [desc[0] for desc in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        else:
+            rows = []
+        
+        cur.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        return f"Error running MySQL query: {str(e)}"
 
-postgres_tool = FunctionTool.from_defaults(run_postgres_query)
-mysql_tool = FunctionTool.from_defaults(run_mysql_query)
+
+# ---------------------------------------------------------------------------
+# Tool registry
+# ---------------------------------------------------------------------------
+
+def get_all_tools() -> list[FunctionTool]:
+    """
+    Return all database tools as FunctionTool objects for on-demand loading.
+    
+    Each tool includes category metadata for better retrieval.
+    
+    Returns:
+        list[FunctionTool]: List of database FunctionTool objects
+    """
+    logger.info("get_all_tools called for database toolkit")
+    return [
+        FunctionTool.from_defaults(
+            fn=run_postgres_query,
+            description="Run a SQL query on PostgreSQL. Use for SELECT, DDL, DML on Postgres. Category: Database",
+        ),
+        FunctionTool.from_defaults(
+            fn=run_mysql_query,
+            description="Run a SQL query on MySQL. Use for SELECT, DDL, DML on MySQL. Category: Database",
+        ),
+    ]
