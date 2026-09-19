@@ -26,6 +26,7 @@ def build_tool_retriever(
     include_git_tools: bool = True,
     include_os_tools: bool = True,
     include_linux_tools: bool = True,
+    include_github_tools: bool = True,
     include_db_tools: bool = True,
 ) -> tuple:
     """
@@ -59,6 +60,10 @@ def build_tool_retriever(
     if include_linux_tools:
         from agent_linux_toolkit import get_all_tools as _get_linux
         all_tools.extend(_get_linux())
+
+    if include_github_tools:
+        from agent_github_toolkit import get_all_tools as _get_github
+        all_tools.extend(_get_github())
 
     if include_db_tools:
         from agent_db_toolkit import get_all_tools as _get_db

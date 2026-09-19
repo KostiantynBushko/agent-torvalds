@@ -35,6 +35,7 @@ from agent_os_toolkit import get_all_tools as get_os_tools
 from agent_db_toolkit import get_all_tools as get_db_tools
 from agent_math_toolkit import get_all_tools as get_math_tools
 from agent_linux_toolkit import get_all_tools as get_linux_tools
+from agent_github_toolkit import get_all_tools as get_github_tools
 from agent_cache_system import (
     get_all_tools as get_cache_tools,
     start_session,
