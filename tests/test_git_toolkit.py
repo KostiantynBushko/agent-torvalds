@@ -7,6 +7,7 @@ Tests Git operations including:
 - Remote operations
 - File staging
 - Branch management (Phase 1 / Tier 1)
+- Diff & Sync tools (Phase 2 / Tier 2)
 """
 import unittest
 import os
@@ -36,6 +37,14 @@ from agent_git_toolkit import (
     git_branch_checkout,
     git_branch_delete,
     git_branch_rename,
+    # Phase 2: Diff & Sync Tools
+    git_diff,
+    git_diff_staged,
+    git_pull,
+    git_fetch,
+    git_merge,
+    git_rebase,
+    git_log_compare,
 )
 
 
@@ -348,6 +357,215 @@ class TestBranchManagement(GitTestBase):
         # Verify deleted
         branches = git_branch_list(self.test_dir)
         self.assertNotIn("feature/lifecycle", branches)
+
+
+# =============================================================================
+# Phase 2: Diff & Sync Tests (Tier 2)
+# =============================================================================
+
+class TestDiffTools(GitTestBase):
+    """Tests for git_diff and git_diff_staged."""
+
+    def test_diff_returns_string(self):
+        """Diff should return a string."""
+        self._make_initial_commit()
+        result = git_diff(self.test_dir)
+        self.assertIsInstance(result, str)
+
+    def test_diff_empty_on_clean_repo(self):
+        """Diff on a clean repo should return empty string."""
+        self._make_initial_commit()
+        result = git_diff(self.test_dir)
+        self.assertEqual(result.strip(), "")
+
+    def test_diff_shows_unstaged_changes(self):
+        """Diff should show unstaged file changes."""
+        self._make_initial_commit()
+        # Modify file without staging
+        self._create_file("initial.txt", "modified content for diff test")
+        result = git_diff(self.test_dir)
+        self.assertIn("modified content for diff test", result)
+        self.assertIn("+", result)  # Should show additions
+
+    def test_diff_with_target(self):
+        """Diff with a target should compare against that target."""
+        self._make_initial_commit()
+        # Make a second commit
+        self._create_file("second.txt", "second file")
+        git_add_files(self.test_dir, ["second.txt"])
+        git_commit(self.test_dir, "Second commit")
+        
+        # Diff against HEAD~1
+        result = git_diff(self.test_dir, "HEAD~1")
+        self.assertIn("second.txt", result)
+
+    def test_diff_staged_returns_string(self):
+        """Staged diff should return a string."""
+        self._make_initial_commit()
+        result = git_diff_staged(self.test_dir)
+        self.assertIsInstance(result, str)
+
+    def test_diff_staged_empty_on_no_staged_changes(self):
+        """Staged diff should be empty when nothing is staged."""
+        self._make_initial_commit()
+        result = git_diff_staged(self.test_dir)
+        self.assertEqual(result.strip(), "")
+
+    def test_diff_staged_shows_staged_changes(self):
+        """Staged diff should show staged changes."""
+        self._make_initial_commit()
+        # Modify and stage file
+        self._create_file("staged.txt", "staged content")
+        git_add_files(self.test_dir, ["staged.txt"])
+        result = git_diff_staged(self.test_dir)
+        self.assertIn("staged.txt", result)
+
+    def test_diff_invalid_target_returns_error(self):
+        """Diff with invalid target should return error string."""
+        self._make_initial_commit()
+        result = git_diff(self.test_dir, "nonexistent-branch-12345")
+        self.assertIn("Error", result)
+
+
+class TestSyncTools(GitTestBase):
+    """Tests for git_fetch, git_pull, git_merge, git_rebase, git_log_compare."""
+
+    def test_fetch_returns_dict(self):
+        """Fetch should return a dict with success key."""
+        result = git_fetch(self.test_dir)
+        self.assertIsInstance(result, dict)
+        self.assertIn("success", result)
+
+    def test_fetch_without_remote_fails(self):
+        """Fetch without a remote should fail."""
+        result = git_fetch(self.test_dir)
+        self.assertFalse(result["success"])
+
+    def test_pull_returns_dict(self):
+        """Pull should return a dict with success key."""
+        result = git_pull(self.test_dir)
+        self.assertIsInstance(result, dict)
+        self.assertIn("success", result)
+
+    def test_pull_without_remote_fails(self):
+        """Pull without a remote should fail."""
+        result = git_pull(self.test_dir)
+        self.assertFalse(result["success"])
+
+    def test_merge_returns_dict(self):
+        """Merge should return a dict with success and conflicts keys."""
+        self._make_initial_commit()
+        git_branch_create(self.test_dir, "feature/merge-test")
+        result = git_merge(self.test_dir, "feature/merge-test")
+        self.assertIsInstance(result, dict)
+        self.assertIn("success", result)
+        self.assertIn("conflicts", result)
+
+    def test_merge_nonexistent_branch_fails(self):
+        """Merge with non-existent branch should fail."""
+        result = git_merge(self.test_dir, "nonexistent-branch")
+        self.assertFalse(result["success"])
+
+    def test_merge_with_strategy(self):
+        """Merge should accept a strategy parameter."""
+        self._make_initial_commit()
+        git_branch_create(self.test_dir, "feature/strategy-test")
+        result = git_merge(self.test_dir, "feature/strategy-test", strategy="recursive")
+        self.assertIsInstance(result, dict)
+        self.assertIn("success", result)
+
+    def test_rebase_returns_dict(self):
+        """Rebase should return a dict with success and conflicts keys."""
+        self._make_initial_commit()
+        git_branch_create(self.test_dir, "feature/rebase-test")
+        result = git_rebase(self.test_dir, "feature/rebase-test")
+        self.assertIsInstance(result, dict)
+        self.assertIn("success", result)
+        self.assertIn("conflicts", result)
+
+    def test_rebase_nonexistent_branch_fails(self):
+        """Rebase with non-existent branch should fail."""
+        result = git_rebase(self.test_dir, "nonexistent-branch")
+        self.assertFalse(result["success"])
+
+    def test_rebase_with_strategy(self):
+        """Rebase should accept a strategy parameter."""
+        self._make_initial_commit()
+        git_branch_create(self.test_dir, "feature/strategy-rebase")
+        result = git_rebase(self.test_dir, "feature/strategy-rebase", strategy="recursive")
+        self.assertIsInstance(result, dict)
+
+    def test_log_compare_returns_dict(self):
+        """Log compare should return a dict with ahead and behind keys."""
+        self._make_initial_commit()
+        git_branch_create(self.test_dir, "feature/compare-test")
+        result = git_log_compare(self.test_dir, "feature/compare-test", "HEAD")
+        self.assertIsInstance(result, dict)
+        self.assertIn("success", result)
+        self.assertIn("ahead", result)
+        self.assertIn("behind", result)
+
+    def test_log_compare_shows_divergence(self):
+        """Log compare should show commits ahead and behind."""
+        self._make_initial_commit()
+        
+        # Create feature branch from HEAD
+        git_branch_create(self.test_dir, "feature/divergence")
+        
+        # Make a commit on feature branch
+        git_branch_checkout(self.test_dir, "feature/divergence")
+        self._create_file("feature-file.txt", "feature content")
+        git_add_files(self.test_dir, ["feature-file.txt"])
+        git_commit(self.test_dir, "Feature commit")
+        
+        # Go back to main branch
+        main_branches = git_branch_list(self.test_dir)
+        for b in main_branches:
+            if b != "feature/divergence":
+                git_branch_checkout(self.test_dir, b)
+                break
+        
+        # Now compare: feature should be 1 ahead, main should be 0 behind
+        result = git_log_compare(self.test_dir, "feature/divergence", "HEAD")
+        self.assertTrue(result["success"])
+        # Feature branch has 1 commit that HEAD doesn't
+        self.assertEqual(len(result["ahead"]), 1)
+        self.assertIn("Feature commit", result["ahead"][0]["message"])
+
+    def test_log_compare_both_directions(self):
+        """Log compare should show commits in both directions."""
+        self._make_initial_commit()
+        
+        # Get the main branch name before switching
+        main_branch = git_branch_list(self.test_dir)[0]
+        
+        # Create feature branch
+        git_branch_create(self.test_dir, "feature/bidirectional")
+        
+        # Make commit on main (current) branch
+        self._create_file("main-file.txt", "main content")
+        git_add_files(self.test_dir, ["main-file.txt"])
+        git_commit(self.test_dir, "Main commit")
+        
+        # Switch to feature and make commit there
+        git_branch_checkout(self.test_dir, "feature/bidirectional")
+        self._create_file("feature-file.txt", "feature content")
+        git_add_files(self.test_dir, ["feature-file.txt"])
+        git_commit(self.test_dir, "Feature commit")
+        
+        # Compare: feature has 1 ahead (feature commit), main has 1 ahead (main commit)
+        # Use the main branch name explicitly instead of HEAD (which is now on feature)
+        result = git_log_compare(self.test_dir, "feature/bidirectional", main_branch)
+        self.assertTrue(result["success"])
+        # Feature is ahead by its own commit
+        self.assertEqual(len(result["ahead"]), 1)
+        # Main branch is ahead by its own commit
+        self.assertEqual(len(result["behind"]), 1)
+
+    def test_log_compare_nonexistent_branch_fails(self):
+        """Log compare with non-existent branch should fail."""
+        result = git_log_compare(self.test_dir, "nonexistent1", "nonexistent2")
+        self.assertFalse(result["success"])
 
 
 if __name__ == "__main__":

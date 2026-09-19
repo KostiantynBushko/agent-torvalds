@@ -3,10 +3,10 @@ Git Toolkit - Git repository management and version control operations.
 
 This module provides comprehensive Git functionality for repository initialization,
 commit management, changelog generation, remote operations, status inspection,
-and branch management.
+branch management, and diff/sync operations.
 
 Category: Version Control
-Retriever Keywords: git, repository, commit, branch, remote, changelog, version control
+Retriever Keywords: git, repository, commit, branch, remote, changelog, version control, diff, merge, sync
 """
 import os
 import subprocess
@@ -891,6 +891,388 @@ def git_branch_rename(path: str, new_name: str) -> bool:
         return False
 
 
+# =============================================================================
+# Phase 2: Diff & Sync Tools (Tier 2)
+# =============================================================================
+
+def git_diff(path: str, target: str = None) -> str:
+    """
+    Show differences between the working tree, index, or commits.
+    
+    Use this tool to inspect what has changed in files compared to a target
+    (commit, branch, or the index). Without a target, shows unstaged changes.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        target (str, optional): Target commit/branch to compare against.
+                               If None, shows unstaged working tree changes.
+                               Examples: 'HEAD', 'main', 'feature/branch', commit hash
+        
+    Returns:
+        str: Unified diff output showing additions (+) and deletions (-),
+             or an error message if the operation failed.
+        
+    Example:
+        >>> git_diff("/home/user/repo")
+        'diff --git a/file.py b/file.py\\n--- a/file.py\\n+++ b/file.py\\n@@ ...'
+        >>> git_diff("/home/user/repo", "HEAD~1")
+        'diff --git a/file.py b/file.py\\n...'
+        
+    Keywords: diff, difference, changes, compare, modified, additions, deletions
+    """
+    logger.info(f"git_diff called with path: {path}, target: {target}")
+    try:
+        if target:
+            result = subprocess.run(
+                ["git", "diff", target],
+                cwd=path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        else:
+            result = subprocess.run(
+                ["git", "diff"],
+                cwd=path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        return f"Error: {e.stderr.strip() if e.stderr else str(e)}"
+
+
+def git_diff_staged(path: str) -> str:
+    """
+    Show staged differences (changes in the index compared to HEAD).
+    
+    Use this tool to review what will be committed before creating a commit.
+    This shows the difference between the staging area and the last commit.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        
+    Returns:
+        str: Unified diff output of staged changes,
+             or an error message if the operation failed.
+        
+    Example:
+        >>> git_diff_staged("/home/user/repo")
+        'diff --git a/file.py b/file.py\\n--- a/file.py\\n+++ b/file.py\\n@@ ...'
+        
+    Keywords: diff, staged, index, cached, review, before commit
+    """
+    logger.info(f"git_diff_staged called with path: {path}")
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--staged"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        return f"Error: {e.stderr.strip() if e.stderr else str(e)}"
+
+
+def git_pull(path: str, remote: str = "origin", branch: str = None) -> dict:
+    """
+    Pull changes from a remote repository and merge into the current branch.
+    
+    Use this tool to fetch and integrate changes from a remote repository.
+    Equivalent to git fetch followed by git merge.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        remote (str): Name of the remote repository (default: 'origin')
+        branch (str, optional): Branch name to pull. If None, pulls the
+                               upstream branch for the current branch.
+        
+    Returns:
+        dict: Dictionary containing:
+            - 'success': bool indicating if the pull succeeded
+            - 'output': stdout from the pull command
+            - 'error': error message if failed (on failure)
+            
+    Example:
+        >>> git_pull("/home/user/repo")
+        {'success': True, 'output': 'Already up to date.'}
+        >>> git_pull("/home/user/repo", "origin", "main")
+        {'success': True, 'output': 'Updating a1b2c3d..e4f5g6h\\n...'}
+        
+    Keywords: pull, fetch, merge, remote, update, synchronize, sync
+    """
+    logger.info(f"git_pull called with path: {path}, remote: {remote}, branch: {branch}")
+    try:
+        if branch:
+            result = subprocess.run(
+                ["git", "pull", remote, branch],
+                cwd=path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        else:
+            result = subprocess.run(
+                ["git", "pull"],
+                cwd=path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        return {
+            "success": True,
+            "output": result.stdout.strip(),
+        }
+    except subprocess.CalledProcessError as e:
+        return {
+            "success": False,
+            "output": result.stdout.strip() if 'result' in locals() else "",
+            "error": e.stderr.strip() if e.stderr else str(e),
+        }
+
+
+def git_fetch(path: str, remote: str = "origin") -> dict:
+    """
+    Fetch objects and refs from a remote repository without merging.
+    
+    Use this tool to update remote-tracking branches without modifying
+    the working tree or current branch. Safer than pull for inspecting
+    what's available before merging.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        remote (str): Name of the remote repository (default: 'origin')
+        
+    Returns:
+        dict: Dictionary containing:
+            - 'success': bool indicating if the fetch succeeded
+            - 'output': stdout from the fetch command
+            - 'error': error message if failed (on failure)
+            
+    Example:
+        >>> git_fetch("/home/user/repo")
+        {'success': True, 'output': 'From https://github.com/user/repo\\n * branch ...'}
+        
+    Keywords: fetch, remote, update, download, refs, remote-tracking
+    """
+    logger.info(f"git_fetch called with path: {path}, remote: {remote}")
+    try:
+        result = subprocess.run(
+            ["git", "fetch", remote],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return {
+            "success": True,
+            "output": result.stdout.strip(),
+        }
+    except subprocess.CalledProcessError as e:
+        return {
+            "success": False,
+            "output": result.stdout.strip() if 'result' in locals() else "",
+            "error": e.stderr.strip() if e.stderr else str(e),
+        }
+
+
+def git_merge(path: str, branch: str, strategy: str = None) -> dict:
+    """
+    Merge the specified branch into the current branch.
+    
+    Use this tool to integrate changes from a feature branch into the
+    current branch. Supports custom merge strategies.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        branch (str): Name of the branch to merge into the current branch
+        strategy (str, optional): Merge strategy to use (e.g., 'ours', 'theirs', 'recursive').
+                                 If None, uses the default merge strategy.
+        
+    Returns:
+        dict: Dictionary containing:
+            - 'success': bool indicating if the merge succeeded
+            - 'output': stdout from the merge command
+            - 'conflicts': bool indicating if there were merge conflicts
+            - 'error': error message if failed (on failure)
+            
+    Example:
+        >>> git_merge("/home/user/repo", "feature/new-feature")
+        {'success': True, 'output': 'Merge made by the \'recursive\' strategy.', 'conflicts': False}
+        >>> git_merge("/home/user/repo", "feature/conflict", strategy="theirs")
+        {'success': True, 'output': '...', 'conflicts': False}
+        
+    Keywords: merge, integrate, combine, strategy, conflicts, feature branch
+    """
+    logger.info(f"git_merge called with path: {path}, branch: {branch}, strategy: {strategy}")
+    try:
+        cmd = ["git", "merge"]
+        if strategy:
+            cmd.extend(["-s", strategy])
+        cmd.append(branch)
+        
+        result = subprocess.run(
+            cmd,
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=False,  # Merge can return non-zero for conflicts
+        )
+        
+        has_conflicts = result.returncode != 0 and "CONFLICT" in (result.stderr or "")
+        
+        return {
+            "success": result.returncode == 0,
+            "output": result.stdout.strip(),
+            "conflicts": has_conflicts,
+            "error": result.stderr.strip() if result.returncode != 0 else None,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "output": "",
+            "conflicts": False,
+            "error": str(e),
+        }
+
+
+def git_rebase(path: str, branch: str, strategy: str = None) -> dict:
+    """
+    Rebase the current branch onto the specified branch.
+    
+    Use this tool to replay commits on top of another branch, creating
+    a linear history. Useful for cleaning up commit history before merging.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        branch (str): Name of the branch to rebase onto
+        strategy (str, optional): Rebase strategy/strategy option.
+                                 If None, uses default rebase behavior.
+        
+    Returns:
+        dict: Dictionary containing:
+            - 'success': bool indicating if the rebase succeeded
+            - 'output': stdout from the rebase command
+            - 'conflicts': bool indicating if there were rebase conflicts
+            - 'error': error message if failed (on failure)
+            
+    Example:
+        >>> git_rebase("/home/user/repo", "main")
+        {'success': True, 'output': 'Successfully rebased and updated refs/heads/feature.', 'conflicts': False}
+        
+    Keywords: rebase, replay, linear, history, cleanup, onto
+    """
+    logger.info(f"git_rebase called with path: {path}, branch: {branch}, strategy: {strategy}")
+    try:
+        cmd = ["git", "rebase"]
+        if strategy:
+            cmd.extend(["-s", strategy])
+        cmd.append(branch)
+        
+        result = subprocess.run(
+            cmd,
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=False,  # Rebase can return non-zero for conflicts
+        )
+        
+        has_conflicts = result.returncode != 0 and "CONFLICT" in (result.stderr or "")
+        
+        return {
+            "success": result.returncode == 0,
+            "output": result.stdout.strip(),
+            "conflicts": has_conflicts,
+            "error": result.stderr.strip() if result.returncode != 0 else None,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "output": "",
+            "conflicts": False,
+            "error": str(e),
+        }
+
+
+def git_log_compare(path: str, branch1: str, branch2: str) -> dict:
+    """
+    Compare commit logs between two branches.
+    
+    Use this tool to see which commits are unique to each branch and
+    which are shared. Useful for understanding divergence before merging.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        branch1 (str): First branch name
+        branch2 (str): Second branch name
+        
+    Returns:
+        dict: Dictionary containing:
+            - 'success': bool indicating if the comparison succeeded
+            - 'ahead': list of commits in branch1 but not in branch2
+            - 'behind': list of commits in branch2 but not in branch1
+            - 'error': error message if failed (on failure)
+            
+    Example:
+        >>> git_log_compare("/home/user/repo", "feature", "main")
+        {
+            'success': True,
+            'ahead': [{'hash': 'a1b2c3d', 'message': 'Add feature X'}],
+            'behind': [{'hash': 'e4f5g6h', 'message': 'Fix bug Y'}]
+        }
+        
+    Keywords: compare, compare branches, divergence, ahead, behind, log, difference
+    """
+    logger.info(f"git_log_compare called with path: {path}, branch1: {branch1}, branch2: {branch2}")
+    try:
+        # Commits in branch1 but not in branch2 (branch1 is ahead)
+        ahead_result = subprocess.run(
+            ["git", "log", f"{branch2}..{branch1}", "--pretty=format:%h|%s", "--no-merges"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        
+        # Commits in branch2 but not in branch1 (branch1 is behind)
+        behind_result = subprocess.run(
+            ["git", "log", f"{branch1}..{branch2}", "--pretty=format:%h|%s", "--no-merges"],
+            cwd=path,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        
+        def parse_commits(output: str) -> list[dict]:
+            commits = []
+            if output.strip():
+                for line in output.strip().split("\n"):
+                    if not line:
+                        continue
+                    parts = line.split("|", 1)
+                    if len(parts) == 2:
+                        commits.append({"hash": parts[0], "message": parts[1]})
+                    else:
+                        commits.append({"hash": parts[0] if parts else "", "message": line})
+            return commits
+        
+        return {
+            "success": True,
+            "ahead": parse_commits(ahead_result.stdout),
+            "behind": parse_commits(behind_result.stdout),
+        }
+    except subprocess.CalledProcessError as e:
+        return {
+            "success": False,
+            "ahead": [],
+            "behind": [],
+            "error": e.stderr.strip() if e.stderr else str(e),
+        }
+
+
 def get_all_tools() -> list[FunctionTool]:
     """
     Return all Git tools as FunctionTool objects for on-demand loading.
@@ -978,5 +1360,34 @@ def get_all_tools() -> list[FunctionTool]:
         FunctionTool.from_defaults(
             fn=git_branch_rename,
             description="Rename the current branch. Use for fixing branch naming. Category: Version Control",
+        ),
+        # Phase 2: Diff & Sync Tools
+        FunctionTool.from_defaults(
+            fn=git_diff,
+            description="Show file differences. Use for comparing working tree, branches, or commits. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_diff_staged,
+            description="Show staged differences. Use for reviewing changes before commit. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_pull,
+            description="Pull from remote. Use for fetching and merging changes. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_fetch,
+            description="Fetch from remote. Use for updating remote refs without merging. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_merge,
+            description="Merge branches. Use for integrating feature branches. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_rebase,
+            description="Rebase commits. Use for cleaning up commit history. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
+            fn=git_log_compare,
+            description="Compare branch logs. Use for seeing what's diverged between branches. Category: Version Control",
         ),
     ]
