@@ -25,6 +25,7 @@ from llama_index.core.callbacks import CallbackManager
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.llms.ollama import Ollama
+from rich import status
 from rich.console import Console
 
 # ---------------------------------------------------------------------------
@@ -36,6 +37,7 @@ from agent_db_toolkit import get_all_tools as get_db_tools
 from agent_math_toolkit import get_all_tools as get_math_tools
 from agent_linux_toolkit import get_all_tools as get_linux_tools
 from agent_github_toolkit import get_all_tools as get_github_tools
+from agent_apt_toolkit import get_all_tools as get_apt_tools
 from agent_cache_system import (
     get_all_tools as get_cache_tools,
     start_session,
@@ -147,6 +149,7 @@ def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K):
             + get_os_tools()
             + get_db_tools()
             + get_linux_tools()
+            + get_apt_tools()
             + get_cache_tools()
         )
 
@@ -327,14 +330,26 @@ async def main():
         if not cmd:
             continue
 
-        with console.status("[yellow]Processing...[/yellow]", spinner="dots"):
-            try:
-                response, stats = await prompt_handler(
-                    cmd, agent, enable_stats=stats_enabled
-                )
-            except Exception as e:
-                response = f"[red]Error: {e}[/red]"
-                stats = None
+        # with console.status("[yellow]Processing...[/yellow]", spinner="dots"):
+        #     try:
+        #         response, stats = await prompt_handler(
+        #             cmd, agent, enable_stats=stats_enabled
+        #         )
+        #     except Exception as e:
+        #         response = f"[red]Error: {e}[/red]"
+        #         stats = None
+
+        console_status = console.status("[yellow]Processing...[/yellow]", spinner="dots")
+        console_status.start()
+        try:
+            response, stats = await prompt_handler(
+                cmd, agent, enable_stats=stats_enabled
+            )
+        except Exception as e:
+            response = f"[red]Error: {e}[/red]"
+            stats = None
+        finally:
+            console_status.stop()
 
         console.rule("[blue]Agent Response[/blue]")
         console.print(response, style="bold white")

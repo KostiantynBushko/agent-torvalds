@@ -28,6 +28,7 @@ def build_tool_retriever(
     include_linux_tools: bool = True,
     include_github_tools: bool = True,
     include_db_tools: bool = True,
+    include_apt_tools: bool = True,
 ) -> tuple:
     """
     Build a tool retriever that loads tools on-demand based on query semantics.
@@ -68,6 +69,10 @@ def build_tool_retriever(
     if include_db_tools:
         from agent_db_toolkit import get_all_tools as _get_db
         all_tools.extend(_get_db())
+
+    if include_apt_tools:
+        from agent_apt_toolkit import get_all_tools as _get_apt
+        all_tools.extend(_get_apt())
 
     if include_cache_tools:
         from agent_cache_system import get_all_tools as _get_cache
