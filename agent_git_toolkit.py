@@ -16,6 +16,7 @@ from typing import Optional
 from llama_index.core.tools import FunctionTool
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 def git_get_latest_commit(path: str) -> str:
@@ -85,38 +86,68 @@ def git_init_repo(path: str) -> bool:
         return False
 
 
-def git_add_files(path: str, files: list) -> bool:
+def git_add_files(path: str, files: list) -> dict:
     """
     Add files to the staging area for commit.
     
-    Use this tool to stage changes before committing. Pass a list of file paths
-    relative to the repository root, or use ['.'] to stage everything.
+    Use this tool to stage changes before committing. The 'files' parameter
+    must be a list of file path strings, e.g. ['file.py', 'README.md'] or
+    ['.'] to stage all changes. Passing an empty list or non-string items
+    will return an error with guidance.
     
     Args:
         path (str): The directory path of the Git repository
-        files (list): List of file paths to add (e.g., ['file.py', 'README.md'])
+        files (list): List of file path strings to add (e.g., ['file.py', 'README.md'])
+                      Use ['.'] to stage all changes.
         
     Returns:
-        bool: True if successful, False otherwise
-        
+        dict: Dictionary with keys:
+            - 'success': bool indicating if the operation succeeded
+            - 'files_staged': list of files that were staged (on success)
+            - 'error': error message with guidance (on failure)
+            
     Example:
         >>> git_add_files("/home/user/repo", ["src/main.py", "README.md"])
-        True
+        {'success': True, 'files_staged': ['src/main.py', 'README.md']}
+        >>> git_add_files("/home/user/repo", ["."])
+        {'success': True, 'files_staged': ['.']}
         
     Keywords: add, stage, staging, index, prepare commit
     """
     logger.info(f"git_add_files called with path: {path}, files: {files}")
+    
+    # Validate input: check if files is empty
+    if not files:
+        return {
+            "success": False,
+            "error": "No files specified. Use ['.'] to stage all changes, or provide a list of file paths like ['file.py', 'README.md'].",
+        }
+    
+    # Validate input: check that all items are strings
+    non_string_items = [f for f in files if not isinstance(f, str)]
+    if non_string_items:
+        return {
+            "success": False,
+            "error": f"files must be a list of strings. Found non-string items: {non_string_items}. Use ['file.py', 'README.md'] format.",
+        }
+    
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["git", "add"] + files,
             cwd=path,
             capture_output=True,
             text=True,
             check=True,
         )
-        return True
-    except subprocess.CalledProcessError:
-        return False
+        return {
+            "success": True,
+            "files_staged": files,
+        }
+    except subprocess.CalledProcessError as e:
+        return {
+            "success": False,
+            "error": f"Failed to add files: {e.stderr.strip() if e.stderr else str(e)}",
+        }
 
 
 def _has_staged_changes(path: str) -> bool:
@@ -1294,7 +1325,7 @@ def get_all_tools() -> list[FunctionTool]:
         ),
         FunctionTool.from_defaults(
             fn=git_add_files,
-            description="Add files to staging area. Use for preparing commits. Category: Version Control",
+            description="Add files to staging area. The 'files' parameter must be a list of file path strings, e.g. ['file.py', 'README.md'] or ['.'] for all files. Use for preparing commits. Category: Version Control",
         ),
         FunctionTool.from_defaults(
             fn=git_commit,

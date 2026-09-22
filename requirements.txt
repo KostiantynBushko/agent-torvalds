@@ -1,3 +1,4 @@
+whiptail
 # Core LLM and Agent Dependencies
 llama-index>=0.14.24
 llama-index-llms-ollama>=0.11.0
