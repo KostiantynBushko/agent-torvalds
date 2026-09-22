@@ -20,6 +20,7 @@ import os
 import sys
 import uuid
 from pathlib import Path
+from typing import Optional
 
 from llama_index.core.callbacks import CallbackManager
 from llama_index.core.agent.workflow import FunctionAgent
@@ -64,6 +65,11 @@ from agent_stats_handler import (
 )
 
 # ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+from components.spinner_controller import SpinnerController
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 REQUEST_TIMEOUT = int(os.environ.get("TORVALDS_REQUEST_TIMEOUT", "99999"))
@@ -105,6 +111,12 @@ logging.basicConfig(level=logging.INFO)
 
 console = Console()
 stats_renderer = StatsRenderer(console)
+
+
+# ---------------------------------------------------------------------------
+# Global spinner controller instance (accessed by toolkit modules)
+# ---------------------------------------------------------------------------
+spinner_controller = SpinnerController(console)
 
 
 # ---------------------------------------------------------------------------
@@ -330,17 +342,8 @@ async def main():
         if not cmd:
             continue
 
-        # with console.status("[yellow]Processing...[/yellow]", spinner="dots"):
-        #     try:
-        #         response, stats = await prompt_handler(
-        #             cmd, agent, enable_stats=stats_enabled
-        #         )
-        #     except Exception as e:
-        #         response = f"[red]Error: {e}[/red]"
-        #         stats = None
-
-        console_status = console.status("[yellow]Processing...[/yellow]", spinner="dots")
-        console_status.start()
+        # Use the global spinner controller
+        spinner_controller.start()
         try:
             response, stats = await prompt_handler(
                 cmd, agent, enable_stats=stats_enabled
@@ -349,7 +352,7 @@ async def main():
             response = f"[red]Error: {e}[/red]"
             stats = None
         finally:
-            console_status.stop()
+            spinner_controller.stop()
 
         console.rule("[blue]Agent Response[/blue]")
         console.print(response, style="bold white")
