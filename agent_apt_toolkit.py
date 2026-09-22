@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # Module-level sudo password cache (session-scoped)
 # ---------------------------------------------------------------------------
 _sudo_password_cache: Optional[str] = None
-_default_prompt_method: str = "whiptail"  # Default to console, can be changed
+_default_prompt_method: str = os.environ.get("TORVALDS_DEFAULT_PROMPT_METHOD", "console")  # From env var, defaults to console
 
 
 # ---------------------------------------------------------------------------
