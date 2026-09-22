@@ -3,7 +3,8 @@ APT Package Toolkit - Interactive package installation for Debian/Ubuntu.
 
 This module provides functionality to detect missing commands, resolve
 them to APT packages, and install them interactively with sudo password
-handling.
+handling. Supports both console (stdin) and whiptail terminal dialog
+password prompting.
 
 Category: System / Package Management
 Retriever Keywords: apt, package, install, debian, ubuntu, sudo, missing, dependency
@@ -12,11 +13,29 @@ Prerequisites:
     - Debian/Ubuntu-based Linux system
     - sudo access with appropriate permissions
     - apt-file (optional, recommended for best resolution)
+    - whiptail (optional, for terminal dialog password prompting)
+
+Password Prompting Methods:
+    - 'console': Uses stdin/console input (default, works in agent context)
+    - 'whiptail': Uses whiptail terminal dialogs (requires whiptail installed)
+    - 'env_var': Uses TORVALDS_SUDO_PASSWORD environment variable
+    - 'parameter': Uses explicitly provided password parameter
+    - 'auto': Tries methods in order: parameter → env_var → cache → configured_prompt_method
+
+Usage:
+    # Using console (default)
+    >>> install_package("ffmpeg", update_first=True)
+
+    # Using whiptail dialogs
+    >>> install_package("ffmpeg", update_first=True, password_method="whiptail")
+
+    # Using environment variable
+    >>> install_package("ffmpeg", update_first=True, password_method="env_var")
 """
 import subprocess
 import os
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 from llama_index.core.tools import FunctionTool
 
 # Configure logging
@@ -27,6 +46,7 @@ logger = logging.getLogger(__name__)
 # Module-level sudo password cache (session-scoped)
 # ---------------------------------------------------------------------------
 _sudo_password_cache: Optional[str] = None
+_default_prompt_method: str = "whiptail"  # Default to console, can be changed
 
 
 # ---------------------------------------------------------------------------
@@ -167,10 +187,52 @@ def check_command_exists(command: str) -> Dict[str, Any]:
 # 2. Sudo Password Handling
 # ---------------------------------------------------------------------------
 
+def set_default_prompt_method(method: str) -> Dict[str, Any]:
+    """
+    Set the default password prompt method for the session.
+
+    Args:
+        method (str): One of 'console', 'whiptail', 'env_var', 'parameter'
+
+    Returns:
+        Dictionary with success status
+
+    Example:
+        >>> set_default_prompt_method("whiptail")
+        {'success': True, 'method': 'whiptail'}
+
+    Keywords: set, default, prompt, method, whiptail, console
+    """
+    global _default_prompt_method
+    valid_methods = ("console", "whiptail", "env_var", "parameter")
+    if method not in valid_methods:
+        return {
+            "success": False,
+            "error": f"Invalid method '{method}'. Must be one of: {', '.join(valid_methods)}",
+        }
+    _default_prompt_method = method
+    logger.info(f"Default prompt method set to: {method}")
+    return {"success": True, "method": method}
+
+
+def get_default_prompt_method() -> str:
+    """
+    Get the current default password prompt method.
+
+    Returns:
+        str: Current default method ('console', 'whiptail', 'env_var', or 'parameter')
+
+    Keywords: get, default, prompt, method
+    """
+    return _default_prompt_method
+
+
 def prompt_sudo_password(
     method: str = "auto",
     password: Optional[str] = None,
     max_attempts: int = 3,
+    whiptail_title: str = "Sudo Password",
+    whiptail_backtitle: str = "Enter your sudo password",
 ) -> Dict[str, Any]:
     """
     Obtain sudo password using multiple fallback strategies.
@@ -179,12 +241,14 @@ def prompt_sudo_password(
       1. Parameter (if method='parameter' or password is explicitly provided)
       2. Environment variable TORVALDS_SUDO_PASSWORD
       3. Session cache (from a previously validated password)
-      4. Console input using rich console (works in agent context)
+      4. Prompt method: 'console' (stdin) or 'whiptail' (terminal dialog)
 
     Args:
-        method (str): Prompting method: 'auto', 'console', 'env_var', or 'parameter'
+        method (str): Prompting method: 'auto', 'console', 'whiptail', 'env_var', or 'parameter'
         password (str, optional): Password to use if method is 'parameter'
-        max_attempts (int): Maximum number of password attempts for console method
+        max_attempts (int): Maximum number of password attempts for console/whiptail methods
+        whiptail_title (str): Title for whiptail dialog (if using whiptail method)
+        whiptail_backtitle (str): Backtitle for whiptail dialog (if using whiptail method)
 
     Returns:
         Dictionary with:
@@ -192,16 +256,19 @@ def prompt_sudo_password(
             - 'success': bool
             - 'method': str (the method actually used)
             - 'password': str (the password, only for internal use, never logged)
-            - 'attempts': int (number of attempts made, for console method)
+            - 'attempts': int (number of attempts made, for console/whiptail method)
 
     Example:
         >>> prompt_sudo_password()
         {'password_provided': True, 'success': True, 'method': 'env_var', ...}
 
+        >>> prompt_sudo_password(method="whiptail")
+        {'password_provided': True, 'success': True, 'method': 'whiptail', ...}
+
         >>> prompt_sudo_password(method="parameter", password="mysecretpass")
         {'password_provided': True, 'success': True, 'method': 'parameter'}
 
-    Keywords: sudo, password, prompt, console, credentials, getpass
+    Keywords: sudo, password, prompt, console, whiptail, credentials, getpass
     """
     logger.info(f"prompt_sudo_password called with method: {method}, max_attempts: {max_attempts}")
     global _sudo_password_cache
@@ -274,9 +341,23 @@ def prompt_sudo_password(
                     _sudo_password_cache = None
 
         # ---------------------------------------------------------------
-        # Strategy 4: Console input (works in agent context)
+        # Strategy 4: Prompt method (console or whiptail)
         # ---------------------------------------------------------------
-        if method in ("auto", "console"):
+        if method == "auto":
+            # Use the configured default prompt method
+            prompt_method = _default_prompt_method
+        else:
+            prompt_method = method
+
+        if prompt_method == "whiptail":
+            return _prompt_whiptail_password(
+                result,
+                max_attempts,
+                whiptail_title,
+                whiptail_backtitle,
+            )
+        else:
+            # Default to console
             return _prompt_console_password(result, max_attempts)
 
     except Exception as e:
@@ -347,6 +428,110 @@ def _prompt_console_password(result: dict, max_attempts: int) -> dict:
         return result
 
 
+def _get_spinner_controller():
+    """
+    Lazily get the spinner controller from agent-torvalds module.
+    
+    This avoids circular imports by importing only when needed.
+    Returns None if the spinner controller is not available.
+    """
+    try:
+        # Try to import from agent-torvalds (main module)
+        import agent_torvalds
+        return agent_torvalds.spinner_controller
+    except (ImportError, AttributeError):
+        # Spinner controller not available (running standalone)
+        return None
+
+
+def _prompt_whiptail_password(
+    result: dict,
+    max_attempts: int,
+    title: str = "Sudo Password",
+    backtitle: str = "Enter your sudo password",
+) -> dict:
+    """
+    Prompt for password using whiptail terminal dialogs.
+
+    This method uses the whiptail_password module to display interactive
+    terminal dialogs for password entry. Falls back to console if whiptail
+    is not available.
+    
+    The console spinner is paused before showing whiptail dialogs and
+    resumed after the dialog closes to avoid visual conflicts.
+    """
+    global _sudo_password_cache
+    
+    # Get spinner controller to pause during whiptail dialogs
+    spinner = _get_spinner_controller()
+    
+    try:
+        # Import whiptail module from whiptail-investigation directory
+        import sys
+        import os
+        whiptail_dir = os.path.join(os.path.dirname(__file__), "whiptail-investigation")
+        if whiptail_dir not in sys.path:
+            sys.path.insert(0, whiptail_dir)
+
+        from whiptail_password import WhiptailPasswordPrompter
+
+        prompter = WhiptailPasswordPrompter(
+            title=title,
+            backtitle=backtitle,
+        )
+
+        # Check if whiptail is available
+        avail = WhiptailPasswordPrompter.is_available()
+        if not avail["available"]:
+            logger.warning(f"Whiptail not available: {avail['details']}. Falling back to console.")
+            return _prompt_console_password(result, max_attempts)
+
+        # Use whiptail for password prompting
+        def test_password_wrapper(password: str) -> bool:
+            return test_sudo_password(password)
+
+        # Pause the spinner before showing whiptail dialog
+        if spinner is not None:
+            spinner.pause()
+            logger.info("Console spinner paused for whiptail dialog")
+
+        try:
+            wt_result = prompter.prompt_password(
+                message="Please enter your sudo password:",
+                max_attempts=max_attempts,
+                test_callback=test_password_wrapper,
+            )
+        finally:
+            # Always resume spinner after dialog closes
+            if spinner is not None:
+                spinner.resume()
+                logger.info("Console spinner resumed after whiptail dialog")
+
+        if wt_result["success"]:
+            _sudo_password_cache = wt_result["password"]
+            result.update({
+                "password_provided": True,
+                "success": True,
+                "password": wt_result["password"],
+                "method": "whiptail",
+                "attempts": wt_result.get("attempts", 0),
+            })
+        else:
+            result.update({
+                "error": wt_result.get("error", "Whiptail password prompt failed"),
+                "method": "whiptail",
+            })
+
+        return result
+
+    except ImportError:
+        logger.warning("whiptail_password module not found. Falling back to console.")
+        return _prompt_console_password(result, max_attempts)
+    except Exception as e:
+        logger.error(f"Whiptail password prompt failed: {e}. Falling back to console.")
+        return _prompt_console_password(result, max_attempts)
+
+
 def test_sudo_password(password: str) -> bool:
     """
     Test if the provided sudo password is valid.
@@ -397,6 +582,7 @@ def install_package(
     package_name: str,
     update_first: bool = False,
     sudo_password: Optional[str] = None,
+    password_method: str = "auto",
 ) -> Dict[str, Any]:
     """
     Install an APT package with optional pre-update and sudo handling.
@@ -404,7 +590,8 @@ def install_package(
     Args:
         package_name (str): Name of the package to install
         update_first (bool): Whether to run apt-get update before install
-        sudo_password (str, optional): Sudo password (if None, will prompt via console)
+        sudo_password (str, optional): Sudo password (if None, will prompt)
+        password_method (str): Method for password input: 'auto', 'console', 'whiptail', 'env_var', 'parameter'
 
     Returns:
         Dictionary with installation result details
@@ -413,9 +600,12 @@ def install_package(
         >>> install_package("ffmpeg", update_first=True)
         {'package': 'ffmpeg', 'installed': True, 'success': True, ...}
 
+        >>> install_package("ffmpeg", update_first=True, password_method="whiptail")
+        {'package': 'ffmpeg', 'installed': True, 'success': True, ...}
+
     Keywords: install, package, apt-get, apt, debian, ubuntu
     """
-    logger.info(f"install_package called with package_name: {package_name}, update_first: {update_first}")
+    logger.info(f"install_package called with package_name: {package_name}, update_first: {update_first}, password_method: {password_method}")
     result = {
         "package": package_name,
         "installed": False,
@@ -436,7 +626,10 @@ def install_package(
 
     # Step 2: Get sudo password if needed
     if sudo_password is None:
-        pass_result = prompt_sudo_password(method="auto")
+        pass_result = prompt_sudo_password(
+            method=password_method,
+            password=sudo_password,
+        )
         if not pass_result.get("password_provided"):
             result["error"] = "No sudo password provided"
             return result
@@ -483,6 +676,7 @@ def install_multiple_packages(
     package_names: List[str],
     update_first: bool = False,
     sudo_password: Optional[str] = None,
+    password_method: str = "auto",
 ) -> List[Dict[str, Any]]:
     """
     Install multiple APT packages sequentially.
@@ -491,6 +685,7 @@ def install_multiple_packages(
         package_names (List[str]): List of package names
         update_first (bool): Whether to run apt-get update before first install
         sudo_password (str, optional): Sudo password
+        password_method (str): Method for password input: 'auto', 'console', 'whiptail', 'env_var', 'parameter'
 
     Returns:
         List of installation result dictionaries
@@ -501,7 +696,12 @@ def install_multiple_packages(
     results = []
     for i, pkg in enumerate(package_names):
         logger.info(f"Installing package {i+1}/{len(package_names)}: {pkg}")
-        result = install_package(pkg, update_first=(i == 0 and update_first), sudo_password=sudo_password)
+        result = install_package(
+            pkg,
+            update_first=(i == 0 and update_first),
+            sudo_password=sudo_password,
+            password_method=password_method,
+        )
         results.append(result)
     return results
 
@@ -527,7 +727,7 @@ def interactive_install_missing_command(
         prompt_password (bool): Whether to prompt for sudo password
         update_first (bool): Whether to update package lists first
         sudo_password (str, optional): Pre-provided sudo password (skips prompting)
-        password_method (str): Method for password input: 'auto', 'console', 'env_var', 'parameter'
+        password_method (str): Method for password input: 'auto', 'console', 'whiptail', 'env_var', 'parameter'
 
     Returns:
         Dictionary with full workflow result
@@ -536,12 +736,12 @@ def interactive_install_missing_command(
         >>> interactive_install_missing_command("ffmpeg")
         {'command': 'ffmpeg', 'success': True, 'message': 'Successfully installed...', ...}
 
-        >>> interactive_install_missing_command("ffmpeg", sudo_password="mypassword")
+        >>> interactive_install_missing_command("ffmpeg", password_method="whiptail")
         {'command': 'ffmpeg', 'success': True, ...}
 
     Keywords: interactive, install, missing, command, workflow, resolve, auto
     """
-    logger.info(f"interactive_install_missing_command called with command: {command}, prompt_password: {prompt_password}, update_first: {update_first}")
+    logger.info(f"interactive_install_missing_command called with command: {command}, prompt_password: {prompt_password}, update_first: {update_first}, password_method: {password_method}")
     workflow_result = {
         "command": command,
         "steps": [],
@@ -636,19 +836,19 @@ def get_all_tools() -> list[FunctionTool]:
         ),
         FunctionTool.from_defaults(
             fn=install_package,
-            description="Install an APT package with sudo handling. Use for installing system packages on Debian/Ubuntu. Category: System / Package Management",
+            description="Install an APT package with sudo handling. Use for installing system packages on Debian/Ubuntu. Supports 'console' and 'whiptail' password methods. Category: System / Package Management",
         ),
         FunctionTool.from_defaults(
             fn=install_multiple_packages,
-            description="Install multiple APT packages sequentially. Use for batch installations. Category: System / Package Management",
+            description="Install multiple APT packages sequentially. Use for batch installations. Supports 'console' and 'whiptail' password methods. Category: System / Package Management",
         ),
         FunctionTool.from_defaults(
             fn=interactive_install_missing_command,
-            description="End-to-end workflow: detect missing command, resolve to package, and install it. Use for automatic dependency resolution. Category: System / Package Management",
+            description="End-to-end workflow: detect missing command, resolve to package, and install it. Use for automatic dependency resolution. Supports 'console' and 'whiptail' password methods. Category: System / Package Management",
         ),
         FunctionTool.from_defaults(
             fn=prompt_sudo_password,
-            description="Obtain sudo password using multiple fallback strategies (env var, cache, console). Use for credential handling in package installation. Category: System / Package Management",
+            description="Obtain sudo password using multiple fallback strategies (env var, cache, console, whiptail). Use for credential handling in package installation. Category: System / Package Management",
         ),
         FunctionTool.from_defaults(
             fn=test_sudo_password,
@@ -658,4 +858,63 @@ def get_all_tools() -> list[FunctionTool]:
             fn=clear_sudo_cache,
             description="Clear the cached sudo password. Use for security or when password changes. Category: System / Package Management",
         ),
+        FunctionTool.from_defaults(
+            fn=set_default_prompt_method,
+            description="Set the default password prompt method ('console' or 'whiptail') for the session. Use to switch between stdin and whiptail dialogs. Category: System / Package Management",
+        ),
+        FunctionTool.from_defaults(
+            fn=get_default_prompt_method,
+            description="Get the current default password prompt method. Use to check which method is configured. Category: System / Package Management",
+        ),
     ]
+
+
+# ---------------------------------------------------------------------------
+# 6. Command-Line Interface
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    def main():
+        parser = argparse.ArgumentParser(
+            description="APT Package Toolkit - Manage APT packages and sudo password handling",
+            epilog="Example: python agent_apt_toolkit.py --prompt-method whiptail"
+        )
+        parser.add_argument(
+            "--prompt-method",
+            type=str,
+            choices=["console", "whiptail", "env_var", "parameter"],
+            default=None,
+            help="Set the default password prompt method (console, whiptail, env_var, parameter)"
+        )
+        parser.add_argument(
+            "--show-method",
+            action="store_true",
+            help="Show the current default prompt method and exit"
+        )
+
+        args = parser.parse_args()
+
+        # Apply --prompt-method first if provided
+        if args.prompt_method:
+            result = set_default_prompt_method(args.prompt_method)
+            if not result["success"]:
+                print(f"Error: {result.get('error', 'Unknown error')}", file=sys.stderr)
+                sys.exit(1)
+
+        # Then show the current method if requested
+        if args.show_method:
+            print(f"Current default prompt method: {get_default_prompt_method()}")
+            sys.exit(0)
+
+        # If --prompt-method was set without --show-method, confirm the change
+        if args.prompt_method:
+            print(f"Default prompt method set to: {result['method']}")
+            sys.exit(0)
+
+        # If no arguments provided, show help
+        parser.print_help()
+
+    main()
