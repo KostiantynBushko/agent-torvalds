@@ -230,11 +230,88 @@ def git_commit(path: str, message: str) -> bool:
         return False
 
 
+def _parse_git_status_porcelain(output: str) -> dict:
+    """
+    Parse git status --porcelain output into structured categories.
+    
+    Git porcelain format: XY file_path
+      - X: staged area status
+      - Y: working tree status
+      - Space separator (3rd char)
+      - Rest: file path
+    
+    Args:
+        output: Raw porcelain output from git status
+        
+    Returns:
+        dict with categorized file lists and raw output
+    """
+    staged = []
+    unstaged = []
+    untracked = []
+    
+    if not output.strip():
+        return {
+            "staged": staged,
+            "unstaged": unstaged,
+            "untracked": untracked,
+            "is_clean": True,
+        }
+    
+    for line in output.strip().split("\n"):
+        if not line.strip():
+            continue
+        
+        # Porcelain format: first 2 chars are status codes, 3rd is space, rest is path
+        # Example: "?? investigate/llama-index-workflow/"
+        #          "M  src/main.py"
+        #          " M src/main.py"
+        if len(line) < 2:
+            continue
+            
+        x_status = line[0]  # staged area
+        y_status = line[1] if len(line) > 1 else " "  # working tree
+        
+        # File path starts after the space separator (position 3)
+        # If no space at position 2, start from position 2
+        if len(line) > 2 and line[2] == " ":
+            file_path = line[3:]
+        else:
+            file_path = line[2:].strip()
+        
+        # Skip empty file paths
+        if not file_path:
+            continue
+        
+        # Classify based on status codes
+        if x_status == "?" or y_status == "?":
+            untracked.append(file_path)
+        elif x_status in ("M", "A", "D", "R", "C"):
+            # Something is staged
+            staged.append(file_path)
+        elif y_status in ("M", "D", "R", "C"):
+            # Only working tree changed, not staged
+            unstaged.append(file_path)
+        else:
+            # Unknown status, treat as unstaged
+            unstaged.append(file_path)
+    
+    return {
+        "staged": staged,
+        "unstaged": unstaged,
+        "untracked": untracked,
+        "is_clean": not (staged or unstaged or untracked),
+    }
+
+
 def git_get_status(path: str) -> dict:
     """
     Get current repository status showing staged, unstaged, and untracked files.
     
     Use this tool to inspect the working tree status before making changes or commits.
+    Returns structured data with categorized file lists that can be directly passed
+    to git_add_files. For untracked files, use the 'untracked' list. For all changes,
+    pass ['.'] to git_add_files.
     
     Args:
         path (str): The directory path of the Git repository
@@ -242,12 +319,23 @@ def git_get_status(path: str) -> dict:
     Returns:
         dict: Dictionary containing status information with keys:
             - 'status': 'success' or 'error'
-            - 'output': Porcelain format status string (on success)
+            - 'output': Raw porcelain format status string (on success)
+            - 'staged': list of files with staged changes (ready to commit)
+            - 'unstaged': list of modified files not yet staged
+            - 'untracked': list of new files not tracked by git
+            - 'is_clean': True if working tree is clean, False otherwise
             - 'message': Error message (on failure)
             
     Example:
         >>> git_get_status("/home/user/repo")
-        {'status': 'success', 'output': 'M src/main.py\n?? new_file.py'}
+        {
+            'status': 'success',
+            'output': 'M src/main.py\n?? new_file.py',
+            'staged': [],
+            'unstaged': ['src/main.py'],
+            'untracked': ['new_file.py'],
+            'is_clean': False
+        }
         
     Keywords: status, changes, modified, untracked, dirty, clean
     """
@@ -260,9 +348,14 @@ def git_get_status(path: str) -> dict:
             text=True,
             check=True,
         )
+        parsed = _parse_git_status_porcelain(result.stdout)
         return {
             "status": "success",
             "output": result.stdout.strip(),
+            "staged": parsed["staged"],
+            "unstaged": parsed["unstaged"],
+            "untracked": parsed["untracked"],
+            "is_clean": parsed["is_clean"],
         }
     except subprocess.CalledProcessError as e:
         return {
