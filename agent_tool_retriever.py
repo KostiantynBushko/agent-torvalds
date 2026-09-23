@@ -13,6 +13,7 @@ from llama_index.core.objects import ObjectIndex
 from llama_index.core.tools import FunctionTool
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.embeddings.ollama import OllamaEmbedding
+import sys
 
 # Configure Ollama embedding model
 Settings.embed_model = OllamaEmbedding(model_name="nomic-embed-text")
@@ -29,6 +30,7 @@ def build_tool_retriever(
     include_github_tools: bool = True,
     include_db_tools: bool = True,
     include_apt_tools: bool = True,
+    include_windows_tools: bool = True,
 ) -> tuple:
     """
     Build a tool retriever that loads tools on-demand based on query semantics.
@@ -58,7 +60,7 @@ def build_tool_retriever(
         from agent_os_toolkit import get_all_tools as _get_os
         all_tools.extend(_get_os())
 
-    if include_linux_tools:
+    if include_linux_tools and sys.platform.startswith("linux"):
         from agent_linux_toolkit import get_all_tools as _get_linux
         all_tools.extend(_get_linux())
 
@@ -77,6 +79,10 @@ def build_tool_retriever(
     if include_cache_tools:
         from agent_cache_system import get_all_tools as _get_cache
         all_tools.extend(_get_cache())
+
+    if include_windows_tools and sys.platform.startswith("win"):
+        from agent_windows_toolkit import get_all_tools as _get_windows
+        all_tools.extend(_get_windows())
 
     # -----------------------------------------------------------------------
     # 2. Build ObjectIndex over tool objects for semantic retrieval

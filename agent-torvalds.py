@@ -19,6 +19,7 @@ import logging
 import os
 import sys
 import uuid
+import platform
 from pathlib import Path
 from typing import Optional
 
@@ -37,6 +38,7 @@ from agent_os_toolkit import get_all_tools as get_os_tools
 from agent_db_toolkit import get_all_tools as get_db_tools
 from agent_math_toolkit import get_all_tools as get_math_tools
 from agent_linux_toolkit import get_all_tools as get_linux_tools
+from agent_windows_toolkit import get_all_tools as get_windows_tools
 from agent_github_toolkit import get_all_tools as get_github_tools
 from agent_apt_toolkit import get_all_tools as get_apt_tools
 from agent_cache_system import (
@@ -155,15 +157,23 @@ def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K):
         # ---- Full tool loading mode ----
         console.print("[dim]Loading ALL tools upfront (legacy mode)[/dim]")
 
+        os_name = platform.system()
+
         all_tools = (
-            get_math_tools()
-            + get_git_tools()
-            + get_os_tools()
-            + get_db_tools()
-            + get_linux_tools()
-            + get_apt_tools()
-            + get_cache_tools()
+                get_math_tools()
+                + get_git_tools()
+                + get_github_tools()
+                + get_os_tools()
+                + get_db_tools()
+                + get_apt_tools()
+                + get_cache_tools()
         )
+
+        if os_name == "Windows":
+            all_tools += get_windows_tools()
+
+        elif os_name == "Linux":
+            all_tools += get_linux_tools()
 
         agent = FunctionAgent(
             tools=all_tools,
