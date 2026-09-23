@@ -34,7 +34,9 @@ def pwd() -> str:
     """
     logger.info("pwd called")
     try:
-        return os.getcwd()
+        cwd = os.getcwd()
+        logger.info(f"cwd: {cwd}")
+        return cwd
     except Exception as e:
         return f"Error getting directory: {str(e)}"
 
