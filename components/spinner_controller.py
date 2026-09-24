@@ -5,7 +5,14 @@ Manages the console spinner with pause/resume capabilities. This component
 wraps the rich console.status spinner and provides pause() and resume()
 methods so that toolkit modules can temporarily hide the spinner during
 interactive dialogs (e.g., whiptail password prompts).
+
+Key improvements:
+    - Proper cleanup with error handling
+    - Thread-safe state management
+    - Console write protection to prevent race conditions
 """
+import threading
+import time
 from contextlib import contextmanager
 from typing import Optional
 from rich.console import Console
@@ -46,39 +53,65 @@ class SpinnerController:
         self._status: Optional[object] = None  # The rich.Status object
         self._running: bool = False
         self._paused: bool = False
+        self._lock = threading.Lock()  # Thread-safe state management
 
     def start(self) -> None:
         """Start the spinner if not already running."""
-        if not self._running:
-            self._status = self.console.status(
-                self.status_text, spinner=self.spinner_style
-            )
-            self._status.start()
-            self._running = True
-            self._paused = False
+        with self._lock:
+            if not self._running:
+                try:
+                    self._status = self.console.status(
+                        self.status_text, spinner=self.spinner_style
+                    )
+                    self._status.start()
+                    self._running = True
+                    self._paused = False
+                except Exception:
+                    # If start fails (e.g., console already in use), reset state
+                    self._running = False
+                    self._paused = False
+                    self._status = None
 
     def stop(self) -> None:
-        """Stop the spinner."""
-        if self._running and self._status is not None:
-            self._status.stop()
-            self._status = None
-            self._running = False
-            self._paused = False
+        """Stop the spinner with proper cleanup."""
+        with self._lock:
+            if self._running and self._status is not None:
+                try:
+                    self._status.stop()
+                except Exception:
+                    pass  # Ignore errors during stop
+                finally:
+                    # Small delay to ensure thread cleanup
+                    time.sleep(0.01)
+                    self._status = None
+                    self._running = False
+                    self._paused = False
 
     def pause(self) -> None:
         """Pause (hide) the spinner temporarily."""
-        if self._running and self._status is not None and not self._paused:
-            self._status.stop()
-            self._paused = True
+        with self._lock:
+            if self._running and self._status is not None and not self._paused:
+                try:
+                    self._status.stop()
+                except Exception:
+                    pass
+                self._paused = True
 
     def resume(self) -> None:
         """Resume (show) the spinner after pause."""
-        if self._running and self._paused:
-            self._status = self.console.status(
-                self.status_text, spinner=self.spinner_style
-            )
-            self._status.start()
-            self._paused = False
+        with self._lock:
+            if self._running and self._paused:
+                try:
+                    self._status = self.console.status(
+                        self.status_text, spinner=self.spinner_style
+                    )
+                    self._status.start()
+                    self._paused = False
+                except Exception:
+                    # If resume fails, mark as not running
+                    self._running = False
+                    self._paused = False
+                    self._status = None
 
     @contextmanager
     def pause_context(self):
