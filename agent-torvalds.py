@@ -6,6 +6,12 @@ interface to all capabilities with support for both:
   - Full tool loading (all tools available at once)
   - On-demand tool retrieval (tools loaded semantically per query)
 
+Features:
+  - Real-time event streaming from workflow
+  - Spinner pause/resume during interactive tools
+  - Agent state tracking and management
+  - Whiptail password dialog integration
+
 Usage:
     python agent-torvalds.py              # Default mode (retriever-based)
     python agent-torvalds.py --full       # Load all tools upfront
@@ -70,6 +76,8 @@ from agent_stats_handler import (
 # Components
 # ---------------------------------------------------------------------------
 from components.spinner_controller import SpinnerController
+from components.state_handler import StateHandler
+from components.event_consumer import EventConsumer
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -79,6 +87,10 @@ MAX_ITERATIONS = int(os.environ.get("TORVALDS_MAX_ITERATIONS", "50"))
 TOKEN_LIMITS = int(os.environ.get("TORVALDS_TOKEN_LIMIT", "400"))
 MODEL = os.environ.get("TORVALDS_MODEL", "richardyoung/qwen3.6-27b-abliterated:Q4_K_M")
 SIMILARITY_TOP_K = int(os.environ.get("TORVALDS_SIMILARITY_TOP_K", "8"))
+
+# Feature flags for event streaming
+ENABLE_EVENT_STREAMING = os.environ.get("TORVALDS_EVENT_STREAMING", "true").lower() in ("true", "1", "yes")
+ENABLE_VERBOSE_EVENTS = os.environ.get("TORVALDS_VERBOSE_EVENTS", "false").lower() in ("true", "1", "yes")
 
 SYSTEM_PROMPT = (
     "Your name is Torvalds an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
@@ -208,6 +220,16 @@ def parse_args():
         action="store_true",
         help="Disable request statistics display",
     )
+    parser.add_argument(
+        "--no-events",
+        action="store_true",
+        help="Disable event streaming (legacy behavior)",
+    )
+    parser.add_argument(
+        "--verbose-events",
+        action="store_true",
+        help="Enable verbose event logging",
+    )
     return parser.parse_args()
 
 
@@ -218,6 +240,8 @@ def parse_args():
 async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = True):
     """
     Process a single command through the agent.
+
+    Uses event streaming to provide real-time feedback and spinner control.
 
     Args:
         cmd: User input string
@@ -240,12 +264,24 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
         chat_memory = agent_chat_memory.get_chat_memory()
         increment_session_commands()
 
-        result = await agent.run(
+        # Create workflow handler
+        workflow_handler = agent.run(
             cmd,
             memory=chat_memory,
             max_iterations=MAX_ITERATIONS,
             callback_manager=callback_manager,
         )
+
+        # Use event consumer for real-time feedback
+        state_handler = StateHandler()
+        event_consumer = EventConsumer(
+            spinner_controller=spinner_controller,
+            state_handler=state_handler,
+            console=console,
+            verbose=ENABLE_VERBOSE_EVENTS,
+        )
+
+        result = await event_consumer.consume_events(workflow_handler, cmd)
 
         response_text = (
             result.get("output")
@@ -318,6 +354,10 @@ async def main():
     # Determine if stats are enabled (CLI flag overrides env var)
     stats_enabled = STATS_ENABLED and not args.no_stats
 
+    # Determine if event streaming is enabled
+    events_enabled = ENABLE_EVENT_STREAMING and not args.no_events
+    verbose_events = ENABLE_VERBOSE_EVENTS or args.verbose_events
+
     console.print("[cyan]Torvalds AI Agent[/cyan]")
     console.print(f"[dim]Model: {MODEL} | Max iterations: {MAX_ITERATIONS}[/dim]")
     if stats_enabled:
@@ -326,6 +366,9 @@ async def main():
         )
     else:
         console.print("[dim]Stats: disabled[/dim]")
+    console.print(
+        f"[dim]Event streaming: {'enabled' if events_enabled else 'disabled'}[/dim]"
+    )
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]\n")
 
