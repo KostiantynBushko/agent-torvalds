@@ -21,6 +21,7 @@ Password Prompting Methods:
     - 'env_var': Uses TORVALDS_SUDO_PASSWORD environment variable
     - 'parameter': Uses explicitly provided password parameter
     - 'auto': Tries methods in order: parameter → env_var → cache → configured_prompt_method
+              With automatic fallback: if the configured method fails, tries the alternative
 
 Usage:
     # Using console (default)
@@ -227,6 +228,19 @@ def get_default_prompt_method() -> str:
     return _default_prompt_method
 
 
+def _has_tty() -> bool:
+    """
+    Check if we have a proper TTY available for whiptail dialogs.
+    
+    Returns:
+        bool: True if a TTY is available
+    """
+    try:
+        return os.isatty(0) or os.isatty(1) or os.path.exists('/dev/tty')
+    except Exception:
+        return False
+
+
 def prompt_sudo_password(
     method: str = "auto",
     password: Optional[str] = None,
@@ -242,6 +256,9 @@ def prompt_sudo_password(
       2. Environment variable TORVALDS_SUDO_PASSWORD
       3. Session cache (from a previously validated password)
       4. Prompt method: 'console' (stdin) or 'whiptail' (terminal dialog)
+      
+      In 'auto' mode: if the configured prompt method fails, automatically
+      falls back to the alternative method before giving up.
 
     Args:
         method (str): Prompting method: 'auto', 'console', 'whiptail', 'env_var', or 'parameter'
@@ -349,16 +366,55 @@ def prompt_sudo_password(
         else:
             prompt_method = method
 
+        # Try the primary method first
+        primary_result = None
         if prompt_method == "whiptail":
-            return _prompt_whiptail_password(
-                result,
+            primary_result = _prompt_whiptail_password(
+                result.copy(),
                 max_attempts,
                 whiptail_title,
                 whiptail_backtitle,
             )
         else:
-            # Default to console
-            return _prompt_console_password(result, max_attempts)
+            primary_result = _prompt_console_password(result.copy(), max_attempts)
+
+        if primary_result.get("success"):
+            return primary_result
+
+        # In auto mode, if primary method failed, try the fallback
+        if method == "auto":
+            logger.info(f"Primary method '{prompt_method}' failed, trying fallback")
+            fallback_method = "console" if prompt_method == "whiptail" else "whiptail"
+            
+            # Skip fallback if we already tried both or if TTY issues
+            if fallback_method == prompt_method:
+                return primary_result
+                
+            logger.info(f"Trying fallback method: {fallback_method}")
+            
+            if fallback_method == "whiptail" and not _has_tty():
+                logger.info("No TTY available, skipping whiptail fallback")
+                return primary_result
+
+            fallback_result = None
+            if fallback_method == "whiptail":
+                fallback_result = _prompt_whiptail_password(
+                    result.copy(),
+                    max_attempts,
+                    whiptail_title,
+                    whiptail_backtitle,
+                )
+            else:
+                fallback_result = _prompt_console_password(result.copy(), max_attempts)
+
+            if fallback_result.get("success"):
+                return fallback_result
+
+            # Both failed, return the primary error
+            return primary_result
+
+        # Not in auto mode, return primary result
+        return primary_result
 
     except Exception as e:
         result["error"] = str(e)
@@ -428,21 +484,6 @@ def _prompt_console_password(result: dict, max_attempts: int) -> dict:
         return result
 
 
-def _get_spinner_controller():
-    """
-    Lazily get the spinner controller from agent-torvalds module.
-    
-    This avoids circular imports by importing only when needed.
-    Returns None if the spinner controller is not available.
-    """
-    try:
-        # Try to import from agent-torvalds (main module)
-        import agent_torvalds
-        return agent_torvalds.spinner_controller
-    except (ImportError, AttributeError):
-        # Spinner controller not available (running standalone)
-        return None
-
 
 def _prompt_whiptail_password(
     result: dict,
@@ -456,24 +497,11 @@ def _prompt_whiptail_password(
     This method uses the whiptail_password module to display interactive
     terminal dialogs for password entry. Falls back to console if whiptail
     is not available.
-    
-    The console spinner is paused before showing whiptail dialogs and
-    resumed after the dialog closes to avoid visual conflicts.
     """
     global _sudo_password_cache
     
-    # Get spinner controller to pause during whiptail dialogs
-    spinner = _get_spinner_controller()
-    
     try:
-        # Import whiptail module from whiptail-investigation directory
-        import sys
-        import os
-        whiptail_dir = os.path.join(os.path.dirname(__file__), "whiptail-investigation")
-        if whiptail_dir not in sys.path:
-            sys.path.insert(0, whiptail_dir)
-
-        from whiptail_password import WhiptailPasswordPrompter
+        from components.whiptail_password import WhiptailPasswordPrompter
 
         prompter = WhiptailPasswordPrompter(
             title=title,
@@ -490,22 +518,11 @@ def _prompt_whiptail_password(
         def test_password_wrapper(password: str) -> bool:
             return test_sudo_password(password)
 
-        # Pause the spinner before showing whiptail dialog
-        if spinner is not None:
-            spinner.pause()
-            logger.info("Console spinner paused for whiptail dialog")
-
-        try:
-            wt_result = prompter.prompt_password(
-                message="Please enter your sudo password:",
-                max_attempts=max_attempts,
-                test_callback=test_password_wrapper,
-            )
-        finally:
-            # Always resume spinner after dialog closes
-            if spinner is not None:
-                spinner.resume()
-                logger.info("Console spinner resumed after whiptail dialog")
+        wt_result = prompter.prompt_password(
+            message="Please enter your sudo password:",
+            max_attempts=max_attempts,
+            test_callback=test_password_wrapper,
+        )
 
         if wt_result["success"]:
             _sudo_password_cache = wt_result["password"]
@@ -537,7 +554,7 @@ def test_sudo_password(password: str) -> bool:
     Test if the provided sudo password is valid.
 
     Args:
-        password (str): Password string to test
+        password (str): Password string to test (bytes are also accepted and decoded)
 
     Returns:
         bool: True if password is valid
@@ -547,6 +564,11 @@ def test_sudo_password(password: str) -> bool:
     logger.info("test_sudo_password called")
     if not password:
         return False
+
+    # Normalize: whiptail Python package may return bytes, ensure str
+    if isinstance(password, bytes):
+        password = password.decode("utf-8")
+
     try:
         result = subprocess.run(
             ["sudo", "-S", "-k", "true"],  # -k forces password prompt

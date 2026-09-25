@@ -78,18 +78,18 @@ def _get_token_limit() -> int:
     Get the token limit from environment or default.
     
     Returns:
-        int: Token limit for the memory buffer (default: 3000)
+        int: Token limit for the memory buffer (default: 5000)
         
     Example:
         >>> _get_token_limit()
-        3000
+        5000
         
     Keywords: token limit, buffer size, memory limit
     """
     try:
-        limit = int(os.environ.get("TORVALDS_TOKEN_LIMIT", "3000"))
+        limit = int(os.environ.get("TORVALDS_TOKEN_LIMIT", "5000"))
     except ValueError:
-        limit = 3000
+        limit = 5000
     logger.debug(f"Using token limit: {limit}")
     return limit
 
