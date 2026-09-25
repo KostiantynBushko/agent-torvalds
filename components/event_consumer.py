@@ -27,7 +27,6 @@ from components.state_handler import StateHandler
 try:
     from llama_index.core.workflow import Event, StopEvent
     from llama_index.core.agent.workflow import (
-        AgentWorkflowStartEvent,
         AgentInput,
         AgentSetup,
         AgentOutput,
@@ -72,11 +71,16 @@ except ImportError:
 
 
 # Default set of tools that should pause the spinner
+# These tools perform interactive operations (password prompts, whiptail dialogs,
+# long-running installs) that conflict with the rich console spinner.
 DEFAULT_INTERACTIVE_TOOLS: Set[str] = {
     "prompt_sudo_password_whiptail",
     "prompt_sudo_password_console",
-    "test_sudo_password",
     "prompt_sudo_password",
+    "test_sudo_password",
+    "install_package",
+    "install_multiple_packages",
+    "interactive_install_missing_command",
 }
 
 # Events to ignore in verbose logging (these are high-frequency/internal)
