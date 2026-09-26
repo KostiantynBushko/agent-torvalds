@@ -16,7 +16,7 @@ from typing import Optional
 from llama_index.core.tools import FunctionTool
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+
 
 
 def git_get_latest_commit(path: str) -> str:

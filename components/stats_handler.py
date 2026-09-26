@@ -13,6 +13,7 @@ panels/tables for display after each agent response.
 Category: Infrastructure
 Retriever Keywords: stats, statistics, logging, metrics, tokens, timing, performance
 """
+import logging
 import os
 import time
 import uuid
@@ -25,6 +26,8 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -34,6 +37,12 @@ STATS_VERBOSE = os.environ.get("TORVALDS_STATS_VERBOSE", "false").lower() in ("t
 STATS_PERSIST = os.environ.get("TORVALDS_STATS_PERSIST", "true").lower() in ("true", "1", "yes")
 STATS_MAX_HISTORY = int(os.environ.get("TORVALDS_STATS_MAX_HISTORY", "500"))
 STATS_FORMAT = os.environ.get("TORVALDS_STATS_FORMAT", "compact").lower()  # compact | detailed | json
+
+
+logger.debug(
+    "Stats config — enabled=%s, verbose=%s, persist=%s, max_history=%d, format=%s",
+    STATS_ENABLED, STATS_VERBOSE, STATS_PERSIST, STATS_MAX_HISTORY, STATS_FORMAT,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -99,17 +108,19 @@ class RequestStats:
 # ---------------------------------------------------------------------------
 # Callback handler
 # ---------------------------------------------------------------------------
+from typing import cast
 
-# Events we care about
-EVENTS_OF_INTEREST = [
+ALL_EVENTS: list[CBEventType] = cast(list[CBEventType], list(CBEventType))
+
+EVENTS_OF_INTEREST: list[CBEventType] = [
     CBEventType.LLM,
     CBEventType.FUNCTION_CALL,
     CBEventType.EXCEPTION,
 ]
 
-# All events minus those we care about (these we ignore)
-ALL_EVENTS = list(CBEventType)
-EVENTS_TO_IGNORE = [e for e in ALL_EVENTS if e not in EVENTS_OF_INTEREST]
+EVENTS_TO_IGNORE: list[CBEventType] = [e for e in ALL_EVENTS if e not in EVENTS_OF_INTEREST]
+
+logger.debug("Events of interest: %s", [e.value for e in EVENTS_OF_INTEREST])
 
 
 class RequestStatsHandler(BaseCallbackHandler):
@@ -144,15 +155,20 @@ class RequestStatsHandler(BaseCallbackHandler):
         self._llm_start_times: Dict[str, float] = {}
         self._tool_start_times: Dict[str, tuple] = {}
 
+        logger.debug(
+            "RequestStatsHandler created — request_id=%s, query='%s'",
+            request_id, user_query[:80],
+        )
+
     # --- Event start ---
 
     def start_trace(self, trace_id: str = "") -> None:
         """Start a trace (no-op for this handler)."""
-        pass
+        logger.debug("start_trace called — trace_id=%s", trace_id)
 
     def end_trace(self, trace_id: str = "", **kwargs: Any) -> None:
         """End a trace (no-op for this handler)."""
-        pass
+        logger.debug("end_trace called — trace_id=%s", trace_id)
 
     def on_event_start(
         self,
@@ -161,8 +177,14 @@ class RequestStatsHandler(BaseCallbackHandler):
         event_id: str = "",
         **kwargs: Any,
     ) -> None:
+        logger.debug(
+            "on_event_start — type=%s, event_id=%s",
+            event_type.value if hasattr(event_type, "value") else event_type,
+            event_id,
+        )
         if event_type == CBEventType.LLM:
             self._llm_start_times[event_id] = time.monotonic()
+            logger.debug("  → LLM start recorded for event %s", event_id)
         elif event_type == CBEventType.FUNCTION_CALL:
             tool_name = (
                 payload.get(EventPayload.TOOL, "unknown")
@@ -170,6 +192,7 @@ class RequestStatsHandler(BaseCallbackHandler):
                 else "unknown"
             )
             self._tool_start_times[event_id] = (tool_name, time.monotonic())
+            logger.debug("  → Tool call start: tool='%s', event_id=%s", tool_name, event_id)
 
     # --- Event end ---
 
@@ -180,6 +203,11 @@ class RequestStatsHandler(BaseCallbackHandler):
         event_id: str = "",
         **kwargs: Any,
     ) -> None:
+        logger.debug(
+            "on_event_end — type=%s, event_id=%s",
+            event_type.value if hasattr(event_type, "value") else event_type,
+            event_id,
+        )
         if event_type == CBEventType.LLM:
             self._on_llm_end(payload, event_id)
         elif event_type == CBEventType.FUNCTION_CALL:
@@ -188,6 +216,7 @@ class RequestStatsHandler(BaseCallbackHandler):
             if payload:
                 error = payload.get(EventPayload.EXCEPTION)
                 if error:
+                    logger.warning("  → Exception caught: %s", error)
                     self.stats.errors.append(str(error))
 
     def _on_llm_end(
@@ -222,11 +251,20 @@ class RequestStatsHandler(BaseCallbackHandler):
         self.stats.total_completion_tokens += completion_tokens
         self.stats.total_tokens += prompt_tokens + completion_tokens
 
+        logger.debug(
+            "  → LLM call #%d finished — prompt=%d, completion=%d, total=%d tokens",
+            self.stats.llm_call_count,
+            prompt_tokens,
+            completion_tokens,
+            prompt_tokens + completion_tokens,
+        )
+
     def _on_tool_end(
         self, payload: Optional[Dict[str, Any]], event_id: str
     ) -> None:
         """Process tool call end — record timing and result."""
         if event_id not in self._tool_start_times:
+            logger.debug("  → Tool call event_id %s not found in start times (skipping)", event_id)
             return
 
         tool_name, start = self._tool_start_times.pop(event_id)
@@ -241,12 +279,30 @@ class RequestStatsHandler(BaseCallbackHandler):
         )
         self.stats.tool_calls.append(record)
 
+        logger.debug(
+            "  → Tool call finished: tool='%s', duration=%.1fms, total_tool_calls=%d",
+            tool_name, duration_ms, len(self.stats.tool_calls),
+        )
+
     def finalize(self) -> RequestStats:
         """Finalize and return the collected stats."""
         self.stats.end_time = time.monotonic()
         self.stats.total_duration_ms = (
             self.stats.end_time - self.stats.start_time
         ) * 1000
+
+        logger.debug(
+            "Stats finalized — request_id=%s, duration=%.1fms, llm_calls=%d, "
+            "tokens=%d (📥%d 📤%d), tools=%d, errors=%d",
+            self.stats.request_id,
+            self.stats.total_duration_ms,
+            self.stats.llm_call_count,
+            self.stats.total_tokens,
+            self.stats.total_prompt_tokens,
+            self.stats.total_completion_tokens,
+            len(self.stats.tool_calls),
+            len(self.stats.errors),
+        )
         return self.stats
 
 
@@ -260,11 +316,14 @@ class StatsRenderer:
 
     def __init__(self, console: Console):
         self.console = console
+        logger.debug("StatsRenderer created")
 
     def render(
         self, stats: RequestStats, show_tools: bool = True
     ) -> None:
         """Render a statistics panel after a response."""
+        logger.debug("Rendering stats — format=%s, request_id=%s", STATS_FORMAT, stats.request_id)
+
         fmt = STATS_FORMAT
 
         if fmt == "json":
@@ -341,6 +400,7 @@ class StatsRenderer:
         """Render stats as JSON."""
         import json
 
+        logger.debug("Rendering stats as JSON")
         self.console.print(
             json.dumps(stats.to_dict(), indent=2, default=str),
             style="dim yellow",

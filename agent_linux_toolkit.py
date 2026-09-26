@@ -17,8 +17,8 @@ import logging
 from typing import Dict, List, Optional, Any
 from llama_index.core.tools import FunctionTool
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Logging is configured centrally in agent-torvalds.py.
+# Do NOT call logging.basicConfig() here — it is a no-op after the first call.
 logger = logging.getLogger(__name__)
 
 

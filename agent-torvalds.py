@@ -11,12 +11,14 @@ Features:
   - Spinner pause/resume during interactive tools
   - Agent state tracking and management
   - Whiptail password dialog integration
+  - Dynamic logging level control via --log-level CLI argument
 
 Usage:
-    python agent-torvalds.py              # Default mode (retriever-based)
+    python agent-torvalds.py              # Default mode (retriever-based, INFO logging)
     python agent-torvalds.py --full       # Load all tools upfront
     python agent-torvalds.py --top-k 10   # Adjust retrieval count
     python agent-torvalds.py --no-stats   # Disable request statistics
+    python agent-torvalds.py --log-level DEBUG  # Enable debug logging
 """
 import asyncio
 import argparse
@@ -63,7 +65,7 @@ import agent_chat_memory
 # ---------------------------------------------------------------------------
 # Stats handler
 # ---------------------------------------------------------------------------
-from agent_stats_handler import (
+from components.stats_handler import (
     RequestStatsHandler,
     StatsRenderer,
     STATS_ENABLED,
@@ -119,9 +121,36 @@ SYSTEM_PROMPT = (
 )
 
 # ---------------------------------------------------------------------------
-# Logging
+# Logging Configuration
 # ---------------------------------------------------------------------------
-logging.basicConfig(level=logging.INFO)
+
+VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+DEFAULT_LOG_LEVEL = "INFO"
+
+
+def configure_logging(level_name: str = DEFAULT_LOG_LEVEL) -> None:
+    """
+    Centralized logging configuration.
+
+    Sets up the root logger with the specified level, a consistent format
+    including timestamps and module names, and outputs to stderr (best
+    practice — keeps logs separate from stdout).
+
+    Args:
+        level_name: Logging level name (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+                    Defaults to INFO.
+    """
+    level = getattr(logging, level_name.upper(), logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[logging.StreamHandler(sys.stderr)],
+        force=True,  # Reconfigure even if basicConfig was already called
+    )
+
+
+# Apply default logging configuration at module level
+configure_logging(DEFAULT_LOG_LEVEL)
 
 console = Console()
 stats_renderer = StatsRenderer(console)
@@ -229,6 +258,14 @@ def parse_args():
         "--verbose-events",
         action="store_true",
         help="Enable verbose event logging",
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=VALID_LOG_LEVELS,
+        default=DEFAULT_LOG_LEVEL,
+        help="Set logging verbosity level (default: %(default)s). "
+             "Options: DEBUG, INFO, WARNING, ERROR, CRITICAL",
     )
     return parser.parse_args()
 
@@ -351,6 +388,9 @@ def render_stats_summary(summary: dict) -> None:
 async def main():
     args = parse_args()
 
+    # Apply logging configuration from CLI argument (reconfigures if different from default)
+    configure_logging(args.log_level)
+
     # Determine if stats are enabled (CLI flag overrides env var)
     stats_enabled = STATS_ENABLED and not args.no_stats
 
@@ -360,6 +400,7 @@ async def main():
 
     console.print("[cyan]Torvalds AI Agent[/cyan]")
     console.print(f"[dim]Model: {MODEL} | Max iterations: {MAX_ITERATIONS}[/dim]")
+    console.print(f"[dim]Logging: {args.log_level}[/dim]")
     if stats_enabled:
         console.print(
             f"[dim]Stats: enabled (format={STATS_FORMAT}, verbose={'on' if STATS_VERBOSE else 'off'})[/dim]"
