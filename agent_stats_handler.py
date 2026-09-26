@@ -99,18 +99,17 @@ class RequestStats:
 # ---------------------------------------------------------------------------
 # Callback handler
 # ---------------------------------------------------------------------------
+from typing import cast
 
-# Events we care about
-EVENTS_OF_INTEREST = [
+ALL_EVENTS: list[CBEventType] = cast(list[CBEventType], list(CBEventType))
+
+EVENTS_OF_INTEREST: list[CBEventType] = [
     CBEventType.LLM,
     CBEventType.FUNCTION_CALL,
     CBEventType.EXCEPTION,
 ]
 
-# All events minus those we care about (these we ignore)
-ALL_EVENTS = list(CBEventType)
-EVENTS_TO_IGNORE = [e for e in ALL_EVENTS if e not in EVENTS_OF_INTEREST]
-
+EVENTS_TO_IGNORE: list[CBEventType] = [e for e in ALL_EVENTS if e not in EVENTS_OF_INTEREST]
 
 class RequestStatsHandler(BaseCallbackHandler):
     """
