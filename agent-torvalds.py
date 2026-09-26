@@ -65,7 +65,7 @@ import agent_chat_memory
 # ---------------------------------------------------------------------------
 # Stats handler
 # ---------------------------------------------------------------------------
-from agent_stats_handler import (
+from components.stats_handler import (
     RequestStatsHandler,
     StatsRenderer,
     STATS_ENABLED,
@@ -421,13 +421,13 @@ async def main():
 
     while True:
         cmd = console.input("[green]>>> [/green]").strip()
-        if cmd.lower in ("\\exit", "\\quit"):
+        if cmd.lower() in ("\\exit", "\\quit"):
             from agent_cache_system import end_session
             end_session()
             console.print("[yellow]Goodbye![/yellow]")
             break
 
-        if cmd.lower == "\\stats":
+        if cmd.lower() == "\\stats":
             # Show statistics summary
             summary = get_stats_summary()
             render_stats_summary(summary)
