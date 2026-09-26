@@ -9,7 +9,7 @@ from llama_index.llms.ollama import Ollama
 from llama_index.core.llms import ChatMessage, CompletionResponse
 import sys
 sys.path.insert(0, '.')
-from agent_stats_handler import RequestStatsHandler
+from components.stats_handler import RequestStatsHandler
 
 async def test_stats_handler():
     print("Testing RequestStatsHandler...")

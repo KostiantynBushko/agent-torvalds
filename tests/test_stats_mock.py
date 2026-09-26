@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, '.')
 
 from llama_index.core.callbacks.schema import CBEventType, EventPayload
-from agent_stats_handler import RequestStatsHandler
+from components.stats_handler import RequestStatsHandler
 
 
 def test_token_extraction():
