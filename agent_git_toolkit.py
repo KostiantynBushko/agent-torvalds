@@ -778,7 +778,7 @@ def git_add_all_changes(path: str) -> dict:
       1. Resolves relative paths to absolute paths (e.g. '.' -> current dir)
       2. Checks that the resolved path exists on disk
       3. Calls git_get_status(path) to obtain all changed/untracked file lists
-      4. Stages every file from 'unstaged' and 'untracked' via git_add_files
+      4. Stages every file from 'unstaged' and 'untracked' individually
 
     Args:
         path (str): Path to the Git repository. Supports relative paths such as
@@ -832,17 +832,26 @@ def git_add_all_changes(path: str) -> dict:
             "status": status,
         }
 
-    # Step 5: Stage all collected files via git_add_files
-    add_result = git_add_files(resolved_path, files_to_stage)
-    if not add_result.get("success"):
+    # Step 5: Stage all collected files individually via pygit2
+    try:
+        repo = _open_repo(resolved_path)
+        staged_files = []
+        for file_path in files_to_stage:
+            # Ensure the path is a string (handle potential bytes from status)
+            if isinstance(file_path, bytes):
+                file_path = file_path.decode("utf-8")
+            repo.index.add(file_path)
+            staged_files.append(file_path)
+        repo.index.write()
+    except (pygit2.GitError, ValueError) as e:
         return {
             "success": False,
-            "error": f"Failed to add files: {add_result.get('error', 'Unknown error')}",
+            "error": f"Failed to add files: {str(e)}",
         }
 
     return {
         "success": True,
-        "files_staged": files_to_stage,
+        "files_staged": staged_files,
         "status": status,
     }
 
