@@ -12,6 +12,7 @@ Category: Version Control
 Retriever Keywords: git, repository, commit, branch, remote, changelog, version control, diff, merge, sync
 """
 import os
+import json
 import logging
 from datetime import date
 from typing import Optional
@@ -439,7 +440,7 @@ def git_get_status(path: str) -> dict:
             output_lines.append(f"?? {f}")
         output = "\n".join(output_lines)
         
-        return {
+        result = {
             "status": "success",
             "output": output,
             "staged": parsed["staged"],
@@ -447,11 +448,25 @@ def git_get_status(path: str) -> dict:
             "untracked": parsed["untracked"],
             "is_clean": parsed["is_clean"],
         }
+        
+        # Print structured JSON in debug mode
+        import os
+        if os.environ.get("DEBUG"):
+            print(json.dumps(result, indent=2))
+        
+        return result
     except (pygit2.GitError, ValueError) as e:
-        return {
+        result = {
             "status": "error",
             "message": f"Error getting status: {str(e)}",
         }
+        
+        # Print structured JSON in debug mode
+        import os
+        if os.environ.get("DEBUG"):
+            print(json.dumps(result, indent=2))
+        
+        return result
 
 
 def git_generate_changelog(path: str, output_file: str = "CHANGELOG.md") -> bool:
