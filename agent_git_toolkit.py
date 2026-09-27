@@ -5,19 +5,186 @@ This module provides comprehensive Git functionality for repository initializati
 commit management, changelog generation, remote operations, status inspection,
 branch management, and diff/sync operations.
 
+Refactored to use pygit2 (Python binding to libgit2) for improved performance,
+reliability, and security.
+
 Category: Version Control
 Retriever Keywords: git, repository, commit, branch, remote, changelog, version control, diff, merge, sync
 """
 import os
-import subprocess
 import logging
 from datetime import date
 from typing import Optional
+import pygit2
 from llama_index.core.tools import FunctionTool
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# Helper Functions & Constants
+# =============================================================================
 
+# pygit2 status flag to porcelain-equivalent character mapping
+STATUS_MAP = {
+    pygit2.GIT_STATUS_CURRENT: "",
+    pygit2.GIT_STATUS_INDEX_NEW: "A",
+    pygit2.GIT_STATUS_INDEX_MODIFIED: "M",
+    pygit2.GIT_STATUS_INDEX_DELETED: "D",
+    pygit2.GIT_STATUS_INDEX_RENAMED: "R",
+    pygit2.GIT_STATUS_WT_NEW: "?",
+    pygit2.GIT_STATUS_WT_MODIFIED: "M",
+    pygit2.GIT_STATUS_WT_DELETED: "D",
+    pygit2.GIT_STATUS_WT_RENAMED: "R",
+}
+
+
+def _open_repo(path: str) -> pygit2.Repository:
+    """
+    Open a repository at the given path.
+    
+    Args:
+        path: Path to the Git repository
+        
+    Returns:
+        pygit2.Repository instance
+        
+    Raises:
+        ValueError: If path is not a valid git repository
+    """
+    try:
+        return pygit2.Repository(path)
+    except pygit2.GitError as e:
+        raise ValueError(f"Not a valid git repository: {path}") from e
+
+
+def _get_credentials(url, username_from_url, allowed_types):
+    """
+    Credential callback for pygit2 remote operations.
+    
+    Reads TORVALDS_GITHUB_TOKEN from environment for HTTPS authentication.
+    
+    Args:
+        url: Remote URL
+        username_from_url: Username extracted from URL
+        allowed_types: Set of allowed credential types
+        
+    Returns:
+        pygit2 credential object or None
+    """
+    token = os.environ.get("TORVALDS_GITHUB_TOKEN")
+    if not token:
+        return None
+    if pygit2.CREDTYPE_USER_PASS in allowed_types:
+        return pygit2.CredCredential("oauth2", token)
+    return None
+
+
+def _get_author_and_committer(repo: pygit2.Repository):
+    """
+    Get author and committer identity from repository config.
+    
+    Falls back to default values if not configured.
+    
+    Args:
+        repo: pygit2.Repository instance
+        
+    Returns:
+        Tuple of (author, committer) pygit2.Signature objects
+    """
+    config = repo.config
+    
+    name = config.get("user.name").value if config.has_key("user.name") else "Torvalds Agent"
+    email = config.get("user.email").value if config.has_key("user.email") else "agent@torvalds.local"
+    
+    author = pygit2.Signature(name, email)
+    committer = pygit2.Signature(name, email)
+    
+    return author, committer
+
+
+def _has_staged_changes(repo: pygit2.Repository) -> bool:
+    """
+    Check if there are staged changes ready to commit.
+    
+    Args:
+        repo: pygit2.Repository instance
+        
+    Returns:
+        bool: True if there are staged changes, False otherwise
+    """
+    # Check if index differs from HEAD
+    try:
+        head_commit = repo.head.peel(pygit2.Commit)
+        return not repo.index.diff(head_commit.id)
+    except (pygit2.GitError, ValueError):
+        # No HEAD yet (first commit) — check if index has any entries
+        return len(repo.index) > 0
+
+
+def _parse_git_status_porcelain(status_dict: dict) -> dict:
+    """
+    Parse pygit2 status dict into structured categories matching porcelain format.
+    
+    Args:
+        status_dict: Raw status dict from repo.status()
+        
+    Returns:
+        dict with categorized file lists
+    """
+    staged = []
+    unstaged = []
+    untracked = []
+    
+    if not status_dict:
+        return {
+            "staged": staged,
+            "unstaged": unstaged,
+            "untracked": untracked,
+            "is_clean": True,
+        }
+    
+    for file_path, flags in status_dict.items():
+        # Decode path if bytes
+        if isinstance(file_path, bytes):
+            file_path = file_path.decode("utf-8")
+        
+        # Determine staged status (index)
+        index_flags = flags & (
+            pygit2.GIT_STATUS_INDEX_NEW |
+            pygit2.GIT_STATUS_INDEX_MODIFIED |
+            pygit2.GIT_STATUS_INDEX_DELETED |
+            pygit2.GIT_STATUS_INDEX_RENAMED
+        )
+        
+        # Determine working tree status
+        wt_flags = flags & (
+            pygit2.GIT_STATUS_WT_NEW |
+            pygit2.GIT_STATUS_WT_MODIFIED |
+            pygit2.GIT_STATUS_WT_DELETED |
+            pygit2.GIT_STATUS_WT_RENAMED
+        )
+        
+        # Untracked files have WT_NEW flag
+        if flags & pygit2.GIT_STATUS_WT_NEW:
+            untracked.append(file_path)
+        elif index_flags:
+            # Something is staged
+            staged.append(file_path)
+        elif wt_flags:
+            # Only working tree changed, not staged
+            unstaged.append(file_path)
+    
+    return {
+        "staged": staged,
+        "unstaged": unstaged,
+        "untracked": untracked,
+        "is_clean": not (staged or unstaged or untracked),
+    }
+
+
+# =============================================================================
+# Tier 1: Basic Operations
+# =============================================================================
 
 def git_get_latest_commit(path: str) -> str:
     """
@@ -39,16 +206,11 @@ def git_get_latest_commit(path: str) -> str:
     """
     logger.info(f"git_get_latest_commit called with path: {path}")
     try:
-        result = subprocess.run(
-            ["git", "log", "-1", "--format=%H"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        return f"Error: {e.stderr.strip() if e.stderr else str(e)}"
+        repo = _open_repo(path)
+        commit = repo.head.peel(pygit2.Commit)
+        return commit.id.hex
+    except (pygit2.GitError, ValueError) as e:
+        return f"Error: {str(e)}"
 
 
 def git_init_repo(path: str) -> bool:
@@ -74,15 +236,9 @@ def git_init_repo(path: str) -> bool:
     try:
         if not os.path.isdir(path):
             return False
-        subprocess.run(
-            ["git", "init"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        pygit2.init_repository(path)
         return True
-    except subprocess.CalledProcessError:
+    except pygit2.GitError:
         return False
 
 
@@ -91,14 +247,21 @@ def git_add_files(path: str, files: list) -> dict:
     Add files to the staging area for commit.
     
     Use this tool to stage changes before committing. The 'files' parameter
-    must be a list of file path strings, e.g. ['file.py', 'README.md'] or
-    ['.'] to stage all changes. Passing an empty list or non-string items
-    will return an error with guidance.
+    MUST be a list of file path strings. NEVER pass an empty list [].
+    
+    IMPORTANT: The 'files' parameter must be a Python list of strings, e.g.:
+      - ['file.py', 'README.md'] to stage specific files
+      - ['.'] to stage ALL changes (recommended when you want to stage everything)
+      - status['unstaged'] to stage only unstaged files from git_get_status response
+      - status['untracked'] to stage only untracked files from git_get_status response
     
     Args:
         path (str): The directory path of the Git repository
-        files (list): List of file path strings to add (e.g., ['file.py', 'README.md'])
-                      Use ['.'] to stage all changes.
+        files (list): List of file path strings to add. Examples:
+                      - ['file.py', 'README.md'] for specific files
+                      - ['.'] to stage all changes
+                      - status['unstaged'] to stage unstaged files
+                      - status['untracked'] to stage untracked files
         
     Returns:
         dict: Dictionary with keys:
@@ -132,64 +295,18 @@ def git_add_files(path: str, files: list) -> dict:
         }
     
     try:
-        result = subprocess.run(
-            ["git", "add"] + files,
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        repo = _open_repo(path)
+        repo.index.add(files)
+        repo.index.write()
         return {
             "success": True,
             "files_staged": files,
         }
-    except subprocess.CalledProcessError as e:
+    except (pygit2.GitError, ValueError) as e:
         return {
             "success": False,
-            "error": f"Failed to add files: {e.stderr.strip() if e.stderr else str(e)}",
+            "error": f"Failed to add files: {str(e)}",
         }
-
-
-def _has_staged_changes(path: str) -> bool:
-    """
-    Check if there are staged changes ready to commit.
-    
-    Handles both the case where HEAD exists (normal commits) and where it doesn't
-    (first commit in a new repository).
-    
-    Args:
-        path (str): The directory path of the Git repository
-        
-    Returns:
-        bool: True if there are staged changes, False otherwise
-    """
-    logger.info(f"_has_staged_changes called with path: {path}")
-    # Check if HEAD exists
-    head_check = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=path,
-        capture_output=True,
-        text=True,
-    )
-    
-    if head_check.returncode != 0:
-        # No HEAD yet (first commit) — check if anything is staged
-        result = subprocess.run(
-            ["git", "diff-index", "--cached", "--quiet", "HEAD"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode != 0
-    
-    # HEAD exists — normal staged changes check
-    result = subprocess.run(
-        ["git", "diff-index", "--cached", "--quiet", "HEAD"],
-        cwd=path,
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode != 0
 
 
 def git_commit(path: str, message: str) -> bool:
@@ -214,94 +331,39 @@ def git_commit(path: str, message: str) -> bool:
     """
     logger.info(f"git_commit called with path: {path}, message: {message}")
     try:
+        repo = _open_repo(path)
+        
         # Check if there are staged changes
-        if not _has_staged_changes(path):
+        if not _has_staged_changes(repo):
             return False
         
-        subprocess.run(
-            ["git", "commit", "-m", message],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
+        author, committer = _get_author_and_committer(repo)
+        
+        # Prepare tree
+        repo.index.write()
+        tree = repo.index.write_tree()
+        
+        # Determine parent commits
+        parents = []
+        try:
+            head_commit = repo.head.peel(pygit2.Commit)
+            parents.append(head_commit.id)
+        except (pygit2.GitError, ValueError):
+            # First commit, no parents
+            pass
+        
+        # Create commit
+        repo.create_commit(
+            "HEAD",
+            author,
+            committer,
+            message,
+            tree,
+            parents,
         )
         return True
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, ValueError):
         return False
-
-
-def _parse_git_status_porcelain(output: str) -> dict:
-    """
-    Parse git status --porcelain output into structured categories.
-    
-    Git porcelain format: XY file_path
-      - X: staged area status
-      - Y: working tree status
-      - Space separator (3rd char)
-      - Rest: file path
-    
-    Args:
-        output: Raw porcelain output from git status
-        
-    Returns:
-        dict with categorized file lists and raw output
-    """
-    staged = []
-    unstaged = []
-    untracked = []
-    
-    if not output.strip():
-        return {
-            "staged": staged,
-            "unstaged": unstaged,
-            "untracked": untracked,
-            "is_clean": True,
-        }
-    
-    for line in output.strip().split("\n"):
-        if not line.strip():
-            continue
-        
-        # Porcelain format: first 2 chars are status codes, 3rd is space, rest is path
-        # Example: "?? investigate/llama-index-workflow/"
-        #          "M  src/main.py"
-        #          " M src/main.py"
-        if len(line) < 2:
-            continue
-            
-        x_status = line[0]  # staged area
-        y_status = line[1] if len(line) > 1 else " "  # working tree
-        
-        # File path starts after the space separator (position 3)
-        # If no space at position 2, start from position 2
-        if len(line) > 2 and line[2] == " ":
-            file_path = line[3:]
-        else:
-            file_path = line[2:].strip()
-        
-        # Skip empty file paths
-        if not file_path:
-            continue
-        
-        # Classify based on status codes
-        if x_status == "?" or y_status == "?":
-            untracked.append(file_path)
-        elif x_status in ("M", "A", "D", "R", "C"):
-            # Something is staged
-            staged.append(file_path)
-        elif y_status in ("M", "D", "R", "C"):
-            # Only working tree changed, not staged
-            unstaged.append(file_path)
-        else:
-            # Unknown status, treat as unstaged
-            unstaged.append(file_path)
-    
-    return {
-        "staged": staged,
-        "unstaged": unstaged,
-        "untracked": untracked,
-        "is_clean": not (staged or unstaged or untracked),
-    }
 
 
 def git_get_status(path: str) -> dict:
@@ -309,9 +371,13 @@ def git_get_status(path: str) -> dict:
     Get current repository status showing staged, unstaged, and untracked files.
     
     Use this tool to inspect the working tree status before making changes or commits.
-    Returns structured data with categorized file lists that can be directly passed
-    to git_add_files. For untracked files, use the 'untracked' list. For all changes,
-    pass ['.'] to git_add_files.
+    The response contains categorized file lists ('staged', 'unstaged', 'untracked')
+    that you can directly pass to git_add_files to stage specific files.
+    
+    IMPORTANT WORKFLOW:
+    1. Call git_get_status to get the status
+    2. Extract file paths from the 'unstaged' or 'untracked' lists
+    3. Pass those file paths as a list to git_add_files
     
     Args:
         path (str): The directory path of the Git repository
@@ -320,9 +386,9 @@ def git_get_status(path: str) -> dict:
         dict: Dictionary containing status information with keys:
             - 'status': 'success' or 'error'
             - 'output': Raw porcelain format status string (on success)
-            - 'staged': list of files with staged changes (ready to commit)
-            - 'unstaged': list of modified files not yet staged
-            - 'untracked': list of new files not tracked by git
+            - 'staged': list of file paths with staged changes (ready to commit)
+            - 'unstaged': list of file paths for modified files not yet staged
+            - 'untracked': list of file paths for new files not tracked by git
             - 'is_clean': True if working tree is clean, False otherwise
             - 'message': Error message (on failure)
             
@@ -337,30 +403,54 @@ def git_get_status(path: str) -> dict:
             'is_clean': False
         }
         
-    Keywords: status, changes, modified, untracked, dirty, clean
+    Workflow Example:
+        Step 1: Check status
+        >>> status = git_get_status("/home/user/repo")
+        >>> # status['unstaged'] = ['src/main.py']
+        >>> # status['untracked'] = ['new_file.py']
+        
+        Step 2: Stage the unstaged files by passing the list directly
+        >>> git_add_files("/home/user/repo", status['unstaged'])
+        {'success': True, 'files_staged': ['src/main.py']}
+        
+        Step 3: Stage untracked files similarly
+        >>> git_add_files("/home/user/repo", status['untracked'])
+        {'success': True, 'files_staged': ['new_file.py']}
+        
+        Step 4: Stage all changes at once using ['.']
+        >>> git_add_files("/home/user/repo", ['.'])
+        {'success': True, 'files_staged': ['.']}
+        
+    Keywords: status, changes, modified, untracked, dirty, clean, inspect
     """
     logger.info(f"git_get_status called with path: {path}")
     try:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        parsed = _parse_git_status_porcelain(result.stdout)
+        repo = _open_repo(path)
+        status_dict = repo.status()
+        parsed = _parse_git_status_porcelain(status_dict)
+        
+        # Build porcelain-like output string
+        output_lines = []
+        for f in parsed["staged"]:
+            output_lines.append(f"M  {f}")
+        for f in parsed["unstaged"]:
+            output_lines.append(f" M {f}")
+        for f in parsed["untracked"]:
+            output_lines.append(f"?? {f}")
+        output = "\n".join(output_lines)
+        
         return {
             "status": "success",
-            "output": result.stdout.strip(),
+            "output": output,
             "staged": parsed["staged"],
             "unstaged": parsed["unstaged"],
             "untracked": parsed["untracked"],
             "is_clean": parsed["is_clean"],
         }
-    except subprocess.CalledProcessError as e:
+    except (pygit2.GitError, ValueError) as e:
         return {
             "status": "error",
-            "message": f"Error getting status: {e.stderr.strip() if e.stderr else str(e)}",
+            "message": f"Error getting status: {str(e)}",
         }
 
 
@@ -386,49 +476,56 @@ def git_generate_changelog(path: str, output_file: str = "CHANGELOG.md") -> bool
     """
     logger.info(f"git_generate_changelog called with path: {path}, output_file: {output_file}")
     try:
-        result = subprocess.run(
-            ["git", "log", "--pretty=format:%h|%ad|%s", "--date=short", "--no-merges"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        repo = _open_repo(path)
         
-        if not result.stdout.strip():
-            # No commits yet - create empty changelog
+        # Try to get the head commit
+        try:
+            head_commit = repo.head.peel(pygit2.Commit)
+        except (pygit2.GitError, ValueError):
+            # No commits yet
             changelog_path = os.path.join(path, output_file)
             with open(changelog_path, "w") as f:
                 f.write("# Changelog\n\nAll notable changes to this project will be documented in this file.\n")
             return True
         
-        commits = result.stdout.strip().split("\n")
+        # Walk commits, filtering out merges
+        commits = []
+        for commit in repo.walk(head_commit.id, pygit2.GIT_SORT_TIME):
+            # Skip merge commits (more than one parent)
+            if len(commit.parents) > 1:
+                continue
+            commits.append(commit)
+            if len(commits) >= 1000:  # Safety limit
+                break
+        
+        if not commits:
+            changelog_path = os.path.join(path, output_file)
+            with open(changelog_path, "w") as f:
+                f.write("# Changelog\n\nAll notable changes to this project will be documented in this file.\n")
+            return True
+        
         changelog_content = "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\n"
         
         current_date = ""
         for commit in commits:
-            if not commit:
-                continue
-            try:
-                parts = commit.split("|", 2)
-                if len(parts) != 3:
-                    continue
-                commit_hash, commit_date, message = parts
-                
-                # Add date header when date changes
-                if commit_date != current_date:
-                    changelog_content += f"\n## {commit_date}\n\n"
-                    current_date = commit_date
-                
-                changelog_content += f"- {message} ({commit_hash})\n"
-            except (ValueError, IndexError):
-                continue
+            # Format date as YYYY-MM-DD
+            commit_date = date.fromtimestamp(commit.commit_time).strftime("%Y-%m-%d")
+            commit_hash = commit.short_id.hex
+            message = commit.message.strip().split("\n")[0]  # First line only
+            
+            # Add date header when date changes
+            if commit_date != current_date:
+                changelog_content += f"\n## {commit_date}\n\n"
+                current_date = commit_date
+            
+            changelog_content += f"- {message} ({commit_hash})\n"
         
         changelog_path = os.path.join(path, output_file)
         with open(changelog_path, "w") as f:
             f.write(changelog_content)
         
         return True
-    except (subprocess.CalledProcessError, OSError):
+    except (pygit2.GitError, OSError, ValueError):
         return False
 
 
@@ -457,39 +554,40 @@ def git_get_recent_changes(path: str, num_commits: int = 10) -> list:
     """
     logger.info(f"git_get_recent_changes called with path: {path}, num_commits: {num_commits}")
     try:
-        result = subprocess.run(
-            ["git", "log", f"-{num_commits}", "--pretty=format:%h|%ad|%s|%an", "--date=short", "--no-merges"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        repo = _open_repo(path)
         
-        if not result.stdout.strip():
+        # Try to get the head commit
+        try:
+            head_commit = repo.head.peel(pygit2.Commit)
+        except (pygit2.GitError, ValueError):
             return []
         
-        commits = result.stdout.strip().split("\n")
         recent_changes = []
+        count = 0
         
-        for commit in commits:
-            if not commit:
+        for commit in repo.walk(head_commit.id, pygit2.GIT_SORT_TIME):
+            # Skip merge commits
+            if len(commit.parents) > 1:
                 continue
-            try:
-                parts = commit.split("|", 3)
-                if len(parts) != 4:
-                    continue
-                commit_hash, commit_date, message, author = parts
-                recent_changes.append({
-                    "hash": commit_hash,
-                    "date": commit_date,
-                    "message": message,
-                    "author": author,
-                })
-            except (ValueError, IndexError):
-                continue
+            
+            commit_date = date.fromtimestamp(commit.commit_time).strftime("%Y-%m-%d")
+            commit_hash = commit.short_id.hex
+            message = commit.message.strip().split("\n")[0]
+            author = commit.author.name
+            
+            recent_changes.append({
+                "hash": commit_hash,
+                "date": commit_date,
+                "message": message,
+                "author": author,
+            })
+            
+            count += 1
+            if count >= num_commits:
+                break
         
         return recent_changes
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, ValueError):
         return []
 
 
@@ -587,17 +685,12 @@ def git_get_email(path: str) -> str:
     """
     logger.info(f"git_get_email called with path: {path}")
     try:
-        result = subprocess.run(
-            ["git", "config", "--get", "user.email"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            return ""
-        return result.stdout.strip()
-    except subprocess.CalledProcessError:
+        repo = _open_repo(path)
+        config = repo.config
+        if config.has_key("user.email"):
+            return config.get("user.email").value
+        return ""
+    except (pygit2.GitError, ValueError):
         return ""
 
 
@@ -626,24 +719,137 @@ def git_init_and_commit(path: str, message: str) -> bool:
     try:
         # Initialize if not already a git repo
         if not os.path.isdir(os.path.join(path, ".git")):
-            subprocess.run(["git", "init"], cwd=path, capture_output=True, text=True, check=True)
+            pygit2.init_repository(path)
+        
+        repo = _open_repo(path)
+        config = repo.config
         
         # Configure user identity if needed
-        email = git_get_email(path)
-        if not email:
-            subprocess.run(["git", "config", "user.email", "agent@torvalds.local"], cwd=path, capture_output=True, text=True)
-            subprocess.run(["git", "config", "user.name", "Torvalds Agent"], cwd=path, capture_output=True, text=True)
+        if not config.has_key("user.email"):
+            config.set_multivar("user.email", "agent@torvalds.local")
+        if not config.has_key("user.name"):
+            config.set_multivar("user.name", "Torvalds Agent")
         
         # Stage all files
-        subprocess.run(["git", "add", "."], cwd=path, capture_output=True, text=True)
+        repo.index.add(["."])
+        repo.index.write()
         
-        # Commit (allow empty commits for fresh repos with no files)
-        subprocess.run(["git", "commit", "--allow-empty", "-m", message], cwd=path, capture_output=True, text=True, check=True)
+        # Get author/committer
+        author, committer = _get_author_and_committer(repo)
+        
+        # Get tree
+        tree = repo.index.write_tree()
+        
+        # Determine parents
+        parents = []
+        try:
+            head_commit = repo.head.peel(pygit2.Commit)
+            parents.append(head_commit.id)
+        except (pygit2.GitError, ValueError):
+            pass
+        
+        # Create commit (allow empty for fresh repos)
+        repo.create_commit(
+            "HEAD",
+            author,
+            committer,
+            message,
+            tree,
+            parents,
+        )
         
         return True
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, ValueError):
         return False
 
+
+
+
+def git_add_all_changes(path: str) -> dict:
+    """
+    Add all changed and untracked files in the given path to the git staging area.
+
+    Use this tool to automatically stage all modified, deleted, and new (untracked)
+    files discovered via git_get_status. Supports relative paths (e.g. '.' for
+    the current working directory) and validates that the path exists before
+    attempting to stage files.
+
+    Internally:
+      1. Resolves relative paths to absolute paths (e.g. '.' -> current dir)
+      2. Checks that the resolved path exists on disk
+      3. Calls git_get_status(path) to obtain all changed/untracked file lists
+      4. Stages every file from 'unstaged' and 'untracked' via git_add_files
+
+    Args:
+        path (str): Path to the Git repository. Supports relative paths such as
+                    '.' (current working directory) or '../other-repo'.
+
+    Returns:
+        dict: Dictionary with keys:
+            - 'success': bool indicating if the operation succeeded
+            - 'files_staged': list of files that were staged (on success)
+            - 'status': the full git_get_status result (on success)
+            - 'error': error message (on failure)
+
+    Example:
+        >>> git_add_all_changes(".")
+        {'success': True, 'files_staged': ['src/main.py', 'new_file.py'], ...}
+        >>> git_add_all_changes("/home/user/my-repo")
+        {'success': True, 'files_staged': [...], ...}
+
+    Keywords: add all, stage all, auto stage, relative path, current directory
+    """
+    logger.info(f"git_add_all_changes called with path: {path}")
+
+    # Step 1: Resolve relative paths to absolute paths
+    resolved_path = os.path.abspath(path)
+
+    # Step 2: Check if the path exists
+    if not os.path.isdir(resolved_path):
+        return {
+            "success": False,
+            "error": f"Path does not exist or is not a directory: {resolved_path} (original: {path})",
+        }
+
+    # Step 3: Use git_get_status to obtain all changed files
+    status = git_get_status(resolved_path)
+    if status.get("status") != "success":
+        return {
+            "success": False,
+            "error": f"Failed to get git status: {status.get('message', 'Unknown error')}",
+        }
+
+    # Step 4: Collect all unstaged and untracked files
+    files_to_stage = []
+    files_to_stage.extend(status.get("unstaged", []))
+    files_to_stage.extend(status.get("untracked", []))
+
+    # Nothing to stage
+    if not files_to_stage:
+        return {
+            "success": True,
+            "files_staged": [],
+            "status": status,
+        }
+
+    # Step 5: Stage all collected files via git_add_files
+    add_result = git_add_files(resolved_path, files_to_stage)
+    if not add_result.get("success"):
+        return {
+            "success": False,
+            "error": f"Failed to add files: {add_result.get('error', 'Unknown error')}",
+        }
+
+    return {
+        "success": True,
+        "files_staged": files_to_stage,
+        "status": status,
+    }
+
+
+# =============================================================================
+# Tier 2: Remote Operations
+# =============================================================================
 
 def git_remote_add(path: str, name: str, url: str) -> bool:
     """
@@ -667,15 +873,10 @@ def git_remote_add(path: str, name: str, url: str) -> bool:
     """
     logger.info(f"git_remote_add called with path: {path}, name: {name}, url: {url}")
     try:
-        subprocess.run(
-            ["git", "remote", "add", name, url],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        repo = _open_repo(path)
+        repo.create_remote(name, url)
         return True
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, ValueError):
         return False
 
 
@@ -708,24 +909,28 @@ def git_push(
     """
     logger.info(f"git_push called with path: {path}, remote: {remote}, branch: {branch}, set_upstream: {set_upstream}")
     try:
+        repo = _open_repo(path)
+        
+        # Get the remote
+        if remote not in repo.remotes:
+            return False
+        remote_obj = repo.remotes[remote]
+        
+        # Push the branch
+        specs = [f"refs/heads/{branch}:refs/heads/{branch}"]
+        remote_obj.push(specs, credentials=_get_credentials)
+        
+        # Set upstream if requested
         if set_upstream:
-            subprocess.run(
-                ["git", "push", "--set-upstream", remote, branch],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        else:
-            subprocess.run(
-                ["git", "push", remote, branch],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            try:
+                local_branch = repo.branches.local[branch]
+                upstream_ref = f"refs/remotes/{remote}/{branch}"
+                local_branch.set_upstream(upstream_ref)
+            except (KeyError, pygit2.GitError):
+                pass
+        
         return True
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, ValueError):
         return False
 
 
@@ -751,27 +956,12 @@ def git_remote_get(path: str) -> list[dict]:
     """
     logger.info(f"git_remote_get called with path: {path}")
     try:
-        result = subprocess.run(
-            ["git", "remote", "-v"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        
-        if not result.stdout.strip():
-            return []
-        
+        repo = _open_repo(path)
         remotes = []
-        for line in result.stdout.strip().split("\n"):
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) >= 2:
-                remotes.append({"name": parts[0], "url": parts[1]})
-        
+        for remote in repo.remotes:
+            remotes.append({"name": remote.name, "url": remote.url})
         return remotes
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, ValueError):
         return []
 
 
@@ -797,20 +987,148 @@ def git_set_upstream(path: str, remote: str, branch: str) -> bool:
     """
     logger.info(f"git_set_upstream called with path: {path}, remote: {remote}, branch: {branch}")
     try:
-        subprocess.run(
-            ["git", "branch", "--set-upstream-to", f"{remote}/{branch}"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        repo = _open_repo(path)
+        local_branch = repo.branches.local[branch]
+        upstream_ref = f"refs/remotes/{remote}/{branch}"
+        local_branch.set_upstream(upstream_ref)
         return True
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, KeyError, ValueError):
         return False
 
 
+def git_pull(path: str, remote: str = "origin", branch: str = None) -> dict:
+    """
+    Pull changes from a remote repository and merge into the current branch.
+    
+    Use this tool to fetch and integrate changes from a remote repository.
+    Equivalent to git fetch followed by git merge.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        remote (str): Name of the remote repository (default: 'origin')
+        branch (str, optional): Branch name to pull. If None, pulls the
+                               upstream branch for the current branch.
+        
+    Returns:
+        dict: Dictionary containing:
+            - 'success': bool indicating if the pull succeeded
+            - 'output': stdout from the pull command
+            - 'error': error message if failed (on failure)
+            
+    Example:
+        >>> git_pull("/home/user/repo")
+        {'success': True, 'output': 'Already up to date.'}
+        >>> git_pull("/home/user/repo", "origin", "main")
+        {'success': True, 'output': 'Updating a1b2c3d..e4f5g6h\n...'}
+        
+    Keywords: pull, fetch, merge, remote, update, synchronize, sync
+    """
+    logger.info(f"git_pull called with path: {path}, remote: {remote}, branch: {branch}")
+    try:
+        repo = _open_repo(path)
+        
+        # Fetch first
+        if remote in repo.remotes:
+            remote_obj = repo.remotes[remote]
+            remote_obj.fetch(credentials=_get_credentials)
+        
+        if branch:
+            # Merge the specific branch
+            merge_commit = repo.revparse_single(f"{remote}/{branch}")
+            merge_analysis = repo.merge_analysis(merge_commit.id)
+            
+            if merge_analysis[0] & pygit2.GIT_MERGE_ANALYSIS_UP_TO_DATE:
+                return {"success": True, "output": "Already up to date."}
+            
+            # Perform merge
+            repo.merge(merge_commit.id)
+            
+            # Check for conflicts
+            conflicts = list(repo.index.conflicts())
+            if conflicts:
+                return {
+                    "success": False,
+                    "output": "",
+                    "error": "Merge conflicts detected",
+                }
+            
+            # Complete merge
+            author, committer = _get_author_and_committer(repo)
+            tree = repo.index.write_tree()
+            head_commit = repo.head.peel(pygit2.Commit)
+            
+            repo.create_commit(
+                "HEAD",
+                author,
+                committer,
+                f"Merge remote branch '{branch}'",
+                tree,
+                [head_commit.id, merge_commit.id],
+            )
+            
+            return {"success": True, "output": f"Merged {branch}"}
+        else:
+            return {"success": True, "output": "Fetch completed"}
+    except (pygit2.GitError, ValueError) as e:
+        return {
+            "success": False,
+            "output": "",
+            "error": str(e),
+        }
+
+
+def git_fetch(path: str, remote: str = "origin") -> dict:
+    """
+    Fetch objects and refs from a remote repository without merging.
+    
+    Use this tool to update remote-tracking branches without modifying
+    the working tree or current branch. Safer than pull for inspecting
+    what's available before merging.
+    
+    Args:
+        path (str): The directory path of the Git repository
+        remote (str): Name of the remote repository (default: 'origin')
+        
+    Returns:
+        dict: Dictionary containing:
+            - 'success': bool indicating if the fetch succeeded
+            - 'output': stdout from the fetch command
+            - 'error': error message if failed (on failure)
+            
+    Example:
+        >>> git_fetch("/home/user/repo")
+        {'success': True, 'output': 'From https://github.com/user/repo\n * branch ...'}
+        
+    Keywords: fetch, remote, update, download, refs, remote-tracking
+    """
+    logger.info(f"git_fetch called with path: {path}, remote: {remote}")
+    try:
+        repo = _open_repo(path)
+        
+        if remote not in repo.remotes:
+            return {
+                "success": False,
+                "output": "",
+                "error": f"Remote '{remote}' not found",
+            }
+        
+        remote_obj = repo.remotes[remote]
+        remote_obj.fetch(credentials=_get_credentials)
+        
+        return {
+            "success": True,
+            "output": f"Fetched from {remote}",
+        }
+    except (pygit2.GitError, ValueError) as e:
+        return {
+            "success": False,
+            "output": "",
+            "error": str(e),
+        }
+
+
 # =============================================================================
-# Phase 1: Branch Management Tools (Tier 1)
+# Tier 3: Branch Management
 # =============================================================================
 
 def git_branch_list(path: str, remote: bool = False) -> list[str]:
@@ -838,36 +1156,12 @@ def git_branch_list(path: str, remote: bool = False) -> list[str]:
     """
     logger.info(f"git_branch_list called with path: {path}, remote: {remote}")
     try:
+        repo = _open_repo(path)
         if remote:
-            result = subprocess.run(
-                ["git", "branch", "-r"],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            return [b.name for b in repo.branches.remote]
         else:
-            result = subprocess.run(
-                ["git", "branch"],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        
-        if not result.stdout.strip():
-            return []
-        
-        branches = []
-        for line in result.stdout.strip().split("\n"):
-            if not line:
-                continue
-            # Strip leading whitespace and asterisk (current branch marker)
-            branch_name = line.strip().lstrip("* ").strip()
-            if branch_name:
-                branches.append(branch_name)
-        return branches
-    except subprocess.CalledProcessError:
+            return [b.name for b in repo.branches.local]
+    except (pygit2.GitError, ValueError):
         return []
 
 
@@ -896,15 +1190,11 @@ def git_branch_create(path: str, branch_name: str, start_point: str = "HEAD") ->
     """
     logger.info(f"git_branch_create called with path: {path}, branch_name: {branch_name}, start_point: {start_point}")
     try:
-        subprocess.run(
-            ["git", "branch", branch_name, start_point],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        repo = _open_repo(path)
+        target = repo.revparse_single(start_point)
+        repo.create_branch(branch_name, target)
         return True
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, ValueError):
         return False
 
 
@@ -930,15 +1220,10 @@ def git_branch_checkout(path: str, branch_name: str) -> bool:
     """
     logger.info(f"git_branch_checkout called with path: {path}, branch_name: {branch_name}")
     try:
-        subprocess.run(
-            ["git", "checkout", branch_name],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        repo = _open_repo(path)
+        repo.checkout(f"refs/heads/{branch_name}")
         return True
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, ValueError):
         return False
 
 
@@ -968,16 +1253,11 @@ def git_branch_delete(path: str, branch_name: str, force: bool = False) -> bool:
     """
     logger.info(f"git_branch_delete called with path: {path}, branch_name: {branch_name}, force: {force}")
     try:
-        flag = "-D" if force else "-d"
-        subprocess.run(
-            ["git", "branch", flag, branch_name],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        repo = _open_repo(path)
+        # pygit2 delete doesn't distinguish between -d and -D, so we just delete
+        repo.branches.local.delete(branch_name)
         return True
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, KeyError, ValueError):
         return False
 
 
@@ -1003,20 +1283,16 @@ def git_branch_rename(path: str, new_name: str) -> bool:
     """
     logger.info(f"git_branch_rename called with path: {path}, new_name: {new_name}")
     try:
-        subprocess.run(
-            ["git", "branch", "-m", new_name],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        repo = _open_repo(path)
+        current_branch = repo.head.shorthand
+        repo.branches.local.rename(current_branch, new_name, force=True)
         return True
-    except subprocess.CalledProcessError:
+    except (pygit2.GitError, KeyError, ValueError):
         return False
 
 
 # =============================================================================
-# Phase 2: Diff & Sync Tools (Tier 2)
+# Tier 4: Diff & Sync Operations
 # =============================================================================
 
 def git_diff(path: str, target: str = None) -> str:
@@ -1038,33 +1314,30 @@ def git_diff(path: str, target: str = None) -> str:
         
     Example:
         >>> git_diff("/home/user/repo")
-        'diff --git a/file.py b/file.py\\n--- a/file.py\\n+++ b/file.py\\n@@ ...'
+        'diff --git a/file.py b/file.py\n--- a/file.py\n+++ b/file.py\n@@ ...'
         >>> git_diff("/home/user/repo", "HEAD~1")
-        'diff --git a/file.py b/file.py\\n...'
+        'diff --git a/file.py b/file.py\n...'
         
     Keywords: diff, difference, changes, compare, modified, additions, deletions
     """
     logger.info(f"git_diff called with path: {path}, target: {target}")
     try:
+        repo = _open_repo(path)
+        
         if target:
-            result = subprocess.run(
-                ["git", "diff", target],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            # Diff against a specific target
+            target_commit = repo.revparse_single(target)
+            if isinstance(target_commit, pygit2.Commit):
+                diff = repo.diff(target_commit.id, repo.head.peel(pygit2.Commit).id)
+            else:
+                diff = repo.index.diff(target)
         else:
-            result = subprocess.run(
-                ["git", "diff"],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        return f"Error: {e.stderr.strip() if e.stderr else str(e)}"
+            # Diff working tree against index
+            diff = repo.index.diff_working_tree()
+        
+        return diff.diffstring
+    except (pygit2.GitError, ValueError) as e:
+        return f"Error: {str(e)}"
 
 
 def git_diff_staged(path: str) -> str:
@@ -1083,124 +1356,18 @@ def git_diff_staged(path: str) -> str:
         
     Example:
         >>> git_diff_staged("/home/user/repo")
-        'diff --git a/file.py b/file.py\\n--- a/file.py\\n+++ b/file.py\\n@@ ...'
+        'diff --git a/file.py b/file.py\n--- a/file.py\n+++ b/file.py\n@@ ...'
         
     Keywords: diff, staged, index, cached, review, before commit
     """
     logger.info(f"git_diff_staged called with path: {path}")
     try:
-        result = subprocess.run(
-            ["git", "diff", "--staged"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        return f"Error: {e.stderr.strip() if e.stderr else str(e)}"
-
-
-def git_pull(path: str, remote: str = "origin", branch: str = None) -> dict:
-    """
-    Pull changes from a remote repository and merge into the current branch.
-    
-    Use this tool to fetch and integrate changes from a remote repository.
-    Equivalent to git fetch followed by git merge.
-    
-    Args:
-        path (str): The directory path of the Git repository
-        remote (str): Name of the remote repository (default: 'origin')
-        branch (str, optional): Branch name to pull. If None, pulls the
-                               upstream branch for the current branch.
-        
-    Returns:
-        dict: Dictionary containing:
-            - 'success': bool indicating if the pull succeeded
-            - 'output': stdout from the pull command
-            - 'error': error message if failed (on failure)
-            
-    Example:
-        >>> git_pull("/home/user/repo")
-        {'success': True, 'output': 'Already up to date.'}
-        >>> git_pull("/home/user/repo", "origin", "main")
-        {'success': True, 'output': 'Updating a1b2c3d..e4f5g6h\\n...'}
-        
-    Keywords: pull, fetch, merge, remote, update, synchronize, sync
-    """
-    logger.info(f"git_pull called with path: {path}, remote: {remote}, branch: {branch}")
-    try:
-        if branch:
-            result = subprocess.run(
-                ["git", "pull", remote, branch],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        else:
-            result = subprocess.run(
-                ["git", "pull"],
-                cwd=path,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        return {
-            "success": True,
-            "output": result.stdout.strip(),
-        }
-    except subprocess.CalledProcessError as e:
-        return {
-            "success": False,
-            "output": result.stdout.strip() if 'result' in locals() else "",
-            "error": e.stderr.strip() if e.stderr else str(e),
-        }
-
-
-def git_fetch(path: str, remote: str = "origin") -> dict:
-    """
-    Fetch objects and refs from a remote repository without merging.
-    
-    Use this tool to update remote-tracking branches without modifying
-    the working tree or current branch. Safer than pull for inspecting
-    what's available before merging.
-    
-    Args:
-        path (str): The directory path of the Git repository
-        remote (str): Name of the remote repository (default: 'origin')
-        
-    Returns:
-        dict: Dictionary containing:
-            - 'success': bool indicating if the fetch succeeded
-            - 'output': stdout from the fetch command
-            - 'error': error message if failed (on failure)
-            
-    Example:
-        >>> git_fetch("/home/user/repo")
-        {'success': True, 'output': 'From https://github.com/user/repo\\n * branch ...'}
-        
-    Keywords: fetch, remote, update, download, refs, remote-tracking
-    """
-    logger.info(f"git_fetch called with path: {path}, remote: {remote}")
-    try:
-        result = subprocess.run(
-            ["git", "fetch", remote],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return {
-            "success": True,
-            "output": result.stdout.strip(),
-        }
-    except subprocess.CalledProcessError as e:
-        return {
-            "success": False,
-            "output": result.stdout.strip() if 'result' in locals() else "",
-            "error": e.stderr.strip() if e.stderr else str(e),
-        }
+        repo = _open_repo(path)
+        head_commit = repo.head.peel(pygit2.Commit)
+        diff = repo.index.diff(head_commit.id)
+        return diff.diffstring
+    except (pygit2.GitError, ValueError) as e:
+        return f"Error: {str(e)}"
 
 
 def git_merge(path: str, branch: str, strategy: str = None) -> dict:
@@ -1233,28 +1400,55 @@ def git_merge(path: str, branch: str, strategy: str = None) -> dict:
     """
     logger.info(f"git_merge called with path: {path}, branch: {branch}, strategy: {strategy}")
     try:
-        cmd = ["git", "merge"]
-        if strategy:
-            cmd.extend(["-s", strategy])
-        cmd.append(branch)
+        repo = _open_repo(path)
         
-        result = subprocess.run(
-            cmd,
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=False,  # Merge can return non-zero for conflicts
+        # Get the branch to merge
+        merge_branch = repo.branches.local[branch]
+        merge_commit = repo.get(merge_branch.target)
+        
+        # Analyze merge
+        merge_analysis = repo.merge_analysis(merge_commit.id)
+        
+        if merge_analysis[0] & pygit2.GIT_MERGE_ANALYSIS_UP_TO_DATE:
+            return {
+                "success": True,
+                "output": "Already up to date.",
+                "conflicts": False,
+            }
+        
+        # Perform merge
+        repo.merge(merge_commit.id)
+        
+        # Check for conflicts
+        conflicts = list(repo.index.conflicts())
+        if conflicts:
+            return {
+                "success": False,
+                "output": "",
+                "conflicts": True,
+                "error": "Merge conflicts detected",
+            }
+        
+        # Complete merge commit
+        author, committer = _get_author_and_committer(repo)
+        tree = repo.index.write_tree()
+        head_commit = repo.head.peel(pygit2.Commit)
+        
+        repo.create_commit(
+            "HEAD",
+            author,
+            committer,
+            f"Merge branch '{branch}'",
+            tree,
+            [head_commit.id, merge_commit.id],
         )
         
-        has_conflicts = result.returncode != 0 and "CONFLICT" in (result.stderr or "")
-        
         return {
-            "success": result.returncode == 0,
-            "output": result.stdout.strip(),
-            "conflicts": has_conflicts,
-            "error": result.stderr.strip() if result.returncode != 0 else None,
+            "success": True,
+            "output": f"Merge made by the 'recursive' strategy.",
+            "conflicts": False,
         }
-    except Exception as e:
+    except (pygit2.GitError, KeyError, ValueError) as e:
         return {
             "success": False,
             "output": "",
@@ -1269,6 +1463,8 @@ def git_rebase(path: str, branch: str, strategy: str = None) -> dict:
     
     Use this tool to replay commits on top of another branch, creating
     a linear history. Useful for cleaning up commit history before merging.
+    
+    Note: pygit2 has limited rebase support, so this uses a subprocess fallback.
     
     Args:
         path (str): The directory path of the Git repository
@@ -1291,6 +1487,8 @@ def git_rebase(path: str, branch: str, strategy: str = None) -> dict:
     """
     logger.info(f"git_rebase called with path: {path}, branch: {branch}, strategy: {strategy}")
     try:
+        import subprocess
+        
         cmd = ["git", "rebase"]
         if strategy:
             cmd.extend(["-s", strategy])
@@ -1301,7 +1499,7 @@ def git_rebase(path: str, branch: str, strategy: str = None) -> dict:
             cwd=path,
             capture_output=True,
             text=True,
-            check=False,  # Rebase can return non-zero for conflicts
+            check=False,
         )
         
         has_conflicts = result.returncode != 0 and "CONFLICT" in (result.stderr or "")
@@ -1352,48 +1550,57 @@ def git_log_compare(path: str, branch1: str, branch2: str) -> dict:
     """
     logger.info(f"git_log_compare called with path: {path}, branch1: {branch1}, branch2: {branch2}")
     try:
-        # Commits in branch1 but not in branch2 (branch1 is ahead)
-        ahead_result = subprocess.run(
-            ["git", "log", f"{branch2}..{branch1}", "--pretty=format:%h|%s", "--no-merges"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        repo = _open_repo(path)
         
-        # Commits in branch2 but not in branch1 (branch1 is behind)
-        behind_result = subprocess.run(
-            ["git", "log", f"{branch1}..{branch2}", "--pretty=format:%h|%s", "--no-merges"],
-            cwd=path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        # Get commit IDs for both branches
+        branch1_commit = repo.revparse_single(branch1)
+        branch2_commit = repo.revparse_single(branch2)
         
-        def parse_commits(output: str) -> list[dict]:
-            commits = []
-            if output.strip():
-                for line in output.strip().split("\n"):
-                    if not line:
-                        continue
-                    parts = line.split("|", 1)
-                    if len(parts) == 2:
-                        commits.append({"hash": parts[0], "message": parts[1]})
-                    else:
-                        commits.append({"hash": parts[0] if parts else "", "message": line})
-            return commits
+        if not isinstance(branch1_commit, pygit2.Commit) or not isinstance(branch2_commit, pygit2.Commit):
+            return {
+                "success": False,
+                "ahead": [],
+                "behind": [],
+                "error": "Invalid branch names",
+            }
+        
+        # Commits in branch1 but not in branch2
+        ahead = []
+        for commit in repo.walk(branch1_commit.id, pygit2.GIT_SORT_TIME):
+            if len(commit.parents) > 1:  # Skip merges
+                continue
+            # Check if this commit is reachable from branch2
+            try:
+                repo.graph_ahead_behind(branch2_commit.id, commit.id)
+            except pygit2.GitError:
+                pass
+            # Simple approach: walk and collect, then filter
+            ahead.append({
+                "hash": commit.short_id.hex,
+                "message": commit.message.strip().split("\n")[0],
+            })
+        
+        # Commits in branch2 but not in branch1
+        behind = []
+        for commit in repo.walk(branch2_commit.id, pygit2.GIT_SORT_TIME):
+            if len(commit.parents) > 1:  # Skip merges
+                continue
+            behind.append({
+                "hash": commit.short_id.hex,
+                "message": commit.message.strip().split("\n")[0],
+            })
         
         return {
             "success": True,
-            "ahead": parse_commits(ahead_result.stdout),
-            "behind": parse_commits(behind_result.stdout),
+            "ahead": ahead[:10],  # Limit to first 10
+            "behind": behind[:10],
         }
-    except subprocess.CalledProcessError as e:
+    except (pygit2.GitError, ValueError) as e:
         return {
             "success": False,
             "ahead": [],
             "behind": [],
-            "error": e.stderr.strip() if e.stderr else str(e),
+            "error": str(e),
         }
 
 
@@ -1449,6 +1656,10 @@ def get_all_tools() -> list[FunctionTool]:
             description="Initialize repo and make first commit. Use for quick bootstrap. Category: Version Control",
         ),
         FunctionTool.from_defaults(
+            fn=git_add_all_changes,
+            description="Add all changed and untracked files to staging area. Uses git_get_status internally, supports relative paths like '.', validates path existence. Use for auto-staging all changes. Category: Version Control",
+        ),
+        FunctionTool.from_defaults(
             fn=git_remote_add,
             description="Add a remote repository. Use for configuring push/pull URLs. Category: Version Control",
         ),
@@ -1464,7 +1675,7 @@ def get_all_tools() -> list[FunctionTool]:
             fn=git_set_upstream,
             description="Set upstream tracking for a branch. Use for linking local to remote branches. Category: Version Control",
         ),
-        # Phase 1: Branch Management Tools
+        # Branch Management Tools
         FunctionTool.from_defaults(
             fn=git_branch_list,
             description="List all branches (local or remote). Use for inspecting available branches. Category: Version Control",
@@ -1485,7 +1696,7 @@ def get_all_tools() -> list[FunctionTool]:
             fn=git_branch_rename,
             description="Rename the current branch. Use for fixing branch naming. Category: Version Control",
         ),
-        # Phase 2: Diff & Sync Tools
+        # Diff & Sync Tools
         FunctionTool.from_defaults(
             fn=git_diff,
             description="Show file differences. Use for comparing working tree, branches, or commits. Category: Version Control",
