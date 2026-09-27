@@ -1,6 +1,6 @@
 # Torvalds' AI Agent Toolkit
 
-A comprehensive, general-purpose AI agent toolkit designed for engineering scientists, mathematicians, database administrators, and technical professionals. This project provides specialized capabilities for mathematical calculations, system operations, database queries, Git repository management, and technical problem-solving—with full access to underlying OS functionality.
+A comprehensive, general-purpose AI agent toolkit designed for engineering scientists, mathematicians, database administrators, and technical professionals. This project provides specialized capabilities for mathematical calculations, system operations, database queries, Git/GitHub repository management, APT package management, and technical problem-solving with full access to underlying OS functionality.
 
 ---
 
@@ -8,13 +8,13 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 
 **Torvalds** is an AI assistant that can directly interact with the host operating system and a wide range of technical tools. The toolkit is designed to support engineering scientists, mathematicians, DevOps engineers, and other technical professionals with comprehensive computational and operational capabilities.
 
-> **Key Philosophy**: Tool-first approach—always use provided tools for calculations, file operations, SQL, etc. Never simulate results.
+> **Key Philosophy**: Tool-first approach - always use provided tools for calculations, file operations, SQL, etc. Never simulate results.
 
 ---
 
 ## Toolkits Included
 
-> **Note**: The files ending in `*_toolkit.py` are **not agents** themselves—they are **toolkits** that provide tools/functions the agent can call and perform.
+> **Note**: The files ending in `*_toolkit.py` are **not agents** themselves - they are **toolkits** that provide tools/functions the agent can call and perform.
 
 ### 1. Math Toolkit (`agent_math_toolkit.py`)
 - Provides mathematical operations: addition, multiplication, division
@@ -35,7 +35,16 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 - Execute commands with custom environment variables
 - Check file permissions
 
-### 4. Git Repository Toolkit (`agent_git_toolkit.py`)
+### 4. Windows PowerShell Toolkit (`agent_windows_toolkit.py`)
+- Execute PowerShell commands on Windows systems
+- Run multiple commands sequentially with batch operation support
+- Parse command output into structured format
+- Get system information via PowerShell cmdlets
+- Check file permissions and access rules
+- Execute commands with custom environment variables
+- Full Windows system integration
+
+### 5. Git Repository Toolkit (`agent_git_toolkit.py`)
 - Initialize and manage Git repositories
 - Stage, commit, and push changes
 - Retrieve commit history and repository status
@@ -43,41 +52,65 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 - Manage remote repositories and upstream tracking
 - Get latest commit and recent changes
 
-### 5. Database Toolkit (`agent_db_toolkit.py`)
+### 6. GitHub Toolkit (`agent_github_toolkit.py`)
+- GitHub API integration for Pull Request management
+- Create, list, update, close, and merge Pull Requests
+- Add comments and review file changes
+- Check authentication status and user information
+- Configure Git credentials
+- Full PR workflow support
+
+### 7. APT Package Management Toolkit (`agent_apt_toolkit.py`)
+- Interactive Debian/Ubuntu package installation
+- Command resolution to APT packages
+- Multiple password prompting methods (console, whiptail, env_var, parameter)
+- Sudo password caching and validation
+- Batch package installation
+- Automatic dependency resolution workflow
+
+### 8. Database Toolkit (`agent_db_toolkit.py`)
 - Execute SQL queries on **PostgreSQL** databases
 - Execute SQL queries on **MySQL** databases
 - Return query results as structured dictionaries
 - Configurable connection parameters via `db_toolkit_config.yaml`
 
-### 6. Chat Memory Module (`agent_chat_memory.py`)
+### 9. Chat Memory Module (`agent_chat_memory.py`)
 - Persistent chat memory backed by PostgreSQL
 - Token-limited memory buffers for conversation context
 - Integration with LlamaIndex for AI-powered memory management
 
-### 7. Persistent Cache System (`agent_cache_system.py`)
+### 10. Persistent Cache System (`agent_cache_system.py`)
 - JSON-based persistent cache for operational context between sessions
 - Stores session info, current directory, active databases, Git repos, error logs
 - Configurable cache location via `TORVALDS_CACHE_PATH` environment variable
 - Auto-load on startup, incremental updates, configurable retention
 
-### 8. Stats Handler (`agent_stats_handler.py`)
+### 11. Stats Handler (`agent_stats_handler.py`)
 - Per-request statistics collection using Llama Index callbacks
 - Tracks token usage (prompt/completion), LLM call count, tool invocations, timing, and errors
 - Rich console rendering of statistics after each agent response
 - Persistent stats history in cache (configurable max entries)
 - Configurable via environment variables (TORVALDS_STATS_ENABLED, TORVALDS_STATS_VERBOSE, etc.)
 
-### 9. Tool Retriever (`agent_tool_retriever.py`)
+### 12. Tool Retriever (`agent_tool_retriever.py`)
 - On-demand semantic tool loading using Llama Index ObjectIndex
 - Ollama embedding support (nomic-embed-text model)
 - Reduces context window pollution by loading only relevant tools per query
 - Configurable similarity_top_k for tool retrieval
 
-### 10. Main Orchestrator (`agent-torvalds.py`)
+### 13. Main Orchestrator (`agent-torvalds.py`)
 - The actual **agent** that coordinates all toolkits
 - Provides unified interface to all capabilities
 - Handles request routing and response aggregation
 - Integrated stats rendering and caching
+- Interactive console with command processing
+
+### 14. Spinner Manager (`spinner_manager.py`)
+- Global singleton for console spinner management
+- Pause/resume functionality for interactive dialogs
+- Context manager support for automatic pause/resume
+- Callback hooks for lifecycle events
+- Shared across toolkit modules
 
 ---
 
@@ -87,9 +120,11 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 |----------|-------------|
 | **Mathematical Operations** | Precise numerical calculations, mathematical problem solving |
 | **System-Level Access** | Direct interaction with OS resources, file management |
-| **Shell Command Execution** | Execute commands, parse output, handle errors, set environment variables |
-| **Database Queries** | PostgreSQL & MySQL support with configurable connections |
+| **Shell Command Execution** | Linux bash and Windows PowerShell support, parse output, handle errors, set environment variables |
+| **Database Queries** | PostgreSQL and MySQL support with configurable connections |
 | **Git Management** | Full Git workflow: init, commit, push, changelog generation |
+| **GitHub Integration** | Full PR lifecycle: create, review, comment, merge, authentication |
+| **APT Package Management** | Interactive package installation with sudo handling and multiple password methods |
 | **Chat Memory** | Persistent conversation memory with LlamaIndex integration |
 | **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
 | **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
@@ -128,6 +163,7 @@ pip install -r requirements.txt
 - MySQL (optional, for database toolkit)
 - Git installed on the system
 - Ollama (optional, for on-demand tool retrieval with embeddings)
+- Debian/Ubuntu system (for APT package management toolkit)
 
 ---
 
@@ -165,6 +201,13 @@ Configure per-request statistics via environment variables:
 | `TORVALDS_STATS_MAX_HISTORY` | `500` | Max number of requests to retain |
 | `TORVALDS_STATS_FORMAT` | `compact` | Output format: `compact`, `detailed`, `json` |
 
+### APT Package Management Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `TORVALDS_SUDO_PASSWORD` | - | Pre-set sudo password for APT operations |
+| `TORVALDS_DEFAULT_PROMPT_METHOD` | `console` | Default password prompt method: `console`, `whiptail`, `env_var`, `parameter` |
+
 ### Cache Configuration
 
 | Variable | Default | Description |
@@ -194,11 +237,19 @@ mkdir('/path/to/new/dir')
 content = read_file('/path/to/file.txt')
 ```
 
-### Shell Commands
+### Linux Shell Commands
 ```python
 from agent_linux_toolkit import execute_shell_command, get_system_info
 
 result = execute_shell_command('ls -la')
+sys_info = get_system_info()
+```
+
+### Windows PowerShell Commands
+```python
+from agent_windows_toolkit import execute_shell_command, get_system_info
+
+result = execute_shell_command('Get-Process | Select-Object -First 5')
 sys_info = get_system_info()
 ```
 
@@ -209,6 +260,35 @@ from agent_git_toolkit import git_init_repo, git_commit, git_get_status
 git_init_repo('/path/to/repo')
 git_commit('/path/to/repo', 'Initial commit')
 status = git_get_status('/path/to/repo')
+```
+
+### GitHub PR Operations
+```python
+from agent_github_toolkit import github_create_pull_request, github_list_pull_requests
+
+# Create a PR
+result = github_create_pull_request(
+    owner="username",
+    repo="repo-name",
+    title="Add new feature",
+    body="Description...",
+    head="feature-branch",
+    base="main"
+)
+
+# List open PRs
+prs = github_list_pull_requests("username", "repo-name", state="open")
+```
+
+### APT Package Management
+```python
+from agent_apt_toolkit import install_package, interactive_install_missing_command
+
+# Install a package
+result = install_package("ffmpeg", update_first=True)
+
+# Auto-resolve and install missing command
+result = interactive_install_missing_command("ffmpeg")
 ```
 
 ### Database Queries
@@ -251,40 +331,84 @@ from agent_stats_handler import RequestStatsHandler, StatsRenderer
 
 ```
 agent-torvalds/
-├── agent_math_toolkit.py      # Mathematical operations toolkit
-├── agent_os_toolkit.py        # System-level operations toolkit
-├── agent_linux_toolkit.py     # Shell command execution toolkit
-├── agent_git_toolkit.py       # Git repository management toolkit
-├── agent_db_toolkit.py        # Database query toolkit (PostgreSQL & MySQL)
-├── agent_chat_memory.py       # Chat memory module with LlamaIndex
-├── agent_cache_system.py      # Persistent cache for operational context
-├── agent_stats_handler.py     # Per-request statistics collection and rendering
-├── agent_tool_retriever.py    # On-demand semantic tool loading
-├── agent-torvalds.py          # Main orchestrator (the actual agent)
-├── agent-torvalds-cpp.py      # C++ toolkit integration
-├── db_toolkit_config.yaml     # Database configuration
-├── requirements.txt           # Project dependencies
-├── LICENSE                    # MIT License
-├── CHANGELOG.md              # Version history
-├── README.md                 # This file
-├── __pycache__/              # Python cache
-├── .venv/                    # Virtual environment
-├── .git/                     # Git repository
-├── .gitignore               # Git ignore rules
-├── .idea/                    # IDE configuration
-├── docs/                     # Documentation and proposals
-│   └── proposals/            # Design proposals
-│       ├── agent_cache_system.md
-│       ├── extended_logging_statistics.md
-│       └── on_demand_tool_loading.md
-└── tests/                    # Test suite
-    ├── __init__.py
-    ├── test_cache_system.py
-    ├── test_git_toolkit.py
-    ├── test_linux_toolkit.py
-    ├── test_math_toolkit.py
-    └── test_os_toolkit.py
+| agent_math_toolkit.py          # Mathematical operations toolkit
+| agent_os_toolkit.py            # System-level operations toolkit
+| agent_linux_toolkit.py         # Linux shell command execution toolkit
+| agent_windows_toolkit.py       # Windows PowerShell execution toolkit
+| agent_git_toolkit.py           # Git repository management toolkit
+| agent_github_toolkit.py        # GitHub API and PR management toolkit
+| agent_apt_toolkit.py           # APT package management toolkit
+| agent_db_toolkit.py            # Database query toolkit (PostgreSQL and MySQL)
+| agent_chat_memory.py           # Chat memory module with LlamaIndex
+| agent_cache_system.py          # Persistent cache for operational context
+| agent_stats_handler.py         # Per-request statistics collection and rendering
+| agent_tool_retriever.py        # On-demand semantic tool loading
+| agent-torvalds.py              # Main orchestrator (the actual agent)
+| agent-torvalds-cpp.py          # C++ toolkit integration
+| spinner_manager.py             # Global console spinner management
+| db_toolkit_config.yaml         # Database configuration
+| requirements.txt               # Project dependencies
+| LICENSE                        # MIT License
+| CHANGELOG.md                   # Version history
+| README.md                      # This file
+| __pycache__/                  # Python cache
+| .venv/                        # Virtual environment
+| .git/                         # Git repository
+| .gitignore                    # Git ignore rules
+| .idea/                        # IDE configuration
+| docs/                         # Documentation and proposals
+| +-- proposals/                # Design proposals
+| +-- agent_cache_system.md
+| +-- extended_logging_statistics.md
+| +-- on_demand_tool_loading.md
+| components/                   # Helper modules and utilities
+| +-- README.md                 # Components documentation
+| +-- __init__.py
+| +-- whiptail_password.py      # Whiptail password prompter
+| +-- spinner_controller.py     # Spinner controller
+| +-- state_handler.py          # State management handler
+| +-- stats_handler.py          # Stats handler component
+| +-- event_consumer.py         # Event consumer
+| investigate/                  # Investigation artifacts and proposals
+| tests/                        # Test suite
+| +-- __init__.py
+| +-- test_cache_system.py
+| +-- test_git_toolkit.py
+| +-- test_linux_toolkit.py
+| +-- test_windows_toolkit.py
+| +-- test_apt_toolkit.py
+| +-- test_math_toolkit.py
+| +-- test_os_toolkit.py
+| +-- test_stats.py
+| +-- test_stats_mock.py
+| +-- test_logging_cli.py
 ```
+
+---
+
+## Recent Updates (September 2026)
+
+### Latest Features Added
+- **APT Package Management Toolkit**: Full Debian/Ubuntu package installation with multiple password methods
+- **Windows PowerShell Toolkit**: Native Windows PowerShell support for command execution
+- **GitHub Toolkit**: Complete PR lifecycle management including creation, review, commenting, and merging
+- **Spinner Manager**: Global console spinner with pause/resume for interactive operations
+- **Real-time Event Streaming**: State management and thread-safe spinner with event consumer
+- **Enhanced Logging**: CLI argument for logging level configuration
+
+### Key Refactors
+- Moved stats handler to components directory for better organization
+- Added comprehensive debug logging throughout the codebase
+- Fixed cmd.lower() bug for console command processing
+- Improved git_add_files with input validation and richer response
+
+### Pull Request History
+- **PR #6**: Merge feature/logging-level-cli-argument into master
+- **PR #5**: Fix cmd.lower() bug and refactor stats_handler
+- **PR #4**: Merge investigation/llama-index-workflow
+- **PR #3**: Add Windows PowerShell toolkit support
+- **PR #2**: Add APT package management toolkit with enhanced git utilities
+- **PR #1**: Merge cognitive_overhead branch with major features
 
 ---
 
@@ -292,7 +416,7 @@ agent-torvalds/
 
 - **Tool-first**: Always use provided tools for calculations, file ops, SQL, etc.
 - **Safety first**: Before any destructive action (delete, drop, modify production data), explicit confirmation is required
-- **Clarity & transparency**: All actions are logged with clear messages
+- **Clarity and transparency**: All actions are logged with clear messages
 - **Context awareness**: Current directory, active databases, and running processes are tracked
 
 ---
