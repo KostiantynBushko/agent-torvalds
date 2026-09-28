@@ -12,6 +12,7 @@ Features:
   - Agent state tracking and management
   - Whiptail password dialog integration
   - Dynamic logging level control via --log-level CLI argument
+  - Graceful signal handling (SIGINT/SIGTERM) for clean shutdown
 
 Usage:
     python agent-torvalds.py              # Default mode (retriever-based, INFO logging)
@@ -25,6 +26,7 @@ import argparse
 import json
 import logging
 import os
+import signal
 import sys
 import uuid
 import platform
@@ -160,6 +162,53 @@ stats_renderer = StatsRenderer(console)
 # Global spinner controller instance (accessed by toolkit modules)
 # ---------------------------------------------------------------------------
 spinner_controller = SpinnerController(console)
+
+
+# ---------------------------------------------------------------------------
+# Signal handling for graceful shutdown
+# ---------------------------------------------------------------------------
+
+_shutdown_requested = False
+
+
+def _signal_handler(signum, frame):
+    """
+    Handle SIGINT (Ctrl+C) and SIGTERM for graceful shutdown.
+
+    Stops the spinner, ends the session, and exits cleanly.
+    If called a second time, force-exits immediately.
+    """
+    global _shutdown_requested
+
+    if _shutdown_requested:
+        # Second signal — force exit without further cleanup
+        console.print("\n[yellow]Force quitting...[/yellow]")
+        spinner_controller.stop()
+        try:
+            from agent_cache_system import end_session
+            end_session()
+        except Exception:
+            pass
+        sys.exit(130 if signum == signal.SIGINT else 143)
+
+    _shutdown_requested = True
+    spinner_controller.stop()
+    console.print("\n[yellow]Signal received, shutting down gracefully...[/yellow]")
+
+    try:
+        from agent_cache_system import end_session
+        end_session()
+    except Exception:
+        pass
+
+    console.print("[yellow]Goodbye![/yellow]")
+    sys.exit(0 if signum == signal.SIGTERM else 0)
+
+
+def _setup_signal_handlers():
+    """Register signal handlers for graceful shutdown."""
+    signal.signal(signal.SIGINT, _signal_handler)
+    signal.signal(signal.SIGTERM, _signal_handler)
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +435,9 @@ def render_stats_summary(summary: dict) -> None:
 
 
 async def main():
+    # Set up signal handlers before anything else
+    _setup_signal_handlers()
+
     args = parse_args()
 
     # Apply logging configuration from CLI argument (reconfigures if different from default)
@@ -411,7 +463,8 @@ async def main():
         f"[dim]Event streaming: {'enabled' if events_enabled else 'disabled'}[/dim]"
     )
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
-    console.print("[dim]Type '\\stats' to view statistics summary.[/dim]\n")
+    console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
+    console.print("[dim]Press Ctrl+C to exit gracefully.[/dim]\n")
 
     # Start a cache session
     start_session()
@@ -420,7 +473,23 @@ async def main():
     agent = create_agent(use_retriever=not args.full, top_k=args.top_k)
 
     while True:
-        cmd = console.input("[green]>>> [/green]").strip()
+        try:
+            cmd = console.input("[green]>>> [/green]").strip()
+        except EOFError:
+            # Handle EOF (e.g., piped input ends)
+            console.print("\n[yellow]EOF received, shutting down...[/yellow]")
+            from agent_cache_system import end_session
+            end_session()
+            console.print("[yellow]Goodbye![/yellow]")
+            break
+        except KeyboardInterrupt:
+            # Handle Ctrl+C during input
+            console.print("\n[yellow]Interrupted, shutting down...[/yellow]")
+            from agent_cache_system import end_session
+            end_session()
+            console.print("[yellow]Goodbye![/yellow]")
+            break
+
         if cmd.lower() in ("\\exit", "\\quit"):
             from agent_cache_system import end_session
             end_session()
