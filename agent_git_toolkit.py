@@ -256,6 +256,9 @@ def git_add_files(path: str, files: list) -> dict:
       - status['unstaged'] to stage only unstaged files from git_get_status response
       - status['untracked'] to stage only untracked files from git_get_status response
     
+    After adding files, this function verifies the operation by checking git status
+    to confirm which files were actually staged successfully.
+    
     Args:
         path (str): The directory path of the Git repository
         files (list): List of file path strings to add. Examples:
@@ -267,7 +270,8 @@ def git_add_files(path: str, files: list) -> dict:
     Returns:
         dict: Dictionary with keys:
             - 'success': bool indicating if the operation succeeded
-            - 'files_staged': list of files that were staged (on success)
+            - 'files_staged': list of files that were actually staged (verified via git status)
+            - 'files_failed': list of requested files that could not be staged (on success with partial failures)
             - 'error': error message with guidance (on failure)
             
     Example:
@@ -297,12 +301,45 @@ def git_add_files(path: str, files: list) -> dict:
     
     try:
         repo = _open_repo(path)
+        
+        # Capture status BEFORE adding to know what was already staged
+        status_before = _parse_git_status_porcelain(repo.status())
+        already_staged = set(status_before.get("staged", []))
+        
+        # Add files to index
         repo.index.add(files)
         repo.index.write()
-        return {
+        
+        # Verify by checking status AFTER adding
+        status_after = _parse_git_status_porcelain(repo.status())
+        now_staged = set(status_after.get("staged", []))
+        
+        # Determine which files were actually staged by this operation
+        newly_staged = now_staged - already_staged
+        
+        # Handle special case: if '.' was used, we can't verify individual files
+        if files == ['.']:
+            return {
+                "success": True,
+                "files_staged": list(now_staged),
+            }
+        
+        # For specific files, check which ones were successfully staged
+        requested_files = set(files)
+        successfully_staged = requested_files & newly_staged
+        failed_to_stage = requested_files - successfully_staged
+        
+        result = {
             "success": True,
-            "files_staged": files,
+            "files_staged": list(successfully_staged),
         }
+        
+        # Include failed files if any
+        if failed_to_stage:
+            result["files_failed"] = list(failed_to_stage)
+            logger.warning(f"Some files failed to stage: {list(failed_to_stage)}")
+        
+        return result
     except (pygit2.GitError, ValueError) as e:
         return {
             "success": False,
@@ -1649,7 +1686,7 @@ def get_all_tools() -> list[FunctionTool]:
         ),
         FunctionTool.from_defaults(
             fn=git_add_files,
-            description="Add files to staging area. The 'files' parameter must be a list of file path strings, e.g. ['file.py', 'README.md'] or ['.'] for all files. Use for preparing commits. Category: Version Control",
+            description="Add files to staging area. The 'files' parameter must be a list of file path strings, e.g. ['file.py', 'README.md'] or ['.'] for all files. Verifies staging success via git status. Use for preparing commits. Category: Version Control",
         ),
         FunctionTool.from_defaults(
             fn=git_commit,
