@@ -13,6 +13,7 @@ Features:
   - Whiptail password dialog integration
   - Dynamic logging level control via --log-level CLI argument
   - Graceful signal handling (SIGINT/SIGTERM) for clean shutdown
+  - Human-in-the-Loop (HITL) support with runtime toggle
 
 Usage:
     python agent-torvalds.py              # Default mode (retriever-based, INFO logging)
@@ -20,6 +21,12 @@ Usage:
     python agent-torvalds.py --top-k 10   # Adjust retrieval count
     python agent-torvalds.py --no-stats   # Disable request statistics
     python agent-torvalds.py --log-level DEBUG  # Enable debug logging
+
+Environment Variables:
+    TORVALDS_HITL_ENABLED       Enable/disable HITL (default: true)
+    TORVALDS_HITL_METHOD        Input method: 'console' or 'whiptail' (default: console)
+    TORVALDS_HITL_TIMEOUT       Timeout in seconds for HITL prompts (default: 30)
+    TORVALDS_HITL_DEFAULT_ANSWER Default answer on timeout (default: empty)
 """
 import asyncio
 import argparse
@@ -84,6 +91,15 @@ from components.state_handler import StateHandler
 from components.event_consumer import EventConsumer
 
 # ---------------------------------------------------------------------------
+# HITL Components (Step 8: Agent Integration)
+# ---------------------------------------------------------------------------
+from components.human_loop_handler import HumanLoopHandler
+from components.timeout_manager import TimeoutManager
+from components.hitl_runtime_toggle import HITLRuntimeToggle
+from components.console_input_module import ConsoleInputModule
+from components.whiptail_input_module import WhiptailInputModule
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 REQUEST_TIMEOUT = int(os.environ.get("TORVALDS_REQUEST_TIMEOUT", "99999"))
@@ -95,6 +111,14 @@ SIMILARITY_TOP_K = int(os.environ.get("TORVALDS_SIMILARITY_TOP_K", "8"))
 # Feature flags for event streaming
 ENABLE_EVENT_STREAMING = os.environ.get("TORVALDS_EVENT_STREAMING", "true").lower() in ("true", "1", "yes")
 ENABLE_VERBOSE_EVENTS = os.environ.get("TORVALDS_VERBOSE_EVENTS", "false").lower() in ("true", "1", "yes")
+
+# ---------------------------------------------------------------------------
+# HITL Configuration via Environment Variables
+# ---------------------------------------------------------------------------
+HITL_ENABLED = os.environ.get("TORVALDS_HITL_ENABLED", "true").lower() == "true"
+HITL_METHOD = os.environ.get("TORVALDS_HITL_METHOD", "console")  # "console" or "whiptail"
+HITL_TIMEOUT = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "30"))
+HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
 
 SYSTEM_PROMPT = (
     "Your name is Torvalds an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
@@ -162,6 +186,29 @@ stats_renderer = StatsRenderer(console)
 # Global spinner controller instance (accessed by toolkit modules)
 # ---------------------------------------------------------------------------
 spinner_controller = SpinnerController(console)
+
+
+# ---------------------------------------------------------------------------
+# HITL Runtime Toggle (global instance)
+# ---------------------------------------------------------------------------
+hitl_toggle = HITLRuntimeToggle(
+    initial_state=HITL_ENABLED,
+    console=console,
+)
+
+
+# ---------------------------------------------------------------------------
+# HITL Handler (global instance — wired into callback manager)
+# ---------------------------------------------------------------------------
+# Note: event_consumer is set later after it's created
+human_loop_handler = HumanLoopHandler(
+    input_method=HITL_METHOD,
+    default_timeout=HITL_TIMEOUT,
+    default_answer=HITL_DEFAULT_ANSWER,
+    console=console,
+    spinner=spinner_controller,
+    enable_hitl=HITL_ENABLED,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -316,14 +363,55 @@ def parse_args():
         help="Set logging verbosity level (default: %(default)s). "
              "Options: DEBUG, INFO, WARNING, ERROR, CRITICAL",
     )
+    parser.add_argument(
+        "--no-hitl",
+        action="store_true",
+        help="Disable Human-in-the-Loop (HITL) support",
+    )
+    parser.add_argument(
+        "--hitl-method",
+        type=str,
+        choices=["console", "whiptail"],
+        default=HITL_METHOD,
+        help="HITL input method (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--hitl-timeout",
+        type=int,
+        default=HITL_TIMEOUT,
+        help="HITL prompt timeout in seconds (default: %(default)s)",
+    )
     return parser.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# HITL Command Handler
+# ---------------------------------------------------------------------------
+
+async def handle_hitl_command(cmd: str) -> Optional[str]:
+    """
+    Handle HITL interactive commands.
+
+    Args:
+        cmd: The command string to process.
+
+    Returns:
+        Response message if it was a HITL command, None otherwise.
+    """
+    if hitl_toggle.is_hitl_command(cmd):
+        result = await hitl_toggle.process_command(cmd)
+        if result:
+            # Also update the human_loop_handler's enable_hitl flag
+            human_loop_handler.enable_hitl = hitl_toggle.is_enabled
+            return result
+    return None
 
 
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
 
-async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = True):
+async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = True, event_consumer: Optional[EventConsumer] = None):
     """
     Process a single command through the agent.
 
@@ -333,18 +421,25 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
         cmd: User input string
         agent: FunctionAgent instance
         enable_stats: Whether to collect and return statistics
+        event_consumer: Optional pre-configured EventConsumer (for HITL integration)
 
     Returns:
         tuple: (response_text, stats) if enable_stats else (response_text, None)
     """
-    handler = None
+    stats_handler = None
+
+    # Build callback manager with HITL handler
+    callback_handlers = []
 
     if enable_stats:
         request_id = str(uuid.uuid4())[:8]
-        handler = RequestStatsHandler(request_id=request_id, user_query=cmd)
-        callback_manager = CallbackManager([handler])
-    else:
-        callback_manager = CallbackManager([])
+        stats_handler = RequestStatsHandler(request_id=request_id, user_query=cmd)
+        callback_handlers.append(stats_handler)
+
+    # Add HITL handler to callback manager
+    callback_handlers.append(human_loop_handler)
+
+    callback_manager = CallbackManager(callback_handlers)
 
     try:
         chat_memory = agent_chat_memory.get_chat_memory()
@@ -359,13 +454,17 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
         )
 
         # Use event consumer for real-time feedback
-        state_handler = StateHandler()
-        event_consumer = EventConsumer(
-            spinner_controller=spinner_controller,
-            state_handler=state_handler,
-            console=console,
-            verbose=ENABLE_VERBOSE_EVENTS,
-        )
+        if event_consumer is None:
+            state_handler = StateHandler()
+            event_consumer = EventConsumer(
+                spinner_controller=spinner_controller,
+                state_handler=state_handler,
+                console=console,
+                verbose=ENABLE_VERBOSE_EVENTS,
+            )
+
+        # Wire event consumer into human loop handler
+        human_loop_handler.event_consumer = event_consumer
 
         result = await event_consumer.consume_events(workflow_handler, cmd)
 
@@ -375,8 +474,8 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
             else str(result)
         )
 
-        if handler:
-            stats = handler.finalize()
+        if stats_handler:
+            stats = stats_handler.finalize()
             return response_text, stats
 
         return response_text, None
@@ -386,8 +485,8 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
         from agent_cache_system import log_error
         log_error(str(e))
 
-        if handler:
-            stats = handler.finalize()
+        if stats_handler:
+            stats = stats_handler.finalize()
             stats.errors.append(str(e))
             return f"Error: {e}\n{traceback.format_exc()}", stats
 
@@ -450,6 +549,23 @@ async def main():
     events_enabled = ENABLE_EVENT_STREAMING and not args.no_events
     verbose_events = ENABLE_VERBOSE_EVENTS or args.verbose_events
 
+    # HITL configuration (CLI overrides env vars)
+    hitl_enabled = HITL_ENABLED and not args.no_hitl
+    hitl_method = args.hitl_method
+    hitl_timeout = args.hitl_timeout
+
+    # Update global HITL components with CLI values
+    hitl_toggle._enabled = hitl_enabled
+    human_loop_handler.enable_hitl = hitl_enabled
+    human_loop_handler.input_method = hitl_method
+    human_loop_handler.default_timeout = hitl_timeout
+
+    # Re-initialize input modules based on method
+    if hitl_method == "whiptail":
+        human_loop_handler.whiptail_input = WhiptailInputModule()
+    else:
+        human_loop_handler.console_input = ConsoleInputModule(console)
+
     console.print("[cyan]Torvalds AI Agent[/cyan]")
     console.print(f"[dim]Model: {MODEL} | Max iterations: {MAX_ITERATIONS}[/dim]")
     console.print(f"[dim]Logging: {args.log_level}[/dim]")
@@ -462,8 +578,13 @@ async def main():
     console.print(
         f"[dim]Event streaming: {'enabled' if events_enabled else 'disabled'}[/dim]"
     )
+    console.print(
+        f"[dim]HITL: {'enabled' if hitl_enabled else 'disabled'} (method={hitl_method}, timeout={hitl_timeout}s)[/dim]"
+    )
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
+    console.print("[dim]Type '\\hitl-status' to check HITL status.[/dim]")
+    console.print("[dim]Type 'toggle-hitl' to enable/disable HITL at runtime.[/dim]")
     console.print("[dim]Press Ctrl+C to exit gracefully.[/dim]\n")
 
     # Start a cache session
@@ -471,6 +592,18 @@ async def main():
 
     # Create agent
     agent = create_agent(use_retriever=not args.full, top_k=args.top_k)
+
+    # Create shared EventConsumer instance
+    state_handler = StateHandler()
+    event_consumer = EventConsumer(
+        spinner_controller=spinner_controller,
+        state_handler=state_handler,
+        console=console,
+        verbose=verbose_events,
+        hitl_timeout=hitl_timeout,
+        hitl_default_answer=HITL_DEFAULT_ANSWER,
+        hitl_enabled=hitl_enabled,
+    )
 
     while True:
         try:
@@ -502,14 +635,33 @@ async def main():
             render_stats_summary(summary)
             continue
 
+        if cmd.lower() == "\\hitl-status":
+            # Show HITL status
+            status_info = hitl_toggle.status_sync()
+            hitl_stats = event_consumer.get_hitl_stats()
+            console.print(f"\n[cyan]HITL Status:[/cyan]")
+            console.print(f"  Enabled: {'🟢 YES' if status_info['enabled'] else '🔴 NO'}")
+            console.print(f"  Method: {hitl_method}")
+            console.print(f"  Timeout: {hitl_timeout}s")
+            console.print(f"  Questions asked: {hitl_stats['question_count']}")
+            console.print(f"  Timeouts: {hitl_stats['timeout_count']}")
+            console.print(f"  Toggle count: {status_info['toggle_count']}")
+            continue
+
         if not cmd:
+            continue
+
+        # Check for HITL commands
+        hitl_response = await handle_hitl_command(cmd)
+        if hitl_response:
+            console.print(f"[cyan]{hitl_response}[/cyan]")
             continue
 
         # Use the global spinner controller
         spinner_controller.start()
         try:
             response, stats = await prompt_handler(
-                cmd, agent, enable_stats=stats_enabled
+                cmd, agent, enable_stats=stats_enabled, event_consumer=event_consumer
             )
         except Exception as e:
             response = f"[red]Error: {e}[/red]"
