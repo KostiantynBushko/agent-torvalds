@@ -81,6 +81,7 @@ class HumanLoopHandler(BaseCallbackHandler):
     - Track question history and timeout logs.
     - Emit ``AgentQuestionEvent`` and ``AgentAnswerEvent`` for external
       consumers (e.g. the EventConsumer workflow).
+    - Integrate with runtime toggle for dynamic HITL enable/disable.
 
     Usage::
 
@@ -89,6 +90,7 @@ class HumanLoopHandler(BaseCallbackHandler):
             default_timeout=30,
             default_answer="yes",
             enable_hitl=True,
+            runtime_toggle=hitl_toggle,  # Optional runtime toggle
         )
         # Register with LlamaIndex callback manager
         from llama_index.core.callbacks import CallbackManager
@@ -105,6 +107,7 @@ class HumanLoopHandler(BaseCallbackHandler):
         enable_hitl: bool = True,
         event_consumer: Any = None,
         question_patterns: Optional[List[str]] = None,
+        runtime_toggle: Any = None,
     ) -> None:
         """Initialise the HITL callback handler.
 
@@ -119,6 +122,8 @@ class HumanLoopHandler(BaseCallbackHandler):
                 ``AgentQuestionEvent`` / ``AgentAnswerEvent`` into.
             question_patterns: Optional list of regex strings to override
                 the built-in question detection patterns.
+            runtime_toggle: Optional ``HITLRuntimeToggle`` instance for
+                dynamic HITL enable/disable during execution.
         """
         # BaseCallbackHandler requires ignore lists
         super().__init__(
@@ -133,6 +138,7 @@ class HumanLoopHandler(BaseCallbackHandler):
         self.spinner = spinner
         self.enable_hitl = enable_hitl
         self.event_consumer = event_consumer
+        self.runtime_toggle = runtime_toggle
 
         # Input modules
         self.console_input = ConsoleInputModule(self.console)
@@ -159,10 +165,11 @@ class HumanLoopHandler(BaseCallbackHandler):
         self._lock = asyncio.Lock()
 
         logger.debug(
-            "HumanLoopHandler initialised — method=%s, timeout=%ds, hitl=%s",
+            "HumanLoopHandler initialised — method=%s, timeout=%ds, hitl=%s, runtime_toggle=%s",
             self.input_method,
             self.default_timeout,
             self.enable_hitl,
+            bool(self.runtime_toggle),
         )
 
     # ------------------------------------------------------------------
@@ -192,7 +199,7 @@ class HumanLoopHandler(BaseCallbackHandler):
         We listen for ``AGENT_STEP`` starts to detect questions in
         intermediate agent outputs.
         """
-        if not self.enable_hitl:
+        if not self._is_hitl_enabled():
             return event_id
 
         if event_type == CBEventType.AGENT_STEP and payload:
@@ -225,7 +232,7 @@ class HumanLoopHandler(BaseCallbackHandler):
         We listen for ``LLM`` and ``AGENT_STEP`` ends to detect questions
         in final outputs.
         """
-        if not self.enable_hitl:
+        if not self._is_hitl_enabled():
             return
 
         if event_type in (CBEventType.LLM, CBEventType.AGENT_STEP) and payload:
@@ -244,6 +251,20 @@ class HumanLoopHandler(BaseCallbackHandler):
                             default_answer=self.default_answer,
                         )
                     )
+
+    # ------------------------------------------------------------------
+    # HITL Enable Check (with runtime toggle support)
+    # ------------------------------------------------------------------
+
+    def _is_hitl_enabled(self) -> bool:
+        """Check if HITL is enabled (considering runtime toggle).
+        
+        Returns:
+            True if HITL is enabled, False otherwise.
+        """
+        if self.runtime_toggle is not None:
+            return self.enable_hitl and self.runtime_toggle.is_enabled
+        return self.enable_hitl
 
     # ------------------------------------------------------------------
     # Question detection

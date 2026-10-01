@@ -10,6 +10,7 @@ Now includes HITL (Human-in-the-Loop) support:
 - Handles custom AgentQuestionEvent from HITL handler
 - Pauses/resumes spinner during human prompts
 - Sends HumanResponseEvent back to the workflow
+- Integrates with runtime toggle for dynamic HITL enable/disable
 
 Usage:
     consumer = EventConsumer(
@@ -21,7 +22,7 @@ Usage:
     )
     
     handler = agent.run(cmd, ...)
-    result = await consumer.consume_events(handler, cmd)
+    result = await consumer.consume_events(handler, cmd, hitl_toggle=hitl_toggle)
 """
 import asyncio
 import logging
@@ -122,6 +123,7 @@ class EventConsumer:
     - Manage spinner state based on events
     - Update UI with progress
     - Handle HITL events (InputRequiredEvent, AgentQuestionEvent)
+    - Integrate with runtime toggle for dynamic HITL control
     
     Attributes:
         spinner: SpinnerController for visual feedback.
@@ -130,6 +132,7 @@ class EventConsumer:
         hitl_timeout: Timeout in seconds for HITL prompts.
         hitl_default_answer: Default answer when user times out.
         console_input: ConsoleInputModule for collecting user input.
+        runtime_toggle: Optional HITLRuntimeToggle for dynamic HITL control.
     """
 
     def __init__(
@@ -159,14 +162,26 @@ class EventConsumer:
         self.hitl_enabled = hitl_enabled
         self.console_input = ConsoleInputModule(console)
         
+        # Runtime toggle (set during consume_events or via setter)
+        self.runtime_toggle = None
+        
         # HITL state tracking
         self._hitl_question_count = 0
         self._hitl_timeout_count = 0
+
+    def set_runtime_toggle(self, toggle: Any) -> None:
+        """Set the runtime toggle for dynamic HITL control.
+        
+        Args:
+            toggle: HITLRuntimeToggle instance or None to disable.
+        """
+        self.runtime_toggle = toggle
 
     async def consume_events(
         self,
         handler: Any,
         user_msg: str,
+        hitl_toggle: Any = None,
     ) -> Any:
         """
         Consume events from workflow handler.
@@ -174,6 +189,7 @@ class EventConsumer:
         Args:
             handler: WorkflowHandler from agent.run()
             user_msg: Original user message
+            hitl_toggle: Optional HITLRuntimeToggle for dynamic HITL control
             
         Returns:
             Final result from the workflow
@@ -182,6 +198,13 @@ class EventConsumer:
         self.state.set("current_user_msg", user_msg)
         self.state.set("workflow_running", True)
         self.state.set("start_time", asyncio.get_event_loop().time())
+        
+        # Store reference to handler for event emission
+        self._current_handler = handler
+        
+        # Set runtime toggle if provided
+        if hitl_toggle is not None:
+            self.runtime_toggle = hitl_toggle
         
         try:
             async for event in handler.stream_events():
@@ -210,6 +233,7 @@ class EventConsumer:
             raise
         finally:
             self._running = False
+            self._current_handler = None
             # Resume spinner if it was paused by any tool
             if self.spinner.is_paused:
                 self.spinner.resume()
@@ -242,6 +266,16 @@ class EventConsumer:
         elif self._verbose and event_type not in VERBOSE_IGNORE_EVENTS:
             # Log other events in verbose mode (excluding high-frequency ones)
             self.console.print(f"[dim]Event: {event_type}[/dim]")
+
+    def _is_hitl_enabled(self) -> bool:
+        """Check if HITL is currently enabled (considering runtime toggle).
+        
+        Returns:
+            True if HITL is enabled, False otherwise.
+        """
+        if self.runtime_toggle is not None:
+            return self.hitl_enabled and self.runtime_toggle.is_enabled
+        return self.hitl_enabled
 
     async def _on_agent_stream(self, event: AgentStream) -> None:
         """Handle streaming token event."""
@@ -334,7 +368,7 @@ class EventConsumer:
         Args:
             event: InputRequiredEvent containing the question/prefix.
         """
-        if not self.hitl_enabled:
+        if not self._is_hitl_enabled():
             logger.debug("HITL disabled, skipping InputRequiredEvent")
             return
         
@@ -428,7 +462,7 @@ class EventConsumer:
             Dict with HITL question and timeout counts.
         """
         return {
-            "enabled": self.hitl_enabled,
+            "enabled": self._is_hitl_enabled(),
             "question_count": self._hitl_question_count,
             "timeout_count": self._hitl_timeout_count,
             "timeout": self.hitl_timeout,

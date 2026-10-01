@@ -208,6 +208,7 @@ human_loop_handler = HumanLoopHandler(
     console=console,
     spinner=spinner_controller,
     enable_hitl=HITL_ENABLED,
+    runtime_toggle=hitl_toggle,
 )
 
 
