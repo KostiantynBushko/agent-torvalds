@@ -27,6 +27,7 @@ Environment Variables:
     TORVALDS_HITL_METHOD        Input method: 'console' or 'whiptail' (default: console)
     TORVALDS_HITL_TIMEOUT       Timeout in seconds for HITL prompts (default: 30)
     TORVALDS_HITL_DEFAULT_ANSWER Default answer on timeout (default: empty)
+    TORVALDS_HITL_RUNTIME_TOGGLE  Enable/disable runtime toggle commands (default: true)
 """
 import asyncio
 import argparse
@@ -119,6 +120,7 @@ HITL_ENABLED = os.environ.get("TORVALDS_HITL_ENABLED", "true").lower() == "true"
 HITL_METHOD = os.environ.get("TORVALDS_HITL_METHOD", "console")  # "console" or "whiptail"
 HITL_TIMEOUT = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "30"))
 HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
+HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").lower() == "true"
 
 SYSTEM_PROMPT = (
     "Your name is Torvalds an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
@@ -382,6 +384,17 @@ def parse_args():
         default=HITL_TIMEOUT,
         help="HITL prompt timeout in seconds (default: %(default)s)",
     )
+    parser.add_argument(
+        "--hitl-default-answer",
+        type=str,
+        default=HITL_DEFAULT_ANSWER,
+        help="Default fallback answer on HITL timeout (default: empty)",
+    )
+    parser.add_argument(
+        "--hitl-no-runtime-toggle",
+        action="store_true",
+        help="Disable runtime HITL toggle commands (toggle-hitl, hitl-status, etc.)",
+    )
     return parser.parse_args()
 
 
@@ -554,6 +567,8 @@ async def main():
     hitl_enabled = HITL_ENABLED and not args.no_hitl
     hitl_method = args.hitl_method
     hitl_timeout = args.hitl_timeout
+    hitl_default_answer = args.hitl_default_answer
+    runtime_toggle_enabled = HITL_RUNTIME_TOGGLE and not args.hitl_no_runtime_toggle
 
     # Update global HITL components with CLI values
     hitl_toggle._enabled = hitl_enabled
@@ -584,8 +599,9 @@ async def main():
     )
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
-    console.print("[dim]Type '\\hitl-status' to check HITL status.[/dim]")
-    console.print("[dim]Type 'toggle-hitl' to enable/disable HITL at runtime.[/dim]")
+    if runtime_toggle_enabled:
+        console.print("[dim]Type '\\hitl-status' to check HITL status.[/dim]")
+        console.print("[dim]Type 'toggle-hitl' to enable/disable HITL at runtime.[/dim]")
     console.print("[dim]Press Ctrl+C to exit gracefully.[/dim]\n")
 
     # Start a cache session
@@ -602,7 +618,7 @@ async def main():
         console=console,
         verbose=verbose_events,
         hitl_timeout=hitl_timeout,
-        hitl_default_answer=HITL_DEFAULT_ANSWER,
+        hitl_default_answer=hitl_default_answer,
         hitl_enabled=hitl_enabled,
     )
 
@@ -636,7 +652,7 @@ async def main():
             render_stats_summary(summary)
             continue
 
-        if cmd.lower() == "\\hitl-status":
+        if cmd.lower() == "\\hitl-status" and runtime_toggle_enabled:
             # Show HITL status
             status_info = hitl_toggle.status_sync()
             hitl_stats = event_consumer.get_hitl_stats()
@@ -652,8 +668,9 @@ async def main():
         if not cmd:
             continue
 
-        # Check for HITL commands
-        hitl_response = await handle_hitl_command(cmd)
+        # Check for HITL commands (only if runtime toggle is enabled)
+        if runtime_toggle_enabled:
+            hitl_response = await handle_hitl_command(cmd)
         if hitl_response:
             console.print(f"[cyan]{hitl_response}[/cyan]")
             continue
