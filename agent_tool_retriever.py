@@ -31,6 +31,8 @@ def build_tool_retriever(
     include_db_tools: bool = True,
     include_apt_tools: bool = True,
     include_windows_tools: bool = True,
+    include_xlsx_tools: bool = True,
+    include_data_analysis_tools: bool = True,
 ) -> tuple:
     """
     Build a tool retriever that loads tools on-demand based on query semantics.
@@ -85,7 +87,18 @@ def build_tool_retriever(
         all_tools.extend(_get_windows())
 
     # -----------------------------------------------------------------------
-    # 2. Build ObjectIndex over tool objects for semantic retrieval
+    # 2. Excel & Data Analysis toolkits
+    # -----------------------------------------------------------------------
+    if include_xlsx_tools:
+        from agent_xlsx_toolkit import get_all_tools as _get_xlsx
+        all_tools.extend(_get_xlsx())
+
+    if include_data_analysis_tools:
+        from agent_data_analysis_toolkit import get_all_tools as _get_analysis
+        all_tools.extend(_get_analysis())
+
+    # -----------------------------------------------------------------------
+    # 3. Build ObjectIndex over tool objects for semantic retrieval
     # -----------------------------------------------------------------------
     # ObjectIndex properly wraps tools and returns FunctionTool instances
     tool_index = ObjectIndex.from_objects(
