@@ -23,20 +23,13 @@ This final step adds CLI arguments and configuration options for HITL settings. 
 ```python
 # Add CLI arguments
 parser.add_argument(
-    "--hitl-enabled",
+    "--no-hitl",
     action="store_true",
     default=True,
-    help="Enable Human-in-the-Loop interactions (default: True)",
+    help="Disable Human-in-the-Loop (HITL is enabled by default)",
 )
 
 parser.add_argument(
-    "--hitl-disabled",
-    action="store_true",
-    help="Disable Human-in-the-Loop interactions at startup",
-)
-
-parser.add_argument(
-    "--hitl-method",
     choices=["console", "whiptail"],
     default="console",
     help="Input method for HITL prompts (default: console)",
@@ -83,7 +76,7 @@ parser.add_argument(
 ./agent-torvalds.py --hitl-method whiptail "Your query here"
 
 # Disable HITL at startup
-./agent-torvalds.py --hitl-disabled "Your query here"
+./agent-torvalds.py --no-hitl "Your query here"
 
 # Custom timeout
 ./agent-torvalds.py --hitl-timeout 60 "Your query here"
@@ -95,7 +88,7 @@ parser.add_argument(
 ## Deliverables
 
 - [ ] Add CLI arguments for HITL configuration
-- [ ] Add `--hitl-disabled` flag for initial disable
+- [ ] Add `--no-hitl` flag to disable HITL at startup
 - [ ] Add `--hitl-no-runtime-toggle` to disable inline commands
 - [ ] Add environment variable overrides
 - [ ] Update help text

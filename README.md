@@ -129,6 +129,7 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 | **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
 | **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
 | **On-Demand Tool Loading** | Semantic tool retrieval to reduce context window pollution |
+| **Human-in-the-Loop** | Interactive questioning with timeout handling and runtime toggle |
 | **Technical Computing** | Engineering and scientific computation support |
 
 ---
@@ -213,6 +214,16 @@ Configure per-request statistics via environment variables:
 | Variable | Default | Description |
 |---|---|---|
 | `TORVALDS_CACHE_PATH` | `~/.cache/torvalds/agent_cache.json` | Custom cache file location |
+
+### Human-in-the-Loop Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `TORVALDS_HITL_ENABLED` | `true` | Enable/disable HITL interactions |
+| `TORVALDS_HITL_METHOD` | `console` | Input method: `console` or `whiptail` |
+| `TORVALDS_HITL_TIMEOUT` | `30` | Timeout in seconds for HITL prompts |
+| `TORVALDS_HITL_DEFAULT_ANSWER` | `""` | Default fallback answer on timeout |
+| `TORVALDS_HITL_RUNTIME_TOGGLE` | `true` | Enable/disable runtime toggle commands |
 
 ---
 
@@ -325,6 +336,21 @@ from agent_stats_handler import RequestStatsHandler, StatsRenderer
 # Use \stats command to view historical statistics summary
 ```
 
+### Human-in-the-Loop
+```bash
+# Start agent with HITL enabled (default)
+python agent-torvalds.py --hitl-enabled --hitl-method console --hitl-timeout 60
+
+# Start agent with HITL disabled
+python agent-torvalds.py --hitl-disabled
+
+# Runtime commands during execution:
+# \hitl-status   - Show current HITL status
+# \toggle-hitl   - Toggle HITL on/off
+# \hitl-on       - Enable HITL
+# \hitl-off      - Disable HITL
+```
+
 ---
 
 ## Project Structure
@@ -369,7 +395,20 @@ agent-torvalds/
 | +-- state_handler.py          # State management handler
 | +-- stats_handler.py          # Stats handler component
 | +-- event_consumer.py         # Event consumer
+| +-- hitl_events.py            # HITL event definitions
+| +-- console_input_module.py   # Console input module for HITL
+| +-- whiptail_input_module.py  # Whiptail input module for HITL
+| +-- human_loop_handler.py     # HITL callback handler
+| +-- timeout_manager.py        # Timeout management for HITL
+| +-- hitl_runtime_toggle.py    # Runtime toggle for HITL
 | investigate/                  # Investigation artifacts and proposals
+| +-- human-in-the-loop/        # HITL solution documentation
+| +-- +-- README.md             # HITL solution overview
+| +-- +-- INVESTIGATION_REPORT.md
+| +-- +-- PROPOSAL_step_by_step.md
+| +-- +-- implementation-plan/  # Step-by-step implementation docs
+| +-- llama-index-workflow/     # LlamaIndex workflow investigation
+| +-- whiptail/                 # Whiptail investigation
 | tests/                        # Test suite
 | +-- __init__.py
 | +-- test_cache_system.py
@@ -389,6 +428,7 @@ agent-torvalds/
 ## Recent Updates (September 2026)
 
 ### Latest Features Added
+- **Human-in-the-Loop (HITL)**: Interactive questioning with timeout handling and runtime toggle
 - **APT Package Management Toolkit**: Full Debian/Ubuntu package installation with multiple password methods
 - **Windows PowerShell Toolkit**: Native Windows PowerShell support for command execution
 - **GitHub Toolkit**: Complete PR lifecycle management including creation, review, commenting, and merging
