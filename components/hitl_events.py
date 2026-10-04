@@ -83,14 +83,16 @@ class AgentQuestionEvent(Event):
         options: Optional[List[str]] = None,
         context: Optional[str] = None,
     ) -> None:
-        super().__init__()
-        self.question = question
-        self.question_id = question_id
-        self.timeout = timeout
-        self.default_answer = default_answer
-        self.input_type = input_type
-        self.options = options or []
-        self.context = context
+        # Pass all Pydantic model fields to super().__init__() so validation succeeds
+        super().__init__(
+            question=question,
+            question_id=question_id,
+            timeout=timeout,
+            default_answer=default_answer,
+            input_type=input_type,
+            options=options or [],
+            context=context,
+        )
 
     def validate(self) -> None:
         """Validate event fields, raising ``ValueError`` on problems."""
@@ -142,10 +144,12 @@ class AgentAnswerEvent(Event):
         answer: str,
         was_timeout: bool = False,
     ) -> None:
-        super().__init__()
-        self.question_id = question_id
-        self.answer = answer
-        self.was_timeout = was_timeout
+        # Pass all Pydantic model fields to super().__init__() so validation succeeds
+        super().__init__(
+            question_id=question_id,
+            answer=answer,
+            was_timeout=was_timeout,
+        )
 
     def validate(self) -> None:
         """Validate event fields, raising ``ValueError`` on problems."""
