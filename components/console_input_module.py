@@ -70,7 +70,8 @@ class ConsoleInputModule:
 
         def _ask() -> str:
             try:
-                return input(message)
+                result = input(message)
+                return result if isinstance(result, str) else default
             except (EOFError, KeyboardInterrupt):
                 return default
 
@@ -79,7 +80,9 @@ class ConsoleInputModule:
                 loop.run_in_executor(None, _ask),
                 timeout=timeout,
             )
-            return response if response.strip() else default
+            if isinstance(response, str):
+                return response if response.strip() else default
+            return default
         except asyncio.TimeoutError:
             return default
 
@@ -161,7 +164,8 @@ class ConsoleInputModule:
 
         def _ask() -> str:
             try:
-                return getpass.getpass(message)
+                result = getpass.getpass(message)
+                return result if isinstance(result, str) else ""
             except (EOFError, KeyboardInterrupt):
                 return ""
 
@@ -170,6 +174,6 @@ class ConsoleInputModule:
                 loop.run_in_executor(None, _ask),
                 timeout=timeout,
             )
-            return response
+            return response if isinstance(response, str) else ""
         except asyncio.TimeoutError:
             return ""

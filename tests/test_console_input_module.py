@@ -46,7 +46,7 @@ class TestPromptMethod(unittest.TestCase):
                 result = await ConsoleInputModule.prompt("Enter: ", timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "hello world")
 
     def test_prompt_returns_default_on_empty(self):
@@ -56,7 +56,7 @@ class TestPromptMethod(unittest.TestCase):
                 result = await ConsoleInputModule.prompt("Enter: ", default="fallback", timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "fallback")
 
     def test_prompt_returns_default_on_eof(self):
@@ -66,7 +66,7 @@ class TestPromptMethod(unittest.TestCase):
                 result = await ConsoleInputModule.prompt("Enter: ", default="eof_val", timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "eof_val")
 
     def test_prompt_returns_default_on_keyboard_interrupt(self):
@@ -76,22 +76,18 @@ class TestPromptMethod(unittest.TestCase):
                 result = await ConsoleInputModule.prompt("Enter: ", default="ctrl_c", timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "ctrl_c")
 
     def test_prompt_timeout_returns_default(self):
         """Should return default when timeout expires."""
         async def _run():
-            def slow_input():
-                await asyncio.sleep(10)  # Slower than timeout
-                return "too late"
-
+            # Simulate timeout by making input block
             with patch("builtins.input", side_effect=asyncio.sleep):
-                # Simulate timeout by making input block
                 result = await ConsoleInputModule.prompt("Enter: ", default="timed_out", timeout=1)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "timed_out")
 
 
@@ -106,7 +102,7 @@ class TestConfirmMethod(unittest.TestCase):
                 result = await module.confirm("Proceed?", default_yes=True, timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertTrue(result)
 
     def test_confirm_no(self):
@@ -117,7 +113,7 @@ class TestConfirmMethod(unittest.TestCase):
                 result = await module.confirm("Proceed?", default_yes=True, timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertFalse(result)
 
     def test_confirm_default_yes_on_empty(self):
@@ -128,7 +124,7 @@ class TestConfirmMethod(unittest.TestCase):
                 result = await module.confirm("Proceed?", default_yes=True, timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertTrue(result)
 
     def test_confirm_default_no_on_empty(self):
@@ -139,7 +135,7 @@ class TestConfirmMethod(unittest.TestCase):
                 result = await module.confirm("Proceed?", default_yes=False, timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertFalse(result)
 
     def test_confirm_case_insensitive(self):
@@ -150,7 +146,7 @@ class TestConfirmMethod(unittest.TestCase):
                 result = await module.confirm("Proceed?", timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertTrue(result)
 
 
@@ -165,7 +161,7 @@ class TestMenuMethod(unittest.TestCase):
                 result = await module.menu("Choose:", ["opt_a", "opt_b", "opt_c"], timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "opt_a")
 
     def test_menu_selects_second_option(self):
@@ -176,7 +172,7 @@ class TestMenuMethod(unittest.TestCase):
                 result = await module.menu("Choose:", ["opt_a", "opt_b", "opt_c"], timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "opt_b")
 
     def test_menu_invalid_input_returns_first(self):
@@ -187,7 +183,7 @@ class TestMenuMethod(unittest.TestCase):
                 result = await module.menu("Choose:", ["opt_a", "opt_b"], timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "opt_a")
 
     def test_menu_out_of_range_returns_first(self):
@@ -198,7 +194,7 @@ class TestMenuMethod(unittest.TestCase):
                 result = await module.menu("Choose:", ["opt_a", "opt_b"], timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "opt_a")
 
     def test_menu_default_on_timeout(self):
@@ -209,7 +205,7 @@ class TestMenuMethod(unittest.TestCase):
                 result = await module.menu("Choose:", ["default_opt", "other"], timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "default_opt")
 
 
@@ -224,7 +220,7 @@ class TestPasswordMethod(unittest.TestCase):
                 result = await module.password(timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "secret123")
 
     def test_password_returns_empty_on_eof(self):
@@ -235,7 +231,7 @@ class TestPasswordMethod(unittest.TestCase):
                 result = await module.password(timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "")
 
     def test_password_returns_empty_on_keyboard_interrupt(self):
@@ -246,7 +242,7 @@ class TestPasswordMethod(unittest.TestCase):
                 result = await module.password(timeout=5)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "")
 
     def test_password_timeout_returns_empty(self):
@@ -257,7 +253,7 @@ class TestPasswordMethod(unittest.TestCase):
                 result = await module.password(timeout=1)
             return result
 
-        result = asyncio.get_event_loop().run_until_complete(_run())
+        result = asyncio.run(_run())
         self.assertEqual(result, "")
 
     def test_password_custom_message(self):
@@ -269,7 +265,7 @@ class TestPasswordMethod(unittest.TestCase):
                 mock_getpass.assert_called_once_with("Custom prompt: ")
             return True
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":
