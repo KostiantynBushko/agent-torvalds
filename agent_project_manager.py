@@ -2,15 +2,17 @@
 Project Manager Toolkit - Project type detection and workspace management.
 
 This module provides project recognition, workspace configuration,
-and project lifecycle management as LlamaIndex FunctionTools.
+project lifecycle management, and Human-in-the-Loop (HITL) resolution
+for ambiguous project type detections as LlamaIndex FunctionTools.
 
 Integrates with the project_manage package (ProjectScanner, WorkspaceConfig,
-ProjectManager) to provide a unified interface for discovering, registering,
-and managing projects in a workspace.
+ProjectManager) and existing HITL infrastructure to provide a unified
+interface for discovering, registering, and managing projects in a workspace.
 
 Category: Project Management
-Retriever Keywords: project, workspace, detect, scan, configure, register, manage, agentworkspace
+Retriever Keywords: project, workspace, detect, scan, configure, register, manage, agentworkspace, hitl
 """
+import asyncio
 import json
 import logging
 import os
@@ -61,6 +63,34 @@ def _safe_json_dumps(data: Any, default: str = "N/A") -> str:
     return json.dumps(data, indent=2, ensure_ascii=False, default=str)
 
 
+def _check_ambiguity(candidates: List[tuple]) -> bool:
+    """
+    Check if project type detection is ambiguous.
+
+    Ambiguity is defined as having multiple candidates where the top 2
+    have a confidence gap less than 0.15.
+
+    Args:
+        candidates: List of (project_type, confidence) tuples sorted by confidence
+
+    Returns:
+        True if detection is ambiguous
+    """
+    if len(candidates) <= 1:
+        return False
+
+    gap = candidates[0][1] - candidates[1][1]
+    return gap < 0.15
+
+
+def _get_hitl_timeout() -> int:
+    """Get HITL timeout from environment."""
+    try:
+        return int(os.environ.get("TORVALDS_HITL_TIMEOUT", "30"))
+    except (ValueError, TypeError):
+        return 30
+
+
 # =============================================================================
 # Tier 1: Project Detection
 # =============================================================================
@@ -96,12 +126,14 @@ def scan_directory(path: str = ".") -> str:
         scores = scanner.scan_directory(resolved_path)
         candidates = scanner.get_candidates(resolved_path)
         detected_type = scanner.detect_project_type(resolved_path)
+        is_ambiguous = _check_ambiguity(candidates)
 
         result = {
             "path": resolved_path,
             "scores": scores,
             "candidates": [{"type": t, "confidence": c} for t, c in candidates],
             "detected_type": detected_type,
+            "ambiguous": is_ambiguous,
             "supported_types": scanner.get_supported_types(),
         }
 
@@ -285,6 +317,7 @@ def register_project(
     path: str,
     name: Optional[str] = None,
     force: bool = False,
+    ask_on_ambiguous: bool = True,
     description: str = "",
     framework: str = "",
     language_version: str = "",
@@ -296,10 +329,14 @@ def register_project(
     Use this tool to discover and register a new project in the workspace.
     Automatically detects the project type and stores metadata in .agentworkspace.json.
 
+    When detection is ambiguous (multiple types with similar confidence),
+    the HITL system will prompt the user to choose the correct type.
+
     Args:
         path (str): Directory path of the project to register
         name (str, optional): Project name (default: derived from directory name)
         force (bool): If True, register even if detection is ambiguous (default: False)
+        ask_on_ambiguous (bool): If True, prompt user when detection is ambiguous (default: True)
         description (str): Optional project description
         framework (str): Framework name (e.g., FastAPI, React)
         language_version (str): Language version string (e.g., 3.11, 18)
@@ -322,6 +359,30 @@ def register_project(
         if not os.path.isdir(resolved_path):
             return json.dumps({"error": f"Path is not a directory: {resolved_path}"}, indent=2)
 
+        scanner = ProjectScanner()
+        candidates = scanner.get_candidates(resolved_path)
+        detected_type = scanner.detect_project_type(resolved_path)
+
+        # Check for ambiguity and optionally ask user
+        resolution_method = "auto"
+        if detected_type is None and candidates:
+            is_ambiguous = _check_ambiguity(candidates)
+            if is_ambiguous and ask_on_ambiguous and not force:
+                # Trigger HITL resolution
+                resolution_result = _resolve_ambiguity_sync(candidates, resolved_path)
+                detected_type = resolution_result.get("project_type", candidates[0][0])
+                resolution_method = resolution_result.get("method", "human")
+            elif not force:
+                return json.dumps({
+                    "status": "failed",
+                    "message": f"Could not detect project type for {resolved_path}. "
+                               f"Use force=True to register anyway.",
+                    "path": resolved_path,
+                    "candidates": [{"type": t, "confidence": c} for t, c in candidates],
+                }, indent=2)
+            else:
+                detected_type = candidates[0][0]
+
         manager = ProjectManager(workspace_path=resolved_workspace)
         project = manager.discover_and_register(
             path=resolved_path,
@@ -335,7 +396,7 @@ def register_project(
         if project is None:
             return json.dumps({
                 "status": "failed",
-                "message": f"Could not detect project type for {resolved_path}. Use force=True to register anyway.",
+                "message": f"Could not detect project type for {resolved_path}.",
                 "path": resolved_path,
             }, indent=2)
 
@@ -348,11 +409,11 @@ def register_project(
                 "git_repo": project["git_repo"],
                 "indicators_found": project["indicators_found"],
             },
+            "resolution_method": resolution_method,
         }
 
         return _safe_json_dumps(result)
     except ValueError as e:
-        # Project already exists
         return json.dumps({"status": "exists", "message": str(e)}, indent=2)
     except Exception as e:
         logger.error(f"register_project failed: {e}")
@@ -615,7 +676,164 @@ def get_project_actions(project_name: str, path: str = ".") -> str:
 
 
 # =============================================================================
-# Tier 5: Workspace Summary and Utilities
+# Tier 5: HITL Integration for Ambiguous Detection
+# =============================================================================
+
+
+def _resolve_ambiguity_sync(candidates: List[tuple], path: str) -> Dict[str, Any]:
+    """
+    Synchronous wrapper for HITL ambiguity resolution.
+
+    Uses the existing HITL infrastructure (ConsoleInputModule) to prompt
+    the user when project type detection is ambiguous.
+
+    Args:
+        candidates: List of (project_type, confidence) tuples
+        path: Path being scanned
+
+    Returns:
+        Dictionary with resolution results
+    """
+    timeout = _get_hitl_timeout()
+    default_answer = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "1")
+
+    # Build prompt
+    options = []
+    for i, (proj_type, confidence) in enumerate(candidates, 1):
+        options.append(f"{i}. {proj_type} (confidence: {confidence:.2f})")
+
+    prompt_text = (
+        f"\nMultiple project types detected in '{path}':\n"
+        f"\n" + "\n".join(options) +
+        f"\n\nEnter the number of the correct project type (default: 1, timeout: {timeout}s):"
+    )
+
+    # Use ConsoleInputModule for synchronous-style input
+    try:
+        from components.console_input_module import ConsoleInputModule
+
+        async def _do_prompt():
+            console = ConsoleInputModule()
+            response = await ConsoleInputModule.prompt(
+                message=prompt_text,
+                default=default_answer,
+                timeout=timeout,
+            )
+            return response
+
+        # Run async prompt synchronously
+        response, timed_out = asyncio.run(_do_prompt()), False
+    except Exception as e:
+        logger.warning(f"HITL prompt failed, using best guess: {e}")
+        return {
+            "project_type": candidates[0][0],
+            "method": "error-fallback",
+            "note": f"HITL prompt failed: {e}",
+        }
+
+    # Parse response
+    try:
+        choice = int(response.strip()) if response.strip() else 1
+        if choice == 0:
+            selected_type = "Unknown"
+        elif 1 <= choice <= len(candidates):
+            selected_type = candidates[choice - 1][0]
+        else:
+            selected_type = candidates[0][0]
+    except ValueError:
+        selected_type = candidates[0][0]
+
+    return {
+        "project_type": selected_type,
+        "method": "human",
+        "candidates": [{"type": t, "confidence": c} for t, c in candidates],
+    }
+
+
+def resolve_project_type_ambiguity(path: str = ".") -> str:
+    """
+    Prompt the user to resolve ambiguous project type detection.
+
+    When the scanner detects multiple possible project types with similar
+    confidence scores, this function presents the options to the user
+    and lets them choose the correct project type.
+
+    Uses the existing HITL infrastructure with configurable timeout.
+
+    Args:
+        path (str): Directory path to resolve (default: current directory)
+
+    Returns:
+        str: JSON string with the resolved project type
+
+    Example:
+        >>> resolve_project_type_ambiguity("/home/user/ambiguous-project")
+        '{\\n  "resolved": true,\\n  "project_type": "Python",\\n  ...\\n}'
+
+    Keywords: resolve, ambiguity, human-in-the-loop, choose, select, confirm, hitl
+    """
+    logger.info(f"resolve_project_type_ambiguity called with path: {path}")
+    try:
+        resolved_path = _resolve_path(path)
+
+        if not os.path.isdir(resolved_path):
+            return json.dumps({"error": f"Path is not a directory: {resolved_path}"}, indent=2)
+
+        scanner = ProjectScanner()
+        candidates = scanner.get_candidates(resolved_path)
+
+        if not candidates:
+            return json.dumps({
+                "resolved": False,
+                "error": "No project indicators found",
+                "path": resolved_path,
+            }, indent=2)
+
+        # If single candidate with high confidence, no ambiguity
+        if len(candidates) == 1 and candidates[0][1] >= 0.8:
+            return json.dumps({
+                "resolved": True,
+                "project_type": candidates[0][0],
+                "confidence": candidates[0][1],
+                "method": "auto",
+                "note": "Single high-confidence detection, no ambiguity",
+            }, indent=2)
+
+        # Check if actually ambiguous
+        if not _check_ambiguity(candidates):
+            return json.dumps({
+                "resolved": True,
+                "project_type": candidates[0][0],
+                "confidence": candidates[0][1],
+                "method": "auto",
+                "note": "Clear winner detected, no ambiguity",
+            }, indent=2)
+
+        # Trigger HITL resolution
+        resolution = _resolve_ambiguity_sync(candidates, resolved_path)
+
+        return json.dumps({
+            "resolved": True,
+            "project_type": resolution["project_type"],
+            "method": resolution["method"],
+            "candidates": resolution.get("candidates", []),
+        }, indent=2)
+
+    except TimeoutError:
+        # Fallback to best guess on timeout
+        return json.dumps({
+            "resolved": True,
+            "project_type": candidates[0][0] if candidates else "Unknown",
+            "method": "timeout-fallback",
+            "note": "User did not respond in time, using best guess",
+        }, indent=2)
+    except Exception as e:
+        logger.error(f"resolve_project_type_ambiguity failed: {e}")
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+# =============================================================================
+# Tier 6: Workspace Summary and Utilities
 # =============================================================================
 
 
@@ -742,7 +960,7 @@ def get_all_tools() -> List[FunctionTool]:
             fn=scan_directory,
             name="scan_directory",
             description="Scan a directory to detect project types with confidence scores. "
-                        "Use for identifying what kind of project exists. Category: Project Management",
+                        "Returns ambiguity flag. Use for identifying what kind of project exists. Category: Project Management",
         ),
         FunctionTool.from_defaults(
             fn=get_project_indicators,
@@ -774,6 +992,7 @@ def get_all_tools() -> List[FunctionTool]:
             fn=register_project,
             name="register_project",
             description="Scan a directory, detect its type, and register it in the workspace. "
+                        "Automatically triggers HITL when detection is ambiguous. "
                         "Use for discovering and registering new projects. Category: Project Management",
         ),
         FunctionTool.from_defaults(
@@ -813,7 +1032,15 @@ def get_all_tools() -> List[FunctionTool]:
             description="Get all configured actions for a project. "
                         "Use for inspecting project commands. Category: Project Management",
         ),
-        # Tier 5: Workspace Summary and Utilities
+        # Tier 5: HITL Integration
+        FunctionTool.from_defaults(
+            fn=resolve_project_type_ambiguity,
+            name="resolve_project_type_ambiguity",
+            description="Prompt user to resolve ambiguous project type detection using HITL. "
+                        "Use when scanner finds multiple similar-confidence types. "
+                        "Supports timeout fallback. Category: Project Management",
+        ),
+        # Tier 6: Workspace Summary and Utilities
         FunctionTool.from_defaults(
             fn=get_workspace_summary,
             name="get_workspace_summary",
