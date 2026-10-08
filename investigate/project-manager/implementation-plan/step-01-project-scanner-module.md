@@ -4,7 +4,7 @@
 Create the core project type detection engine that scans directories and identifies project types based on file indicators.
 
 ## Files to Create
-- `self-development/project_scanner.py`
+- `investigate/project-manager/scanner.py`
 
 ## Implementation Details
 

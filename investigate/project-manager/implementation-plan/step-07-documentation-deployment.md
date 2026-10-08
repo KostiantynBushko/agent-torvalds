@@ -4,9 +4,9 @@
 Create comprehensive documentation for the project manager feature and prepare for deployment.
 
 ## Files to Create/Modify
-- `self-development/docs/project-manager.md` (new)
-- `self-development/README.md` (update)
-- `self-development/CHANGELOG.md` (update)
+- `project-manager/docs/project-manager.md` (new)
+- `README.md` (update)
+- `CHANGELOG.md` (update)
 
 ## Implementation Details
 

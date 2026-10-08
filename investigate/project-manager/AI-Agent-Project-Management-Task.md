@@ -1,10 +1,36 @@
-Here’s the full consolidated description of the task in Markdown format, combining the taxonomy, requirements, and workflow into one specification file.
-
 # AI Agent Project Management Task
 
 ## 🎯 Objective
 Design and implement an AI agent capable of managing **any type of project** (software, hardware, configuration).  
 The agent must recognize the project type when starting from the folder, so the agent treats a current working directory as a project, configure itself accordingly, and persist this knowledge for future sessions.
+
+---
+
+## 📦 Implementation Structure
+
+**The project must be implemented as a Python module inside the `project-manager` folder.**
+
+All source code, tests, and module files belong under:
+```
+agent-torvalds/
+├── project_manager/          # Python package (module)
+│   ├── __init__.py
+│   ├── scanner.py            # Project type detection engine
+│   ├── workspace_config.py   # Configuration persistence layer
+│   ├── toolkit.py            # LlamaIndex FunctionTools integration
+│   └── ...
+├── tests/                    # Module tests
+│   ├── __init__.py
+│   ├── test_scanner.py
+│   ├── test_workspace_config.py
+│   └── ...
+└── investigate/    
+    ├── /project-manager/               # Module documentation
+        ├── README.md                   # Module documentation 
+        └──implementation-plan/         # Step-by-step implementation guide
+```
+
+> **Note:** Do **not** place `project_scanner.py`, `workspace_config.py`, or `agent_project_manager.py` in the self-development root. All project manager code lives inside the `project-manager` folder as a proper Python module.
 
 ---
 
@@ -47,7 +73,7 @@ The agent must recognize the project type when starting from the folder, so the 
       }
     ]
   }
-```
+  ```
 
 ### Git Version Control
 - Every project must be under Git.
@@ -59,7 +85,7 @@ The agent must recognize the project type when starting from the folder, so the 
 - If recognition is ambiguous, agent asks user:
     - Input via console or whiptail (dedicated module).
     - Timeout → fallback to default guess.
-- Example: “This folder has both requirements.txt and package.json. Should I treat it as Python or Node.js?”
+- Example: "This folder has both requirements.txt and package.json. Should I treat it as Python or Node.js?"
 
 ⚙️  Tooling Layer:
     - PythonTool → build/run/test with pip/pytest.
@@ -93,4 +119,3 @@ The agent must recognize the project type when starting from the folder, so the 
     - Workspace‑level awareness of multiple projects.
     - Extensible plugin system for new domains.
     - Human‑in‑the‑loop ensures correctness when auto‑detection is uncertain.
-

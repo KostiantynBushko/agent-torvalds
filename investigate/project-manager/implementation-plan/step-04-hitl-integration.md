@@ -4,8 +4,8 @@
 Integrate the existing Human-in-the-Loop (HITL) infrastructure with the project scanner to resolve ambiguous project type detections.
 
 ## Files to Modify/Create
-- `self-development/agent_project_manager.py` (modify - add HITL function)
-- `self-development/components/human_loop_handler.py` (reuse existing)
+- `agent_project_manager.py` (modify - add HITL function)
+- `components/human_loop_handler.py` (reuse existing)
 
 ## Implementation Details
 
