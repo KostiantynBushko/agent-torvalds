@@ -1,5 +1,5 @@
 """
-project_manage - Project management module for workspace orchestration.
+project_manager - Project management module for workspace orchestration.
 
 Provides project type detection, workspace configuration management,
 and a unified ProjectManager interface for discovering and managing projects.
@@ -12,7 +12,7 @@ Usage:
     result = manager.discover_and_register("./my-project")
 
     # Or use components directly
-    from project_manage.scanner import ProjectScanner
+    from project_manager.scanner import ProjectScanner
     scanner = ProjectScanner()
     scores = scanner.scan_directory("./some-path")
 

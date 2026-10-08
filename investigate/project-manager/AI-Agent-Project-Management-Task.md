@@ -13,7 +13,7 @@ The agent must recognize the project type when starting from the folder, so the 
 All source code, tests, and module files belong under:
 ```
 agent-torvalds/
-├── project_manager/          # Python package (module)
+├── project-manager/          # Python package (module)
 │   ├── __init__.py
 │   ├── scanner.py            # Project type detection engine
 │   ├── workspace_config.py   # Configuration persistence layer

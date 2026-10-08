@@ -5,7 +5,7 @@ This module provides project recognition, workspace configuration,
 project lifecycle management, and Human-in-the-Loop (HITL) resolution
 for ambiguous project type detections as LlamaIndex FunctionTools.
 
-Integrates with the project_manage package (ProjectScanner, WorkspaceConfig,
+Integrates with the project_manager package (ProjectScanner, WorkspaceConfig,
 ProjectManager) and existing HITL infrastructure to provide a unified
 interface for discovering, registering, and managing projects in a workspace.
 
@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from llama_index.core.tools import FunctionTool
 
-from project_manage import ProjectManager, ProjectScanner, WorkspaceConfig
+from project_manager import ProjectManager, ProjectScanner, WorkspaceConfig
 
 logger = logging.getLogger(__name__)
 
