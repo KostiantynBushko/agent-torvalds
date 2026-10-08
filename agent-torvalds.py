@@ -14,6 +14,7 @@ Features:
   - Dynamic logging level control via --log-level CLI argument
   - Graceful signal handling (SIGINT/SIGTERM) for clean shutdown
   - Human-in-the-Loop (HITL) support with runtime toggle
+  - Project Management: auto-scan, workspace config, project context injection
 
 Usage:
     python agent-torvalds.py              # Default mode (retriever-based, INFO logging)
@@ -21,6 +22,8 @@ Usage:
     python agent-torvalds.py --top-k 10   # Adjust retrieval count
     python agent-torvalds.py --no-stats   # Disable request statistics
     python agent-torvalds.py --log-level DEBUG  # Enable debug logging
+    python agent-torvalds.py --auto-scan  # Auto-scan and configure projects on startup
+    python agent-torvalds.py --project-type Python  # Override auto-detected project type
 
 Environment Variables:
     TORVALDS_HITL_ENABLED       Enable/disable HITL (default: true)
@@ -122,7 +125,118 @@ HITL_TIMEOUT = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "30"))
 HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
 HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").lower() == "true"
 
-SYSTEM_PROMPT = (
+# ---------------------------------------------------------------------------
+# Project Management (Step 05)
+# ---------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
+
+
+def build_project_context() -> str:
+    """
+    Build project context string for system prompt injection.
+
+    Scans the workspace configuration and returns a formatted string
+    describing all registered projects and their actions.
+
+    Returns:
+        str: Formatted project context string, or empty string if no projects.
+    """
+    try:
+        from project_manager import WorkspaceConfig
+        config = WorkspaceConfig(Path.cwd())
+        projects = config.get_all_projects()
+
+        if not projects:
+            return ""
+
+        context_lines = ["\nCurrent Workspace Projects:"]
+        for p in projects:
+            context_lines.append(
+                f"  - {p['name']} ({p['type']}): {p['path']}"
+            )
+            if p.get('actions'):
+                for action_name, cmd in p['actions'].items():
+                    context_lines.append(f"    {action_name}: {cmd}")
+
+        return "\n".join(context_lines)
+    except Exception as e:
+        logger.debug(f"Failed to build project context: {e}")
+        return ""
+
+
+def initialize_project_management(
+    auto_scan: bool = False,
+    override_project_type: Optional[str] = None,
+) -> None:
+    """
+    Auto-scan and configure project on agent startup.
+
+    Checks if the current workspace already has configured projects.
+    If not and auto_scan is enabled, scans for project indicators and
+    auto-registers the detected project type.
+
+    Args:
+        auto_scan: Whether to auto-scan for projects on startup.
+        override_project_type: Optional project type override (bypasses detection).
+    """
+    if not auto_scan:
+        return
+
+    try:
+        from project_manager import ProjectManager, ProjectScanner, WorkspaceConfig
+
+        scanner = ProjectScanner()
+        config = WorkspaceConfig(Path.cwd())
+
+        # Check if already configured
+        existing = config.get_all_projects()
+        if existing:
+            logger.info(f"Found {len(existing)} configured projects in workspace")
+            return
+
+        # Scan for projects
+        candidates = scanner.get_candidates(str(Path.cwd()))
+        if not candidates:
+            logger.info("No project indicators detected in current directory")
+            return
+
+        # Determine project type
+        if override_project_type:
+            project_type = override_project_type
+            confidence = 1.0
+            logger.info(f"Using overridden project type: {project_type}")
+        else:
+            project_type, confidence = candidates[0]
+            logger.info(f"Detected project type: {project_type} (confidence: {confidence:.2f})")
+
+        # Auto-initialize if confidence is high enough
+        if confidence >= 0.8:
+            project_name = Path.cwd().name
+            indicators = [t for t, _ in candidates]
+            config.add_project(
+                name=project_name,
+                path=".",
+                project_type=project_type,
+                indicators=indicators,
+                confidence=confidence,
+                git_repo=(Path.cwd() / ".git").exists(),
+            )
+            logger.info(f"Auto-configured project: {project_name} ({project_type})")
+        else:
+            logger.info(
+                f"Detected {project_type} but confidence ({confidence:.2f}) "
+                f"below threshold (0.8). Manual registration required."
+            )
+
+    except ImportError:
+        logger.debug("project_manager module not available, skipping auto-scan")
+    except Exception as e:
+        logger.warning(f"Project auto-scan failed: {e}")
+
+
+# Base system prompt template (project context injected at runtime)
+_SYSTEM_PROMPT_TEMPLATE = (
     "Your name is Torvalds an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
     "Core capabilities"
     "OS‑level access: browse file systems, run shell commands, launch/manage processes, work with network shares, containers, VMs, etc."
@@ -138,15 +252,40 @@ SYSTEM_PROMPT = (
     "Context awareness: keep track of the current directory, active databases, running processes, and any in‑progress scripts to avoid repetitive prompts."
     "Documentation: when you create code or scripts, also generate a short README or comment block explaining purpose, usage, and prerequisites."
     ""
+    "Project Management Capabilities:"
+    "You can detect project types, manage workspace configurations, and auto-initialize Git repositories."
+    "When entering a new directory, scan for project indicators and configure accordingly."
+    "Use project-aware tools based on the detected project type."
+    "Refer to registered projects and their configured actions when performing project-related tasks."
+    ""
     "Optional output‑format comment – keep it concise unless the user asks for a specific style."
     ""
     "Source URL: git@github.com:KostiantynBushko/agent-torvalds.git"
     ""
     "Self-Development Rules:"
-    "1. When asked to update source code, always perform the changes in the 'self-development' directory located at: ${PWD}/self-development"
+    "1. When asked to update source code, always perform the changes in the 'self-development' directory located at: ${{PWD}}/self-development"
     "2. Do not modify the main repository directly for development tasks; use the self-development clone."
     "3. Remember these rules for future interactions."
+    ""
+    "{project_context}"
 )
+
+
+def build_system_prompt(project_context: str = "") -> str:
+    """
+    Build the full system prompt with dynamic project context injection.
+
+    Args:
+        project_context: Project context string from build_project_context().
+
+    Returns:
+        str: Complete system prompt string.
+    """
+    return _SYSTEM_PROMPT_TEMPLATE.format(project_context=project_context)
+
+
+# Default system prompt (without project context — populated at runtime)
+SYSTEM_PROMPT = build_system_prompt()
 
 # ---------------------------------------------------------------------------
 # Logging Configuration
@@ -265,7 +404,11 @@ def _setup_signal_handlers():
 # Agent factory
 # ---------------------------------------------------------------------------
 
-def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K):
+def create_agent(
+    use_retriever: bool = True,
+    top_k: int = SIMILARITY_TOP_K,
+    system_prompt: Optional[str] = None,
+):
     """
     Create and configure the Torvalds agent.
 
@@ -273,12 +416,16 @@ def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K):
         use_retriever: If True, use on-demand tool retrieval.
                        If False, load all tools upfront.
         top_k: Number of tools to retrieve per query (only used with retriever mode).
+        system_prompt: Optional custom system prompt (includes project context).
 
     Returns:
         FunctionAgent instance
     """
     llm = Ollama(model=MODEL, request_timeout=REQUEST_TIMEOUT)
     chat_memory = agent_chat_memory.get_chat_memory()
+
+    # Use provided system prompt or build one with project context
+    prompt = system_prompt or build_system_prompt(build_project_context())
 
     if use_retriever:
         # ---- On-demand tool retrieval mode ----
@@ -289,7 +436,7 @@ def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K):
         agent = create_agent_with_retriever(
             llm=llm,
             memory=chat_memory,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=prompt,
             max_iterations=MAX_ITERATIONS,
             similarity_top_k=top_k,
         )
@@ -309,6 +456,13 @@ def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K):
                 + get_cache_tools()
         )
 
+        # Include project manager tools in full mode too
+        try:
+            from agent_project_manager import get_all_tools as get_pm_tools
+            all_tools += get_pm_tools()
+        except ImportError:
+            pass
+
         if os_name == "Windows":
             all_tools += get_windows_tools()
 
@@ -320,7 +474,7 @@ def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K):
             llm=llm,
             max_iterations=MAX_ITERATIONS,
             memory=chat_memory,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=prompt,
         )
 
     return agent
@@ -395,6 +549,20 @@ def parse_args():
         action="store_true",
         help="Disable runtime HITL toggle commands (toggle-hitl, hitl-status, etc.)",
     )
+    # ------------------------------------------------------------------
+    # Project Management CLI flags (Step 05)
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--auto-scan",
+        action="store_true",
+        help="Auto-scan and configure projects on startup",
+    )
+    parser.add_argument(
+        "--project-type",
+        type=str,
+        default=None,
+        help="Override auto-detected project type (requires --auto-scan)",
+    )
     return parser.parse_args()
 
 
@@ -458,6 +626,11 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
     try:
         chat_memory = agent_chat_memory.get_chat_memory()
         increment_session_commands()
+
+        # Inject project context into agent memory before each query (Step 05)
+        project_context = build_project_context()
+        if project_context:
+            chat_memory.put(f"CONTEXT: {project_context}")
 
         # Create workflow handler
         workflow_handler = agent.run(
@@ -597,6 +770,23 @@ async def main():
     console.print(
         f"[dim]HITL: {'enabled' if hitl_enabled else 'disabled'} (method={hitl_method}, timeout={hitl_timeout}s)[/dim]"
     )
+
+    # ------------------------------------------------------------------
+    # Project Management initialization (Step 05)
+    # ------------------------------------------------------------------
+    if args.auto_scan:
+        console.print("[dim]Auto-scanning for projects...[/dim]")
+        initialize_project_management(
+            auto_scan=True,
+            override_project_type=args.project_type,
+        )
+        # Show project context status
+        ctx = build_project_context()
+        if ctx:
+            console.print(f"[dim]Project context: {ctx.strip()}[/dim]")
+        else:
+            console.print("[dim]No projects configured in workspace[/dim]")
+
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
     if runtime_toggle_enabled:
@@ -607,8 +797,15 @@ async def main():
     # Start a cache session
     start_session()
 
+    # Build system prompt with project context
+    system_prompt = build_system_prompt(build_project_context())
+
     # Create agent
-    agent = create_agent(use_retriever=not args.full, top_k=args.top_k)
+    agent = create_agent(
+        use_retriever=not args.full,
+        top_k=args.top_k,
+        system_prompt=system_prompt,
+    )
 
     # Create shared EventConsumer instance
     state_handler = StateHandler()
