@@ -33,6 +33,7 @@ def build_tool_retriever(
     include_windows_tools: bool = True,
     include_xlsx_tools: bool = True,
     include_data_analysis_tools: bool = True,
+    include_project_manager_tools: bool = True,  # NEW: Step 05
 ) -> tuple:
     """
     Build a tool retriever that loads tools on-demand based on query semantics.
@@ -98,7 +99,18 @@ def build_tool_retriever(
         all_tools.extend(_get_analysis())
 
     # -----------------------------------------------------------------------
-    # 3. Build ObjectIndex over tool objects for semantic retrieval
+    # 3. Project Manager toolkit (Step 05)
+    # -----------------------------------------------------------------------
+    if include_project_manager_tools:
+        try:
+            from agent_project_manager import get_all_tools as _get_pm
+            all_tools.extend(_get_pm())
+        except ImportError:
+            # Project manager toolkit not available — skip gracefully
+            pass
+
+    # -----------------------------------------------------------------------
+    # 4. Build ObjectIndex over tool objects for semantic retrieval
     # -----------------------------------------------------------------------
     # ObjectIndex properly wraps tools and returns FunctionTool instances
     tool_index = ObjectIndex.from_objects(
