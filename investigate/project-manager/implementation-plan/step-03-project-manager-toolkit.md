@@ -1,10 +1,10 @@
 # Step 03: Project Manager Toolkit
 
 ## Objective
-Create the main `agent_project_manager.py` toolkit that exposes project management capabilities as LlamaIndex FunctionTools, integrating the scanner and config modules.
+Create the main project manager toolkit that exposes project management capabilities as LlamaIndex FunctionTools, integrating the scanner and config modules.
 
 ## Files to Create
-- `self-development/agent_project_manager.py`
+- `project-manager/toolkit.py`
 
 ## Implementation Details
 
@@ -27,8 +27,8 @@ from pathlib import Path
 from typing import Optional, Dict, List
 from llama_index.core.tools import FunctionTool
 
-from project_scanner import ProjectScanner
-from workspace_config import WorkspaceConfig
+from .scanner import ProjectScanner
+from .workspace_config import WorkspaceConfig
 
 logger = logging.getLogger(__name__)
 ```
@@ -294,6 +294,6 @@ def get_all_tools() -> List[FunctionTool]:
 - [ ] Unit tests pass for all tools
 
 ## Dependencies
-- `project_scanner.py` (Step 01)
+- `scanner.py` (Step 01)
 - `workspace_config.py` (Step 02)
 - LlamaIndex `FunctionTool`

@@ -4,8 +4,8 @@
 Integrate the project manager toolkit into the main agent, register tools with the retriever, and extend the system prompt with project awareness context.
 
 ## Files to Modify
-- `self-development/agent_tool_retriever.py`
-- `self-development/agent-torvalds.py`
+- `agent_tool_retriever.py`
+- `agent-torvalds.py`
 
 ## Implementation Details
 

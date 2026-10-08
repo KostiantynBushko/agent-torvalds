@@ -4,7 +4,7 @@
 Create the configuration persistence layer that manages `.agentworkspace.json` files for storing project metadata, build commands, and Git status.
 
 ## Files to Create
-- `self-development/workspace_config.py`
+- `project-manager/workspace_config.py`
 
 ## Implementation Details
 

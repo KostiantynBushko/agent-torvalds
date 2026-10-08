@@ -4,10 +4,10 @@
 Create comprehensive tests for the project manager feature, including unit tests, integration tests, and end-to-end workflow tests.
 
 ## Files to Create
-- `self-development/tests/test_project_scanner.py`
-- `self-development/tests/test_workspace_config.py`
-- `self-development/tests/test_project_manager_toolkit.py`
-- `self-development/tests/test_project_manager_integration.py`
+- `project-manager/tests/test_project_scanner.py`
+- `project-manager/tests/test_workspace_config.py`
+- `project-manager/tests/test_project_manager_toolkit.py`
+- `project-manager/tests/test_project_manager_integration.py`
 
 ## Implementation Details
 
