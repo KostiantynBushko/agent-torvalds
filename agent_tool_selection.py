@@ -12,6 +12,7 @@ Used by agent-torvalds.py when the user passes --select.
 Category: Infrastructure
 """
 
+import re
 import sys
 from typing import List, Dict, Optional
 
@@ -92,6 +93,240 @@ def _extract_category(description: str) -> str:
         return description.split("Category:")[-1].strip()
     return "Uncategorized"
 
+
+def _extract_short_description(description: str) -> str:
+    """
+    Extract the short description from a tool's full description string.
+
+    Tool descriptions follow the pattern:
+        "Short description. Category: <CategoryName>"
+
+    Args:
+        description: The tool's full description metadata.
+
+    Returns:
+        Short description string (before "Category:").
+    """
+    if "Category:" in description:
+        return description.split("Category:")[0].strip().rstrip(".")
+    return description.strip().rstrip(".")
+
+
+# ---------------------------------------------------------------------------
+# Description summarisation
+# ---------------------------------------------------------------------------
+
+# Canonical action groups and their trigger phrases.
+# Each tuple: (pattern_regex, canonical_label)
+# Patterns are checked in order; first match wins.
+_ACTION_PATTERNS: list = [
+    # --- Mathematics ---
+    (r"(?i)\badd\s+two\s+numbers",              "arithmetic"),
+    (r"(?i)\bsubtract",                          "arithmetic"),
+    (r"(?i)\bmultiply",                          "arithmetic"),
+    (r"(?i)\bdivide",                            "arithmetic"),
+    (r"(?i)\braise.*power",                      "arithmetic"),
+    (r"(?i)\bcalculate\s+remainder",             "compute"),
+    (r"(?i)\bcalculate\s+square\s+root",         "compute"),
+    (r"(?i)\bcalculate\s+sine",                  "trigonometry"),
+    (r"(?i)\bcalculate\s+cosine",                "trigonometry"),
+    (r"(?i)\bcalculate\s+tangent",               "trigonometry"),
+    (r"(?i)\bcalculate\s+natural\s+logarithm",   "logarithms"),
+    (r"(?i)\bcalculate\s+base-?10\s+logarithm",  "logarithms"),
+    (r"(?i)\bcalculate\s+factorial",             "compute"),
+    (r"(?i)\bevaluate.*expression",              "compute"),
+
+    # --- Version Control ---
+    (r"(?i)\bget\s+latest\s+commit",            "inspect"),
+    (r"(?i)\binitialize.*repo",                  "repository"),
+    (r"(?i)\badd\s+files\s+to\s+staging",       "staging"),
+    (r"(?i)\badd\s+all.*staging",                "staging"),
+    (r"(?i)\badd\s+a\s+remote",                  "remote"),
+    (r"(?i)\bcreate\s+a\s+commit",               "commit"),
+    (r"(?i)\bget\s+repository\s+status",         "inspect"),
+    (r"(?i)\bgenerate\s+changelog",              "changelog"),
+    (r"(?i)\bget\s+recent\s+commits",            "inspect"),
+    (r"(?i)\bupdate\s+changelog",                "changelog"),
+    (r"(?i)\bget\s+user\s+email",                "inspect"),
+    (r"(?i)\bpush\s+changes",                    "remote"),
+    (r"(?i)\blist\s+configured\s+remotes",       "inspect"),
+    (r"(?i)\bset\s+upstream",                    "remote"),
+    (r"(?i)\blist\s+all\s+branches",             "inspect"),
+    (r"(?i)\bcreate\s+a\s+new\s+branch",         "branching"),
+    (r"(?i)\bswitch\s+to\s+a\s+branch",          "branching"),
+    (r"(?i)\bdelete\s+a\s+branch",               "cleanup"),
+    (r"(?i)\brename.*branch",                    "cleanup"),
+    (r"(?i)\bshow\s+file\s+differences",         "inspect"),
+    (r"(?i)\bshow\s+staged\s+differences",       "inspect"),
+    (r"(?i)\bpull\s+from\s+remote",              "remote"),
+    (r"(?i)\bfetch\s+from\s+remote",             "remote"),
+    (r"(?i)\bmerge\s+branches",                  "merge"),
+    (r"(?i)\brebase\s+commits",                  "merge"),
+    (r"(?i)\bcompare\s+branch\s+logs",           "inspect"),
+    (r"(?i)\bverify.*auth",                      "inspect"),
+    (r"(?i)\bget\s+github\s+user\s+information", "inspect"),
+    (r"(?i)\bconfigure.*credentials",            "config"),
+    (r"(?i)\bcreate\s+a\s+pull\s+request",       "collaborate"),
+    (r"(?i)\blist\s+pull\s+requests",            "inspect"),
+    (r"(?i)\bget\s+details.*pull\s+request",     "inspect"),
+    (r"(?i)\bupdate.*pull\s+request",            "update"),
+    (r"(?i)\bclose.*pull\s+request",             "collaborate"),
+    (r"(?i)\bmerge.*pull\s+request",             "merge"),
+    (r"(?i)\badd.*comment.*pull\s+request",      "collaborate"),
+    (r"(?i)\bget.*file\s+changes.*pull",         "inspect"),
+    (r"(?i)\bget.*comments.*pull\s+request",     "inspect"),
+    (r"(?i)\bget.*review.*pull\s+request",       "inspect"),
+
+    # --- Operating System ---
+    (r"(?i)\bget\s+current\s+working\s+directory", "inspect"),
+    (r"(?i)\blist\s+files",                         "inspect"),
+    (r"(?i)\bcreate\s+an?\s+empty\s+file",          "create"),
+    (r"(?i)\bcheck\s+if.*exists",                   "inspect"),
+    (r"(?i)\bcreate\s+a\s+new\s+directory",         "create"),
+    (r"(?i)\bremove.*file.*directory",               "delete"),
+    (r"(?i)\bcopy.*file.*directory",                 "move/copy"),
+    (r"(?i)\bmove.*rename.*file",                    "move/copy"),
+    (r"(?i)\bread\s+file\s+contents",                "read/write"),
+    (r"(?i)\bwrite\s+content\s+to\s+a\s+file",      "read/write"),
+    (r"(?i)\bget\s+system\s+information",            "inspect"),
+
+    # --- Database ---
+    (r"(?i)\brun.*sql.*query",           "query"),
+
+    # --- Package Management ---
+    (r"(?i)\bfind.*package.*provides",   "discover"),
+    (r"(?i)\bcheck.*available",          "inspect"),
+    (r"(?i)\binstall.*apt.*package",     "install"),
+    (r"(?i)\binstall\s+multiple",        "install"),
+    (r"(?i)\bend-to-end",                "install"),
+    (r"(?i)\bobtain.*password",          "auth"),
+    (r"(?i)\btest.*password",           "auth"),
+    (r"(?i)\bclear.*password",          "reset"),
+    (r"(?i)\bset.*default.*prompt",     "config"),
+    (r"(?i)\bget.*default.*prompt",     "inspect"),
+
+    # --- Infrastructure ---
+    (r"(?i)\bstore.*cache",          "cache"),
+    (r"(?i)\bretrieve.*cache",       "cache"),
+    (r"(?i)\bwipe.*cache",          "reset"),
+    (r"(?i)\bview\s+cache\s+status", "inspect"),
+    (r"(?i)\bupdate.*cached",        "update"),
+    (r"(?i)\brecord.*repository",    "track"),
+    (r"(?i)\blog.*error",            "track"),
+    (r"(?i)\bstart.*session",        "session"),
+    (r"(?i)\bend.*session",          "session"),
+    (r"(?i)\bsave.*statistics",      "cache"),
+    (r"(?i)\bget\s+summary",         "inspect"),
+
+    # --- Data / Excel ---
+    (r"(?i)\bread.*xlsx.*file",        "read/write"),
+    (r"(?i)\bwrite.*xlsx.*file",       "read/write"),
+    (r"(?i)\blist.*sheet\s+names",     "inspect"),
+    (r"(?i)\bget.*value.*cell",        "inspect"),
+    (r"(?i)\bset.*value.*cell",        "modify"),
+    (r"(?i)\bget.*range\s+dimensions", "inspect"),
+    (r"(?i)\bcopy.*sheet",             "move/copy"),
+    (r"(?i)\bapply.*style",            "format"),
+    (r"(?i)\bcreate.*workbook",        "create"),
+
+    # --- Data / Analysis ---
+    (r"(?i)\bload.*excel.*file",        "load"),
+    (r"(?i)\bload.*csv.*file",          "load"),
+    (r"(?i)\bgenerate.*statistics",     "compute"),
+    (r"(?i)\bfilter.*rows",             "filter"),
+    (r"(?i)\bgroup.*aggregate",         "aggregate"),
+    (r"(?i)\bcreate.*pivot",            "aggregate"),
+    (r"(?i)\bdetect.*missing",          "inspect"),
+    (r"(?i)\bcompute.*correlation",     "compute"),
+    (r"(?i)\bexport.*dictionaries",     "export"),
+    (r"(?i)\bget.*unique",              "inspect"),
+    (r"(?i)\bsort.*data",              "transform"),
+    (r"(?i)\bcompute.*detailed.*statistics", "compute"),
+    (r"(?i)\bget.*DataFrame.*information",  "inspect"),
+
+    # --- System ---
+    (r"(?i)\bexecute.*shell\s+command",        "execute"),
+    (r"(?i)\bexecute\s+multiple.*commands",    "execute"),
+    (r"(?i)\bparse.*command.*output",           "parse"),
+    (r"(?i)\bget\s+system\s+information.*os",   "inspect"),
+    (r"(?i)\bcheck.*file\s+permissions",        "inspect"),
+    (r"(?i)\bexecute.*environment\s+variables",  "execute"),
+]
+
+
+def _normalize_action(description: str) -> str:
+    """
+    Map a tool description to a canonical action label.
+
+    Uses ordered pattern matching against known phrase → category mappings.
+    First regex that matches wins. Fallback: lowercase the first word.
+
+    Args:
+        description: A tool's short description.
+
+    Returns:
+        Canonical action label (e.g. "arithmetic", "remote", "read/write").
+    """
+    for pattern, label in _ACTION_PATTERNS:
+        if re.search(pattern, description):
+            return label
+
+    # Fallback: first word lowercased
+    return description.strip().split()[0].lower() if description.strip().split() else "misc"
+
+
+def _cluster_actions(actions: List[str]) -> List[str]:
+    """
+    Deduplicate a list of canonical action labels while preserving order.
+
+    Args:
+        actions: List of normalised action labels.
+
+    Returns:
+        Deduplicated list of unique action labels.
+    """
+    seen: set = set()
+    unique: list = []
+    for a in actions:
+        if a not in seen:
+            seen.add(a)
+            unique.append(a)
+    return unique
+
+
+def _build_category_description(tools: List[FunctionTool]) -> str:
+    """
+    Build a comprehensive yet concise description that covers **all**
+    tool actions within a category.
+
+    Strategy:
+      1. Extract the leading verb phrase from every tool description.
+      2. Normalise each verb via pattern matching to canonical action groups.
+      3. Deduplicate the canonical labels.
+      4. Join them into a comma‑separated summary:
+         "Actions: <action1>, <action2>, …"
+
+    Args:
+        tools: List of FunctionTool instances in this category.
+
+    Returns:
+        A one‑line description summarising the category's capabilities.
+    """
+    if not tools:
+        return "No tools available"
+
+    normalised = [
+        _normalize_action(_extract_short_description(t.metadata.description))
+        for t in tools
+    ]
+
+    unique = _cluster_actions(normalised)
+    return f"Actions: {', '.join(unique)}"
+
+
+# ---------------------------------------------------------------------------
+# Grouping
+# ---------------------------------------------------------------------------
 
 def group_tools_by_category(tools: List[FunctionTool]) -> Dict[str, List[FunctionTool]]:
     """
@@ -174,7 +409,6 @@ def display_tools_flat(
     """
     print("\nAvailable tools:\n")
     for idx, tool in enumerate(tools, start=1):
-        # Extract short description (first sentence before "Category:")
         desc = tool.metadata.description
         short_desc = desc.split("Category:")[0].strip().rstrip(".")
         print(f"  [{idx}] {tool.metadata.name}")
@@ -188,8 +422,8 @@ def display_categories_for_selection(
     Print categories (groups) as a numbered list for user selection.
 
     Each *category* gets a unique number so the user can select entire groups.
-    Individual tools within each category are shown for reference but are not
-    individually selectable.
+    Only the category name, tool count, and a concise capability summary are
+    shown — individual tool names are **not** displayed to keep the menu clean.
 
     Args:
         groups: Category → tools mapping.
@@ -197,10 +431,10 @@ def display_categories_for_selection(
     print("\nAvailable tool categories (select by category index):\n")
     for idx, (category, tools) in enumerate(groups.items(), start=1):
         tool_count = len(tools)
-        tool_names = ", ".join(t.metadata.name for t in tools)
+        short_desc = _build_category_description(tools)
         print(f"  [{idx}] {category} ({tool_count} tools)")
-        print(f"      Tools: {tool_names}")
-    print()  # trailing newline
+        print(f"      {short_desc}")
+    print()
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +466,7 @@ def select_tools_interactively(
         all_tools = _discover_tools()
 
     groups = group_tools_by_category(all_tools)
-    category_list = list(groups.keys())  # ordered list of category names
+    category_list = list(groups.keys())
     display_categories_for_selection(groups)
 
     total_categories = len(category_list)
@@ -249,7 +483,6 @@ def select_tools_interactively(
 
             selected_indexes = parse_tool_selection(raw, maximum=total_categories)
 
-            # Guard: empty selection after parsing (shouldn't happen, but just in case)
             if not selected_indexes:
                 print("No categories selected. Please try again.\n")
                 continue
@@ -266,14 +499,12 @@ def select_tools_interactively(
             print("\n  Interrupted. Aborting selection.")
             return []
 
-    # Build selected tool list from selected categories
     selected_categories = {category_list[i - 1] for i in selected_indexes}
     selected_tools = [
         t for t in all_tools
         if _extract_category(t.metadata.description) in selected_categories
     ]
 
-    # Summary
     print(
         f"\nSelected {len(selected_categories)} categories ({len(selected_tools)} of {len(all_tools)} tools):"
     )
