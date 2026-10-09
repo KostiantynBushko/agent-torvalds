@@ -1,5 +1,5 @@
 """
-Tests for the project-manager module.
+Tests for the project_manager module.
 
 Tests cover:
 - ProjectScanner: directory scanning and type detection
