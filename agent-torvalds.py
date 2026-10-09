@@ -2,9 +2,10 @@
 Torvalds AI Agent - Main Orchestrator
 
 This is the actual agent that coordinates all toolkits. It provides a unified
-interface to all capabilities with support for both:
-  - Full tool loading (all tools available at once)
-  - On-demand tool retrieval (tools loaded semantically per query)
+interface to all capabilities with support for three startup modes:
+  1. Default: on-demand tool retrieval (top-8 tools per query)
+  2. Full: --full loads all tools upfront
+  3. Select: --select lets the user interactively choose which tools to load
 
 Features:
   - Real-time event streaming from workflow
@@ -14,10 +15,12 @@ Features:
   - Dynamic logging level control via --log-level CLI argument
   - Graceful signal handling (SIGINT/SIGTERM) for clean shutdown
   - Human-in-the-Loop (HITL) support with runtime toggle
+  - Interactive startup tool selection with --select
 
 Usage:
     python agent-torvalds.py              # Default mode (retriever-based, INFO logging)
     python agent-torvalds.py --full       # Load all tools upfront
+    python agent-torvalds.py --select     # Interactively select tools before starting
     python agent-torvalds.py --top-k 10   # Adjust retrieval count
     python agent-torvalds.py --no-stats   # Disable request statistics
     python agent-torvalds.py --log-level DEBUG  # Enable debug logging
@@ -39,11 +42,12 @@ import sys
 import uuid
 import platform
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from llama_index.core.callbacks import CallbackManager
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.memory import ChatMemoryBuffer
+from llama_index.core.tools import FunctionTool
 from llama_index.llms.ollama import Ollama
 from rich import status
 from rich.console import Console
@@ -262,17 +266,57 @@ def _setup_signal_handlers():
 
 
 # ---------------------------------------------------------------------------
+# Helper: collect all tools from every toolkit
+# ---------------------------------------------------------------------------
+
+def _collect_all_tools() -> List[FunctionTool]:
+    """
+    Gather every available tool from all toolkit modules.
+
+    This mirrors the tool collection logic used in both the retriever
+    and full-loading modes, so the --select mode sees the same set
+    of tools that would otherwise be available.
+
+    Returns:
+        List of all FunctionTool instances.
+    """
+    all_tools = (
+        get_math_tools()
+        + get_git_tools()
+        + get_github_tools()
+        + get_os_tools()
+        + get_db_tools()
+        + get_apt_tools()
+        + get_cache_tools()
+    )
+
+    os_name = platform.system()
+    if os_name == "Windows":
+        all_tools += get_windows_tools()
+    elif os_name == "Linux":
+        all_tools += get_linux_tools()
+
+    return all_tools
+
+
+# ---------------------------------------------------------------------------
 # Agent factory
 # ---------------------------------------------------------------------------
 
-def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K):
+def create_agent(
+    use_retriever: bool = True,
+    top_k: int = SIMILARITY_TOP_K,
+    tools: Optional[List[FunctionTool]] = None,
+):
     """
     Create and configure the Torvalds agent.
 
     Args:
         use_retriever: If True, use on-demand tool retrieval.
-                       If False, load all tools upfront.
+                       If False, load tools upfront.
         top_k: Number of tools to retrieve per query (only used with retriever mode).
+        tools: Pre-selected list of tools (used when --select is active).
+               If None and use_retriever is False, all tools are loaded.
 
     Returns:
         FunctionAgent instance
@@ -294,29 +338,15 @@ def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K):
             similarity_top_k=top_k,
         )
     else:
-        # ---- Full tool loading mode ----
-        console.print("[dim]Loading ALL tools upfront (legacy mode)[/dim]")
-
-        os_name = platform.system()
-
-        all_tools = (
-                get_math_tools()
-                + get_git_tools()
-                + get_github_tools()
-                + get_os_tools()
-                + get_db_tools()
-                + get_apt_tools()
-                + get_cache_tools()
-        )
-
-        if os_name == "Windows":
-            all_tools += get_windows_tools()
-
-        elif os_name == "Linux":
-            all_tools += get_linux_tools()
+        # ---- Full / selected tool loading mode ----
+        if tools is None:
+            console.print("[dim]Loading ALL tools upfront (legacy mode)[/dim]")
+            tools = _collect_all_tools()
+        else:
+            console.print(f"[dim]Loading {len(tools)} user-selected tools[/dim]")
 
         agent = FunctionAgent(
-            tools=all_tools,
+            tools=tools,
             llm=llm,
             max_iterations=MAX_ITERATIONS,
             memory=chat_memory,
@@ -332,11 +362,20 @@ def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Torvalds AI Agent")
-    parser.add_argument(
+
+    # Mutually exclusive group for startup mode selection
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--full",
         action="store_true",
         help="Load all tools upfront instead of using on-demand retrieval",
     )
+    mode.add_argument(
+        "--select",
+        action="store_true",
+        help="Interactively select which tools to load before starting the agent",
+    )
+
     parser.add_argument(
         "--top-k",
         type=int,
@@ -607,8 +646,34 @@ async def main():
     # Start a cache session
     start_session()
 
+    # -----------------------------------------------------------------------
+    # Startup mode decision: default (retriever) | --full | --select
+    # -----------------------------------------------------------------------
+    selected_tools: Optional[List[FunctionTool]] = None
+
+    if args.select:
+        # ---- Interactive tool selection mode ----
+        from agent_tool_selection import select_tools_interactively
+
+        selected_tools = select_tools_interactively()
+
+        if not selected_tools:
+            console.print("[yellow]No tools selected. Exiting.[/yellow]")
+            from agent_cache_system import end_session
+            end_session()
+            console.print("[yellow]Goodbye![/yellow]")
+            return
+
+        console.print(
+            f"[green]Starting agent with {len(selected_tools)} selected tool(s)...[/green]"
+        )
+
     # Create agent
-    agent = create_agent(use_retriever=not args.full, top_k=args.top_k)
+    agent = create_agent(
+        use_retriever=not args.full and not args.select,
+        top_k=args.top_k,
+        tools=selected_tools,
+    )
 
     # Create shared EventConsumer instance
     state_handler = StateHandler()
