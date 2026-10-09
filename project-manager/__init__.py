@@ -2,10 +2,11 @@
 project_manager - Project management module for workspace orchestration.
 
 Provides project type detection, workspace configuration management,
-and a unified ProjectManager interface for discovering and managing projects.
+a unified ProjectManager interface, and LlamaIndex FunctionTools for
+agent integration.
 
 Usage:
-    from project_manage import ProjectManager, ProjectScanner, WorkspaceConfig
+    from project_manager import ProjectManager, ProjectScanner, WorkspaceConfig
 
     # Quick scan
     manager = ProjectManager("/path/to/workspace")
@@ -16,12 +17,19 @@ Usage:
     scanner = ProjectScanner()
     scores = scanner.scan_directory("./some-path")
 
+    # Or use as LlamaIndex tools
+    from project_manager.toolkit import get_all_tools
+    tools = get_all_tools()
+
 Category: Project Management
 """
 
 from .scanner import ProjectScanner
 from .config import WorkspaceConfig, validate_config, migrate_config
 from .manager import ProjectManager
+from .executor import ActionExecutor, ActionResult
+from .recommender import ToolRecommender
+from .toolkit import get_all_tools
 
 # Public API
 __all__ = [
@@ -30,9 +38,14 @@ __all__ = [
     # Components (for direct use when needed)
     "ProjectScanner",
     "WorkspaceConfig",
+    "ActionExecutor",
+    "ActionResult",
+    "ToolRecommender",
     # Config utilities
     "validate_config",
     "migrate_config",
+    # Toolkit integration
+    "get_all_tools",
 ]
 
 __version__ = "1.0.0"
