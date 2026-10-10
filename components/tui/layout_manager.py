@@ -16,6 +16,7 @@ from rich.layout import Layout
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich.markup import escape
 
 
 def build_torvalds_layout() -> Layout:
@@ -184,7 +185,11 @@ def render_footer(
     cur_char = input_buffer[safe_pos] if safe_pos < len(input_buffer) else " "
     after_cur = input_buffer[safe_pos + 1:] if safe_pos < len(input_buffer) else ""
 
-    cursor_rendered = f"{before_cur}[black on green]{cur_char}[/black on green]{after_cur}"
+    cursor_rendered = (
+        f"{escape(before_cur)}"
+        f"[black on green]{escape(cur_char)}[/black on green]"
+        f"{escape(after_cur)}"
+    )
 
     prompt_label = "[green]>>> [/green]"
     if is_busy:
