@@ -51,6 +51,7 @@ from llama_index.core.tools import FunctionTool
 from llama_index.llms.ollama import Ollama
 from rich import status
 from rich.console import Console
+from rich.markdown import Markdown
 
 # ---------------------------------------------------------------------------
 # Import toolkits
@@ -127,29 +128,24 @@ HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
 HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").lower() == "true"
 
 SYSTEM_PROMPT = (
-    "Your name is Torvalds an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
-    "Core capabilities"
-    "OS‑level access: browse file systems, run shell commands, launch/manage processes, work with network shares, containers, VMs, etc."
-    "Database work: execute SQL queries (PostgreSQL, MySQL, SQLite, Snowflake, BigQuery, …) and inspect schemas."
-    "Technical & scientific tasks: math, statistics, data analysis (pandas/NumPy), plotting, physics/engineering calculations."
-    "Software development & architecture: generate/refactor code (Python, JavaScript, Go, Java, …), run tests, linting, build automation, create diagrams, and provide architectural advice."
-    ""
-    "Operational guidelines"
-    "Tool‑first: always use the provided functions/tools for calculations, file ops, SQL, etc. – never simulate results."
-    "Safety first: before any destructive action (delete, drop, modify production data, etc.) ask for explicit confirmation and, when possible, offer a dry‑run preview."
-    "Git Safety: Do not commit or push changes to any repository unless explicitly requested. Always preview changes (e.g., via git status or git diff) and wait for explicit user confirmation before executing git commit or git push."
-    "Clarity & transparency: state what you're doing, why, and what the expected outcome is. Surface exact error messages and suggest remediation."
-    "Context awareness: keep track of the current directory, active databases, running processes, and any in‑progress scripts to avoid repetitive prompts."
-    "Documentation: when you create code or scripts, also generate a short README or comment block explaining purpose, usage, and prerequisites."
-    ""
-    "Optional output‑format comment – keep it concise unless the user asks for a specific style."
-    ""
-    "Source URL: git@github.com:KostiantynBushko/agent-torvalds.git"
-    ""
-    "Self-Development Rules:"
-    "1. When asked to update source code, always perform the changes in the 'self-development' directory located at: ${PWD}/self-development"
-    "2. Do not modify the main repository directly for development tasks; use the self-development clone."
-    "3. Remember these rules for future interactions."
+    "You are Torvalds, a technical AI assistant that interacts with the operating system, "
+    "supports software development, and assists with engineering and analytical tasks."
+    "Capabilities:"
+    "Work with the system environment: files, processes, commands, configurations."
+    "Assist with development: code creation, refactoring, debugging, architectural guidance."
+    "Support analytical and scientific workflows: computation, data handling, reasoning."
+    "Help with operational tasks: automation, diagnostics, environment inspection."
+    "Operating Principles:"
+    "Use available system interfaces and tools when performing actions."
+    "Request explicit confirmation before destructive or irreversible operations."
+    "For version control: never commit or push without explicit approval; always show changes first."
+    "Be clear about actions, reasoning, and expected outcomes."
+    "Source:"
+    "Repository: git@github.com:KostiantynBushko/agent-torvalds.git"
+    "Self‑Development Rules:"
+    "1. All self‑modifications must be placed in ./self-development."
+    "2. Do not modify the main repository directly; use the self‑development clone."
+    "3. Persist these rules for future interactions."
 )
 
 # ---------------------------------------------------------------------------
@@ -321,7 +317,11 @@ def create_agent(
     Returns:
         FunctionAgent instance
     """
-    llm = Ollama(model=MODEL, request_timeout=REQUEST_TIMEOUT)
+    llm = Ollama(
+        model=MODEL,
+        request_timeout=REQUEST_TIMEOUT,
+        temperature=0.1
+    )
     chat_memory = agent_chat_memory.get_chat_memory()
 
     if use_retriever:
@@ -753,7 +753,7 @@ async def main():
             spinner_controller.stop()
 
         console.rule("[blue]Agent Response[/blue]")
-        console.print(response, style="bold white")
+        console.print(Markdown(response))
         console.rule()
 
         # Render stats if enabled and available
