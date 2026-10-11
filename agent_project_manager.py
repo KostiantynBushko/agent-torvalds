@@ -92,6 +92,111 @@ def _get_hitl_timeout() -> int:
 
 
 # =============================================================================
+# Project Context Management (used by agent-torvalds.py)
+# =============================================================================
+
+
+def build_project_context() -> str:
+    """
+    Build project context string for system prompt injection.
+
+    Scans the workspace configuration and returns a formatted string
+    describing all registered projects and their actions.
+
+    Returns:
+        str: Formatted project context string, or empty string if no projects.
+    """
+    try:
+        config = WorkspaceConfig(Path.cwd())
+        projects = config.get_all_projects()
+
+        if not projects:
+            return ""
+
+        context_lines = ["\nCurrent Workspace Projects:"]
+        for p in projects:
+            context_lines.append(
+                f"  - {p['name']} ({p['type']}): {p['path']}"
+            )
+            if p.get('actions'):
+                for action_name, cmd in p['actions'].items():
+                    context_lines.append(f"    {action_name}: {cmd}")
+
+        return "\n".join(context_lines)
+    except Exception as e:
+        logger.debug(f"Failed to build project context: {e}")
+        return ""
+
+
+def initialize_project_management(
+    auto_scan: bool = False,
+    override_project_type: Optional[str] = None,
+) -> None:
+    """
+    Auto-scan and configure project on agent startup.
+
+    Checks if the current workspace already has configured projects.
+    If not and auto_scan is enabled, scans for project indicators and
+    auto-registers the detected project type.
+
+    Args:
+        auto_scan: Whether to auto-scan for projects on startup.
+        override_project_type: Optional project type override (bypasses detection).
+    """
+    if not auto_scan:
+        return
+
+    try:
+        scanner = ProjectScanner()
+        config = WorkspaceConfig(Path.cwd())
+
+        # Check if already configured
+        existing = config.get_all_projects()
+        if existing:
+            logger.info(f"Found {len(existing)} configured projects in workspace")
+            return
+
+        # Scan for projects
+        candidates = scanner.get_candidates(str(Path.cwd()))
+        if not candidates:
+            logger.info("No project indicators detected in current directory")
+            return
+
+        # Determine project type
+        if override_project_type:
+            project_type = override_project_type
+            confidence = 1.0
+            logger.info(f"Using overridden project type: {project_type}")
+        else:
+            project_type, confidence = candidates[0]
+            logger.info(f"Detected project type: {project_type} (confidence: {confidence:.2f})")
+
+        # Auto-initialize if confidence is high enough
+        if confidence >= 0.8:
+            project_name = Path.cwd().name
+            indicators = [t for t, _ in candidates]
+            config.add_project(
+                name=project_name,
+                path=".",
+                project_type=project_type,
+                indicators=indicators,
+                confidence=confidence,
+                git_repo=(Path.cwd() / ".git").exists(),
+            )
+            logger.info(f"Auto-configured project: {project_name} ({project_type})")
+        else:
+            logger.info(
+                f"Detected {project_type} but confidence ({confidence:.2f}) "
+                f"below threshold (0.8). Manual registration required."
+            )
+
+    except ImportError:
+        logger.debug("project_manager module not available, skipping auto-scan")
+    except Exception as e:
+        logger.warning(f"Project auto-scan failed: {e}")
+
+
+# =============================================================================
 # Tier 1: Project Detection
 # =============================================================================
 
