@@ -1095,3 +1095,84 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 70)
     print("Demo complete.")
+
+
+# =============================================================================
+# Project Context & Initialization Helpers
+# =============================================================================
+
+def build_project_context(path: str = ".") -> str:
+    """
+    Build a project context string summarizing the workspace state.
+
+    Returns a formatted string with registered projects and their types,
+    suitable for injection into system prompts or agent memory.
+
+    Args:
+        path: Path to workspace root (default: current directory)
+
+    Returns:
+        str: Formatted project context string, or empty string if no projects
+    """
+    logger.info(f"build_project_context called with path: {path}")
+    try:
+        resolved_path = _resolve_path(path)
+        config = WorkspaceConfig(workspace_path=resolved_path)
+        projects = config.get_all_projects()
+
+        if not projects:
+            return ""
+
+        lines = ["### Registered Projects"]
+        for proj in projects:
+            name = proj.get("name", "unknown")
+            proj_type = proj.get("type", "unknown")
+            proj_path = proj.get("path", "N/A")
+            lines.append(f"- **{name}** ({proj_type}): {proj_path}")
+
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error(f"build_project_context failed: {e}")
+        return ""
+
+
+def initialize_project_management(
+    auto_scan: bool = False,
+    override_project_type: Optional[str] = None,
+    path: str = ".",
+) -> Optional[str]:
+    """
+    Initialize project management with optional auto-scan.
+
+    When auto_scan is True, scans the workspace for projects and registers them.
+    Optionally overrides the detected project type.
+
+    Args:
+        auto_scan: Whether to auto-scan for projects
+        override_project_type: Override detected project type
+        path: Path to workspace root (default: current directory)
+
+    Returns:
+        str: Summary of initialization, or None if no auto-scan
+    """
+    logger.info(f"initialize_project_management called with auto_scan={auto_scan}")
+    if not auto_scan:
+        return None
+
+    try:
+        resolved_path = _resolve_path(path)
+        manager = ProjectManager(workspace_path=resolved_path)
+
+        # Scan current directory
+        result = manager.discover_and_register(
+            resolved_path,
+            override_project_type=override_project_type,
+        )
+
+        if result.get("registered"):
+            return f"Auto-registered project: {result.get('project_name', 'unknown')} ({result.get('project_type', 'unknown')})"
+        else:
+            return "No projects detected during auto-scan"
+    except Exception as e:
+        logger.error(f"initialize_project_management failed: {e}")
+        return f"Auto-scan failed: {e}"

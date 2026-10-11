@@ -29,7 +29,7 @@ from .config import WorkspaceConfig, validate_config, migrate_config
 from .manager import ProjectManager
 from .executor import ActionExecutor, ActionResult
 from .recommender import ToolRecommender
-from .toolkit import get_all_tools
+from .agent_project_manager_toolkit import get_all_tools
 
 # Public API
 __all__ = [
