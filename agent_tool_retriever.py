@@ -103,7 +103,7 @@ def build_tool_retriever(
     # -----------------------------------------------------------------------
     if include_project_manager_tools:
         try:
-            from agent_project_manager import get_all_tools as _get_pm
+            from project_manager.agent_project_manager_toolkit import get_all_tools as _get_pm
             all_tools.extend(_get_pm())
         except ImportError:
             # Project manager toolkit not available — skip gracefully

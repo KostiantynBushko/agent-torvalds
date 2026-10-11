@@ -18,7 +18,7 @@ Usage:
     scores = scanner.scan_directory("./some-path")
 
     # Or use as LlamaIndex tools
-    from project_manager.toolkit import get_all_tools
+    from project_manager.agent_project_manager_toolkit import get_all_tools
     tools = get_all_tools()
 
 Category: Project Management
