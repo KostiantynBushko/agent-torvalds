@@ -47,7 +47,7 @@ def _build_pg_uri() -> str:
     host = os.environ.get("TORVALDS_PG_HOST", "127.0.0.1")
     port = os.environ.get("TORVALDS_PG_PORT", "5432")
     user = os.environ.get("TORVALDS_PG_USER", "postgres")
-    password = os.environ.get("TORVALDS_PG_PASSWORD", "postgres1")
+    password = os.environ.get("TORVALDS_PG_PASSWORD", "postgres")
     database = os.environ.get("TORVALDS_PG_DATABASE", "llama_index_db")
 
     uri = f"postgres+asyncpg://{user}:{password}@{host}:{port}/{database}"

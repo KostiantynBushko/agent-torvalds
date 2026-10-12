@@ -359,7 +359,7 @@ def create_agent(
     llm = Ollama(
         model=MODEL,
         request_timeout=REQUEST_TIMEOUT,
-        temperature=0.1
+        temperature=0.0
     )
     chat_memory = agent_chat_memory.get_chat_memory()
 
