@@ -59,6 +59,9 @@ def _discover_tools() -> List[FunctionTool]:
     tools.extend(_get_xlsx())
 
     from agent_data_analysis_toolkit import get_all_tools as _get_analysis
+
+    from project_manager.agent_project_manager_toolkit import get_all_tools as _get_pm
+    tools.extend(_get_pm())
     tools.extend(_get_analysis())
 
     # Platform-specific
@@ -244,6 +247,24 @@ _ACTION_PATTERNS: list = [
     (r"(?i)\bcompute.*detailed.*statistics", "compute"),
     (r"(?i)\bget.*DataFrame.*information",  "inspect"),
 
+
+    # --- Project Management ---
+    (r"(?i)\bscan.*directory.*detect.*project",   "scan"),
+    (r"(?i)\bget.*indicator.*files",             "inspect"),
+    (r"(?i)\bload.*workspace.*config",           "inspect"),
+    (r"(?i)\blist.*registered.*projects",        "inspect"),
+    (r"(?i)\bget.*detailed.*information.*project", "inspect"),
+    (r"(?i)\bscan.*detect.*register",            "register"),
+    (r"(?i)\bupdate.*metadata.*project",         "update"),
+    (r"(?i)\bremove.*project.*workspace",        "delete"),
+    (r"(?i)\brename.*registered.*project",       "rename"),
+    (r"(?i)\bset.*actions.*project",             "config"),
+    (r"(?i)\bset.*single.*action",               "config"),
+    (r"(?i)\bget.*project.*actions",             "inspect"),
+    (r"(?i)\bresolve.*ambiguity",                "resolve"),
+    (r"(?i)\bget.*workspace.*summary",           "inspect"),
+    (r"(?i)\bget.*project.*types.*summary",      "inspect"),
+    (r"(?i)\bclear.*all.*projects",              "delete"),
     # --- System ---
     (r"(?i)\bexecute.*shell\s+command",        "execute"),
     (r"(?i)\bexecute\s+multiple.*commands",    "execute"),

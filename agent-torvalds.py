@@ -15,6 +15,7 @@ Features:
   - Dynamic logging level control via --log-level CLI argument
   - Graceful signal handling (SIGINT/SIGTERM) for clean shutdown
   - Human-in-the-Loop (HITL) support with runtime toggle
+  - Project Management: auto-scan, workspace config, project context injection
   - Interactive startup tool selection with --select
 
 Usage:
@@ -24,6 +25,8 @@ Usage:
     python agent-torvalds.py --top-k 10   # Adjust retrieval count
     python agent-torvalds.py --no-stats   # Disable request statistics
     python agent-torvalds.py --log-level DEBUG  # Enable debug logging
+    python agent-torvalds.py --auto-scan  # Auto-scan and configure projects on startup
+    python agent-torvalds.py --project-type Python  # Override auto-detected project type
 
 Environment Variables:
     TORVALDS_HITL_ENABLED       Enable/disable HITL (default: true)
@@ -106,6 +109,14 @@ from components.console_input_module import ConsoleInputModule
 from components.whiptail_input_module import WhiptailInputModule
 
 # ---------------------------------------------------------------------------
+# Project Management (Step 05) - imported from agent_project_manager
+# ---------------------------------------------------------------------------
+from project_manager.agent_project_manager_toolkit import (
+    build_project_context,
+    initialize_project_management,
+)
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 REQUEST_TIMEOUT = int(os.environ.get("TORVALDS_REQUEST_TIMEOUT", "99999"))
@@ -127,7 +138,14 @@ HITL_TIMEOUT = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "30"))
 HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
 HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").lower() == "true"
 
-SYSTEM_PROMPT = (
+# ---------------------------------------------------------------------------
+# System Prompt Configuration
+# ---------------------------------------------------------------------------
+
+logger = logging.getLogger(__name__)
+
+# Base system prompt template (project context injected at runtime)
+_SYSTEM_PROMPT_TEMPLATE = (
     "You are Torvalds, a technical AI assistant that interacts with the operating system, "
     "supports software development, and assists with engineering and analytical tasks."
     "Capabilities:"
@@ -146,7 +164,26 @@ SYSTEM_PROMPT = (
     "1. All self‑modifications must be placed in ./self-development."
     "2. Do not modify the main repository directly; use the self‑development clone."
     "3. Persist these rules for future interactions."
+    ""
+    "{project_context}"
 )
+
+
+def build_system_prompt(project_context: str = "") -> str:
+    """
+    Build the full system prompt with dynamic project context injection.
+
+    Args:
+        project_context: Project context string from build_project_context().
+
+    Returns:
+        str: Complete system prompt string.
+    """
+    return _SYSTEM_PROMPT_TEMPLATE.format(project_context=project_context)
+
+
+# Default system prompt (without project context — populated at runtime)
+SYSTEM_PROMPT = build_system_prompt()
 
 # ---------------------------------------------------------------------------
 # Logging Configuration
@@ -303,6 +340,7 @@ def create_agent(
     use_retriever: bool = True,
     top_k: int = SIMILARITY_TOP_K,
     tools: Optional[List[FunctionTool]] = None,
+    system_prompt: Optional[str] = None,
 ):
     """
     Create and configure the Torvalds agent.
@@ -313,6 +351,7 @@ def create_agent(
         top_k: Number of tools to retrieve per query (only used with retriever mode).
         tools: Pre-selected list of tools (used when --select is active).
                If None and use_retriever is False, all tools are loaded.
+        system_prompt: Optional custom system prompt (includes project context).
 
     Returns:
         FunctionAgent instance
@@ -324,6 +363,9 @@ def create_agent(
     )
     chat_memory = agent_chat_memory.get_chat_memory()
 
+    # Use provided system prompt or build one with project context
+    prompt = system_prompt or build_system_prompt(build_project_context())
+
     if use_retriever:
         # ---- On-demand tool retrieval mode ----
         from agent_tool_retriever import create_agent_with_retriever
@@ -333,7 +375,7 @@ def create_agent(
         agent = create_agent_with_retriever(
             llm=llm,
             memory=chat_memory,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=prompt,
             max_iterations=MAX_ITERATIONS,
             similarity_top_k=top_k,
         )
@@ -350,7 +392,7 @@ def create_agent(
             llm=llm,
             max_iterations=MAX_ITERATIONS,
             memory=chat_memory,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=prompt,
         )
 
     return agent
@@ -434,6 +476,20 @@ def parse_args():
         action="store_true",
         help="Disable runtime HITL toggle commands (toggle-hitl, hitl-status, etc.)",
     )
+    # ------------------------------------------------------------------
+    # Project Management CLI flags (Step 05)
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--auto-scan",
+        action="store_true",
+        help="Auto-scan and configure projects on startup",
+    )
+    parser.add_argument(
+        "--project-type",
+        type=str,
+        default=None,
+        help="Override auto-detected project type (requires --auto-scan)",
+    )
     return parser.parse_args()
 
 
@@ -497,6 +553,11 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
     try:
         chat_memory = agent_chat_memory.get_chat_memory()
         increment_session_commands()
+
+        # Inject project context into agent memory before each query (Step 05)
+        project_context = build_project_context()
+        if project_context:
+            chat_memory.put(f"CONTEXT: {project_context}")
 
         # Create workflow handler
         workflow_handler = agent.run(
@@ -636,6 +697,23 @@ async def main():
     console.print(
         f"[dim]HITL: {'enabled' if hitl_enabled else 'disabled'} (method={hitl_method}, timeout={hitl_timeout}s)[/dim]"
     )
+
+    # ------------------------------------------------------------------
+    # Project Management initialization (Step 05)
+    # ------------------------------------------------------------------
+    if args.auto_scan:
+        console.print("[dim]Auto-scanning for projects...[/dim]")
+        initialize_project_management(
+            auto_scan=True,
+            override_project_type=args.project_type,
+        )
+        # Show project context status
+        ctx = build_project_context()
+        if ctx:
+            console.print(f"[dim]Project context: {ctx.strip()}[/dim]")
+        else:
+            console.print("[dim]No projects configured in workspace[/dim]")
+
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
     if runtime_toggle_enabled:
@@ -645,6 +723,9 @@ async def main():
 
     # Start a cache session
     start_session()
+
+    # Build system prompt with project context
+    system_prompt = build_system_prompt(build_project_context())
 
     # -----------------------------------------------------------------------
     # Startup mode decision: default (retriever) | --full | --select
@@ -672,6 +753,7 @@ async def main():
     agent = create_agent(
         use_retriever=not args.full and not args.select,
         top_k=args.top_k,
+        system_prompt=system_prompt,
         tools=selected_tools,
     )
 

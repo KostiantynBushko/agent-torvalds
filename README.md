@@ -112,6 +112,15 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 - Callback hooks for lifecycle events
 - Shared across toolkit modules
 
+
+### 15. Project Manager (`project_manager/`)
+- Automatic project type detection via file indicator scanning
+- Workspace configuration persistence in `.agentworkspace.json`
+- Project action execution (build, test, run, clean) with timeout support
+- Project-aware tool recommendation engine
+- Human-in-the-Loop resolution for ambiguous project types
+- Full LlamaIndex FunctionTools integration
+- See [Project Manager README](project_manager/README.md) for details
 ---
 
 ## Key Features
