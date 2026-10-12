@@ -59,6 +59,9 @@ def _discover_tools() -> List[FunctionTool]:
     tools.extend(_get_xlsx())
 
     from agent_data_analysis_toolkit import get_all_tools as _get_analysis
+
+    from project_manager.agent_project_manager_toolkit import get_all_tools as _get_pm
+    tools.extend(_get_pm())
     tools.extend(_get_analysis())
 
     # Platform-specific
