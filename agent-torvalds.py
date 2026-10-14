@@ -17,6 +17,7 @@ Features:
   - Human-in-the-Loop (HITL) support with runtime toggle
   - Project Management: auto-scan, workspace config, project context injection
   - Interactive startup tool selection with --select
+  - Runtime Prompt Injection: dynamic system prompt generation based on active project
 
 Usage:
     python agent-torvalds.py              # Default mode (retriever-based, INFO logging)
@@ -27,6 +28,7 @@ Usage:
     python agent-torvalds.py --log-level DEBUG  # Enable debug logging
     python agent-torvalds.py --auto-scan  # Auto-scan and configure projects on startup
     python agent-torvalds.py --project-type Python  # Override auto-detected project type
+    python agent-torvalds.py --no-prompt-injection  # Disable dynamic prompt injection
 
 Environment Variables:
     TORVALDS_HITL_ENABLED       Enable/disable HITL (default: true)
@@ -34,6 +36,9 @@ Environment Variables:
     TORVALDS_HITL_TIMEOUT       Timeout in seconds for HITL prompts (default: 30)
     TORVALDS_HITL_DEFAULT_ANSWER Default answer on timeout (default: empty)
     TORVALDS_HITL_RUNTIME_TOGGLE  Enable/disable runtime toggle commands (default: true)
+    TORVALDS_PROMPT_INJECTION   Enable/disable runtime prompt injection (default: true)
+    TORVALDS_PROMPT_TEMPLATE    Path to custom prompt template file
+    TORVALDS_INCLUDE_RECOMMENDATIONS  Include tool recommendations in prompt (default: true)
 """
 import asyncio
 import argparse
@@ -117,6 +122,11 @@ from project_manager.agent_project_manager_toolkit import (
 )
 
 # ---------------------------------------------------------------------------
+# Runtime Prompt Injection (Step 06)
+# ---------------------------------------------------------------------------
+from project_manager.prompt_engine import PromptTemplateEngine
+
+# ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 REQUEST_TIMEOUT = int(os.environ.get("TORVALDS_REQUEST_TIMEOUT", "99999"))
@@ -139,12 +149,107 @@ HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
 HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").lower() == "true"
 
 # ---------------------------------------------------------------------------
+# Runtime Prompt Injection Configuration
+# ---------------------------------------------------------------------------
+PROMPT_INJECTION_ENABLED = os.environ.get("TORVALDS_PROMPT_INJECTION", "true").lower() == "true"
+PROMPT_TEMPLATE_PATH = os.environ.get("TORVALDS_PROMPT_TEMPLATE", "")
+INCLUDE_TOOL_RECOMMENDATIONS = os.environ.get("TORVALDS_INCLUDE_RECOMMENDATIONS", "true").lower() == "true"
+
+# ---------------------------------------------------------------------------
 # System Prompt Configuration
 # ---------------------------------------------------------------------------
 
 logger = logging.getLogger(__name__)
 
-# Base system prompt template (project context injected at runtime)
+# ---------------------------------------------------------------------------
+# Global Prompt Template Engine instance
+# ---------------------------------------------------------------------------
+prompt_engine: Optional[PromptTemplateEngine] = None
+
+
+def _load_custom_template(template_path: str) -> Optional[str]:
+    """
+    Load a custom prompt template from file.
+
+    Args:
+        template_path: Path to the template file.
+
+    Returns:
+        Template string if file exists and is readable, None otherwise.
+    """
+    if not template_path:
+        return None
+
+    path = Path(template_path)
+    if not path.exists():
+        logger.warning(f"Prompt template file not found: {template_path}")
+        return None
+
+    try:
+        content = path.read_text(encoding="utf-8")
+        logger.info(f"Loaded custom prompt template from {template_path}")
+        return content
+    except Exception as e:
+        logger.error(f"Failed to load prompt template: {e}")
+        return None
+
+
+def _initialize_prompt_engine() -> None:
+    """Initialize the global prompt template engine."""
+    global prompt_engine
+
+    custom_template = _load_custom_template(PROMPT_TEMPLATE_PATH)
+
+    prompt_engine = PromptTemplateEngine(
+        workspace_path=".",
+        system_prompt_template=custom_template,
+        include_tool_recommendations=INCLUDE_TOOL_RECOMMENDATIONS,
+        include_custom_instructions=True,
+    )
+
+    logger.info(
+        f"Prompt injection: {'enabled' if PROMPT_INJECTION_ENABLED else 'disabled'}, "
+        f"template: {'custom' if custom_template else 'default'}, "
+        f"recommendations: {'enabled' if INCLUDE_TOOL_RECOMMENDATIONS else 'disabled'}"
+    )
+
+
+# Initialize prompt engine at module level
+_initialize_prompt_engine()
+
+
+def build_system_prompt(
+    user_input: str = "",
+    force_project: Optional[str] = None,
+    custom_instructions: Optional[str] = None,
+) -> str:
+    """
+    Build the full system prompt with dynamic project context injection.
+
+    Uses the PromptTemplateEngine for runtime prompt injection when enabled,
+    otherwise falls back to the legacy static prompt with project context.
+
+    Args:
+        user_input: User input string (used for project detection).
+        force_project: Force a specific project name (overrides detection).
+        custom_instructions: Additional custom instructions to include.
+
+    Returns:
+        str: Complete system prompt string.
+    """
+    if PROMPT_INJECTION_ENABLED and prompt_engine is not None:
+        return prompt_engine.generate_prompt(
+            user_input=user_input,
+            force_project=force_project,
+            custom_instructions=custom_instructions,
+        )
+
+    # Legacy fallback: static prompt with project context
+    project_context = build_project_context()
+    return _SYSTEM_PROMPT_TEMPLATE.format(project_context=project_context)
+
+
+# Legacy system prompt template (used when prompt injection is disabled)
 _SYSTEM_PROMPT_TEMPLATE = (
     "You are Torvalds, a technical AI assistant that interacts with the operating system, "
     "supports software development, and assists with engineering and analytical tasks."
@@ -167,19 +272,6 @@ _SYSTEM_PROMPT_TEMPLATE = (
     ""
     "{project_context}"
 )
-
-
-def build_system_prompt(project_context: str = "") -> str:
-    """
-    Build the full system prompt with dynamic project context injection.
-
-    Args:
-        project_context: Project context string from build_project_context().
-
-    Returns:
-        str: Complete system prompt string.
-    """
-    return _SYSTEM_PROMPT_TEMPLATE.format(project_context=project_context)
 
 
 # Default system prompt (without project context — populated at runtime)
@@ -364,7 +456,7 @@ def create_agent(
     chat_memory = agent_chat_memory.get_chat_memory()
 
     # Use provided system prompt or build one with project context
-    prompt = system_prompt or build_system_prompt(build_project_context())
+    prompt = system_prompt or build_system_prompt()
 
     if use_retriever:
         # ---- On-demand tool retrieval mode ----
@@ -489,6 +581,31 @@ def parse_args():
         type=str,
         default=None,
         help="Override auto-detected project type (requires --auto-scan)",
+    )
+    # ------------------------------------------------------------------
+    # Runtime Prompt Injection CLI flags (Step 06)
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--no-prompt-injection",
+        action="store_true",
+        help="Disable dynamic prompt injection (use static system prompt)",
+    )
+    parser.add_argument(
+        "--prompt-template",
+        type=str,
+        default="",
+        help="Path to custom prompt template file",
+    )
+    parser.add_argument(
+        "--no-tool-recommendations",
+        action="store_true",
+        help="Disable tool recommendations in dynamic prompts",
+    )
+    parser.add_argument(
+        "--force-project",
+        type=str,
+        default=None,
+        help="Force a specific project name for prompt context",
     )
     return parser.parse_args()
 
@@ -682,6 +799,26 @@ async def main():
     else:
         human_loop_handler.console_input = ConsoleInputModule(console)
 
+    # ------------------------------------------------------------------
+    # Runtime Prompt Injection configuration (Step 06)
+    # ------------------------------------------------------------------
+    global PROMPT_INJECTION_ENABLED, INCLUDE_TOOL_RECOMMENDATIONS, prompt_engine
+
+    prompt_injection_enabled = PROMPT_INJECTION_ENABLED and not args.no_prompt_injection
+    include_recommendations = INCLUDE_TOOL_RECOMMENDATIONS and not args.no_tool_recommendations
+
+    # Re-initialize prompt engine with CLI overrides
+    if args.prompt_template:
+        PROMPT_TEMPLATE_PATH = args.prompt_template
+
+    custom_template = _load_custom_template(PROMPT_TEMPLATE_PATH)
+    prompt_engine = PromptTemplateEngine(
+        workspace_path=".",
+        system_prompt_template=custom_template,
+        include_tool_recommendations=include_recommendations,
+        include_custom_instructions=True,
+    )
+
     console.print("[cyan]Torvalds AI Agent[/cyan]")
     console.print(f"[dim]Model: {MODEL} | Max iterations: {MAX_ITERATIONS}[/dim]")
     console.print(f"[dim]Logging: {args.log_level}[/dim]")
@@ -696,6 +833,10 @@ async def main():
     )
     console.print(
         f"[dim]HITL: {'enabled' if hitl_enabled else 'disabled'} (method={hitl_method}, timeout={hitl_timeout}s)[/dim]"
+    )
+    console.print(
+        f"[dim]Prompt injection: {'enabled' if prompt_injection_enabled else 'disabled'}"
+        f" (recommendations={'on' if include_recommendations else 'off'})[/dim]"
     )
 
     # ------------------------------------------------------------------
@@ -714,6 +855,12 @@ async def main():
         else:
             console.print("[dim]No projects configured in workspace[/dim]")
 
+    # Show active project if prompt injection is enabled
+    if prompt_injection_enabled and prompt_engine:
+        active_project = prompt_engine.config.get_all_projects()
+        if active_project:
+            console.print(f"[dim]Active projects: {len(active_project)} registered[/dim]")
+
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
     if runtime_toggle_enabled:
@@ -725,7 +872,7 @@ async def main():
     start_session()
 
     # Build system prompt with project context
-    system_prompt = build_system_prompt(build_project_context())
+    system_prompt = build_system_prompt(force_project=args.force_project)
 
     # -----------------------------------------------------------------------
     # Startup mode decision: default (retriever) | --full | --select

@@ -2,7 +2,7 @@
 
 > **Project-aware workspace orchestration for the Torvalds AI Agent.**
 
-The `project_manager` module provides automatic project type detection, workspace configuration management, action execution, and tool recommendation — all integrated as LlamaIndex FunctionTools for seamless agent interaction.
+The `project_manager` module provides automatic project type detection, workspace configuration management, action execution, tool recommendation, and dynamic prompt generation — all integrated as LlamaIndex FunctionTools for seamless agent interaction.
 
 ---
 
@@ -16,6 +16,7 @@ The `project_manager` module provides automatic project type detection, workspac
 - [API Reference](#api-reference)
 - [Integration with Agent](#integration-with-agent)
 - [Human-in-the-Loop](#human-in-the-loop)
+- [Runtime Prompt Injection](#runtime-prompt-injection)
 - [Usage Examples](#usage-examples)
 - [CLI Options](#cli-options)
 - [Environment Variables](#environment-variables)
@@ -31,6 +32,7 @@ The Project Manager module enables the Torvalds AI Agent to:
 3. **Execute project actions** (build, test, run, clean) with timeout support and output capture.
 4. **Recommend relevant tools** based on detected project type.
 5. **Resolve ambiguities** via Human-in-the-Loop (HITL) when multiple project types are detected with similar confidence.
+6. **Generate dynamic system prompts** based on active project context and tool recommendations.
 
 ### Key Benefits
 
@@ -41,6 +43,7 @@ The Project Manager module enables the Torvalds AI Agent to:
 | **Workspace awareness** | Multiple projects tracked separately in a single workspace |
 | **Extensible** | New project types and tools can be added via the indicator database and recommender |
 | **HITL fallback** | Ambiguous detections are resolved interactively with timeout handling |
+| **Dynamic Prompts** | System prompt adapts at runtime based on active project and tool recommendations |
 
 ---
 
@@ -55,6 +58,7 @@ project_manager/
 ├── manager.py                       # ProjectManager — orchestration layer
 ├── executor.py                      # ActionExecutor — safe command execution
 ├── recommender.py                   # ToolRecommender — project-aware tool suggestions
+├── prompt_engine.py                 # PromptTemplateEngine — dynamic prompt generation
 └── agent_project_manager_toolkit.py # LlamaIndex FunctionTools integration
 ```
 
@@ -77,6 +81,7 @@ Directory Scan → ProjectScanner → Confidence Scores
                                       │
                               ToolRecommender → Recommended Tools
                               ActionExecutor  → Build/Test/Run
+                              PromptTemplateEngine → Dynamic System Prompt
 ```
 
 ---
@@ -193,6 +198,23 @@ Analyzes detected project type and recommends the most relevant tools from the a
 | `build_context_string(project)` | Build context string for system prompt |
 | `has_recommendations(type)` | Check if type has recommendations |
 | `get_supported_types()` | Get list of types with recommendations |
+
+### 6. `PromptTemplateEngine` — Dynamic Prompt Generation
+
+Generates customized system prompts at runtime based on active project context, tool recommendations, and custom instructions.
+
+| Method | Description |
+|--------|-------------|
+| `generate_prompt(user_input, ...)` | Generate full system prompt with context injection |
+| `detect_active_project(user_input)` | Detect active project from user input |
+| `get_tool_recommendations(project_type)` | Get tool recommendations for project type |
+| `load_custom_template(path)` | Load custom prompt template from file |
+
+**Features:**
+- **Dynamic Context**: Injects active project details (type, path, framework, etc.)
+- **Tool Recommendations**: Includes relevant tool suggestions based on project type
+- **Custom Templates**: Supports custom prompt templates via CLI or environment variable
+- **Non-Breaking**: Falls back to static prompt if injection is disabled
 
 ---
 
@@ -366,6 +388,42 @@ Enter the number of the correct project type (or 0 for Unknown):
 
 ---
 
+## Runtime Prompt Injection
+
+The `PromptTemplateEngine` provides dynamic system prompt generation based on the active project context. Instead of a static system prompt, the agent generates a tailored prompt at runtime that includes:
+
+- **Active Project Context**: Details about the currently active project (type, path, framework, etc.)
+- **Tool Recommendations**: Suggested tools and actions based on the project type
+- **Custom Instructions**: User-defined instructions or overrides
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Dynamic Generation** | System prompt is rebuilt at runtime based on detected project |
+| **Project Detection** | Automatically detects active project from user input or current directory |
+| **Custom Templates** | Supports custom prompt templates via `--prompt-template` or `TORVALDS_PROMPT_TEMPLATE` |
+| **Tool Recommendations** | Includes relevant tool suggestions based on project type |
+| **Non-Breaking** | Falls back to static prompt if injection is disabled |
+
+### Usage
+
+```bash
+# Enable prompt injection (default)
+python agent-torvalds.py
+
+# Disable prompt injection
+python agent-torvalds.py --no-prompt-injection
+
+# Use custom template
+python agent-torvalds.py --prompt-template /path/to/template.txt
+
+# Force specific project context
+python agent-torvalds.py --force-project backend
+```
+
+---
+
 ## Usage Examples
 
 ### Direct API Usage
@@ -436,6 +494,10 @@ print(recs["recommended_actions"])  # {'build': 'python -m build', 'test': 'pyte
 |--------|-------------|
 | `--auto-scan` | Auto-scan and configure projects on startup |
 | `--project-type TYPE` | Override auto-detected project type |
+| `--no-prompt-injection` | Disable dynamic prompt injection (use static system prompt) |
+| `--prompt-template PATH` | Path to custom prompt template file |
+| `--no-tool-recommendations` | Disable tool recommendations in dynamic prompts |
+| `--force-project NAME` | Force a specific project name for prompt context |
 
 ---
 
@@ -447,6 +509,9 @@ print(recs["recommended_actions"])  # {'build': 'python -m build', 'test': 'pyte
 | `TORVALDS_HITL_METHOD` | `console` | Input method: `console` or `whiptail` |
 | `TORVALDS_HITL_TIMEOUT` | `30` | Timeout in seconds for HITL prompts |
 | `TORVALDS_HITL_DEFAULT_ANSWER` | `""` | Default fallback answer on timeout |
+| `TORVALDS_PROMPT_INJECTION` | `true` | Enable/disable runtime prompt injection |
+| `TORVALDS_PROMPT_TEMPLATE` | `""` | Path to custom prompt template file |
+| `TORVALDS_INCLUDE_RECOMMENDATIONS` | `true` | Include tool recommendations in prompt |
 
 ---
 
@@ -461,8 +526,8 @@ The module was developed through a 7-step implementation plan:
 | 03 | ✅ Done | Project Manager Toolkit — LlamaIndex FunctionTools integration |
 | 04 | ✅ Done | HITL Integration — Human-in-the-Loop for ambiguous detection |
 | 05 | ✅ Done | Agent Integration — Integration with main agent |
-| 06 | 🔄 WIP | Testing & Validation — Unit and integration tests |
-| 07 | 🔄 WIP | Documentation & Deployment — Final documentation |
+| 06 | ✅ Done | Runtime Prompt Injection — Dynamic system prompt generation |
+| 07 | 🔄 WIP | Testing & Validation — Unit and integration tests |
 
 ---
 
