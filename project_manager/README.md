@@ -262,6 +262,33 @@ The workspace configuration is stored in `.agentworkspace.json` at the workspace
 - **Versioned** for future schema migrations
 - **Validated** on load with schema checks
 
+### Workspace Path Resolution
+
+When registering a project, the workspace path determines where `.agentworkspace.json` is created:
+
+| Scenario | Workspace Path | `.agentworkspace.json` Location |
+|----------|---------------|--------------------------------|
+| Single project (default) | Project path itself | Inside the project directory |
+| Explicit `workspace_path` | User-specified path | At the specified path |
+| Multiple projects | Shared parent directory | At the shared workspace root |
+
+**Default Behavior:**
+- When `workspace_path` is **not provided**, it defaults to the **project path itself**
+- This ensures the workspace config is created in the correct location for single-project scenarios
+- For multi-project workspaces, explicitly specify `workspace_path` to share a common config
+
+**Example:**
+```python
+# Single project - workspace created in the project directory
+register_project("/home/user/my-project")
+# → .agentworkspace.json created at /home/user/my-project/.agentworkspace.json
+
+# Multi-project - explicit workspace path
+register_project("/home/user/project-a", workspace_path="/home/user")
+register_project("/home/user/project-b", workspace_path="/home/user")
+# → .agentworkspace.json created at /home/user/.agentworkspace.json
+```
+
 ### Schema Validation & Migration
 
 The `WorkspaceConfig` class validates the config structure on load and supports migration from older versions:

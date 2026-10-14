@@ -340,7 +340,7 @@ def register_project(
         description (str): Optional project description
         framework (str): Framework name (e.g., FastAPI, React)
         language_version (str): Language version string (e.g., 3.11, 18)
-        workspace_path (str): Path to workspace root (default: parent directory of the project path)
+        workspace_path (str): Path to workspace root (default: the project path itself)
 
     Returns:
         str: JSON string with registration results
@@ -355,9 +355,9 @@ def register_project(
     try:
         resolved_path = _resolve_path(path)
         
-        # If workspace_path not provided, default to parent directory of project path
+        # If workspace_path not provided, default to the project path itself
         if workspace_path is None:
-            resolved_workspace = os.path.dirname(resolved_path)
+            resolved_workspace = resolved_path
         else:
             resolved_workspace = _resolve_path(workspace_path)
 
