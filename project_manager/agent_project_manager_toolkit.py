@@ -321,7 +321,7 @@ def register_project(
     description: str = "",
     framework: str = "",
     language_version: str = "",
-    workspace_path: str = ".",
+    workspace_path: Optional[str] = None,
 ) -> str:
     """
     Scan a directory, detect its project type, and register it in the workspace.
@@ -340,7 +340,7 @@ def register_project(
         description (str): Optional project description
         framework (str): Framework name (e.g., FastAPI, React)
         language_version (str): Language version string (e.g., 3.11, 18)
-        workspace_path (str): Path to workspace root (default: current directory)
+        workspace_path (str): Path to workspace root (default: parent directory of the project path)
 
     Returns:
         str: JSON string with registration results
@@ -354,7 +354,12 @@ def register_project(
     logger.info(f"register_project called with path: {path}, name: {name}, force: {force}")
     try:
         resolved_path = _resolve_path(path)
-        resolved_workspace = _resolve_path(workspace_path)
+        
+        # If workspace_path not provided, default to parent directory of project path
+        if workspace_path is None:
+            resolved_workspace = os.path.dirname(resolved_path)
+        else:
+            resolved_workspace = _resolve_path(workspace_path)
 
         if not os.path.isdir(resolved_path):
             return json.dumps({"error": f"Path is not a directory: {resolved_path}"}, indent=2)
