@@ -802,7 +802,7 @@ async def main():
     # ------------------------------------------------------------------
     # Runtime Prompt Injection configuration (Step 06)
     # ------------------------------------------------------------------
-    global PROMPT_INJECTION_ENABLED, INCLUDE_TOOL_RECOMMENDATIONS, prompt_engine
+    global PROMPT_INJECTION_ENABLED, INCLUDE_TOOL_RECOMMENDATIONS, prompt_engine, PROMPT_TEMPLATE_PATH
 
     prompt_injection_enabled = PROMPT_INJECTION_ENABLED and not args.no_prompt_injection
     include_recommendations = INCLUDE_TOOL_RECOMMENDATIONS and not args.no_tool_recommendations
