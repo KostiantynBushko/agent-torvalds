@@ -118,6 +118,7 @@ from components.whiptail_input_module import WhiptailInputModule
 # Project Management (Step 05) - imported from agent_project_manager
 # ---------------------------------------------------------------------------
 from project_manager.agent_project_manager_toolkit import (
+    load_project,
     build_project_context,
     initialize_project_management,
 )
@@ -878,20 +879,21 @@ async def main():
             include_custom_instructions=True,
         )
 
-        # Auto-scan and register the project
+        # Auto-scan and register the project using load_project()
         console.print("[dim]Scanning and registering project...[/dim]")
-        manager = ProjectManager(workspace_path=str(project_path))
-        result = manager.discover_and_register(
+        import json
+        load_result_str = load_project(
             path=str(project_path),
             force=True,
-            override_project_type=args.project_type,
         )
+        load_result = json.loads(load_result_str)
 
-        if result:
-            console.print(f"[green]Project loaded: {result.get('name', 'unknown')} ({result.get('type', 'Unknown')})[/green]")
-            console.print(f"[dim]Path: {result.get('path', 'N/A')}[/dim]")
-            if result.get('git_repo'):
-                console.print(f"[dim]Git branch: {result.get('git_branch', 'N/A')}[/dim]")
+        if load_result.get("status") == "loaded" and "project" in load_result:
+            proj = load_result["project"]
+            console.print(f"[green]Project loaded: {proj.get('name', 'unknown')} ({proj.get('type', 'Unknown')})[/green]")
+            console.print(f"[dim]Path: {proj.get('path', 'N/A')}[/dim]")
+            if proj.get("git_repo"):
+                console.print(f"[dim]Git branch: {proj.get('git_branch', 'N/A')}[/dim]")
         else:
             console.print("[yellow]Warning: Could not detect project type[/yellow]")
 
