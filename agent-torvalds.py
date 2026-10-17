@@ -28,6 +28,7 @@ Usage:
     python agent-torvalds.py --log-level DEBUG  # Enable debug logging
     python agent-torvalds.py --auto-scan  # Auto-scan and configure projects on startup
     python agent-torvalds.py --project-type Python  # Override auto-detected project type
+    python agent-torvalds.py --project-path /path/to/project  # Load and work on a specific project
     python agent-torvalds.py --no-prompt-injection  # Disable dynamic prompt injection
 
 Environment Variables:
@@ -582,6 +583,13 @@ def parse_args():
         default=None,
         help="Override auto-detected project type (requires --auto-scan)",
     )
+    parser.add_argument(
+        "--project-path",
+        type=str,
+        default=None,
+        help="Path to a project directory to load and work on. "
+             "The agent will cd into this directory, auto-scan it, and register it.",
+    )
     # ------------------------------------------------------------------
     # Runtime Prompt Injection CLI flags (Step 06)
     # ------------------------------------------------------------------
@@ -840,9 +848,64 @@ async def main():
     )
 
     # ------------------------------------------------------------------
-    # Project Management initialization (Step 05)
+    # Project Path handling (Step 07) - Load a specific project
     # ------------------------------------------------------------------
-    if args.auto_scan:
+    if args.project_path:
+        project_path = Path(args.project_path).resolve()
+
+        if not project_path.exists():
+            console.print(f"[red]Error: Project path does not exist: {project_path}[/red]")
+            from agent_cache_system import end_session
+            end_session()
+            sys.exit(1)
+
+        if not project_path.is_dir():
+            console.print(f"[red]Error: Project path is not a directory: {project_path}[/red]")
+            from agent_cache_system import end_session
+            end_session()
+            sys.exit(1)
+
+        # Change working directory to the project path
+        os.chdir(str(project_path))
+        console.print(f"[green]Working directory changed to: {project_path}[/green]")
+
+        # Re-initialize prompt engine with the new workspace path
+        custom_template = _load_custom_template(PROMPT_TEMPLATE_PATH)
+        prompt_engine = PromptTemplateEngine(
+            workspace_path=str(project_path),
+            system_prompt_template=custom_template,
+            include_tool_recommendations=include_recommendations,
+            include_custom_instructions=True,
+        )
+
+        # Auto-scan and register the project
+        console.print("[dim]Scanning and registering project...[/dim]")
+        manager = ProjectManager(workspace_path=str(project_path))
+        result = manager.discover_and_register(
+            path=str(project_path),
+            force=True,
+            override_project_type=args.project_type,
+        )
+
+        if result:
+            console.print(f"[green]Project loaded: {result.get('name', 'unknown')} ({result.get('type', 'Unknown')})[/green]")
+            console.print(f"[dim]Path: {result.get('path', 'N/A')}[/dim]")
+            if result.get('git_repo'):
+                console.print(f"[dim]Git branch: {result.get('git_branch', 'N/A')}[/dim]")
+        else:
+            console.print("[yellow]Warning: Could not detect project type[/yellow]")
+
+        # Show project context status
+        ctx = build_project_context(str(project_path))
+        if ctx:
+            console.print(f"[dim]Project context: {ctx.strip()}[/dim]")
+        else:
+            console.print("[dim]No projects configured in workspace[/dim]")
+
+    elif args.auto_scan:
+        # ------------------------------------------------------------------
+        # Project Management initialization (Step 05)
+        # ------------------------------------------------------------------
         console.print("[dim]Auto-scanning for projects...[/dim]")
         initialize_project_management(
             auto_scan=True,
