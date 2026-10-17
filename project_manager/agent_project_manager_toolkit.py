@@ -2,15 +2,15 @@
 Project Manager Toolkit - Project type detection and workspace management.
 
 This module provides project recognition, workspace configuration,
-project lifecycle management, and Human-in-the-Loop (HITL) resolution
-for ambiguous project type detections as LlamaIndex FunctionTools.
+project lifecycle management, git status checking, and Human-in-the-Loop (HITL)
+resolution for ambiguous project type detections as LlamaIndex FunctionTools.
 
 Integrates with the project_manager package (ProjectScanner, WorkspaceConfig,
-ProjectManager) and existing HITL infrastructure to provide a unified
-interface for discovering, registering, and managing projects in a workspace.
+ProjectManager, GitStatusChecker) and existing HITL infrastructure to provide
+a unified interface for discovering, registering, and managing projects in a workspace.
 
 Category: Project Management
-Retriever Keywords: project, workspace, detect, scan, configure, register, manage, agentworkspace, hitl
+Retriever Keywords: project, workspace, detect, scan, configure, register, manage, agentworkspace, hitl, git, status, load
 """
 import asyncio
 import json
@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 from llama_index.core.tools import FunctionTool
 
 from project_manager import ProjectManager, ProjectScanner, WorkspaceConfig
+from project_manager.git_status import GitStatusChecker
 
 logger = logging.getLogger(__name__)
 
@@ -354,7 +355,7 @@ def register_project(
     logger.info(f"register_project called with path: {path}, name: {name}, force: {force}")
     try:
         resolved_path = _resolve_path(path)
-        
+
         # If workspace_path not provided, default to the project path itself
         if workspace_path is None:
             resolved_workspace = resolved_path
@@ -422,6 +423,76 @@ def register_project(
         return json.dumps({"status": "exists", "message": str(e)}, indent=2)
     except Exception as e:
         logger.error(f"register_project failed: {e}")
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+def load_project(
+    path: str,
+    project_name: Optional[str] = None,
+    force: bool = False,
+    description: str = "",
+    framework: str = "",
+    language_version: str = "",
+) -> str:
+    """
+    Load a project from a given path.
+
+    This is the unified entry point for loading a project. It handles two cases:
+
+    1. **Existing workspace**: If `.agentworkspace.json` exists at the target path,
+       it loads the project from the workspace config. If `project_name` is provided,
+       it returns that specific project; otherwise it returns the first project
+       whose path matches the given path.
+
+    2. **No workspace**: If `.agentworkspace.json` does not exist, it creates a new
+       workspace, scans the directory, registers the project, and returns it.
+
+    Use this tool when you want to start working with a specific project directory.
+    It will automatically detect the project type and set up the workspace if needed.
+
+    Args:
+        path (str): Directory path of the project to load
+        project_name (str, optional): Project name to look up (only used when loading
+                                     from an existing workspace)
+        force (bool): If True, register even if detection is ambiguous (only used when
+                      creating a new workspace)
+        description (str): Optional project description (only used when creating a new workspace)
+        framework (str): Framework name (only used when creating a new workspace)
+        language_version (str): Language version string (only used when creating a new workspace)
+
+    Returns:
+        str: JSON string with load results including project metadata and load method
+
+    Example:
+        >>> load_project("/home/user/my-python-project")
+        '{\\n  "status": "loaded",\\n  "method": "existing_workspace",\\n  "project": {...}\\n}'
+
+    Keywords: load, open, project, workspace, detect, register, new project, existing project
+    """
+    logger.info(f"load_project called with path: {path}, project_name: {project_name}")
+    try:
+        resolved_path = _resolve_path(path)
+
+        if not os.path.isdir(resolved_path):
+            return json.dumps({"error": f"Path is not a directory: {resolved_path}"}, indent=2)
+
+        manager = ProjectManager(workspace_path=resolved_path)
+        result = manager.load_project(
+            path=resolved_path,
+            project_name=project_name,
+            force=force,
+            description=description,
+            framework=framework,
+            language_version=language_version,
+        )
+
+        return _safe_json_dumps(result)
+    except FileNotFoundError as e:
+        return json.dumps({"status": "error", "message": str(e)}, indent=2)
+    except ValueError as e:
+        return json.dumps({"status": "error", "message": str(e)}, indent=2)
+    except Exception as e:
+        logger.error(f"load_project failed: {e}")
         return json.dumps({"error": str(e)}, indent=2)
 
 
@@ -681,7 +752,95 @@ def get_project_actions(project_name: str, path: str = ".") -> str:
 
 
 # =============================================================================
-# Tier 5: HITL Integration for Ambiguous Detection
+# Tier 5: Git Status
+# =============================================================================
+
+
+def check_git_status(path: str = ".", include_untracked: bool = True) -> str:
+    """
+    Check the git status of a project directory.
+
+    Use this tool to inspect the current state of a project's working tree,
+    including modified, staged, and untracked files. This is useful for
+    understanding what changes have been made but not yet committed.
+
+    Args:
+        path (str): Directory path to check (default: current directory)
+        include_untracked (bool): Whether to include untracked files (default: True)
+
+    Returns:
+        str: JSON string with git status information including:
+             - Whether it's a git repository
+             - Current branch and commit hash
+             - List of modified/staged/untracked files
+             - Summary flags (has_uncommitted, has_staged, has_untracked, has_modified)
+
+    Example:
+        >>> check_git_status("/home/user/my-python-project")
+        '{\\n  "path": "/home/user/my-python-project",\\n  "is_git_repo": true,\\n  ...\\n}'
+
+    Keywords: git, status, uncommitted, modified, staged, untracked, changes, dirty, working tree
+    """
+    logger.info(f"check_git_status called with path: {path}, include_untracked: {include_untracked}")
+    try:
+        resolved_path = _resolve_path(path)
+
+        if not os.path.isdir(resolved_path):
+            return json.dumps({"error": f"Path is not a directory: {resolved_path}"}, indent=2)
+
+        checker = GitStatusChecker()
+        result = checker.check_status(
+            path=resolved_path,
+            include_untracked=include_untracked,
+        )
+
+        return _safe_json_dumps(result.to_dict())
+    except Exception as e:
+        logger.error(f"check_git_status failed: {e}")
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+def get_git_status_summary(path: str = ".", include_untracked: bool = True) -> str:
+    """
+    Get a summary of git status without detailed file list.
+
+    Use this tool for a quick overview of whether a project has uncommitted
+    changes, without the full file listing.
+
+    Args:
+        path (str): Directory path to check (default: current directory)
+        include_untracked (bool): Whether to include untracked files (default: True)
+
+    Returns:
+        str: JSON string with git status summary
+
+    Example:
+        >>> get_git_status_summary("/home/user/my-python-project")
+        '{\\n  "path": "/home/user/my-python-project",\\n  "has_uncommitted": true,\\n  ...\\n}'
+
+    Keywords: git, status, summary, overview, uncommitted, clean, dirty
+    """
+    logger.info(f"get_git_status_summary called with path: {path}")
+    try:
+        resolved_path = _resolve_path(path)
+
+        if not os.path.isdir(resolved_path):
+            return json.dumps({"error": f"Path is not a directory: {resolved_path}"}, indent=2)
+
+        checker = GitStatusChecker()
+        summary = checker.get_summary(
+            path=resolved_path,
+            include_untracked=include_untracked,
+        )
+
+        return _safe_json_dumps(summary)
+    except Exception as e:
+        logger.error(f"get_git_status_summary failed: {e}")
+        return json.dumps({"error": str(e)}, indent=2)
+
+
+# =============================================================================
+# Tier 6: HITL Integration for Ambiguous Detection
 # =============================================================================
 
 
@@ -838,7 +997,7 @@ def resolve_project_type_ambiguity(path: str = ".") -> str:
 
 
 # =============================================================================
-# Tier 6: Workspace Summary and Utilities
+# Tier 7: Workspace Summary and Utilities
 # =============================================================================
 
 
@@ -1001,6 +1160,13 @@ def get_all_tools() -> List[FunctionTool]:
                         "Use for discovering and registering new projects. Category: Project Management",
         ),
         FunctionTool.from_defaults(
+            fn=load_project,
+            name="load_project",
+            description="Load a project from a given path. Handles both existing workspaces "
+                        "(loads from .agentworkspace.json) and new projects (creates workspace, "
+                        "scans, and registers). Use when starting work on a specific project. Category: Project Management",
+        ),
+        FunctionTool.from_defaults(
             fn=update_project,
             name="update_project",
             description="Update metadata for a registered project. "
@@ -1037,7 +1203,20 @@ def get_all_tools() -> List[FunctionTool]:
             description="Get all configured actions for a project. "
                         "Use for inspecting project commands. Category: Project Management",
         ),
-        # Tier 5: HITL Integration
+        # Tier 5: Git Status
+        FunctionTool.from_defaults(
+            fn=check_git_status,
+            name="check_git_status",
+            description="Check git status of a project directory. Shows modified, staged, "
+                        "and untracked files. Use for inspecting uncommitted changes. Category: Project Management",
+        ),
+        FunctionTool.from_defaults(
+            fn=get_git_status_summary,
+            name="get_git_status_summary",
+            description="Get a summary of git status without detailed file list. "
+                        "Use for quick overview of uncommitted changes. Category: Project Management",
+        ),
+        # Tier 6: HITL Integration
         FunctionTool.from_defaults(
             fn=resolve_project_type_ambiguity,
             name="resolve_project_type_ambiguity",
@@ -1045,7 +1224,7 @@ def get_all_tools() -> List[FunctionTool]:
                         "Use when scanner finds multiple similar-confidence types. "
                         "Supports timeout fallback. Category: Project Management",
         ),
-        # Tier 6: Workspace Summary and Utilities
+        # Tier 7: Workspace Summary and Utilities
         FunctionTool.from_defaults(
             fn=get_workspace_summary,
             name="get_workspace_summary",
