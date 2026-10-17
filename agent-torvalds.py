@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Optional, List
 
 from llama_index.core.callbacks import CallbackManager
+from llama_index.core.base.llms.types import ChatMessage
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.core.tools import FunctionTool
@@ -683,7 +684,7 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
         # Inject project context into agent memory before each query (Step 05)
         project_context = build_project_context()
         if project_context:
-            chat_memory.put(f"CONTEXT: {project_context}")
+            chat_memory.put(ChatMessage(content=f"CONTEXT: {project_context}"))
 
         # Create workflow handler
         workflow_handler = agent.run(
