@@ -652,6 +652,7 @@ print(recs["recommended_actions"])  # {'build': 'python -m build', 'test': 'pyte
 |--------|-------------|
 | `--auto-scan` | Auto-scan and configure projects on startup |
 | `--project-type TYPE` | Override auto-detected project type |
+| `--project-path PATH` | **Load and work on a specific project directory** — cds into the path, auto-scans, registers the project, and re-initializes the prompt engine |
 | `--no-prompt-injection` | Disable dynamic prompt injection (use static system prompt) |
 | `--prompt-template PATH` | Path to custom prompt template file |
 | `--no-tool-recommendations` | Disable tool recommendations in dynamic prompts |
@@ -685,13 +686,14 @@ The module was developed through a 7-step implementation plan:
 | 04 | ✅ Done | HITL Integration — Human-in-the-Loop for ambiguous detection |
 | 05 | ✅ Done | Agent Integration — Integration with main agent |
 | 06 | ✅ Done | Runtime Prompt Injection — Dynamic system prompt generation |
-| 07 | 🔄 WIP | Testing & Validation — Unit and integration tests |
+| 07 | ✅ Done | Project Path CLI — `--project-path` flag for loading specific projects on startup |
 
-### Recent Additions (Uncommitted)
+### Recent Additions
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| `load_project()` | 🆕 New | Unified project loading API — handles both existing workspaces and new project discovery transparently |
+| `load_project()` | ✅ Done | Unified project loading API — handles both existing workspaces and new project discovery transparently |
+| `--project-path` CLI flag | ✅ Done | Load a specific project on startup — cds into directory, auto-scans, registers, and re-initializes prompt engine |
 
 ---
 
