@@ -188,6 +188,199 @@ class ProjectManager:
         return project
 
     # ------------------------------------------------------------------
+    # Load Project (NEW)
+    # ------------------------------------------------------------------
+
+    def load_project(
+        self,
+        path: str,
+        project_name: Optional[str] = None,
+        force: bool = False,
+        description: str = "",
+        framework: str = "",
+        language_version: str = "",
+    ) -> Dict[str, Any]:
+        """
+        Load a project from a given path.
+
+        This is the unified entry point for loading a project. It handles two cases:
+
+        1. **Existing workspace**: If `.agentworkspace.json` exists at the target path,
+           it loads the project from the workspace config. If `project_name` is provided,
+           it returns that specific project; otherwise it returns the first project
+           whose path matches the given path.
+
+        2. **No workspace**: If `.agentworkspace.json` does not exist, it creates a new
+           workspace, scans the directory, registers the project, and returns it.
+
+        Args:
+            path: Directory path of the project to load
+            project_name: Optional project name to look up (only used when loading
+                         from an existing workspace)
+            force: If True, register even if detection is ambiguous (only used when
+                   creating a new workspace)
+            description: Optional project description (only used when creating a new workspace)
+            framework: Framework name (only used when creating a new workspace)
+            language_version: Language version string (only used when creating a new workspace)
+
+        Returns:
+            Dictionary with load results including project metadata and load method
+
+        Raises:
+            FileNotFoundError: If the path does not exist or is not a directory
+            ValueError: If project_name is not found in the existing workspace
+        """
+        project_path = Path(path).resolve()
+
+        if not project_path.is_dir():
+            raise FileNotFoundError(f"Path is not a directory: {project_path}")
+
+        workspace_file = project_path / WorkspaceConfig.DEFAULT_CONFIG_FILENAME
+
+        if workspace_file.exists():
+            # Case 1: Existing workspace — load from config
+            return self._load_from_existing_workspace(project_path, project_name)
+        else:
+            # Case 2: No workspace — create, scan, register, and return
+            return self._create_and_load(project_path, project_name, force, description, framework, language_version)
+
+    def _load_from_existing_workspace(
+        self,
+        project_path: Path,
+        project_name: Optional[str],
+    ) -> Dict[str, Any]:
+        """
+        Load a project from an existing workspace config.
+
+        Args:
+            project_path: Resolved path to the project directory
+            project_name: Optional project name to look up
+
+        Returns:
+            Dictionary with loaded project data and metadata
+        """
+        # Create a fresh WorkspaceConfig pointing at the target workspace
+        config = WorkspaceConfig(workspace_path=str(project_path))
+        projects = config.get_all_projects()
+
+        if not projects:
+            raise ValueError(
+                f"Workspace exists at {project_path} but contains no registered projects"
+            )
+
+        # If project_name is given, look it up directly
+        if project_name:
+            project = config.get_project(project_name)
+            if not project:
+                available = [p["name"] for p in projects]
+                raise ValueError(
+                    f"Project '{project_name}' not found in workspace. "
+                    f"Available: {available}"
+                )
+            return self._build_load_result(project, "existing_workspace", str(project_path))
+
+        # Otherwise, try to match by path
+        target_str = str(project_path)
+        for proj in projects:
+            proj_path = proj.get("path", "")
+            # Handle relative paths stored in config
+            if proj_path.startswith("."):
+                full_proj_path = str(project_path / proj_path).rstrip("/")
+            else:
+                full_proj_path = proj_path
+
+            if full_proj_path == target_str or proj_path == ".":
+                return self._build_load_result(proj, "existing_workspace", str(project_path))
+
+        # No match — return the first project as fallback
+        logger.warning(
+            f"No project matched path {project_path}, returning first project: {projects[0]['name']}"
+        )
+        return self._build_load_result(projects[0], "existing_workspace_fallback", str(project_path))
+
+    def _create_and_load(
+        self,
+        project_path: Path,
+        project_name: Optional[str],
+        force: bool,
+        description: str,
+        framework: str,
+        language_version: str,
+    ) -> Dict[str, Any]:
+        """
+        Create a new workspace, scan, register, and return the project.
+
+        Args:
+            project_path: Resolved path to the project directory
+            project_name: Optional project name override
+            force: If True, register even if detection is ambiguous
+            description: Optional project description
+            framework: Framework name
+            language_version: Language version string
+
+        Returns:
+            Dictionary with newly registered project data and metadata
+        """
+        # Create a new ProjectManager scoped to this project's directory
+        manager = ProjectManager(
+            workspace_path=str(project_path),
+            auto_save=True,
+        )
+
+        project = manager.discover_and_register(
+            path=str(project_path),
+            name=project_name,
+            force=force,
+            description=description,
+            framework=framework,
+            language_version=language_version,
+        )
+
+        if project is None:
+            return {
+                "status": "failed",
+                "message": f"Could not detect project type for {project_path}. Use force=True.",
+                "path": str(project_path),
+                "workspace_created": True,
+            }
+
+        return self._build_load_result(project, "new_workspace", str(project_path))
+
+    @staticmethod
+    def _build_load_result(
+        project: ProjectDict,
+        method: str,
+        workspace_path: str,
+    ) -> Dict[str, Any]:
+        """
+        Build a standardized load result dictionary.
+
+        Args:
+            project: The loaded/registered project dictionary
+            method: How the project was loaded ("existing_workspace", "new_workspace", etc.)
+            workspace_path: Path to the workspace
+
+        Returns:
+            Standardized result dictionary
+        """
+        return {
+            "status": "loaded",
+            "method": method,
+            "workspace_path": workspace_path,
+            "project": {
+                "name": project.get("name", "unknown"),
+                "path": project.get("path", ""),
+                "type": project.get("type", "Unknown"),
+                "confidence": project.get("confidence", 0.0),
+                "git_repo": project.get("git_repo", False),
+                "git_branch": project.get("git_branch", ""),
+                "indicators_found": project.get("indicators_found", []),
+                "actions": project.get("actions", {}),
+                "metadata": project.get("metadata", {}),
+            },
+        }
+
+    # ------------------------------------------------------------------
     # Project Management
     # ------------------------------------------------------------------
 

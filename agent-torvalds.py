@@ -28,6 +28,7 @@ Usage:
     python agent-torvalds.py --log-level DEBUG  # Enable debug logging
     python agent-torvalds.py --auto-scan  # Auto-scan and configure projects on startup
     python agent-torvalds.py --project-type Python  # Override auto-detected project type
+    python agent-torvalds.py --project-path /path/to/project  # Load and work on a specific project
     python agent-torvalds.py --no-prompt-injection  # Disable dynamic prompt injection
 
 Environment Variables:
@@ -117,6 +118,7 @@ from components.whiptail_input_module import WhiptailInputModule
 # Project Management (Step 05) - imported from agent_project_manager
 # ---------------------------------------------------------------------------
 from project_manager.agent_project_manager_toolkit import (
+    load_project,
     build_project_context,
     initialize_project_management,
 )
@@ -582,6 +584,13 @@ def parse_args():
         default=None,
         help="Override auto-detected project type (requires --auto-scan)",
     )
+    parser.add_argument(
+        "--project-path",
+        type=str,
+        default=None,
+        help="Path to a project directory to load and work on. "
+             "The agent will cd into this directory, auto-scan it, and register it.",
+    )
     # ------------------------------------------------------------------
     # Runtime Prompt Injection CLI flags (Step 06)
     # ------------------------------------------------------------------
@@ -840,9 +849,65 @@ async def main():
     )
 
     # ------------------------------------------------------------------
-    # Project Management initialization (Step 05)
+    # Project Path handling (Step 07) - Load a specific project
     # ------------------------------------------------------------------
-    if args.auto_scan:
+    if args.project_path:
+        project_path = Path(args.project_path).resolve()
+
+        if not project_path.exists():
+            console.print(f"[red]Error: Project path does not exist: {project_path}[/red]")
+            from agent_cache_system import end_session
+            end_session()
+            sys.exit(1)
+
+        if not project_path.is_dir():
+            console.print(f"[red]Error: Project path is not a directory: {project_path}[/red]")
+            from agent_cache_system import end_session
+            end_session()
+            sys.exit(1)
+
+        # Change working directory to the project path
+        os.chdir(str(project_path))
+        console.print(f"[green]Working directory changed to: {project_path}[/green]")
+
+        # Re-initialize prompt engine with the new workspace path
+        custom_template = _load_custom_template(PROMPT_TEMPLATE_PATH)
+        prompt_engine = PromptTemplateEngine(
+            workspace_path=str(project_path),
+            system_prompt_template=custom_template,
+            include_tool_recommendations=include_recommendations,
+            include_custom_instructions=True,
+        )
+
+        # Auto-scan and register the project using load_project()
+        console.print("[dim]Scanning and registering project...[/dim]")
+        import json
+        load_result_str = load_project(
+            path=str(project_path),
+            force=True,
+        )
+        load_result = json.loads(load_result_str)
+
+        if load_result.get("status") == "loaded" and "project" in load_result:
+            proj = load_result["project"]
+            console.print(f"[green]Project loaded: {proj.get('name', 'unknown')} ({proj.get('type', 'Unknown')})[/green]")
+            console.print(f"[dim]Path: {proj.get('path', 'N/A')}[/dim]")
+            if proj.get("git_repo"):
+                console.print(f"[dim]Git branch: {proj.get('git_branch', 'N/A')}[/dim]")
+        else:
+            console.print("[yellow]Warning: Could not detect project type[/yellow]")
+
+        # Show project context status
+        ctx = build_project_context(str(project_path))
+        if ctx:
+            console.print(f"[dim]Project context: {ctx.strip()}[/dim]")
+        else:
+            console.print("[dim]No projects configured in workspace[/dim]")
+
+    elif args.auto_scan:
+        # ------------------------------------------------------------------
+        # Project Management initialization (Step 05)
+        # ------------------------------------------------------------------
         console.print("[dim]Auto-scanning for projects...[/dim]")
         initialize_project_management(
             auto_scan=True,

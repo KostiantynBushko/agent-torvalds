@@ -120,6 +120,7 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 - Project-aware tool recommendation engine
 - Human-in-the-Loop resolution for ambiguous project types
 - Full LlamaIndex FunctionTools integration
+- `--project-path` CLI flag to load and work on a specific project directory on startup
 - See [Project Manager README](project_manager/README.md) for details
 ---
 
@@ -138,6 +139,7 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 | **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
 | **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
 | **On-Demand Tool Loading** | Semantic tool retrieval to reduce context window pollution |
+| **Project Path Loading** | `--project-path` flag to load, scan, and register a specific project on startup |
 | **Human-in-the-Loop** | Interactive questioning with timeout handling and runtime toggle |
 | **Technical Computing** | Engineering and scientific computation support |
 

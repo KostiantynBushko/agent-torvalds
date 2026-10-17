@@ -2,8 +2,8 @@
 project_manager - Project management module for workspace orchestration.
 
 Provides project type detection, workspace configuration management,
-a unified ProjectManager interface, and LlamaIndex FunctionTools for
-agent integration.
+a unified ProjectManager interface, git status checking, and LlamaIndex
+FunctionTools for agent integration.
 
 Usage:
     from project_manager import ProjectManager, ProjectScanner, WorkspaceConfig
@@ -29,6 +29,7 @@ from .config import WorkspaceConfig, validate_config, migrate_config
 from .manager import ProjectManager
 from .executor import ActionExecutor, ActionResult
 from .recommender import ToolRecommender
+from .git_status import GitStatusChecker, GitStatusResult, GitFileStatus
 from .agent_project_manager_toolkit import get_all_tools
 
 # Public API
@@ -41,6 +42,9 @@ __all__ = [
     "ActionExecutor",
     "ActionResult",
     "ToolRecommender",
+    "GitStatusChecker",
+    "GitStatusResult",
+    "GitFileStatus",
     # Config utilities
     "validate_config",
     "migrate_config",
