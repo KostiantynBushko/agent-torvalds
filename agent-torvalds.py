@@ -119,6 +119,7 @@ from components.whiptail_input_module import WhiptailInputModule
 # Project Management (Step 05) - imported from agent_project_manager
 # ---------------------------------------------------------------------------
 from project_manager.agent_project_manager_toolkit import (
+    get_all_tools as get_project_manager_tools,
     load_project,
     build_project_context,
     initialize_project_management,
@@ -416,6 +417,7 @@ def _collect_all_tools() -> List[FunctionTool]:
         + get_db_tools()
         + get_apt_tools()
         + get_cache_tools()
+        + get_project_manager_tools()
     )
 
     os_name = platform.system()
