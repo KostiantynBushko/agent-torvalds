@@ -383,8 +383,7 @@ class EventConsumer:
 
     async def _on_agent_stream(self, event: AgentStream) -> None:
         """Handle streaming token event."""
-        logger.debug("EventConsumer._on_agent_stream: delta=%r, prefix=%s, suffix=%s",
-                     event.delta, event.prefix, event.suffix)
+        logger.debug("EventConsumer._on_agent_stream: delta=%r", event.delta)
         if event.delta:
             # Could print streaming tokens here if desired
             # For now, just track in state
