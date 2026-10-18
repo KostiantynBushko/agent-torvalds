@@ -31,11 +31,11 @@ logger = logging.getLogger(__name__)
 
 # Recognized inline commands
 HITL_COMMANDS: frozenset = frozenset({
-    "toggle-hitl",
-    "hitl-status",
-    "hitl-on",
-    "hitl-off",
-    "hitl-help",
+    "\\toggle-hitl",
+    "\\hitl-status",
+    "\\hitl-on",
+    "\\hitl-off",
+    "\\hitl-help",
 })
 
 
@@ -43,7 +43,7 @@ class HITLRuntimeToggle:
     """Runtime toggle for Human-in-the-Loop mode.
 
     Allows enabling/disabling HITL during agent execution via:
-    1. Interactive command (e.g., typing 'toggle-hitl' during execution)
+    1. Interactive command (e.g., typing '\\toggle-hitl' during execution)
     2. Environment variable change detection
     3. API calls
 
@@ -179,11 +179,11 @@ class HITLRuntimeToggle:
         """Process an inline command string.
 
         Recognised commands:
-        - ``toggle-hitl`` — Toggle HITL on/off
-        - ``hitl-status`` — Show current status
-        - ``hitl-on`` — Enable HITL
-        - ``hitl-off`` — Disable HITL
-        - ``hitl-help`` — Show available commands
+        - ``\toggle-hitl`` — Toggle HITL on/off
+        - ``\hitl-status`` — Show current status
+        - ``\hitl-on`` — Enable HITL
+        - ``\hitl-off`` — Disable HITL
+        - ``\hitl-help`` — Show available commands
 
         Args:
             command: Raw command string (case-insensitive).
@@ -193,11 +193,11 @@ class HITLRuntimeToggle:
         """
         cmd = command.lower().strip()
 
-        if cmd == "toggle-hitl":
+        if cmd == "\\toggle-hitl":
             await self.toggle(source="interactive")
             return f"HITL {'enabled' if self._enabled else 'disabled'}"
 
-        elif cmd == "hitl-status":
+        elif cmd == "\\hitl-status":
             st = await self.status()
             return (
                 f"HITL Status: {'🟢 ENABLED' if st['enabled'] else '🔴 DISABLED'}\n"
@@ -205,22 +205,22 @@ class HITLRuntimeToggle:
                 f"  Last by: {st['last_toggled_by']}"
             )
 
-        elif cmd == "hitl-on":
+        elif cmd == "\\hitl-on":
             await self.set_state(True, source="interactive")
             return "HITL enabled"
 
-        elif cmd == "hitl-off":
+        elif cmd == "\\hitl-off":
             await self.set_state(False, source="interactive")
             return "HITL disabled"
 
-        elif cmd == "hitl-help":
+        elif cmd == "\\hitl-help":
             return (
                 "Available HITL commands:\n"
-                "  toggle-hitl  — Toggle HITL on/off\n"
-                "  hitl-status  — Show current status\n"
-                "  hitl-on      — Enable HITL\n"
-                "  hitl-off     — Disable HITL\n"
-                "  hitl-help    — Show this help"
+                "  \\toggle-hitl  — Toggle HITL on/off\n"
+                "  \\hitl-status  — Show current status\n"
+                "  \\hitl-on      — Enable HITL\n"
+                "  \\hitl-off     — Disable HITL\n"
+                "  \\hitl-help    — Show this help"
             )
 
         return None
