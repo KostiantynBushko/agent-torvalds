@@ -436,6 +436,7 @@ def create_agent(
     top_k: int = SIMILARITY_TOP_K,
     tools: Optional[List[FunctionTool]] = None,
     system_prompt: Optional[str] = None,
+    callback_manager: Optional[CallbackManager] = None,
 ):
     """
     Create and configure the Torvalds agent.
@@ -447,6 +448,9 @@ def create_agent(
         tools: Pre-selected list of tools (used when --select is active).
                If None and use_retriever is False, all tools are loaded.
         system_prompt: Optional custom system prompt (includes project context).
+        callback_manager: Optional callback manager passed to the LLM at creation
+                         time so that LLM-level events (token streaming, LLM call
+                         start/end) propagate through stats and HITL handlers.
 
     Returns:
         FunctionAgent instance
@@ -454,7 +458,8 @@ def create_agent(
     llm = Ollama(
         model=MODEL,
         request_timeout=REQUEST_TIMEOUT,
-        temperature=0.0
+        temperature=0.0,
+        callback_manager=callback_manager,
     )
     chat_memory = agent_chat_memory.get_chat_memory()
 
@@ -473,6 +478,7 @@ def create_agent(
             system_prompt=prompt,
             max_iterations=MAX_ITERATIONS,
             similarity_top_k=top_k,
+            callback_manager=callback_manager,
         )
     else:
         # ---- Full / selected tool loading mode ----
@@ -488,6 +494,7 @@ def create_agent(
             max_iterations=MAX_ITERATIONS,
             memory=chat_memory,
             system_prompt=prompt,
+            callback_manager=callback_manager,
         )
 
     return agent
