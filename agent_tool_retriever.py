@@ -8,7 +8,10 @@ on the user's query, reducing context window pollution.
 Category: Infrastructure
 Retriever Keywords: retriever, tool loading, lazy, vector index, semantic
 """
+from typing import Optional
+
 from llama_index.core import Settings, VectorStoreIndex
+from llama_index.core.callbacks import CallbackManager
 from llama_index.core.objects import ObjectIndex
 from llama_index.core.tools import FunctionTool
 from llama_index.core.agent.workflow import FunctionAgent
@@ -129,6 +132,7 @@ def create_agent_with_retriever(
     system_prompt: str,
     max_iterations: int = 50,
     similarity_top_k: int = 8,
+    callback_manager: Optional[CallbackManager] = None,
 ) -> FunctionAgent:
     """
     Create a FunctionAgent that uses on-demand tool retrieval.
@@ -139,6 +143,8 @@ def create_agent_with_retriever(
         system_prompt: System prompt string.
         max_iterations: Max agent iterations per query.
         similarity_top_k: Tools retrieved per query.
+        callback_manager: Optional callback manager to propagate to the agent
+                         for LLM-level event tracking (stats, HITL, etc.).
 
     Returns:
         FunctionAgent configured with tool_retriever.
@@ -154,6 +160,7 @@ def create_agent_with_retriever(
         memory=memory,
         system_prompt=system_prompt,
         max_iterations=max_iterations,
+        callback_manager=callback_manager,
     )
 
     return agent
