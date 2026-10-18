@@ -578,7 +578,7 @@ def parse_args():
     parser.add_argument(
         "--hitl-no-runtime-toggle",
         action="store_true",
-        help="Disable runtime HITL toggle commands (toggle-hitl, hitl-status, etc.)",
+        help="Disable runtime HITL toggle commands (\toggle-hitl, \hitl-status, etc.)",
     )
     # ------------------------------------------------------------------
     # Project Management CLI flags (Step 05)
@@ -940,7 +940,7 @@ async def main():
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
     if runtime_toggle_enabled:
         console.print("[dim]Type '\\hitl-status' to check HITL status.[/dim]")
-        console.print("[dim]Type 'toggle-hitl' to enable/disable HITL at runtime.[/dim]")
+        console.print("[dim]Type '\\toggle-hitl' to enable/disable HITL at runtime.[/dim]")
     console.print("[dim]Press Ctrl+C to exit gracefully.[/dim]\n")
 
     # Start a cache session
