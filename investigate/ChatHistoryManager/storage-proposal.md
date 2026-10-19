@@ -2,8 +2,14 @@
 
 ## 1. Overview
 
-The ChatHistoryManager uses a **single SQLite database** for all persistent state.  
+The ChatHistoryManager uses a **SQL-based database** for all persistent state.  
 **No local config files or cache files are used.** Everything — user identities, session metadata, active session state, and user preferences — lives in the database.
+
+The storage layer is **backend-agnostic** and supports any SQL-compatible database:
+- PostgreSQL
+- MySQL / MariaDB
+- SQLite
+- Any other SQL-like database
 
 | Data Type | Storage | Characteristics |
 |---|---|---|
@@ -14,30 +20,9 @@ The ChatHistoryManager uses a **single SQLite database** for all persistent stat
 
 ---
 
-## 2. Database Location
+## 2. Database Schema
 
-The SQLite database is stored in the platform-native data directory using `platformdirs`:
-
-### Linux
-```
-~/.local/share/torvalds/chat_manager.db
-```
-
-### Windows
-```
-%APPDATA%\torvalds\chat_manager.db
-```
-
-### macOS
-```
-~/Library/Application Support/torvalds/chat_manager.db
-```
-
----
-
-## 3. Database Schema
-
-### 3.1 Users Table
+### 2.1 Users Table
 
 Stores user identity and per-user preferences.
 
@@ -69,7 +54,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 ---
 
-### 3.2 Chat Sessions Table
+### 2.2 Chat Sessions Table
 
 Stores session metadata scoped per user.
 
@@ -110,7 +95,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_active ON chat_sessions(user_id, is_acti
 
 ---
 
-### 3.3 Pre-seeded Sessions
+### 2.3 Pre-seeded Sessions
 
 On first run for a new user, two default sessions are created:
 
@@ -123,7 +108,7 @@ The `general` session is activated by default.
 
 ---
 
-## 4. Active Session Tracking
+## 3. Active Session Tracking
 
 ### How It Works
 
@@ -162,35 +147,54 @@ SELECT * FROM chat_sessions WHERE user_id = ?;
 
 ---
 
-## 5. Directory Creation Strategy
+## 4. Backend Abstraction
+
+The storage layer exposes a **backend-agnostic interface** so the database engine can be swapped without changing application code.
+
+### Storage Backend Interface
 
 ```python
-import platformdirs
-import os
+class StorageBackend(ABC):
+    """Abstract interface for SQL-based session storage."""
 
-pd = platformdirs.PlatformDirs('torvalds', 'agent-torvalds')
+    @abstractmethod
+    def connect(self, connection_string: str) -> None: ...
 
-def ensure_directories():
-    """Create data directory if it doesn't exist."""
-    os.makedirs(pd.user_data_dir, exist_ok=True)
+    @abstractmethod
+    def execute(self, query: str, params: tuple = ()) -> Any: ...
+
+    @abstractmethod
+    def execute_many(self, query: str, params_list: list) -> None: ...
+
+    @abstractmethod
+    def create_schema(self) -> None: ...
+
+    @abstractmethod
+    def close(self) -> None: ...
 ```
 
-Only the data directory is created. No config or cache directories are needed.
+### Supported Backends
+
+| Backend | Driver | Connection String Format |
+|---|---|---|
+| **PostgreSQL** | `asyncpg` / `psycopg2` | `postgresql://user:pass@host:5432/dbname` |
+| **MySQL** | `mysql-connector-python` | `mysql://user:pass@host:3306/dbname` |
+| **SQLite** | `sqlite3` (stdlib) | `sqlite:///path/to/chat_manager.db` |
+
+### Configuration
+
+Database connection is configured via environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `TORVALDS_STORAGE_URI` | `sqlite:////tmp/torvalds_chat.db` | Database connection URI |
+| `TORVALDS_STORAGE_BACKEND` | `auto` | Backend type: `postgres`, `mysql`, `sqlite`, or `auto` |
+
+When set to `auto`, the system detects the backend from the URI scheme.
 
 ---
 
-## 6. Platform Compatibility Matrix
-
-| Feature | Linux | Windows | macOS |
-|---|---|---|---|
-| Data dir | `~/.local/share/torvalds/` | `%APPDATA%\torvalds\` | `~/Library/Application Support/torvalds/` |
-| Database | `chat_manager.db` | `chat_manager.db` | `chat_manager.db` |
-| Config file | **None** | **None** | **None** |
-| Cache file | **None** | **None** | **None** |
-
----
-
-## 7. Migration from Current Setup
+## 5. Migration from Current Setup
 
 **Current:**
 - `TORVALDS_CHAT_KEY` env var → single hardcoded key
@@ -208,12 +212,14 @@ Only the data directory is created. No config or cache directories are needed.
 
 ---
 
-## 8. Dependencies
+## 6. Dependencies
 
 | Package | Version | Purpose |
 |---|---|---|
-| `platformdirs` | 4.13.0 (installed) | Platform-aware directory resolution |
-| `sqlite3` | stdlib | User & session metadata storage |
+| `asyncpg` | 0.30.0 (installed) | PostgreSQL async driver |
+| `psycopg2-binary` | 2.9.12 (installed) | PostgreSQL sync driver |
+| `mysql-connector-python` | 26.7.0 (installed) | MySQL driver |
+| `sqlite3` | stdlib | SQLite driver |
 | `uuid` | stdlib | ID generation |
 | `os` | stdlib | User identification |
 
@@ -221,17 +227,16 @@ Only the data directory is created. No config or cache directories are needed.
 
 ---
 
-## 9. Security & Permissions
+## 7. Security & Permissions
 
-- SQLite DB: `0644` (readable/writable by user only)
 - No sensitive data stored (no passwords, no tokens)
-- All paths under user home directory
 - Foreign key constraints ensure referential integrity
 - `ON DELETE CASCADE` ensures sessions are cleaned up when user is deleted
+- Connection strings configured via environment variables
 
 ---
 
-## 10. Database Operations Reference
+## 8. Database Operations Reference
 
 ### Common Queries
 
@@ -260,15 +265,15 @@ DELETE FROM chat_sessions WHERE session_id = ?;
 
 ---
 
-## 11. Summary
+## 9. Summary
 
 | Concern | Solution |
 |---|---|
-| Platform compatibility | `platformdirs` library |
+| Backend agnostic | SQL interface supporting PostgreSQL, MySQL, SQLite |
 | User identification | `users` table, auto-provisioned from OS username |
 | Multi-user support | Sessions scoped by `user_id` FK |
 | Active session tracking | `is_active` flag in `chat_sessions` table |
 | User preferences | `backend_type`, `token_limit` in `users` table |
-| No config/cache files | **All state in SQLite database** |
+| No config/cache files | **All state in SQL database** |
 | Migration | Auto-detect old env var, create initial user & sessions |
-| Dependencies | None new — all stdlib or already installed |
+| Dependencies | None new — all drivers already installed |
