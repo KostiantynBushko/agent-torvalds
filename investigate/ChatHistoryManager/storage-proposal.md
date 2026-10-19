@@ -2,151 +2,163 @@
 
 ## 1. Overview
 
-The ChatHistoryManager requires three types of persistent data:
+The ChatHistoryManager uses a **single SQLite database** for all persistent state.  
+**No local config files or cache files are used.** Everything — user identities, session metadata, active session state, and user preferences — lives in the database.
 
-| Type | Purpose | Characteristics |
+| Data Type | Storage | Characteristics |
 |---|---|---|
-| **Session Metadata** | Session definitions, names, types, mappings | Structured, queryable, grows over time |
-| **Configuration** | User preferences, backend settings, defaults | Small, infrequently changed, critical |
-| **Runtime Cache** | Current session ID, transient state | Fast access, can be regenerated |
+| **User Identities** | `users` table | Multi-user support, per-user preferences |
+| **Session Metadata** | `chat_sessions` table | Scoped per user, active state tracked in DB |
+| **Active Session** | `chat_sessions.is_active` | One active session per user, stored in DB |
+| **User Preferences** | `users` table | Backend type, token limit per user |
 
 ---
 
-## 2. Platform-Aware Directory Strategy
+## 2. Database Location
 
-We use **`platformdirs`** (already installed, v4.13.0) to resolve platform-native directories.
+The SQLite database is stored in the platform-native data directory using `platformdirs`:
 
 ### Linux
-
-| Data Type | Directory | Example Path |
-|---|---|---|
-| Config | `~/.config/torvalds/` | `/home/kbush/.config/torvalds/` |
-| Cache | `~/.cache/torvalds/` | `/home/kbush/.cache/torvalds/` |
-| Data | `~/.local/share/torvalds/` | `/home/kbush/.local/share/torvalds/` |
+```
+~/.local/share/torvalds/chat_manager.db
+```
 
 ### Windows
-
-| Data Type | Directory | Example Path |
-|---|---|---|
-| Config | `%APPDATA%\torvalds\` | `C:\Users\<user>\AppData\Roaming\torvalds\` |
-| Cache | `%LOCALAPPDATA%\torvalds\` | `C:\Users\<user>\AppData\Local\torvalds\` |
-| Data | `%APPDATA%\torvalds\` | `C:\Users\<user>\AppData\Roaming\torvalds\` |
+```
+%APPDATA%\torvalds\chat_manager.db
+```
 
 ### macOS
-
-| Data Type | Directory | Example Path |
-|---|---|---|
-| Config | `~/Library/Preferences/torvalds/` | `~/Library/Preferences/torvalds/` |
-| Cache | `~/Library/Caches/torvalds/` | `~/Library/Caches/torvalds/` |
-| Data | `~/Library/Application Support/torvalds/` | `~/Library/Application Support/torvalds/` |
-
----
-
-## 3. File Layout
-
 ```
-~/.config/torvalds/
-└── chat_config.json          # Configuration (user preferences)
-
-~/.cache/torvalds/
-└── agent_cache.json          # Runtime cache (current session ID)
-
-~/.local/share/torvalds/      # Linux
-  (or %APPDATA%\torvalds\)    # Windows
-  (or ~/Library/Application Support/torvalds/)  # macOS
-└── sessions.db               # SQLite session metadata (Table B)
+~/Library/Application Support/torvalds/chat_manager.db
 ```
 
 ---
 
-## 4. File Specifications
+## 3. Database Schema
 
-### 4.1 Configuration File
-**Path:** `~/.config/torvalds/chat_config.json`
+### 3.1 Users Table
 
-**Purpose:** User preferences and backend configuration. Survives cache clears.
+Stores user identity and per-user preferences.
 
-**Schema:**
-```json
-{
-    "backend_type": "postgres",
-    "token_limit": 5000,
-    "default_session_type": "general",
-    "auto_restore_last_session": true,
-    "startup_behavior": "prompt",
-    "created_at": "2024-01-15T10:30:00Z"
-}
+```sql
+CREATE TABLE IF NOT EXISTS users (
+    user_id       TEXT PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    backend_type  TEXT NOT NULL DEFAULT 'postgres',
+    token_limit   INTEGER NOT NULL DEFAULT 5000,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
 **Fields:**
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `backend_type` | string | `"postgres"` | Storage backend: `postgres`, `sqlite`, `memory` |
-| `token_limit` | int | `5000` | Max tokens in memory buffer |
-| `default_session_type` | string | `"general"` | Default type for new sessions |
-| `auto_restore_last_session` | bool | `true` | Restore last session on startup |
-| `startup_behavior` | string | `"prompt"` | `prompt`, `auto-restore`, `always-new` |
-| `created_at` | datetime | — | Config creation timestamp |
+| `user_id` | TEXT (UUID) | — | Primary key |
+| `username` | TEXT | — | OS username, unique constraint |
+| `backend_type` | TEXT | `'postgres'` | Preferred storage backend |
+| `token_limit` | INTEGER | `5000` | Max tokens in memory buffer |
+| `created_at` | TIMESTAMP | `CURRENT_TIMESTAMP` | User creation time |
+| `updated_at` | TIMESTAMP | `CURRENT_TIMESTAMP` | Last update time |
+
+**User Identification:**
+- On first run: `os.getlogin()` → look up in `users` table
+- If not found: auto-create user with default preferences
+- Future: explicit login mechanism
 
 ---
 
-### 4.2 Runtime Cache File
-**Path:** `~/.cache/torvalds/agent_cache.json`
+### 3.2 Chat Sessions Table
 
-**Purpose:** Fast-access runtime state. Can be safely deleted/regenerated.
+Stores session metadata scoped per user.
 
-**Schema:**
-```json
-{
-    "active_session_id": "550e8400-e29b-41d4-a716-446655440000",
-    "last_active_at": "2024-01-15T14:22:00Z",
-    "session_count": 3,
-    "cache_version": 1
-}
-```
-
-**Fields:**
-| Field | Type | Description |
-|---|---|---|
-| `active_session_id` | UUID | Currently active session |
-| `last_active_at` | datetime | When this session was last selected |
-| `session_count` | int | Total number of sessions (for quick display) |
-| `cache_version` | int | Cache schema version for migration |
-
-**Lifecycle:**
-- Written on every session switch
-- Read on startup for fast session restore
-- Safe to delete — will be regenerated from `sessions.db`
-
----
-
-### 4.3 Session Metadata Database
-**Path:** `~/.local/share/torvalds/sessions.db` (Linux)
-
-**Purpose:** Persistent session metadata (Table B). Primary source of truth.
-
-**SQLite Schema:**
 ```sql
 CREATE TABLE IF NOT EXISTS chat_sessions (
     session_id    TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL,
     session_name  TEXT NOT NULL,
     session_type  TEXT NOT NULL CHECK(session_type IN ('general', 'project', 'custom')),
     chat_key      TEXT NOT NULL UNIQUE,
     metadata      TEXT DEFAULT '{}',
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    is_active     BOOLEAN DEFAULT FALSE
+    is_active     BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
-
-CREATE INDEX IF NOT EXISTS idx_sessions_type ON chat_sessions(session_type);
-CREATE INDEX IF NOT EXISTS idx_sessions_active ON chat_sessions(is_active);
 ```
 
-**Pre-seeded Sessions:**
-| session_id | session_name | session_type | chat_key |
+**Fields:**
+| Field | Type | Default | Description |
 |---|---|---|---|
-| `gen-000000` | General Chat | `general` | `chat-general-001` |
-| `proj-000000` | Project Chat | `project` | `chat-project-001` |
+| `session_id` | TEXT (UUID) | — | Primary key |
+| `user_id` | TEXT | — | FK → `users.user_id`, CASCADE delete |
+| `session_name` | TEXT | — | Human-readable name |
+| `session_type` | TEXT | — | `general`, `project`, or `custom` |
+| `chat_key` | TEXT | — | Maps to LlamaIndex Table A, unique |
+| `metadata` | TEXT | `'{}'` | Optional JSON metadata |
+| `created_at` | TIMESTAMP | `CURRENT_TIMESTAMP` | Session creation time |
+| `updated_at` | TIMESTAMP | `CURRENT_TIMESTAMP` | Last update time |
+| `is_active` | BOOLEAN | `FALSE` | Active session flag (one TRUE per user) |
+
+**Indexes:**
+```sql
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON chat_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_type ON chat_sessions(session_type);
+CREATE INDEX IF NOT EXISTS idx_sessions_active ON chat_sessions(user_id, is_active);
+```
+
+---
+
+### 3.3 Pre-seeded Sessions
+
+On first run for a new user, two default sessions are created:
+
+| session_id | user_id | session_name | session_type | chat_key | is_active |
+|---|---|---|---|---|---|
+| `<uuid>` | `<user_id>` | General Chat | `general` | `chat-general-<user_id>` | `TRUE` |
+| `<uuid>` | `<user_id>` | Project Chat | `project` | `chat-project-<user_id>` | `FALSE` |
+
+The `general` session is activated by default.
+
+---
+
+## 4. Active Session Tracking
+
+### How It Works
+
+1. **On startup:**
+   ```sql
+   SELECT * FROM chat_sessions 
+   WHERE user_id = ? AND is_active = TRUE;
+   ```
+   - If result exists → restore that session
+   - If no result → activate the `general` session
+
+2. **On session switch:**
+   ```sql
+   -- Deactivate all sessions for this user
+   UPDATE chat_sessions SET is_active = FALSE WHERE user_id = ?;
+   
+   -- Activate new session
+   UPDATE chat_sessions SET is_active = TRUE, updated_at = CURRENT_TIMESTAMP 
+   WHERE session_id = ?;
+   ```
+
+3. **On session creation:**
+   - New session is created with `is_active = FALSE`
+   - User must explicitly select it via `\chat-select`
+
+### Multi-User Isolation
+
+Each user has their own set of sessions:
+```sql
+-- List sessions for current user only
+SELECT * FROM chat_sessions WHERE user_id = ?;
+
+-- Each user can have their own "General Chat" and "Project Chat"
+-- Sessions are fully isolated by user_id
+```
 
 ---
 
@@ -159,14 +171,11 @@ import os
 pd = platformdirs.PlatformDirs('torvalds', 'agent-torvalds')
 
 def ensure_directories():
-    """Create all required directories if they don't exist."""
-    for dir_path in [
-        pd.user_config_dir,
-        pd.user_cache_dir,
-        pd.user_data_dir,
-    ]:
-        os.makedirs(dir_path, exist_ok=True)
+    """Create data directory if it doesn't exist."""
+    os.makedirs(pd.user_data_dir, exist_ok=True)
 ```
+
+Only the data directory is created. No config or cache directories are needed.
 
 ---
 
@@ -174,12 +183,10 @@ def ensure_directories():
 
 | Feature | Linux | Windows | macOS |
 |---|---|---|---|
-| Config dir | `~/.config/torvalds/` | `%APPDATA%\torvalds\` | `~/Library/Preferences/torvalds/` |
-| Cache dir | `~/.cache/torvalds/` | `%LOCALAPPDATA%\torvalds\` | `~/Library/Caches/torvalds/` |
 | Data dir | `~/.local/share/torvalds/` | `%APPDATA%\torvalds\` | `~/Library/Application Support/torvalds/` |
-| Session DB | `sessions.db` | `sessions.db` | `sessions.db` |
-| Config file | `chat_config.json` | `chat_config.json` | `chat_config.json` |
-| Cache file | `agent_cache.json` | `agent_cache.json` | `agent_cache.json` |
+| Database | `chat_manager.db` | `chat_manager.db` | `chat_manager.db` |
+| Config file | **None** | **None** | **None** |
+| Cache file | **None** | **None** | **None** |
 
 ---
 
@@ -188,14 +195,16 @@ def ensure_directories():
 **Current:**
 - `TORVALDS_CHAT_KEY` env var → single hardcoded key
 - No session persistence
-- No config file
+- No user identification
 
 **Migration Path:**
 1. On first run with new system, detect if `TORVALDS_CHAT_KEY` is set
-2. If yes, create a `general` session using that key
-3. Migrate existing messages from old key to new session
-4. Write initial config and cache files
-5. Subsequent runs use new system exclusively
+2. Create user from `os.getlogin()`
+3. If old key exists, create a `general` session using that key
+4. Migrate existing messages from old key to new session (if any)
+5. Pre-seed `project` session
+6. Set `general` session as active
+7. Subsequent runs use new system exclusively
 
 ---
 
@@ -204,9 +213,9 @@ def ensure_directories():
 | Package | Version | Purpose |
 |---|---|---|
 | `platformdirs` | 4.13.0 (installed) | Platform-aware directory resolution |
-| `sqlite3` | stdlib | Session metadata storage |
-| `json` | stdlib | Config and cache file I/O |
-| `uuid` | stdlib | Session ID generation |
+| `sqlite3` | stdlib | User & session metadata storage |
+| `uuid` | stdlib | ID generation |
+| `os` | stdlib | User identification |
 
 **No new dependencies required.**
 
@@ -214,21 +223,52 @@ def ensure_directories():
 
 ## 9. Security & Permissions
 
-- Config files: `0644` (readable by user, writable by user)
-- Cache files: `0644`
-- SQLite DB: `0644`
+- SQLite DB: `0644` (readable/writable by user only)
 - No sensitive data stored (no passwords, no tokens)
 - All paths under user home directory
+- Foreign key constraints ensure referential integrity
+- `ON DELETE CASCADE` ensures sessions are cleaned up when user is deleted
 
 ---
 
-## 10. Summary
+## 10. Database Operations Reference
+
+### Common Queries
+
+```sql
+-- Get current user
+SELECT * FROM users WHERE username = ?;
+
+-- List all sessions for current user
+SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY created_at DESC;
+
+-- Get active session for current user
+SELECT * FROM chat_sessions WHERE user_id = ? AND is_active = TRUE;
+
+-- Switch active session
+UPDATE chat_sessions SET is_active = FALSE WHERE user_id = ?;
+UPDATE chat_sessions SET is_active = TRUE, updated_at = CURRENT_TIMESTAMP 
+WHERE session_id = ?;
+
+-- Create new session
+INSERT INTO chat_sessions (session_id, user_id, session_name, session_type, chat_key)
+VALUES (?, ?, ?, ?, ?);
+
+-- Delete session
+DELETE FROM chat_sessions WHERE session_id = ?;
+```
+
+---
+
+## 11. Summary
 
 | Concern | Solution |
 |---|---|
 | Platform compatibility | `platformdirs` library |
-| Config persistence | `~/.config/torvalds/chat_config.json` |
-| Runtime state | `~/.cache/torvalds/agent_cache.json` |
-| Session metadata | SQLite DB in platform data dir |
-| Migration | Auto-detect old env var, create initial session |
+| User identification | `users` table, auto-provisioned from OS username |
+| Multi-user support | Sessions scoped by `user_id` FK |
+| Active session tracking | `is_active` flag in `chat_sessions` table |
+| User preferences | `backend_type`, `token_limit` in `users` table |
+| No config/cache files | **All state in SQLite database** |
+| Migration | Auto-detect old env var, create initial user & sessions |
 | Dependencies | None new — all stdlib or already installed |
