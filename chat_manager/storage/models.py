@@ -53,7 +53,7 @@ class Session(Base):
     session_name = Column(Text, nullable=False)
     session_type = Column(Text, nullable=False, default="general")
     chat_key = Column(Text, nullable=False, unique=True)
-    metadata = Column(Text, default="{}")
+    session_metadata = Column(Text, default="{}")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     is_active = Column(Boolean, default=False)
