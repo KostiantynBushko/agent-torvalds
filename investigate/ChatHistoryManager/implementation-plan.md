@@ -21,12 +21,12 @@ chat-manager/
 ├── user.py                      # User data model
 ├── backend/
 │   ├── __init__.py              # Backend interface exports
-│   ├── base.py                  # ChatStoreBackend ABC
+│   ├── base.py                  # ChatStoreBackend ABC (LlamaIndex messages)
 │   ├── postgres.py              # PostgresChatStoreBackend implementation
 │   └── simple.py                # SimpleChatStoreBackend (in-memory fallback)
 ├── storage/
 │   ├── __init__.py              # Storage exports
-│   ├── database.py              # SQLite database connection & schema
+│   ├── database.py              # SQL database connection & schema (custom DB)
 │   ├── user_store.py            # User CRUD operations
 │   └── session_store.py         # Session CRUD operations
 ├── commands/
@@ -74,7 +74,7 @@ chat-manager/
 
 ---
 
-### Step 2: Backend Adapter Interface
+### Step 2: Backend Adapter Interface (LlamaIndex Messages)
 **Files:** `chat-manager/backend/base.py`, `chat-manager/backend/__init__.py`
 
 - Define `ChatStoreBackend` ABC with methods:
@@ -89,11 +89,11 @@ chat-manager/
 
 ---
 
-### Step 3: Backend Implementations
+### Step 3: Backend Implementations (LlamaIndex Messages)
 **Files:** `chat-manager/backend/postgres.py`, `chat-manager/backend/simple.py`
 
 - Implement `PostgresChatStoreBackend` wrapping existing `PostgresChatStore`
-  - Reuses current PostgreSQL connection from env vars
+  - Uses **LlamaIndex connector** (separate from custom DB)
   - Delegates to LlamaIndex's `PostgresChatStore` methods
 - Implement `SimpleChatStoreBackend` as in-memory fallback
   - Uses LlamaIndex's `SimpleChatStore`
@@ -103,13 +103,14 @@ chat-manager/
 
 ---
 
-### Step 4: SQLite Database & Schema
+### Step 4: Custom SQL Database Connection & Schema
 **Files:** `chat-manager/storage/database.py`
 
 - Implement `ChatDatabase` class:
-  - Manages SQLite connection to `~/.local/share/torvalds/chat_manager.db`
+  - Manages SQL connection (PostgreSQL or MySQL) via `TORVALDS_STORAGE_URI`
   - Creates schema on first run
   - Provides connection pool / context manager
+  - **Separate connector** from LlamaIndex — uses its own connection string
 - **Schema:**
 
 ```sql
@@ -188,7 +189,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_active ON chat_sessions(user_id, is_acti
 - Implement `ChatHistoryManager` class with:
   - **Initialization:**
     - `initialize() -> None`
-      - Open DB connection
+      - Open custom DB connection
+      - Open LlamaIndex backend connection
     - `identify_user() -> User`
       - Get OS username, call `UserStore.get_or_create()`
   - **Session CRUD (delegates to SessionStore):**
@@ -210,7 +212,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_active ON chat_sessions(user_id, is_acti
     - `clear_messages() -> None`
   - **Shutdown:**
     - `close() -> None`
-      - Close DB connection, close backend
+      - Close custom DB connection
+      - Close LlamaIndex backend connection
 
 **Deliverable:** Fully functional ChatHistoryManager with all core operations.
 
@@ -300,7 +303,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_active ON chat_sessions(user_id, is_acti
 | Dependency | Purpose |
 |---|---|
 | `llama_index` | Existing dependency, provides `PostgresChatStore`, `SimpleChatStore`, `ChatMemoryBuffer` |
-| `sqlite3` | Standard library, user & session metadata storage |
+| `asyncpg` | PostgreSQL async driver (LlamaIndex + custom DB) |
+| `psycopg2-binary` | PostgreSQL sync driver (custom DB) |
+| `mysql-connector-python` | MySQL driver (custom DB alternative) |
 | `uuid` | Standard library, ID generation |
 | `os` | Standard library, user identification |
 
@@ -313,7 +318,7 @@ No new external dependencies required.
 1. **Phase 1:** `chat-manager/` module created alongside existing `agent_chat_memory.py`
 2. **Phase 2:** Agent uses `ChatHistoryManager` internally, `agent_chat_memory.py` becomes thin wrapper
 3. **Phase 3:** `agent_chat_memory.py` deprecated, fully replaced by `chat-manager`
-4. **Phase 4:** Backend swap tested (e.g., PostgreSQL → SQLite)
+4. **Phase 4:** Backend swap tested (e.g., PostgreSQL → MySQL)
 
 ---
 
@@ -329,3 +334,4 @@ No new external dependencies required.
 - [ ] Tests pass with both PostgreSQL and in-memory backends
 - [ ] **No local config or cache files are used**
 - [ ] **Multi-user support works (sessions scoped per user)**
+- [ ] **Two separate connectors: one for LlamaIndex, one for custom DB**

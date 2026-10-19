@@ -8,7 +8,6 @@ The ChatHistoryManager uses a **SQL-based database** for all persistent state.
 The storage layer is **backend-agnostic** and supports any SQL-compatible database:
 - PostgreSQL
 - MySQL / MariaDB
-- SQLite
 - Any other SQL-like database
 
 | Data Type | Storage | Characteristics |
@@ -20,9 +19,25 @@ The storage layer is **backend-agnostic** and supports any SQL-compatible databa
 
 ---
 
-## 2. Database Schema
+## 2. Dual-Connector Architecture
 
-### 2.1 Users Table
+The system uses **two separate database connectors** to isolate concerns:
+
+| Connector | Purpose | Managed By | Tables Used |
+|---|---|---|---|
+| **LlamaIndex Connector** | Stores/retrieves chat messages | LlamaIndex (`PostgresChatStore`) | LlamaIndex internal tables (Table A) |
+| **Custom DB Connector** | Stores/retrieves user & session metadata | `ChatHistoryManager` | `users`, `chat_sessions` (Tables B & C) |
+
+This separation ensures:
+- LlamaIndex manages its own message storage schema
+- Our manager handles session lifecycle and user identity
+- Both can use the same database instance but operate independently
+
+---
+
+## 3. Database Schema (Custom DB)
+
+### 3.1 Users Table
 
 Stores user identity and per-user preferences.
 
@@ -54,7 +69,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 ---
 
-### 2.2 Chat Sessions Table
+### 3.2 Chat Sessions Table
 
 Stores session metadata scoped per user.
 
@@ -95,7 +110,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_active ON chat_sessions(user_id, is_acti
 
 ---
 
-### 2.3 Pre-seeded Sessions
+### 3.3 Pre-seeded Sessions
 
 On first run for a new user, two default sessions are created:
 
@@ -108,7 +123,7 @@ The `general` session is activated by default.
 
 ---
 
-## 3. Active Session Tracking
+## 4. Active Session Tracking
 
 ### How It Works
 
@@ -147,7 +162,7 @@ SELECT * FROM chat_sessions WHERE user_id = ?;
 
 ---
 
-## 4. Backend Abstraction
+## 5. Backend Abstraction
 
 The storage layer exposes a **backend-agnostic interface** so the database engine can be swapped without changing application code.
 
@@ -179,7 +194,6 @@ class StorageBackend(ABC):
 |---|---|---|
 | **PostgreSQL** | `asyncpg` / `psycopg2` | `postgresql://user:pass@host:5432/dbname` |
 | **MySQL** | `mysql-connector-python` | `mysql://user:pass@host:3306/dbname` |
-| **SQLite** | `sqlite3` (stdlib) | `sqlite:///path/to/chat_manager.db` |
 
 ### Configuration
 
@@ -187,14 +201,15 @@ Database connection is configured via environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `TORVALDS_STORAGE_URI` | `sqlite:////tmp/torvalds_chat.db` | Database connection URI |
-| `TORVALDS_STORAGE_BACKEND` | `auto` | Backend type: `postgres`, `mysql`, `sqlite`, or `auto` |
+| `TORVALDS_STORAGE_URI` | `postgresql://localhost/torvalds_chat` | Custom DB connection URI |
+| `TORVALDS_STORAGE_BACKEND` | `auto` | Backend type: `postgres`, `mysql`, or `auto` |
+| `TORVALDS_LLAMA_URI` | `postgresql://localhost/torvalds_llama` | LlamaIndex DB connection URI |
 
 When set to `auto`, the system detects the backend from the URI scheme.
 
 ---
 
-## 5. Migration from Current Setup
+## 6. Migration from Current Setup
 
 **Current:**
 - `TORVALDS_CHAT_KEY` env var → single hardcoded key
@@ -212,14 +227,13 @@ When set to `auto`, the system detects the backend from the URI scheme.
 
 ---
 
-## 6. Dependencies
+## 7. Dependencies
 
 | Package | Version | Purpose |
 |---|---|---|
 | `asyncpg` | 0.30.0 (installed) | PostgreSQL async driver |
 | `psycopg2-binary` | 2.9.12 (installed) | PostgreSQL sync driver |
 | `mysql-connector-python` | 26.7.0 (installed) | MySQL driver |
-| `sqlite3` | stdlib | SQLite driver |
 | `uuid` | stdlib | ID generation |
 | `os` | stdlib | User identification |
 
@@ -227,7 +241,7 @@ When set to `auto`, the system detects the backend from the URI scheme.
 
 ---
 
-## 7. Security & Permissions
+## 8. Security & Permissions
 
 - No sensitive data stored (no passwords, no tokens)
 - Foreign key constraints ensure referential integrity
@@ -236,7 +250,7 @@ When set to `auto`, the system detects the backend from the URI scheme.
 
 ---
 
-## 8. Database Operations Reference
+## 9. Database Operations Reference
 
 ### Common Queries
 
@@ -265,11 +279,12 @@ DELETE FROM chat_sessions WHERE session_id = ?;
 
 ---
 
-## 9. Summary
+## 10. Summary
 
 | Concern | Solution |
 |---|---|
-| Backend agnostic | SQL interface supporting PostgreSQL, MySQL, SQLite |
+| Backend agnostic | SQL interface supporting PostgreSQL, MySQL |
+| Dual connectors | Separate connections for LlamaIndex (messages) and Custom DB (metadata) |
 | User identification | `users` table, auto-provisioned from OS username |
 | Multi-user support | Sessions scoped by `user_id` FK |
 | Active session tracking | `is_active` flag in `chat_sessions` table |
