@@ -1,7 +1,8 @@
 """Startup integration for ChatHistoryManager.
 
 Handles initialization and shutdown hooks for the ChatHistoryManager,
-providing a clean integration point with the agent's lifecycle.
+providing a clean integration point with the agent's lifecycle, plus the
+interactive session selection flow required at startup.
 """
 
 from __future__ import annotations
@@ -89,3 +90,38 @@ def is_chat_manager_initialized() -> bool:
         True if initialized, False otherwise.
     """
     return _chat_manager is not None and _chat_manager.is_initialized
+
+
+# ---------------------------------------------------------------------------
+# Interactive startup session selection
+# ---------------------------------------------------------------------------
+
+def select_startup_session(
+    input_func=None,
+    output_func=None,
+) -> None:
+    """Run the interactive startup session selection.
+
+    Presents the current user's sessions and lets them pick one, create a new
+    one, or keep the currently active session. The choice is persisted to the
+    database as the user's active session.
+
+    Args:
+        input_func: Optional callable used to read user input (defaults to
+            the built-in ``input``).
+        output_func: Optional callable used to write prompts (defaults to
+            the built-in ``print``).
+    """
+    from chat_manager.session_selector import select_session_interactively
+
+    manager = get_chat_manager()
+    if manager is None:
+        if output_func:
+            output_func("ChatHistoryManager not initialized.")
+        return
+
+    select_session_interactively(
+        manager,
+        input_func=input_func or input,
+        output_func=output_func or print,
+    )
