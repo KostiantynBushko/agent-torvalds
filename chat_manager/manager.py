@@ -150,6 +150,25 @@ class ChatHistoryManager:
     # User Identification
     # ------------------------------------------------------------------
 
+    def identify_user(self) -> User:
+        """Identify the current OS user, provisioning the record if needed.
+
+        Idempotent: if the user has already been identified (for example
+        during :meth:`initialize`), the existing user is returned without
+        re-running identification. Otherwise the OS user is looked up and
+        provisioned on demand.
+
+        Returns:
+            The User associated with the current OS login.
+        """
+        if self._current_user is not None:
+            return self._current_user
+
+        self._identify_user()
+        if self._current_user is None:
+            raise RuntimeError("User identification failed")
+        return self._current_user
+
     def _identify_user(self) -> None:
         """Identify current user from OS or create new user."""
         if self._db is None:
@@ -268,12 +287,15 @@ class ChatHistoryManager:
         self,
         name: str,
         session_type: SessionType = SessionType.CUSTOM,
+        metadata: dict | None = None,
     ) -> Session:
         """Create a new session for the current user.
 
         Args:
             name: Human-readable session name.
             session_type: Type of session.
+            metadata: Optional JSON-serialisable metadata stored with the
+                session.
 
         Returns:
             The created Session object.
@@ -290,6 +312,7 @@ class ChatHistoryManager:
             session_name=name,
             session_type=session_type,
             chat_key=chat_key,
+            metadata=metadata or {},
             is_active=False,
         )
         return self._db.create_session(session_obj)
@@ -366,6 +389,17 @@ class ChatHistoryManager:
         if self._active_session is None:
             return None
         return self._active_session.chat_key
+
+    def select_session(self, session_id: str) -> Session | None:
+        """Select (activate) a session — alias for :meth:`switch_session`.
+
+        Args:
+            session_id: The session to activate.
+
+        Returns:
+            The activated Session or None if not found.
+        """
+        return self.switch_session(session_id)
 
     def switch_session(self, session_id: str) -> Session | None:
         """Switch to a different session.
@@ -484,6 +518,15 @@ class ChatHistoryManager:
         buffer = self.get_memory_buffer()
         buffer.put(message)
 
+    def put_message(self, content: str, role: str = "user") -> None:
+        """Add a message to the current session — alias for :meth:`add_message`.
+
+        Args:
+            content: Message content.
+            role: Message role ('user', 'assistant', 'system').
+        """
+        self.add_message(content, role)
+
     def get_messages(self) -> list:
         """Get all messages from the current session's memory buffer.
 
@@ -507,6 +550,13 @@ class ChatHistoryManager:
         # Invalidate the cached buffer so it is rebuilt empty.
         self._memory_buffer = None
         logger.info(f"Cleared messages for session '{self._active_session.session_name}'")
+
+    def close(self) -> None:
+        """Close all connections — alias for :meth:`shutdown`.
+
+        Safe to call more than once.
+        """
+        self.shutdown()
 
     # ------------------------------------------------------------------
     # Properties

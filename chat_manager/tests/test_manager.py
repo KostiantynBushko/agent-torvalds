@@ -262,5 +262,78 @@ class TestManagerMessages(unittest.TestCase):
         self.assertEqual(len(self.manager.get_messages()), 1)
 
 
+class TestPlanMandatedApi(unittest.TestCase):
+    """Tests for the Step 7 API surface mandated by the implementation plan.
+
+    The plan lists ``identify_user``, ``select_session``, ``put_message`` and
+    ``close`` by name. These tests pin the public contract so future
+    refactors cannot silently drop them.
+    """
+
+    def setUp(self):
+        self.manager = ChatHistoryManager(
+            storage_uri="sqlite:///:memory:",
+            llama_uri="sqlite:///:memory:",
+        )
+        with patch.object(ChatHistoryManager, "_get_os_username", return_value="tester"):
+            self.manager.initialize()
+
+    def tearDown(self):
+        try:
+            self.manager.close()
+        except Exception:
+            pass
+
+    def test_identify_user_returns_current_user(self):
+        """identify_user() returns the provisioned OS user."""
+        user = self.manager.identify_user()
+        self.assertIsNotNone(user)
+        self.assertEqual(user.username, "tester")
+        self.assertIs(user, self.manager.current_user)
+
+    def test_select_session_activates_session(self):
+        """select_session() activates the target session like switch_session()."""
+        target = self.manager.create_session("Selected", SessionType.CUSTOM)
+        activated = self.manager.select_session(target.session_id)
+
+        self.assertIsNotNone(activated)
+        self.assertEqual(activated.session_id, target.session_id)
+        self.assertEqual(self.manager.get_active_session().session_id, target.session_id)
+
+    def test_select_session_rejects_foreign_session(self):
+        """select_session() returns None for an unknown session."""
+        self.assertIsNone(self.manager.select_session("00000000-0000-0000-0000-000000000000"))
+
+    def test_put_message_adds_to_active_session(self):
+        """put_message() appends a message to the active session."""
+        self.manager.put_message("hello via put_message", "user")
+        messages = self.manager.get_messages()
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0].content, "hello via put_message")
+
+    def test_close_is_idempotent(self):
+        """close() can be called more than once without raising."""
+        self.manager.close()
+        self.manager.close()
+        self.assertFalse(self.manager.is_initialized)
+
+    def test_create_session_accepts_metadata(self):
+        """create_session() persists the optional metadata argument."""
+        session = self.manager.create_session(
+            "With meta",
+            SessionType.CUSTOM,
+            metadata={"tag": "important", "n": 7},
+        )
+        fetched = self.manager.get_session(session.session_id)
+        self.assertEqual(fetched.metadata.get("tag"), "important")
+        self.assertEqual(fetched.metadata.get("n"), 7)
+
+    def test_create_session_defaults_to_empty_metadata(self):
+        """create_session() without metadata yields an empty dict."""
+        session = self.manager.create_session("No meta", SessionType.CUSTOM)
+        fetched = self.manager.get_session(session.session_id)
+        self.assertEqual(fetched.metadata, {})
+
+
 if __name__ == "__main__":
     unittest.main()
