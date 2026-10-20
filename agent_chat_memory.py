@@ -1,8 +1,13 @@
 """
-Chat Memory Module - Persistent chat memory backed by PostgreSQL.
+Chat Memory Module - Compatibility layer over ChatHistoryManager.
 
-This module provides a PostgreSQL-backed chat memory buffer for the Torvalds agent.
-Connection parameters can be configured via environment variables or a config file.
+This module keeps the historical `agent_chat_memory` API working while
+delegating the actual work to the `chat_manager` package (ChatHistoryManager),
+which provides multi-user, multi-session chat history.
+
+The legacy single-key behaviour is preserved when the ChatHistoryManager is
+not available (e.g. the database is unreachable), so the agent always has a
+usable memory buffer.
 
 Environment Variables:
     TORVALDS_PG_HOST        - PostgreSQL host (default: 127.0.0.1)
@@ -10,6 +15,8 @@ Environment Variables:
     TORVALDS_PG_USER        - PostgreSQL user (default: postgres)
     TORVALDS_PG_PASSWORD    - PostgreSQL password
     TORVALDS_PG_DATABASE    - PostgreSQL database name (default: llama_index_db)
+    TORVALDS_STORAGE_URI    - Custom DB URI for users/sessions metadata
+    TORVALDS_LLAMA_URI      - LlamaIndex message store URI
     TORVALDS_CHAT_KEY       - Unique chat store key (default: user1-abliterated)
     TORVALDS_TOKEN_LIMIT    - Token limit for memory buffer (default: 3000)
 
@@ -18,6 +25,8 @@ Retriever Keywords: chat, memory, conversation, history, buffer, postgres, persi
 """
 import os
 import logging
+from typing import Optional
+
 from llama_index.storage.chat_store.postgres import PostgresChatStore
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.core.tools import FunctionTool
@@ -161,6 +170,14 @@ def get_chat_memory(
         key = chat_store_key or _get_chat_store_key()
         limit = token_limit or _get_token_limit()
 
+        # Preferred path: delegate to ChatHistoryManager, which provides
+        # multi-user, multi-session chat history with per-session isolation.
+        manager_buffer = _get_manager_memory_buffer()
+        if manager_buffer is not None:
+            _chat_memory = manager_buffer
+            return _chat_memory
+
+        # Legacy fallback: single chat store key.
         chat_store = get_chat_store()
         if chat_store is not None:
             _chat_memory = ChatMemoryBuffer.from_defaults(
@@ -177,6 +194,50 @@ def get_chat_memory(
             logger.info(f"Initialized in-memory chat memory (limit={limit})")
 
     return _chat_memory
+
+
+def _get_manager_memory_buffer() -> Optional[ChatMemoryBuffer]:
+    """
+    Get the memory buffer from the ChatHistoryManager, if it is available.
+
+    Returns:
+        The ChatHistoryManager's ChatMemoryBuffer, or None if the manager is
+        not initialized or could not provide one.
+    """
+    try:
+        from chat_manager.startup import get_chat_manager
+    except Exception as e:
+        logger.debug(f"chat_manager package not importable: {e}")
+        return None
+
+    manager = get_chat_manager()
+    if manager is None or not manager.is_initialized:
+        return None
+
+    try:
+        return manager.get_memory_buffer()
+    except Exception as e:
+        logger.warning(f"ChatHistoryManager could not provide a memory buffer: {e}")
+        return None
+
+
+def get_active_chat_key() -> Optional[str]:
+    """
+    Get the chat key of the currently active session.
+
+    Returns:
+        The active session's chat key, or None when no manager is active.
+    """
+    try:
+        from chat_manager.startup import get_chat_manager
+    except Exception:
+        return None
+
+    manager = get_chat_manager()
+    if manager is None or not manager.is_initialized:
+        return None
+
+    return manager.get_active_chat_key()
 
 
 # ---------------------------------------------------------------------------
