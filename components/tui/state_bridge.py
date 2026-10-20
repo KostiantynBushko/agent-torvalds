@@ -72,6 +72,17 @@ class TuiState:
         self.memory_msg_count: int = 0
         self.last_stats: Optional[Any] = None
 
+        # Project management state (active project / workspace)
+        self.active_project: str = ""
+        self.project_type: str = ""
+        self.project_path: str = ""
+        self.registered_projects: List[str] = []
+
+        # Chat history state (active chat session)
+        self.chat_session_name: str = ""
+        self.chat_session_type: str = ""
+        self.chat_session_id: str = ""
+
         # Interactive input bar state
         self.input_buffer: str = ""
         self.cursor_pos: int = 0
@@ -206,6 +217,32 @@ class TuiState:
         with self._lock:
             self.cache_hits = hits
             self.cache_total = total
+
+    def update_project_context(
+        self,
+        project_name: str = "",
+        project_type: str = "",
+        project_path: str = "",
+        registered_projects: Optional[List[str]] = None,
+    ) -> None:
+        """Update the active project / workspace context."""
+        with self._lock:
+            self.active_project = project_name
+            self.project_type = project_type
+            self.project_path = project_path
+            self.registered_projects = list(registered_projects or [])
+
+    def update_chat_session(
+        self,
+        session_name: str = "",
+        session_type: str = "",
+        session_id: str = "",
+    ) -> None:
+        """Update the active chat session information."""
+        with self._lock:
+            self.chat_session_name = session_name
+            self.chat_session_type = session_type
+            self.chat_session_id = session_id
 
     def show_notification(self, message: str, duration: float = 3.0) -> None:
         """Display a temporary notification in the status bar."""

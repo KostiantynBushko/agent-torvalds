@@ -43,6 +43,26 @@ HELP_TEXT = """# Torvalds AI Agent — Help & Commands
 - `\\help` : Show this help message.
 - `\\exit` or `\\quit` : Exit the Torvalds agent session.
 
+### Tool Selection:
+- `\\tools` : Open the interactive tool category selection menu.
+- `\\tool-list` : List every available tool with its description.
+- `\\tool-select <spec>` : Select categories non-interactively (e.g. `\\tool-select 1-3,7`).
+
+### Project Management:
+- `\\projects` : List registered projects in the workspace.
+- `\\project-info <name>` : Show details for a registered project.
+- `\\project-status` : Show the git status of the active project.
+- `\\project-summary` : Show a full workspace summary.
+
+### Chat History:
+- `\\chat-sessions` : List all chat sessions for the current user.
+- `\\chat-select <id>` : Switch the active chat session.
+- `\\chat-create <name> [type]` : Create a new chat session.
+- `\\chat-delete <id>` : Delete a chat session.
+- `\\chat-rename <id> <new name>` : Rename a chat session.
+- `\\chat-info` : Show details of the active chat session.
+- `\\chat-clear` : Clear the active session message history.
+
 ### Keyboard Navigation:
 - **Enter** : Submit prompt / confirm HITL answer
 - **PgUp / PgDn** : Scroll document viewer up and down
@@ -68,6 +88,8 @@ class TuiApp:
         hitl_toggle: Optional[Any] = None,
         event_consumer: Optional[Any] = None,
         stats_enabled: bool = True,
+        chat_history_enabled: bool = True,
+        project_manager_enabled: bool = True,
     ):
         self.console = console or Console()
         self.state = state or TuiState()
@@ -77,6 +99,8 @@ class TuiApp:
         self.hitl_toggle = hitl_toggle
         self.event_consumer = event_consumer
         self.stats_enabled = stats_enabled
+        self.chat_history_enabled = chat_history_enabled
+        self.project_manager_enabled = project_manager_enabled
 
         self.layout = build_torvalds_layout()
         self.input_reader = NonBlockingInputReader()
@@ -306,6 +330,45 @@ class TuiApp:
             self._render_hitl_status_to_markdown()
             return
 
+        # ---- Tool selection commands ----
+        if cmd_lower == "\\tools":
+            self._render_tool_selection_menu()
+            return
+
+        if cmd_lower == "\\tool-list":
+            self._render_tool_list()
+            return
+
+        if cmd_lower.startswith("\\tool-select"):
+            self._handle_tool_select_command(cmd)
+            return
+
+        # ---- Project management commands ----
+        if self.project_manager_enabled:
+            from components.tui.project_manager_view import handle_project_command_markdown
+
+            if cmd_lower.startswith("\\project") or cmd_lower.startswith("\\projects"):
+                try:
+                    project_md = handle_project_command_markdown(cmd)
+                except Exception as e:
+                    project_md = f"# Project Command\n\n**Error:** {e}"
+                if project_md:
+                    self.state.set_markdown_content(project_md)
+                return
+
+        # ---- Chat history commands ----
+        if self.chat_history_enabled:
+            from components.tui.chat_history_view import handle_chat_command_markdown
+
+            try:
+                chat_md = handle_chat_command_markdown(cmd)
+            except Exception as e:
+                chat_md = f"# Chat Command\n\n**Error:** {e}"
+            if chat_md:
+                self.state.set_markdown_content(chat_md)
+                self._refresh_chat_session_state()
+                return
+
         # Standard agent query: Launch async task
         if self.state.is_busy:
             self.state.show_notification("Agent is busy processing. Please wait.", duration=2.5)
@@ -394,6 +457,151 @@ class TuiApp:
 | **Runtime Toggles** | {status_info.get('toggle_count', 0)} |
 """
         self.state.set_markdown_content(content)
+
+    # ------------------------------------------------------------------
+    # Tool selection
+    # ------------------------------------------------------------------
+
+    def _render_tool_selection_menu(self) -> None:
+        """Render the interactive tool category selection menu."""
+        from components.tui.tool_selection_view import (
+            discover_all_tools,
+            render_categories_markdown,
+        )
+
+        try:
+            tools = discover_all_tools()
+        except Exception as e:
+            self.state.set_markdown_content(
+                f"# 🧰 Startup Tool Selection\n\n**Error:** {e}"
+            )
+            return
+
+        from agent_tool_selection import group_tools_by_category
+
+        groups = group_tools_by_category(tools)
+        self.state.set_markdown_content(
+            render_categories_markdown(groups, len(tools))
+        )
+        self.state.show_notification(
+            "Type your selection in the command bar (e.g. 1,3,5 or 1-4) and press Enter.",
+            duration=6.0,
+        )
+
+    def _render_tool_list(self) -> None:
+        """Render the flat list of every available tool."""
+        from components.tui.tool_selection_view import (
+            discover_all_tools,
+            render_tool_list_markdown,
+        )
+
+        try:
+            tools = discover_all_tools()
+        except Exception as e:
+            self.state.set_markdown_content(
+                f"# 🧰 Available Tools\n\n**Error:** {e}"
+            )
+            return
+
+        self.state.set_markdown_content(render_tool_list_markdown(tools))
+
+    def _handle_tool_select_command(self, cmd: str) -> None:
+        """
+        Handle the non-interactive ``\tool-select <spec>`` command.
+
+        Args:
+            cmd: The full command string.
+        """
+        from agent_tool_selection import (
+            _extract_category,
+            group_tools_by_category,
+            parse_tool_selection,
+        )
+        from components.tui.tool_selection_view import discover_all_tools
+
+        parts = cmd.strip().split(maxsplit=1)
+        spec = parts[1].strip() if len(parts) > 1 else ""
+
+        if not spec:
+            self.state.set_markdown_content(
+                "# 🧰 Tool Selection\n\n"
+                "**Usage:** `\\tool-select <spec>`  "
+                "(e.g. `\\tool-select 1-3,7`)"
+            )
+            return
+
+        try:
+            tools = discover_all_tools()
+        except Exception as e:
+            self.state.set_markdown_content(
+                f"# 🧰 Tool Selection\n\n**Error:** {e}"
+            )
+            return
+
+        groups = group_tools_by_category(tools)
+        category_list = list(groups.keys())
+
+        try:
+            indexes = parse_tool_selection(spec, maximum=len(category_list))
+        except ValueError as e:
+            self.state.set_markdown_content(
+                f"# 🧰 Tool Selection\n\n**Error:** {e}"
+            )
+            return
+
+        selected_categories = {category_list[i - 1] for i in indexes}
+        selected_tools = [
+            t for t in tools
+            if _extract_category(t.metadata.description) in selected_categories
+        ]
+
+        lines = [
+            "# 🧰 Tool Selection Result",
+            "",
+            f"Selected **{len(selected_categories)}** categories "
+            f"({len(selected_tools)} of {len(tools)} tools):",
+            "",
+        ]
+        for cat in selected_categories:
+            lines.append(f"- ✓ **{cat}** ({len(groups[cat])} tools)")
+
+        self.state.set_markdown_content("\n".join(lines))
+        self.state.show_notification(
+            f"Selected {len(selected_tools)} tools. Restart with --select to apply.",
+            duration=5.0,
+        )
+
+    # ------------------------------------------------------------------
+    # Chat session state
+    # ------------------------------------------------------------------
+
+    def _refresh_chat_session_state(self) -> None:
+        """Refresh the active chat session information in the TUI state."""
+        try:
+            from chat_manager.startup import get_chat_manager
+
+            manager = get_chat_manager()
+            if manager is None or not manager.is_initialized:
+                return
+
+            session = manager.get_active_session()
+            if session is None:
+                return
+
+            self.state.update_chat_session(
+                session_name=session.session_name,
+                session_type=session.session_type.value,
+                session_id=session.session_id,
+            )
+
+            # Refresh the message count for the (possibly new) session
+            try:
+                msgs = manager.get_messages()
+                self.state.memory_msg_count = len(msgs)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     async def _toggle_hitl_action(self) -> None:
         """Toggle HITL runtime state and notify."""
