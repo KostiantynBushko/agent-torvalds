@@ -122,6 +122,18 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 - Full LlamaIndex FunctionTools integration
 - `--project-path` CLI flag to load and work on a specific project directory on startup
 - See [Project Manager README](project_manager/README.md) for details
+
+### 16. Chat History Manager (`chat_manager/`)
+- Multi-user, multi-session chat history with a backend-agnostic storage interface
+- Session lifecycle: create, list, select, rename, delete, clear
+- Per-session message isolation — each session maps to its own LlamaIndex `chat_key`
+- Automatic user identification from the OS login with on-demand provisioning
+- Active session persisted in the database and restored on the next startup
+- Interactive startup session picker plus seven `\chat-*` runtime commands
+- Dual-connector architecture: SQLAlchemy for metadata, LlamaIndex for message bodies
+- Graceful fallback to an in-memory message store when PostgreSQL is unavailable
+- 104 hermetic unit tests
+- See [Chat History Manager README](chat_manager/README.md) for details
 ---
 
 ## Key Features
@@ -136,6 +148,8 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 | **GitHub Integration** | Full PR lifecycle: create, review, comment, merge, authentication |
 | **APT Package Management** | Interactive package installation with sudo handling and multiple password methods |
 | **Chat Memory** | Persistent conversation memory with LlamaIndex integration |
+| **Multi-Session Chat History** | Isolated per-session conversations, multi-user scoping, and database-persisted active session |
+| **Chat Session Commands** | `\chat-sessions`, `\chat-select`, `\chat-create`, `\chat-delete`, `\chat-rename`, `\chat-info`, `\chat-clear` |
 | **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
 | **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
 | **On-Demand Tool Loading** | Semantic tool retrieval to reduce context window pollution |
@@ -235,6 +249,26 @@ Configure per-request statistics via environment variables:
 | `TORVALDS_HITL_TIMEOUT` | `30` | Timeout in seconds for HITL prompts |
 | `TORVALDS_HITL_DEFAULT_ANSWER` | `""` | Default fallback answer on timeout |
 | `TORVALDS_HITL_RUNTIME_TOGGLE` | `true` | Enable/disable runtime toggle commands |
+
+### Chat History Manager Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `TORVALDS_STORAGE_URI` | derived from `TORVALDS_PG_*` | SQLAlchemy URI for the `users` / `chat_sessions` tables |
+| `TORVALDS_LLAMA_URI` | `postgres+asyncpg://…/llama_index_db` | LlamaIndex chat-store URI for message bodies |
+| `TORVALDS_PG_HOST` | `127.0.0.1` | PostgreSQL host |
+| `TORVALDS_PG_PORT` | `5432` | PostgreSQL port |
+| `TORVALDS_PG_USER` | `postgres` | PostgreSQL user |
+| `TORVALDS_PG_PASSWORD` | `postgres` | PostgreSQL password |
+| `TORVALDS_PG_DATABASE` | `llama_index_db` | PostgreSQL database name |
+| `TORVALDS_CHAT_KEY` | - | Legacy single chat key. If set, it is reused as the General session's `chat_key` to keep pre-existing history reachable |
+
+CLI flags:
+
+| Flag | Description |
+|---|---|
+| `--no-chat-history` | Disable the ChatHistoryManager and fall back to the legacy single-session chat memory |
+| `--no-session-select` | Skip the interactive startup session selection menu |
 
 ---
 
@@ -362,6 +396,47 @@ python agent-torvalds.py --hitl-disabled
 # \hitl-off      - Disable HITL
 ```
 
+### Chat History Manager
+```python
+from chat_manager import ChatHistoryManager, SessionType
+
+manager = ChatHistoryManager()
+manager.initialize()
+
+# Inspect the current user and sessions
+print(manager.current_user.username)
+for session in manager.list_sessions():
+    print(session.session_name, session.is_active)
+
+# Create and switch to a dedicated session
+session = manager.create_session(
+    name="Postgres migration",
+    session_type=SessionType.CUSTOM,
+    metadata={"tag": "important"},
+)
+manager.switch_session(session.session_id)
+
+# Messages stay isolated per session
+manager.add_message("How do I set up PostgreSQL?", role="user")
+print([m.content for m in manager.get_messages()])
+
+manager.shutdown()
+```
+
+```bash
+# Runtime commands inside the agent:
+# \chat-sessions              - List all sessions
+# \chat-select <session_id>   - Switch the active session
+# \chat-create <name> [type]  - Create a session (single-word name)
+# \chat-delete <session_id>   - Delete a session
+# \chat-rename <id> <name>    - Rename a session
+# \chat-info                  - Show the active session
+# \chat-clear                 - Clear the active session's message history
+#
+# Note: \chat-create / \chat-rename split on whitespace, so use a single-word
+# name there. The startup menu's "new <name>" form keeps the full name.
+```
+
 ---
 
 ## Project Structure
@@ -412,6 +487,32 @@ agent-torvalds/
 | +-- human_loop_handler.py     # HITL callback handler
 | +-- timeout_manager.py        # Timeout management for HITL
 | +-- hitl_runtime_toggle.py    # Runtime toggle for HITL
+| chat_manager/                 # Chat History Manager (multi-user, multi-session)
+| +-- README.md                 # Chat History Manager documentation
+| +-- __init__.py
+| +-- manager.py                # ChatHistoryManager core orchestrator
+| +-- user.py                   # User data model
+| +-- session.py                # Session data model + SessionType enum
+| +-- startup.py                # Global singleton lifecycle + startup hooks
+| +-- session_selector.py       # Interactive startup session picker
+| +-- backend/                  # Message storage backends (LlamaIndex)
+| +-- +-- base.py               # ChatStoreBackend ABC (extends BaseChatStore)
+| +-- +-- postgres.py           # PostgreSQL chat store backend
+| +-- +-- simple.py             # In-memory chat store backend (fallback)
+| +-- storage/                  # User & session metadata (SQLAlchemy)
+| +-- +-- models.py             # ORM models: User, Session
+| +-- +-- connector.py          # CustomDBConnector — CRUD + schema DDL
+| +-- commands/                 # Interactive chat command layer
+| +-- +-- handler.py            # Command dispatcher
+| +-- +-- cli.py                # Per-command implementations
+| +-- tests/                    # Chat manager unit tests
+| +-- +-- test_backend.py
+| +-- +-- test_commands.py
+| +-- +-- test_manager.py
+| +-- +-- test_models.py
+| +-- +-- test_session_selector.py
+| +-- +-- test_startup.py
+| +-- +-- test_storage.py
 | investigate/                  # Investigation artifacts and proposals
 | +-- human-in-the-loop/        # HITL solution documentation
 | +-- +-- README.md             # HITL solution overview
@@ -420,6 +521,11 @@ agent-torvalds/
 | +-- +-- implementation-plan/  # Step-by-step implementation docs
 | +-- llama-index-workflow/     # LlamaIndex workflow investigation
 | +-- whiptail/                 # Whiptail investigation
+| +-- ChatHistoryManager/       # Chat history design docs & implementation plan
+| +-- +-- ChatHistoryManager.md
+| +-- +-- storage-proposal.md
+| +-- +-- implementation-plan.md
+| +-- +-- STEP_AUDIT.md
 | tests/                        # Test suite
 | +-- __init__.py
 | +-- test_cache_system.py
@@ -439,6 +545,7 @@ agent-torvalds/
 ## Recent Updates (September 2026)
 
 ### Latest Features Added
+- **Chat History Manager**: Multi-user, multi-session chat history with isolated per-session message storage, database-persisted active session, and seven `\chat-*` runtime commands
 - **Human-in-the-Loop (HITL)**: Interactive questioning with timeout handling and runtime toggle
 - **APT Package Management Toolkit**: Full Debian/Ubuntu package installation with multiple password methods
 - **Windows PowerShell Toolkit**: Native Windows PowerShell support for command execution
@@ -448,6 +555,7 @@ agent-torvalds/
 - **Enhanced Logging**: CLI argument for logging level configuration
 
 ### Key Refactors
+- Reworked `agent_chat_memory.py` into a compatibility layer over the new `chat_manager` package (legacy single-key behaviour retained as fallback)
 - Moved stats handler to components directory for better organization
 - Added comprehensive debug logging throughout the codebase
 - Fixed cmd.lower() bug for console command processing

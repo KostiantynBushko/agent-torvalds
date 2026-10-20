@@ -88,6 +88,17 @@ from agent_cache_system import (
 import agent_chat_memory
 
 # ---------------------------------------------------------------------------
+# Chat History Manager (multi-user, multi-session chat history)
+# ---------------------------------------------------------------------------
+from chat_manager.startup import (
+    initialize_chat_manager,
+    get_chat_manager,
+    shutdown_chat_manager,
+    select_startup_session,
+)
+from chat_manager.commands.handler import is_chat_command, handle_chat_command
+
+# ---------------------------------------------------------------------------
 # Stats handler
 # ---------------------------------------------------------------------------
 from components.stats_handler import (
@@ -348,6 +359,24 @@ human_loop_handler = HumanLoopHandler(
 
 
 # ---------------------------------------------------------------------------
+# Chat History Manager shutdown helper
+# ---------------------------------------------------------------------------
+
+def _shutdown_chat_manager() -> None:
+    """
+    Shut down the ChatHistoryManager singleton, if it is running.
+
+    Safe to call multiple times and when the manager was never started.
+    """
+    try:
+        from chat_manager.startup import shutdown_chat_manager as _shutdown
+
+        _shutdown()
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Signal handling for graceful shutdown
 # ---------------------------------------------------------------------------
 
@@ -383,6 +412,8 @@ def _signal_handler(signum, frame):
         end_session()
     except Exception:
         pass
+
+    _shutdown_chat_manager()
 
     console.print("[yellow]Goodbye![/yellow]")
     sys.exit(0 if signum == signal.SIGTERM else 0)
@@ -626,6 +657,19 @@ def parse_args():
         default=None,
         help="Force a specific project name for prompt context",
     )
+    # ------------------------------------------------------------------
+    # Chat History Manager CLI flags (Step 10)
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--no-chat-history",
+        action="store_true",
+        help="Disable the ChatHistoryManager (use the legacy single-session chat memory)",
+    )
+    parser.add_argument(
+        "--no-session-select",
+        action="store_true",
+        help="Skip the interactive startup session selection",
+    )
     return parser.parse_args()
 
 
@@ -806,6 +850,9 @@ async def main():
     hitl_default_answer = args.hitl_default_answer
     runtime_toggle_enabled = HITL_RUNTIME_TOGGLE and not args.hitl_no_runtime_toggle
 
+    # Chat History Manager enabled (Step 10)
+    chat_history_enabled = not args.no_chat_history
+
     # Update global HITL components with CLI values
     hitl_toggle._enabled = hitl_enabled
     human_loop_handler.enable_hitl = hitl_enabled
@@ -938,10 +985,41 @@ async def main():
 
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
+    if chat_history_enabled:
+        console.print("[dim]Type '\\chat-sessions' to list chat sessions.[/dim]")
+        console.print("[dim]Type '\\chat-select <id>' to switch sessions.[/dim]")
+        console.print("[dim]Type '\\chat-info' to show the active session.[/dim]")
     if runtime_toggle_enabled:
         console.print("[dim]Type '\\hitl-status' to check HITL status.[/dim]")
         console.print("[dim]Type '\\toggle-hitl' to enable/disable HITL at runtime.[/dim]")
     console.print("[dim]Press Ctrl+C to exit gracefully.[/dim]\n")
+
+    # ------------------------------------------------------------------
+    # Chat History Manager initialization (Step 10)
+    # ------------------------------------------------------------------
+    if chat_history_enabled:
+        try:
+            console.print("[dim]Initializing chat history manager...[/dim]")
+            manager = initialize_chat_manager()
+            active = manager.get_active_session()
+            if active:
+                console.print(
+                    f"[dim]Chat session: {active.session_name} "
+                    f"({active.session_type.value})[/dim]"
+                )
+
+            if not args.no_session_select:
+                console.print("[cyan]Session selection:[/cyan]")
+                select_startup_session(
+                    input_func=lambda prompt="": console.input(prompt),
+                    output_func=lambda text: console.print(text),
+                )
+                selected = manager.get_active_session()
+                if selected:
+                    console.print(f"[green]Active chat session: {selected.session_name}[/green]")
+        except Exception as e:
+            console.print(f"[yellow]Chat history manager unavailable: {e}[/yellow]")
+            console.print("[dim]Falling back to the legacy single-session chat memory.[/dim]")
 
     # Start a cache session
     start_session()
@@ -999,6 +1077,7 @@ async def main():
             console.print("\n[yellow]EOF received, shutting down...[/yellow]")
             from agent_cache_system import end_session
             end_session()
+            _shutdown_chat_manager()
             console.print("[yellow]Goodbye![/yellow]")
             break
         except KeyboardInterrupt:
@@ -1006,12 +1085,14 @@ async def main():
             console.print("\n[yellow]Interrupted, shutting down...[/yellow]")
             from agent_cache_system import end_session
             end_session()
+            _shutdown_chat_manager()
             console.print("[yellow]Goodbye![/yellow]")
             break
 
         if cmd.lower() in ("\\exit", "\\quit"):
             from agent_cache_system import end_session
             end_session()
+            _shutdown_chat_manager()
             console.print("[yellow]Goodbye![/yellow]")
             break
 
@@ -1035,6 +1116,16 @@ async def main():
             continue
 
         if not cmd:
+            continue
+
+        # Check for chat session commands (Step 10)
+        if chat_history_enabled and is_chat_command(cmd):
+            try:
+                chat_response = handle_chat_command(cmd)
+            except Exception as e:
+                chat_response = f"Error: {e}"
+            if chat_response:
+                console.print(f"[cyan]{chat_response}[/cyan]")
             continue
 
         # Check for HITL commands (only if runtime toggle is enabled)
