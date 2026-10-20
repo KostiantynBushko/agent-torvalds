@@ -68,7 +68,23 @@ class TelemetryView:
         else:
             table.add_row("Toolkits", "Git, OS, DB, Math")
 
-        # 7. Session Time
+        # 7. Active Project
+        if state.active_project:
+            project_str = state.active_project
+            if state.project_type:
+                project_str = f"{project_str} ({state.project_type})"
+            table.add_row("Project", project_str)
+        elif state.registered_projects:
+            table.add_row("Projects", f"{len(state.registered_projects)} registered")
+
+        # 8. Active Chat Session
+        if state.chat_session_name:
+            session_str = state.chat_session_name
+            if state.chat_session_type:
+                session_str = f"{session_str} [{state.chat_session_type}]"
+            table.add_row("Chat Session", session_str)
+
+        # 9. Session Time
         elapsed_sec = int(time.time() - state.session_start_time)
         m, s = divmod(elapsed_sec, 60)
         h, m = divmod(m, 60)

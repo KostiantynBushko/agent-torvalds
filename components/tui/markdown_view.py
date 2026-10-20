@@ -36,6 +36,17 @@ Capabilities:
 - `PgUp` / `PgDn` : Scroll up and down through document responses
 - `Up` / `Down` : Browse command history in the input bar
 
+### Tools, Projects & Chat History:
+- `\\tools` : Open the interactive tool category selection menu
+- `\\tool-list` : List every available tool
+- `\\projects` : List registered projects in the workspace
+- `\\project-info <name>` : Show details for a registered project
+- `\\project-status` : Show the git status of the active project
+- `\\project-summary` : Show a full workspace summary
+- `\\chat-sessions` : List all chat sessions
+- `\\chat-select <id>` : Switch the active chat session
+- `\\chat-info` : Show details of the active chat session
+
 *Type your command below and press Enter to begin.*
 """
 

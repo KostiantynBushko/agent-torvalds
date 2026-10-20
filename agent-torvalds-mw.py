@@ -10,13 +10,34 @@ responsive Multi-Window Terminal User Interface (TUI):
   - Non-blocking Interactive Command Bar with integrated Human-in-the-Loop (HITL) dialogs
   - Seamless fallback to classic linear REPL mode via --no-tui or in headless/piped environments
 
+Feature parity with agent-torvalds.py:
+  - Startup tool selection (--select) with interactive category picker
+  - Project Management: auto-scan, workspace config, project context injection
+  - Chat History Manager: multi-user, multi-session chat history
+  - Runtime Prompt Injection: dynamic system prompt based on the active project
+  - Callback manager propagation for LLM-level event tracking
+
 Usage:
     python agent-torvalds-mw.py                # Multi-Window TUI mode (default)
     python agent-torvalds-mw.py --no-tui       # Classic linear REPL mode
     python agent-torvalds-mw.py --full         # Load all tools upfront
+    python agent-torvalds-mw.py --select       # Interactively select tools before starting
     python agent-torvalds-mw.py --top-k 10     # Adjust retrieval count
     python agent-torvalds-mw.py --log-level DEBUG  # Enable debug logging
     python agent-torvalds-mw.py --tui-fps 20   # Custom TUI render refresh rate
+    python agent-torvalds-mw.py --auto-scan   # Auto-scan and configure projects on startup
+    python agent-torvalds-mw.py --project-path /path/to/project  # Load a specific project
+
+TUI slash commands:
+    \\tools              Open the interactive tool category selection menu
+    \\tool-list          List every available tool
+    \\projects           List registered projects in the workspace
+    \\project-info <n>   Show details for a registered project
+    \\project-status     Show the git status of the active project
+    \\project-summary    Show a full workspace summary
+    \\chat-sessions      List chat sessions
+    \\chat-select <id>   Switch the active chat session
+    \\chat-info          Show the active chat session
 
 Environment Variables:
     TORVALDS_TUI_ENABLED        Enable/disable multi-window TUI (default: true)
@@ -27,6 +48,9 @@ Environment Variables:
     TORVALDS_HITL_TIMEOUT       Timeout in seconds for HITL prompts (default: 30)
     TORVALDS_HITL_DEFAULT_ANSWER Default answer on timeout (default: empty)
     TORVALDS_HITL_RUNTIME_TOGGLE Enable/disable runtime toggle commands (default: true)
+    TORVALDS_PROMPT_INJECTION   Enable/disable runtime prompt injection (default: true)
+    TORVALDS_PROMPT_TEMPLATE    Path to custom prompt template file
+    TORVALDS_INCLUDE_RECOMMENDATIONS  Include tool recommendations in prompt (default: true)
 """
 import asyncio
 import argparse
@@ -39,11 +63,13 @@ import sys
 import uuid
 import platform
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from llama_index.core.callbacks import CallbackManager
 from llama_index.core.agent.workflow import FunctionAgent
+from llama_index.core.base.llms.types import ChatMessage
 from llama_index.core.memory import ChatMemoryBuffer
+from llama_index.core.tools import FunctionTool
 from llama_index.llms.ollama import Ollama
 from rich.console import Console
 from rich.markdown import Markdown
@@ -73,6 +99,31 @@ from agent_cache_system import (
 # Chat memory (PostgreSQL-backed with in-memory fallback)
 # ---------------------------------------------------------------------------
 import agent_chat_memory
+
+# ---------------------------------------------------------------------------
+# Chat History Manager (multi-user, multi-session chat history)
+# ---------------------------------------------------------------------------
+from chat_manager.startup import (
+    initialize_chat_manager,
+    get_chat_manager,
+    select_startup_session,
+)
+from chat_manager.commands.handler import is_chat_command, handle_chat_command
+
+# ---------------------------------------------------------------------------
+# Project Management (project detection, workspace config, git status)
+# ---------------------------------------------------------------------------
+from project_manager.agent_project_manager_toolkit import (
+    get_all_tools as get_project_manager_tools,
+    load_project,
+    build_project_context,
+    initialize_project_management,
+)
+
+# ---------------------------------------------------------------------------
+# Runtime Prompt Injection
+# ---------------------------------------------------------------------------
+from project_manager.prompt_engine import PromptTemplateEngine
 
 # ---------------------------------------------------------------------------
 # Stats handler
@@ -106,11 +157,12 @@ from components.whiptail_input_module import WhiptailInputModule
 # Multi-Window TUI Components
 # ---------------------------------------------------------------------------
 from components.tui import (
-    build_torvalds_layout,
     TuiState,
     TuiEventAdapter,
     TuiInputModule,
     TuiApp,
+    is_project_command,
+    handle_project_command_markdown,
 )
 
 # ---------------------------------------------------------------------------
@@ -135,7 +187,114 @@ HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").low
 TUI_ENABLED_DEFAULT = os.environ.get("TORVALDS_TUI_ENABLED", "true").lower() in ("true", "1", "yes")
 TUI_DEFAULT_FPS = int(os.environ.get("TORVALDS_TUI_FPS", "15"))
 
-SYSTEM_PROMPT = (
+# ---------------------------------------------------------------------------
+# Runtime Prompt Injection Configuration
+# ---------------------------------------------------------------------------
+PROMPT_INJECTION_ENABLED = os.environ.get("TORVALDS_PROMPT_INJECTION", "true").lower() == "true"
+PROMPT_TEMPLATE_PATH = os.environ.get("TORVALDS_PROMPT_TEMPLATE", "")
+INCLUDE_TOOL_RECOMMENDATIONS = os.environ.get("TORVALDS_INCLUDE_RECOMMENDATIONS", "true").lower() == "true"
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Global Prompt Template Engine instance
+# ---------------------------------------------------------------------------
+prompt_engine: Optional[PromptTemplateEngine] = None
+
+
+# ---------------------------------------------------------------------------
+# Prompt template helpers
+# ---------------------------------------------------------------------------
+
+def _load_custom_template(template_path: str) -> Optional[str]:
+    """
+    Load a custom prompt template from file.
+
+    Args:
+        template_path: Path to the template file.
+
+    Returns:
+        Template string if the file exists and is readable, None otherwise.
+    """
+    if not template_path:
+        return None
+
+    path = Path(template_path)
+    if not path.exists():
+        logger.warning(f"Prompt template file not found: {template_path}")
+        return None
+
+    try:
+        content = path.read_text(encoding="utf-8")
+        logger.info(f"Loaded custom prompt template from {template_path}")
+        return content
+    except Exception as e:
+        logger.error(f"Failed to load prompt template: {e}")
+        return None
+
+
+def _initialize_prompt_engine(
+    workspace_path: str = ".",
+    include_recommendations: bool = True,
+) -> None:
+    """
+    Initialize the global prompt template engine.
+
+    Args:
+        workspace_path: Root path of the workspace to scan for projects.
+        include_recommendations: Whether to include tool recommendations.
+    """
+    global prompt_engine
+
+    custom_template = _load_custom_template(PROMPT_TEMPLATE_PATH)
+
+    prompt_engine = PromptTemplateEngine(
+        workspace_path=workspace_path,
+        system_prompt_template=custom_template,
+        include_tool_recommendations=include_recommendations,
+        include_custom_instructions=True,
+    )
+
+    logger.info(
+        f"Prompt injection: {'enabled' if PROMPT_INJECTION_ENABLED else 'disabled'}, "
+        f"template: {'custom' if custom_template else 'default'}, "
+        f"recommendations: {'enabled' if include_recommendations else 'disabled'}"
+    )
+
+
+def build_system_prompt(
+    user_input: str = "",
+    force_project: Optional[str] = None,
+    custom_instructions: Optional[str] = None,
+) -> str:
+    """
+    Build the full system prompt with dynamic project context injection.
+
+    Uses the PromptTemplateEngine for runtime prompt injection when enabled,
+    otherwise falls back to the legacy static prompt with project context.
+
+    Args:
+        user_input: User input string (used for project detection).
+        force_project: Force a specific project name (overrides detection).
+        custom_instructions: Additional custom instructions to include.
+
+    Returns:
+        str: Complete system prompt string.
+    """
+    if PROMPT_INJECTION_ENABLED and prompt_engine is not None:
+        return prompt_engine.generate_prompt(
+            user_input=user_input,
+            force_project=force_project,
+            custom_instructions=custom_instructions,
+        )
+
+    # Legacy fallback: static prompt with project context
+    project_context = build_project_context()
+    return _SYSTEM_PROMPT_TEMPLATE.format(project_context=project_context)
+
+
+# Legacy system prompt template (used when prompt injection is disabled)
+_SYSTEM_PROMPT_TEMPLATE = (
     "You are Torvalds, a technical AI assistant that interacts with the operating system, "
     "supports software development, and assists with engineering and analytical tasks."
     "Capabilities:"
@@ -152,9 +311,20 @@ SYSTEM_PROMPT = (
     "Repository: git@github.com:KostiantynBushko/agent-torvalds.git"
     "Self‑Development Rules:"
     "1. All self‑modifications must be placed in ./self-development."
-    "2. Do not modify the main repository directly; use the self‑development clone."
+    "2. Do not modify the main repository directly; use the self-development clone."
     "3. Persist these rules for future interactions."
+    ""
+    "{project_context}"
 )
+
+
+# Initialize the prompt engine at module level
+_initialize_prompt_engine()
+
+
+# Default system prompt (without project context - populated at runtime)
+# Kept for backwards compatibility with tooling that imports this constant.
+SYSTEM_PROMPT = build_system_prompt()
 
 VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 DEFAULT_LOG_LEVEL = "INFO"
@@ -197,6 +367,24 @@ human_loop_handler = HumanLoopHandler(
     runtime_toggle=hitl_toggle,
 )
 
+# ---------------------------------------------------------------------------
+# Chat History Manager shutdown helper
+# ---------------------------------------------------------------------------
+
+def _shutdown_chat_manager() -> None:
+    """
+    Shut down the ChatHistoryManager singleton, if it is running.
+
+    Safe to call multiple times and when the manager was never started.
+    """
+    try:
+        from chat_manager.startup import shutdown_chat_manager as _shutdown
+
+        _shutdown()
+    except Exception:
+        pass
+
+
 # Signal handling state
 _shutdown_requested = False
 _active_tui_app: Optional[TuiApp] = None
@@ -219,6 +407,8 @@ def _signal_handler(signum, frame):
     except Exception:
         pass
 
+    _shutdown_chat_manager()
+
     sys.exit(0)
 
 
@@ -229,21 +419,84 @@ def _setup_signal_handlers():
 
 
 # ---------------------------------------------------------------------------
+# Helper: collect all tools from every toolkit
+# ---------------------------------------------------------------------------
+
+def _collect_all_tools() -> List[FunctionTool]:
+    """
+    Gather every available tool from all toolkit modules.
+
+    This mirrors the tool collection logic used in both the retriever
+    and full-loading modes, so the --select mode sees the same set
+    of tools that would otherwise be available.
+
+    Returns:
+        List of all FunctionTool instances.
+    """
+    all_tools = (
+        get_math_tools()
+        + get_git_tools()
+        + get_github_tools()
+        + get_os_tools()
+        + get_db_tools()
+        + get_apt_tools()
+        + get_cache_tools()
+        + get_project_manager_tools()
+    )
+
+    os_name = platform.system()
+    if os_name == "Windows":
+        all_tools += get_windows_tools()
+    elif os_name == "Linux":
+        all_tools += get_linux_tools()
+
+    return all_tools
+
+
+# ---------------------------------------------------------------------------
 # Agent factory
 # ---------------------------------------------------------------------------
 
-def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K, is_tui: bool = False):
+def create_agent(
+    use_retriever: bool = True,
+    top_k: int = SIMILARITY_TOP_K,
+    is_tui: bool = False,
+    tools: Optional[List[FunctionTool]] = None,
+    system_prompt: Optional[str] = None,
+    callback_manager: Optional[CallbackManager] = None,
+):
     """
     Create and configure the Torvalds FunctionAgent.
+
+    Args:
+        use_retriever: If True, use on-demand tool retrieval.
+                       If False, load tools upfront.
+        top_k: Number of tools to retrieve per query (retriever mode only).
+        is_tui: True when running inside the multi-window TUI (suppresses
+                console output that would corrupt the Live display).
+        tools: Pre-selected list of tools (used when --select is active).
+               If None and use_retriever is False, all tools are loaded.
+        system_prompt: Optional custom system prompt (includes project context).
+        callback_manager: Optional callback manager passed to the LLM at
+                         creation time so LLM-level events (token streaming,
+                         LLM call start/end) propagate through stats and HITL
+                         handlers.
+
+    Returns:
+        FunctionAgent instance.
     """
     llm = Ollama(
         model=MODEL,
         request_timeout=REQUEST_TIMEOUT,
         temperature=0.0,
         top_p=0.1,
+        callback_manager=callback_manager,
     )
 
     chat_memory = agent_chat_memory.get_chat_memory()
+
+    # Use the provided system prompt or build one with project context
+    prompt = system_prompt or build_system_prompt()
 
     if use_retriever:
         from agent_tool_retriever import create_agent_with_retriever
@@ -253,31 +506,27 @@ def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K, is_t
         agent = create_agent_with_retriever(
             llm=llm,
             memory=chat_memory,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=prompt,
             max_iterations=MAX_ITERATIONS,
             similarity_top_k=top_k,
+            callback_manager=callback_manager,
         )
     else:
-        if not is_tui:
-            console.print("[dim]Loading ALL tools upfront (legacy mode)[/dim]")
-
-        os_name = platform.system()
-        all_tools = (
-            get_os_tools()
-            + get_github_tools()
-        )
-        if os_name == "Windows":
-            all_tools += get_windows_tools()
-        elif os_name == "Linux":
-            all_tools += get_linux_tools()
-            all_tools += get_apt_tools()
+        if tools is None:
+            if not is_tui:
+                console.print("[dim]Loading ALL tools upfront (legacy mode)[/dim]")
+            tools = _collect_all_tools()
+        else:
+            if not is_tui:
+                console.print(f"[dim]Loading {len(tools)} user-selected tools[/dim]")
 
         agent = FunctionAgent(
-            tools=all_tools,
+            tools=tools,
             llm=llm,
             max_iterations=MAX_ITERATIONS,
             memory=chat_memory,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=prompt,
+            callback_manager=callback_manager,
         )
 
     return agent
@@ -289,11 +538,20 @@ def create_agent(use_retriever: bool = True, top_k: int = SIMILARITY_TOP_K, is_t
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Torvalds AI Agent - Multi-Window Console")
-    parser.add_argument(
+
+    # Mutually exclusive group for startup mode selection
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--full",
         action="store_true",
         help="Load all tools upfront instead of using on-demand retrieval",
     )
+    mode.add_argument(
+        "--select",
+        action="store_true",
+        help="Interactively select which tools to load before starting the agent",
+    )
+
     parser.add_argument(
         "--top-k",
         type=int,
@@ -350,6 +608,65 @@ def parse_args():
         "--hitl-no-runtime-toggle",
         action="store_true",
         help="Disable runtime HITL toggle commands",
+    )
+    # ------------------------------------------------------------------
+    # Project Management CLI flags
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--auto-scan",
+        action="store_true",
+        help="Auto-scan and configure projects on startup",
+    )
+    parser.add_argument(
+        "--project-type",
+        type=str,
+        default=None,
+        help="Override auto-detected project type (requires --auto-scan)",
+    )
+    parser.add_argument(
+        "--project-path",
+        type=str,
+        default=None,
+        help="Path to a project directory to load and work on. "
+             "The agent will cd into this directory, auto-scan it, and register it.",
+    )
+    # ------------------------------------------------------------------
+    # Runtime Prompt Injection CLI flags
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--no-prompt-injection",
+        action="store_true",
+        help="Disable dynamic prompt injection (use static system prompt)",
+    )
+    parser.add_argument(
+        "--prompt-template",
+        type=str,
+        default="",
+        help="Path to custom prompt template file",
+    )
+    parser.add_argument(
+        "--no-tool-recommendations",
+        action="store_true",
+        help="Disable tool recommendations in dynamic prompts",
+    )
+    parser.add_argument(
+        "--force-project",
+        type=str,
+        default=None,
+        help="Force a specific project name for prompt context",
+    )
+    # ------------------------------------------------------------------
+    # Chat History Manager CLI flags
+    # ------------------------------------------------------------------
+    parser.add_argument(
+        "--no-chat-history",
+        action="store_true",
+        help="Disable the ChatHistoryManager (use the legacy single-session chat memory)",
+    )
+    parser.add_argument(
+        "--no-session-select",
+        action="store_true",
+        help="Skip the interactive startup session selection",
     )
     # TUI Specific Arguments
     parser.add_argument(
@@ -414,6 +731,11 @@ async def prompt_handler(
     try:
         chat_memory = agent_chat_memory.get_chat_memory()
         increment_session_commands()
+
+        # Inject project context into agent memory before each query
+        project_context = build_project_context()
+        if project_context:
+            chat_memory.put(ChatMessage(content=f"CONTEXT: {project_context}"))
 
         workflow_handler = agent.run(
             cmd,
@@ -491,7 +813,17 @@ def render_stats_summary(summary: dict) -> None:
 # Classic Linear REPL Mode
 # ---------------------------------------------------------------------------
 
-async def run_classic_repl(args, stats_enabled: bool, events_enabled: bool, verbose_events: bool, hitl_method: str, hitl_timeout: int, runtime_toggle_enabled: bool):
+async def run_classic_repl(
+    args,
+    stats_enabled: bool,
+    events_enabled: bool,
+    verbose_events: bool,
+    hitl_method: str,
+    hitl_timeout: int,
+    runtime_toggle_enabled: bool,
+    chat_history_enabled: bool = True,
+    selected_tools: Optional[List[FunctionTool]] = None,
+):
     """Run classic linear REPL loop matching agent-torvalds.py."""
     console.print("[cyan]Torvalds AI Agent (Classic Linear REPL)[/cyan]")
     console.print(f"[dim]Model: {MODEL} | Max iterations: {MAX_ITERATIONS}[/dim]")
@@ -501,13 +833,24 @@ async def run_classic_repl(args, stats_enabled: bool, events_enabled: bool, verb
     console.print(f"[dim]HITL: {'enabled' if human_loop_handler.enable_hitl else 'disabled'} (method={hitl_method}, timeout={hitl_timeout}s)[/dim]")
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
+    console.print("[dim]Type '\\projects' to list registered projects.[/dim]")
+    console.print("[dim]Type '\\project-status' to check the git status.[/dim]")
+    if chat_history_enabled:
+        console.print("[dim]Type '\\chat-sessions' to list chat sessions.[/dim]")
+        console.print("[dim]Type '\\chat-select <id>' to switch sessions.[/dim]")
+        console.print("[dim]Type '\\chat-info' to show the active session.[/dim]")
     if runtime_toggle_enabled:
         console.print("[dim]Type '\\hitl-status' to check HITL status.[/dim]")
         console.print("[dim]Type '\\toggle-hitl' to enable/disable HITL at runtime.[/dim]")
     console.print("[dim]Press Ctrl+C to exit gracefully.[/dim]\n")
 
     start_session()
-    agent = create_agent(use_retriever=not args.full, top_k=args.top_k, is_tui=False)
+    agent = create_agent(
+        use_retriever=not args.full and not args.select,
+        top_k=args.top_k,
+        is_tui=False,
+        tools=selected_tools,
+    )
 
     state_handler = StateHandler()
     event_consumer = EventConsumer(
@@ -526,10 +869,12 @@ async def run_classic_repl(args, stats_enabled: bool, events_enabled: bool, verb
         except (EOFError, KeyboardInterrupt):
             console.print("\n[yellow]Shutting down... Goodbye![/yellow]")
             end_session()
+            _shutdown_chat_manager()
             break
 
         if cmd.lower() in ("\\exit", "\\quit"):
             end_session()
+            _shutdown_chat_manager()
             console.print("[yellow]Goodbye![/yellow]")
             break
 
@@ -551,6 +896,26 @@ async def run_classic_repl(args, stats_enabled: bool, events_enabled: bool, verb
             continue
 
         if not cmd:
+            continue
+
+        # Project management commands
+        if is_project_command(cmd):
+            try:
+                project_response = handle_project_command_markdown(cmd)
+            except Exception as e:
+                project_response = f"# Project Command\n\n**Error:** {e}"
+            if project_response:
+                console.print(Markdown(project_response))
+            continue
+
+        # Chat history commands
+        if chat_history_enabled and is_chat_command(cmd):
+            try:
+                chat_response = handle_chat_command(cmd)
+            except Exception as e:
+                chat_response = f"Error: {e}"
+            if chat_response:
+                console.print(f"[cyan]{chat_response}[/cyan]")
             continue
 
         if runtime_toggle_enabled:
@@ -585,7 +950,9 @@ async def run_classic_repl(args, stats_enabled: bool, events_enabled: bool, verb
 # ---------------------------------------------------------------------------
 
 async def main():
-    global _active_tui_app
+    global _active_tui_app, prompt_engine, PROMPT_INJECTION_ENABLED
+    global INCLUDE_TOOL_RECOMMENDATIONS, PROMPT_TEMPLATE_PATH
+
     _setup_signal_handlers()
 
     args = parse_args()
@@ -601,6 +968,27 @@ async def main():
     hitl_default_answer = args.hitl_default_answer
     runtime_toggle_enabled = HITL_RUNTIME_TOGGLE and not args.hitl_no_runtime_toggle
 
+    # Chat History Manager enabled
+    chat_history_enabled = not args.no_chat_history
+
+    # Runtime Prompt Injection configuration
+    prompt_injection_enabled = PROMPT_INJECTION_ENABLED and not args.no_prompt_injection
+    include_recommendations = INCLUDE_TOOL_RECOMMENDATIONS and not args.no_tool_recommendations
+
+    # Keep the module-level state in sync so build_system_prompt() honours
+    # the CLI overrides at runtime.
+    PROMPT_INJECTION_ENABLED = prompt_injection_enabled
+    INCLUDE_TOOL_RECOMMENDATIONS = include_recommendations
+
+    if args.prompt_template:
+        PROMPT_TEMPLATE_PATH = args.prompt_template
+
+    # Initialize the prompt engine with CLI overrides
+    _initialize_prompt_engine(
+        workspace_path=".",
+        include_recommendations=include_recommendations,
+    )
+
     hitl_toggle._enabled = hitl_enabled
     human_loop_handler.enable_hitl = hitl_enabled
     human_loop_handler.input_method = hitl_method
@@ -609,6 +997,130 @@ async def main():
     # Check whether TUI mode should be launched
     is_interactive_tty = sys.stdin.isatty() if hasattr(sys.stdin, "isatty") else False
     use_tui = args.tui and is_interactive_tty
+
+    # ------------------------------------------------------------------
+    # Project Path handling - Load a specific project
+    # ------------------------------------------------------------------
+    if args.project_path:
+        project_path = Path(args.project_path).resolve()
+
+        if not project_path.exists():
+            console.print(f"[red]Error: Project path does not exist: {project_path}[/red]")
+            end_session()
+            sys.exit(1)
+
+        if not project_path.is_dir():
+            console.print(f"[red]Error: Project path is not a directory: {project_path}[/red]")
+            end_session()
+            sys.exit(1)
+
+        # Change working directory to the project path
+        os.chdir(str(project_path))
+        console.print(f"[green]Working directory changed to: {project_path}[/green]")
+
+        # Re-initialize prompt engine with the new workspace path
+        _initialize_prompt_engine(
+            workspace_path=str(project_path),
+            include_recommendations=include_recommendations,
+        )
+
+        # Auto-scan and register the project using load_project()
+        console.print("[dim]Scanning and registering project...[/dim]")
+        load_result_str = load_project(path=str(project_path), force=True)
+        load_result = json.loads(load_result_str)
+
+        if load_result.get("status") == "loaded" and "project" in load_result:
+            proj = load_result["project"]
+            console.print(
+                f"[green]Project loaded: {proj.get('name', 'unknown')} "
+                f"({proj.get('type', 'Unknown')})[/green]"
+            )
+            console.print(f"[dim]Path: {proj.get('path', 'N/A')}[/dim]")
+            if proj.get("git_repo"):
+                console.print(f"[dim]Git branch: {proj.get('git_branch', 'N/A')}[/dim]")
+        else:
+            console.print("[yellow]Warning: Could not detect project type[/yellow]")
+
+        # Show project context status
+        ctx = build_project_context(str(project_path))
+        if ctx:
+            console.print(f"[dim]Project context: {ctx.strip()}[/dim]")
+        else:
+            console.print("[dim]No projects configured in workspace[/dim]")
+
+    elif args.auto_scan:
+        # ------------------------------------------------------------------
+        # Project Management initialization
+        # ------------------------------------------------------------------
+        console.print("[dim]Auto-scanning for projects...[/dim]")
+        initialize_project_management(
+            auto_scan=True,
+            override_project_type=args.project_type,
+        )
+        ctx = build_project_context()
+        if ctx:
+            console.print(f"[dim]Project context: {ctx.strip()}[/dim]")
+        else:
+            console.print("[dim]No projects configured in workspace[/dim]")
+
+    # Show active projects if prompt injection is enabled
+    if prompt_injection_enabled and prompt_engine:
+        active_projects = prompt_engine.config.get_all_projects()
+        if active_projects:
+            console.print(f"[dim]Active projects: {len(active_projects)} registered[/dim]")
+
+    console.print(
+        f"[dim]Prompt injection: {'enabled' if prompt_injection_enabled else 'disabled'}"
+        f" (recommendations={'on' if include_recommendations else 'off'})[/dim]"
+    )
+
+    # ------------------------------------------------------------------
+    # Startup tool selection (--select)
+    # ------------------------------------------------------------------
+    selected_tools: Optional[List[FunctionTool]] = None
+
+    if args.select:
+        from agent_tool_selection import select_tools_interactively
+
+        selected_tools = select_tools_interactively()
+
+        if not selected_tools:
+            console.print("[yellow]No tools selected. Exiting.[/yellow]")
+            end_session()
+            console.print("[yellow]Goodbye![/yellow]")
+            return
+
+        console.print(
+            f"[green]Starting agent with {len(selected_tools)} selected tool(s)...[/green]"
+        )
+
+    # ------------------------------------------------------------------
+    # Chat History Manager initialization
+    # ------------------------------------------------------------------
+    chat_manager = None
+    if chat_history_enabled:
+        try:
+            console.print("[dim]Initializing chat history manager...[/dim]")
+            chat_manager = initialize_chat_manager()
+            active = chat_manager.get_active_session()
+            if active:
+                console.print(
+                    f"[dim]Chat session: {active.session_name} "
+                    f"({active.session_type.value})[/dim]"
+                )
+
+            if not args.no_session_select and not use_tui:
+                console.print("[cyan]Session selection:[/cyan]")
+                select_startup_session(
+                    input_func=lambda prompt="": console.input(prompt),
+                    output_func=lambda text: console.print(text),
+                )
+                selected = chat_manager.get_active_session()
+                if selected:
+                    console.print(f"[green]Active chat session: {selected.session_name}[/green]")
+        except Exception as e:
+            console.print(f"[yellow]Chat history manager unavailable: {e}[/yellow]")
+            console.print("[dim]Falling back to the legacy single-session chat memory.[/dim]")
 
     if not use_tui:
         # Re-initialize input modules for classic console
@@ -625,6 +1137,8 @@ async def main():
             hitl_method=hitl_method,
             hitl_timeout=hitl_timeout,
             runtime_toggle_enabled=runtime_toggle_enabled,
+            chat_history_enabled=chat_history_enabled,
+            selected_tools=selected_tools,
         )
         return
 
@@ -634,11 +1148,45 @@ async def main():
     # Create thread-safe TUI state
     tui_state = TuiState()
     tui_state.model_name = MODEL
-    tui_state.mode = f"Retriever (top_k={args.top_k})" if not args.full else "Full upfront"
+    if args.select:
+        tui_state.mode = f"Selected ({len(selected_tools or [])} tools)"
+    elif args.full:
+        tui_state.mode = "Full upfront"
+    else:
+        tui_state.mode = f"Retriever (top_k={args.top_k})"
     tui_state.hitl_enabled = hitl_enabled
     tui_state.hitl_timeout = hitl_timeout
     tui_state.hitl_default_answer = hitl_default_answer
     tui_state.active_toolkits = ["Git", "OS", "DB", "Math"]
+
+    # Populate the project context in the TUI state
+    try:
+        from project_manager.agent_project_manager_toolkit import list_projects
+
+        projects_payload = json.loads(list_projects("."))
+        project_entries = projects_payload.get("projects", []) or []
+        tui_state.update_project_context(
+            project_name=project_entries[0].get("name", "") if project_entries else "",
+            project_type=project_entries[0].get("type", "") if project_entries else "",
+            project_path=project_entries[0].get("path", "") if project_entries else "",
+            registered_projects=[p.get("name", "") for p in project_entries],
+        )
+    except Exception:
+        pass
+
+    # Populate the active chat session in the TUI state
+    try:
+        manager = get_chat_manager()
+        if manager is not None and manager.is_initialized:
+            session = manager.get_active_session()
+            if session is not None:
+                tui_state.update_chat_session(
+                    session_name=session.session_name,
+                    session_type=session.session_type.value,
+                    session_id=session.session_id,
+                )
+    except Exception:
+        pass
 
     # Provide silent console for background EventConsumer and SpinnerController
     # to prevent terminal scroll tearing while Live is active
@@ -667,8 +1215,17 @@ async def main():
     event_adapter = TuiEventAdapter(tui_state)
     event_adapter.register_with_event_consumer(event_consumer)
 
+    # Build the system prompt with project context
+    system_prompt = build_system_prompt(force_project=args.force_project)
+
     # Create Agent
-    agent = create_agent(use_retriever=not args.full, top_k=args.top_k, is_tui=True)
+    agent = create_agent(
+        use_retriever=not args.full and not args.select,
+        top_k=args.top_k,
+        is_tui=True,
+        tools=selected_tools,
+        system_prompt=system_prompt,
+    )
 
     # Count chat memory messages
     try:
@@ -687,6 +1244,8 @@ async def main():
         hitl_toggle=hitl_toggle,
         event_consumer=event_consumer,
         stats_enabled=stats_enabled,
+        chat_history_enabled=chat_history_enabled,
+        project_manager_enabled=True,
     )
     _active_tui_app = app
 
@@ -694,6 +1253,7 @@ async def main():
         await app.run()
     finally:
         end_session()
+        _shutdown_chat_manager()
         console.print("[yellow]Torvalds AI Agent session terminated. Goodbye![/yellow]")
 
 
