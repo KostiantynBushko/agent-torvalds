@@ -1,28 +1,95 @@
-whiptail
+# Terminal UI helper (whiptail dialogs) - imported by components/whiptail_*.py
+whiptail>=0.2
+
+# ---------------------------------------------------------------------------
 # Core LLM and Agent Dependencies
+# ---------------------------------------------------------------------------
 llama-index>=0.14.24
+llama-index-core>=0.14.24
 llama-index-llms-ollama>=0.11.0
+
+# Required by agent_tool_retriever.py:
+#   from llama_index.embeddings.ollama import OllamaEmbedding
+llama-index-embeddings-ollama>=0.8.6
+
+# Required by agent-torvalds-cpp.py:
+#   from llama_index.llms.llama_cpp import LlamaCPP
+# NOTE: llama-cpp-python ships no prebuilt wheels for this platform and is
+# compiled from source, so a C/C++ toolchain (cmake, gcc/g++) must be
+# available when installing this requirement.
+llama-index-llms-llama-cpp>=0.5.1
+
+# Provides the top-level "workflows" package imported by components/hitl_events.py
+#   from workflows.events import Event
+llama-index-workflows>=2.14.0
+
+# Callback/event instrumentation used by the stats and HITL handlers
+llama-index-instrumentation>=0.6.0
+
+# ---------------------------------------------------------------------------
+# Database Dependencies
+# ---------------------------------------------------------------------------
+# LlamaIndex chat store backend (message bodies).
+# Pulls in asyncpg + psycopg; both are listed explicitly below as they are
+# also used directly by the agent.
 llama-index-storage-chat-store-postgres>=0.5.0
 
-# Database Dependencies
+# LlamaIndex vector store backend (PGVectorStore). Requires the pgvector
+# *server* extension - see setup_postgres_db.sql.
+llama-index-vector-stores-postgres>=0.9.0
+
+# Synchronous PostgreSQL driver (agent_db_toolkit.py)
 psycopg2-binary>=2.9.12
-mysql-connector-python>=26.7.0
+
+# PostgreSQL 3.x driver used by llama-index-storage-chat-store-postgres
+# (the "postgresql+psycopg://" SQLAlchemy dialect)
+psycopg[binary]>=3.3.6
+
+# Asynchronous PostgreSQL driver (the "postgresql+asyncpg://" dialect)
 asyncpg>=0.30.0
 
+# ORM layer behind chat_manager/storage (CustomDBConnector) and used by
+# llama-index-storage-chat-store-postgres.
+# Keep below 2.1: llama-index-vector-stores-postgres pins sqlalchemy<2.1.
+SQLAlchemy>=2.0.54,<2.1
+
+# MySQL driver (agent_db_toolkit.py)
+mysql-connector-python>=26.7.0
+
+# Python bindings for the pgvector extension, required by
+# llama-index-vector-stores-postgres (PGVectorStore).
+# NOTE: the matching *server* extension must also be installed, e.g.
+#   apt install postgresql-16-pgvector
+# See setup_postgres_db.sql.
+pgvector>=0.5.1
+
+# ---------------------------------------------------------------------------
 # Utility Dependencies
+# ---------------------------------------------------------------------------
 PyYAML>=6.0.3
 rich>=15.0.0
 numpy>=2.5.3
 
-# Additional Core Dependencies (from installed packages)
-llama-index-core>=0.14.24
-llama-index-vector-stores-postgres>=0.9.0
-llama-index-instrumentation>=0.6.0
+# HTTP client used by agent_github_toolkit.py
+requests>=2.31.0
+
+# OpenAI embeddings (optional; used by the OpenAI embedding integrations)
 llama-index-embeddings-openai>=0.6.0
 
+# ---------------------------------------------------------------------------
 # Git Toolkit Dependencies
+# ---------------------------------------------------------------------------
 pygit2>=1.14.0
 
+# ---------------------------------------------------------------------------
 # Excel & Data Analysis Dependencies
+# ---------------------------------------------------------------------------
 openpyxl>=3.1.5
 pandas>=2.0.0
+
+# ---------------------------------------------------------------------------
+# Testing Dependencies
+# ---------------------------------------------------------------------------
+pytest>=8.4
+# Required for the @pytest.mark.asyncio tests in tests/test_event_consumer_hitl.py
+pytest-asyncio>=0.23.8
