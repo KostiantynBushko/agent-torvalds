@@ -29,16 +29,17 @@ class PostgresChatStoreBackend(ChatStoreBackend):
 
         Args:
             config: Backend configuration with connection URI.
+
+        Raises:
+            Exception: Propagated from LlamaIndex if the store cannot be
+                created, so the caller can fall back to another backend.
         """
         self._config = config
-        try:
-            from llama_index.storage.chat_store.postgres import PostgresChatStore
 
-            self._store = PostgresChatStore.from_uri(uri=config.connection_string)
-            logger.info("Connected to PostgreSQL chat store backend")
-        except Exception as e:
-            logger.warning(f"Failed to connect to PostgreSQL chat store: {e}")
-            self._store = None
+        from llama_index.storage.chat_store.postgres import PostgresChatStore
+
+        self._store = PostgresChatStore.from_uri(uri=config.connection_string)
+        logger.info("Connected to PostgreSQL chat store backend")
 
     def _ensure_connected(self) -> None:
         """Raise if not connected."""
