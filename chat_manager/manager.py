@@ -10,7 +10,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from chat_manager.session import Session, SessionType
 from chat_manager.user import User
@@ -25,7 +25,7 @@ from chat_manager.backend import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from llama_index.core.llms import ChatMessage
+    from llama_index.core.base.llms.types import ChatMessage
 
 
 class ChatHistoryManager:
@@ -113,12 +113,19 @@ class ChatHistoryManager:
         )
 
     def shutdown(self) -> None:
-        """Clean up all connections."""
+        """Clean up all connections and reset the manager state.
+
+        Safe to call more than once.
+        """
         if self._db:
             self._db.close()
         if self._backend:
             self._backend.close()
+        self._db = None
+        self._backend = None
         self._memory_buffer = None
+        self._active_session = None
+        self._current_user = None
         logger.info("ChatHistoryManager shut down")
 
     # ------------------------------------------------------------------
@@ -287,6 +294,79 @@ class ChatHistoryManager:
         )
         return self._db.create_session(session_obj)
 
+    def get_session(self, session_id: str) -> Session | None:
+        """Get one of the current user's sessions by ID.
+
+        Args:
+            session_id: The session to look up.
+
+        Returns:
+            The Session, or None if it does not exist or belongs to another user.
+        """
+        if self._db is None or self._current_user is None:
+            return None
+
+        session = self._db.get_session_by_id(session_id)
+        if session is None or session.user_id != self._current_user.user_id:
+            return None
+        return session
+
+    def update_session(self, session_id: str, **kwargs) -> Session | None:
+        """Update fields of one of the current user's sessions.
+
+        Args:
+            session_id: The session to update.
+            **kwargs: Fields to update (e.g. ``session_name``).
+
+        Returns:
+            The updated Session, or None if it does not exist or belongs to
+            another user.
+        """
+        if self._db is None or self._current_user is None:
+            return None
+
+        session = self.get_session(session_id)
+        if session is None:
+            return None
+
+        for field_name, value in kwargs.items():
+            if field_name == "session_type" and isinstance(value, str):
+                value = SessionType(value.lower())
+            if hasattr(session, field_name):
+                setattr(session, field_name, value)
+
+        session.update_timestamp()
+        updated = self._db.update_session(session)
+        if updated and self._active_session and self._active_session.session_id == session_id:
+            self._active_session = updated
+        return updated
+
+    def rename_session(self, session_id: str, new_name: str) -> Session | None:
+        """Rename one of the current user's sessions.
+
+        Args:
+            session_id: The session to rename.
+            new_name: The new human-readable name.
+
+        Returns:
+            The updated Session, or None if it does not exist or belongs to
+            another user.
+        """
+        if not new_name or not new_name.strip():
+            raise ValueError("Session name cannot be empty")
+
+        return self.update_session(session_id, session_name=new_name.strip())
+
+    def get_active_chat_key(self) -> str | None:
+        """Get the LlamaIndex chat key of the active session.
+
+        Returns:
+            The chat key string, or None if there is no active session.
+        """
+        if self._active_session is None:
+            return None
+        return self._active_session.chat_key
+
     def switch_session(self, session_id: str) -> Session | None:
         """Switch to a different session.
 
@@ -299,6 +379,14 @@ class ChatHistoryManager:
         if self._db is None or self._current_user is None:
             return None
 
+        # Only sessions owned by the current user may be activated.
+        if self.get_session(session_id) is None:
+            logger.warning(
+                f"Session '{session_id}' does not exist or does not belong to "
+                f"user '{self._current_user.username}'"
+            )
+            return None
+
         self._memory_buffer = None  # Invalidate memory buffer
         self._active_session = self._db.activate_session(
             session_id, self._current_user.user_id
@@ -308,7 +396,8 @@ class ChatHistoryManager:
     def delete_session(self, session_id: str) -> bool:
         """Delete a session by ID.
 
-        Cannot delete the active session.
+        Cannot delete the active session, and can only delete sessions owned
+        by the current user.
 
         Args:
             session_id: The session to delete.
@@ -323,7 +412,16 @@ class ChatHistoryManager:
             logger.warning("Cannot delete the active session")
             return False
 
-        return self._db.delete_session(session_id)
+        if self.get_session(session_id) is None:
+            logger.warning(
+                f"Session '{session_id}' does not exist or does not belong to "
+                f"the current user"
+            )
+            return False
+
+        return self._db.delete_session(
+            session_id, user_id=self._current_user.user_id
+        )
 
     # ------------------------------------------------------------------
     # Public API: Message Buffer
@@ -332,7 +430,9 @@ class ChatHistoryManager:
     def get_memory_buffer(self, token_limit: int | None = None) -> Any:
         """Get the LlamaIndex ChatMemoryBuffer for the active session.
 
-        Lazily creates and caches the buffer.
+        Lazily creates and caches the buffer. The buffer is bound to the
+        active session's ``chat_key`` so that each session keeps its own,
+        isolated message history.
 
         Args:
             token_limit: Override token limit (defaults to user preference).
@@ -350,24 +450,17 @@ class ChatHistoryManager:
             self._current_user.token_limit if self._current_user else 5000
         )
 
-        try:
-            from llama_index.core.memory import ChatMemoryBuffer
+        from llama_index.core.memory import ChatMemoryBuffer
 
-            self._memory_buffer = ChatMemoryBuffer.from_defaults(
-                token_limit=limit,
-                chat_store=self._backend,
-                chat_store_key=self._active_session.chat_key,
-            )
-            logger.info(
-                f"Created memory buffer for session '{self._active_session.session_name}' "
-                f"(key={self._active_session.chat_key}, limit={limit})"
-            )
-        except Exception as e:
-            logger.warning(f"Failed to create memory buffer: {e}")
-            # Fallback: in-memory only
-            from llama_index.core.memory import ChatMemoryBuffer
-
-            self._memory_buffer = ChatMemoryBuffer.from_defaults(token_limit=limit)
+        self._memory_buffer = ChatMemoryBuffer.from_defaults(
+            token_limit=limit,
+            chat_store=self._backend,
+            chat_store_key=self._active_session.chat_key,
+        )
+        logger.info(
+            f"Created memory buffer for session '{self._active_session.session_name}' "
+            f"(key={self._active_session.chat_key}, limit={limit})"
+        )
 
         return self._memory_buffer
 
@@ -377,9 +470,19 @@ class ChatHistoryManager:
         Args:
             content: Message content.
             role: Message role ('user', 'assistant', 'system').
+
+        Raises:
+            ValueError: If the role is not a valid chat message role.
         """
+        from llama_index.core.base.llms.types import ChatMessage
+
+        try:
+            message = ChatMessage(role=role, content=content)
+        except Exception as e:
+            raise ValueError(f"Invalid message role '{role}': {e}") from e
+
         buffer = self.get_memory_buffer()
-        buffer.put(content, role)
+        buffer.put(message)
 
     def get_messages(self) -> list:
         """Get all messages from the current session's memory buffer.
@@ -389,6 +492,21 @@ class ChatHistoryManager:
         """
         buffer = self.get_memory_buffer()
         return buffer.get()
+
+    def clear_messages(self) -> None:
+        """Delete every message stored for the active session.
+
+        The session itself is kept; only its message history is removed.
+        """
+        if self._active_session is None:
+            raise RuntimeError("No active session")
+
+        if self._backend is not None:
+            self._backend.delete_messages(self._active_session.chat_key)
+
+        # Invalidate the cached buffer so it is rebuilt empty.
+        self._memory_buffer = None
+        logger.info(f"Cleared messages for session '{self._active_session.session_name}'")
 
     # ------------------------------------------------------------------
     # Properties
