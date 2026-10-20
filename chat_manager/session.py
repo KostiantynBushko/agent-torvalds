@@ -20,7 +20,7 @@ class SessionType(str, Enum):
         return self.value
 
 
-@dataclass
+@dataclass(eq=False)
 class Session:
     """Represents a chat session scoped to a user.
 
@@ -52,6 +52,15 @@ class Session:
             self.session_id = str(uuid.uuid4())
         if isinstance(self.session_type, str) and self.session_type != self.session_type.lower():
             self.session_type = SessionType(self.session_type.lower())
+
+    def __eq__(self, other: object) -> bool:
+        """Sessions are equal if session_id matches."""
+        if isinstance(other, Session):
+            return self.session_id == other.session_id
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.session_id)
 
     def update_timestamp(self) -> None:
         """Update the updated_at timestamp to now."""

@@ -2,15 +2,21 @@
 
 Uses SQLAlchemy to manage the `users` and `chat_sessions` tables,
 isolated from the LlamaIndex message storage connector.
+
+Converts between dataclass models (chat_manager.user.User, chat_manager.session.Session)
+and SQLAlchemy ORM models (chat_manager.storage.models.User, chat_manager.storage.models.Session).
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 from typing import Any
 
-from chat_manager.storage.models import Base, User, Session
+from chat_manager.storage.models import Base, User as ORMUser, Session as ORMSession
+from chat_manager.user import User
+from chat_manager.session import Session, SessionType
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +52,65 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON chat_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_type ON chat_sessions(session_type);
 CREATE INDEX IF NOT EXISTS idx_sessions_active ON chat_sessions(user_id, is_active);
 """
+
+
+# ---------------------------------------------------------------------------
+# Conversion helpers
+# ---------------------------------------------------------------------------
+
+def _orm_user_to_dataclass(orm_user: ORMUser) -> User:
+    """Convert ORM User to dataclass User."""
+    return User(
+        user_id=orm_user.user_id,
+        username=orm_user.username,
+        backend_type=orm_user.backend_type,
+        token_limit=orm_user.token_limit,
+        created_at=orm_user.created_at,
+        updated_at=orm_user.updated_at,
+    )
+
+
+def _dataclass_to_orm_user(user: User) -> ORMUser:
+    """Convert dataclass User to ORM User."""
+    return ORMUser(
+        user_id=user.user_id,
+        username=user.username,
+        backend_type=user.backend_type,
+        token_limit=user.token_limit,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
+    )
+
+
+def _orm_session_to_dataclass(orm_session: ORMSession) -> Session:
+    """Convert ORM Session to dataclass Session."""
+    return Session(
+        session_id=orm_session.session_id,
+        user_id=orm_session.user_id,
+        session_name=orm_session.session_name,
+        session_type=SessionType(orm_session.session_type) if isinstance(orm_session.session_type, str) else orm_session.session_type,
+        chat_key=orm_session.chat_key,
+        metadata={},
+        created_at=orm_session.created_at,
+        updated_at=orm_session.updated_at,
+        is_active=bool(orm_session.is_active),
+    )
+
+
+def _dataclass_to_orm_session(session: Session) -> ORMSession:
+    """Convert dataclass Session to ORM Session."""
+    session_type_val = session.session_type.value if isinstance(session.session_type, SessionType) else session.session_type
+    return ORMSession(
+        session_id=session.session_id,
+        user_id=session.user_id,
+        session_name=session.session_name,
+        session_type=session_type_val,
+        chat_key=session.chat_key,
+        session_metadata="{}",
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+        is_active=session.is_active,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +168,7 @@ class CustomDBConnector:
         """Close the connection and release resources."""
         if self._engine:
             self._engine.dispose()
+            self._engine = None
             self._connected = False
             logger.info("CustomDBConnector closed")
 
@@ -132,7 +198,8 @@ class CustomDBConnector:
         self._ensure_connected()
         session = self._session_factory()
         try:
-            return session.query(User).filter(User.username == username).first()
+            orm_user = session.query(ORMUser).filter(ORMUser.username == username).first()
+            return _orm_user_to_dataclass(orm_user) if orm_user else None
         finally:
             session.close()
 
@@ -148,7 +215,8 @@ class CustomDBConnector:
         self._ensure_connected()
         session = self._session_factory()
         try:
-            return session.query(User).filter(User.user_id == user_id).first()
+            orm_user = session.query(ORMUser).filter(ORMUser.user_id == user_id).first()
+            return _orm_user_to_dataclass(orm_user) if orm_user else None
         finally:
             session.close()
 
@@ -164,11 +232,12 @@ class CustomDBConnector:
         self._ensure_connected()
         session = self._session_factory()
         try:
-            session.add(user)
+            orm_user = _dataclass_to_orm_user(user)
+            session.add(orm_user)
             session.commit()
-            session.refresh(user)
+            session.refresh(orm_user)
             logger.info(f"Created user: {user.username} ({user.user_id})")
-            return user
+            return _orm_user_to_dataclass(orm_user)
         except Exception:
             session.rollback()
             raise
@@ -187,14 +256,14 @@ class CustomDBConnector:
         self._ensure_connected()
         session = self._session_factory()
         try:
-            existing = session.query(User).filter(User.user_id == user.user_id).first()
+            existing = session.query(ORMUser).filter(ORMUser.user_id == user.user_id).first()
             if existing:
                 existing.backend_type = user.backend_type
                 existing.token_limit = user.token_limit
                 existing.updated_at = user.updated_at
                 session.commit()
                 session.refresh(existing)
-                return existing
+                return _orm_user_to_dataclass(existing)
             return user
         finally:
             session.close()
@@ -215,7 +284,8 @@ class CustomDBConnector:
         self._ensure_connected()
         session = self._session_factory()
         try:
-            return session.query(Session).filter(Session.session_id == session_id).first()
+            orm_session = session.query(ORMSession).filter(ORMSession.session_id == session_id).first()
+            return _orm_session_to_dataclass(orm_session) if orm_session else None
         finally:
             session.close()
 
@@ -231,11 +301,12 @@ class CustomDBConnector:
         self._ensure_connected()
         session = self._session_factory()
         try:
-            return (
-                session.query(Session)
-                .filter(Session.user_id == user_id, Session.is_active.is_(True))
+            orm_session = (
+                session.query(ORMSession)
+                .filter(ORMSession.user_id == user_id, ORMSession.is_active.is_(True))
                 .first()
             )
+            return _orm_session_to_dataclass(orm_session) if orm_session else None
         finally:
             session.close()
 
@@ -251,12 +322,13 @@ class CustomDBConnector:
         self._ensure_connected()
         session = self._session_factory()
         try:
-            return (
-                session.query(Session)
-                .filter(Session.user_id == user_id)
-                .order_by(Session.created_at.desc())
+            orm_sessions = (
+                session.query(ORMSession)
+                .filter(ORMSession.user_id == user_id)
+                .order_by(ORMSession.created_at.desc())
                 .all()
             )
+            return [_orm_session_to_dataclass(s) for s in orm_sessions]
         finally:
             session.close()
 
@@ -272,11 +344,12 @@ class CustomDBConnector:
         self._ensure_connected()
         session = self._session_factory()
         try:
-            session.add(session_obj)
+            orm_session = _dataclass_to_orm_session(session_obj)
+            session.add(orm_session)
             session.commit()
-            session.refresh(session_obj)
+            session.refresh(orm_session)
             logger.info(f"Created session: {session_obj.session_name} ({session_obj.session_id})")
-            return session_obj
+            return _orm_session_to_dataclass(orm_session)
         except Exception:
             session.rollback()
             raise
@@ -296,17 +369,15 @@ class CustomDBConnector:
         self._ensure_connected()
         session = self._session_factory()
         try:
-            from datetime import datetime
-
             # Deactivate all sessions for this user
-            session.query(Session).filter(
-                Session.user_id == user_id, Session.is_active.is_(True)
+            session.query(ORMSession).filter(
+                ORMSession.user_id == user_id, ORMSession.is_active.is_(True)
             ).update({"is_active": False, "updated_at": datetime.now()})
 
             # Activate the target session
             target = (
-                session.query(Session)
-                .filter(Session.session_id == session_id)
+                session.query(ORMSession)
+                .filter(ORMSession.session_id == session_id)
                 .first()
             )
             if target:
@@ -315,7 +386,7 @@ class CustomDBConnector:
                 session.commit()
                 session.refresh(target)
                 logger.info(f"Activated session: {target.session_name}")
-                return target
+                return _orm_session_to_dataclass(target)
             return None
         finally:
             session.close()
@@ -333,8 +404,8 @@ class CustomDBConnector:
         session = self._session_factory()
         try:
             target = (
-                session.query(Session)
-                .filter(Session.session_id == session_id)
+                session.query(ORMSession)
+                .filter(ORMSession.session_id == session_id)
                 .first()
             )
             if target:

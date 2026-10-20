@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 
 
-@dataclass
+@dataclass(eq=False)
 class User:
     """Represents a user identity and preferences.
 
@@ -32,6 +32,15 @@ class User:
         """Ensure user_id is a valid UUID string."""
         if not self.user_id:
             self.user_id = str(uuid.uuid4())
+
+    def __eq__(self, other: object) -> bool:
+        """Users are equal if user_id matches."""
+        if isinstance(other, User):
+            return self.user_id == other.user_id
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.user_id)
 
     def update_timestamp(self) -> None:
         """Update the updated_at timestamp to now."""
