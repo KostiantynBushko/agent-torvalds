@@ -123,7 +123,21 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 - `--project-path` CLI flag to load and work on a specific project directory on startup
 - See [Project Manager README](project_manager/README.md) for details
 
-### 16. Chat History Manager (`chat_manager/`)
+### 16. Multi-Window Console Agent (`agent-torvalds-mw.py`)
+- The **multi-window** variant of the orchestrator, built on top of `agent-torvalds.py`
+- Persistent Multi-Window TUI: Markdown document viewer, background worker/tool progress,
+  agent telemetry inspector, and a non-blocking command bar with HITL dialogs
+- **Full feature parity** with the classic orchestrator:
+  - Startup tool selection (`--select`) with an interactive category picker
+  - Project Management: `--auto-scan`, `--project-path`, workspace config, project context injection
+  - Chat History Manager: multi-user, multi-session history with `\chat-*` commands
+  - Runtime Prompt Injection: dynamic system prompt derived from the active project
+  - Callback-manager propagation for LLM-level event tracking
+- TUI slash commands: `\tools`, `\tool-list`, `\projects`, `\project-info`,
+  `\project-status`, `\project-summary`, `\chat-sessions`, `\chat-select`, `\chat-info`, …
+- Seamless fallback to the classic linear REPL via `--no-tui` or in headless/piped environments
+
+### 17. Chat History Manager (`chat_manager/`)
 - Multi-user, multi-session chat history with a backend-agnostic storage interface
 - Session lifecycle: create, list, select, rename, delete, clear
 - Per-session message isolation — each session maps to its own LlamaIndex `chat_key`

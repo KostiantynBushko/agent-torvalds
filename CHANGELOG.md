@@ -1,5 +1,46 @@
 # Changelog
 
+## [Unreleased] - Multi-Window Agent Parity
+
+### Features
+- **Multi-Window agent feature parity** — `agent-torvalds-mw.py` now matches the
+  capabilities of the classic `agent-torvalds.py` orchestrator:
+  - **Startup tool selection** — new `--select` flag with an interactive category
+    picker; the agent now loads only the toolkits the user chose.
+  - **Project Manager** — new `--auto-scan`, `--project-type` and `--project-path`
+    flags, project context injection into agent memory, and the Project Manager
+    toolkits included in the full tool collection.
+  - **Chat History Manager** — the multi-user, multi-session chat history is now
+    initialized at startup, with the `\chat-*` runtime commands available in both
+    the TUI and the classic REPL.
+  - **Runtime Prompt Injection** — the system prompt is now generated dynamically
+    from the active project via `PromptTemplateEngine`, with `--no-prompt-injection`,
+    `--prompt-template`, `--no-tool-recommendations` and `--force-project` flags.
+  - **Callback manager propagation** — the callback manager is now passed to the LLM
+    at creation time so LLM-level events reach the stats and HITL handlers.
+- **Full tool parity** — `--full` mode now loads every toolkit (previously only
+  OS and GitHub), matching the classic orchestrator exactly.
+
+### Fixes
+- **TUI input reader** — keystrokes typed in a burst were truncated to the first
+  character because `sys.stdin.read(1)` blocks until a full line arrives. The
+  reader now consumes the raw terminal file descriptor and buffers the remainder,
+  so slash commands such as `\projects` are received in full.
+
+### New modules
+- `components/tui/tool_selection_view.py` — TUI-friendly tool discovery, category
+  rendering and interactive selection.
+- `components/tui/project_manager_view.py` — Markdown renderers for the project
+  list, project details, git status and workspace summary.
+- `components/tui/chat_history_view.py` — Markdown renderers for the chat session
+  list and active session details.
+
+### Tests
+- `tests/test_multi_window_parity.py` — 56 tests covering CLI parity, tool
+  collection parity, tool selection, project manager, chat history, TUI state and
+  command dispatch.
+- `tests/test_tui_input_reader.py` — 6 tests covering the buffered input reader.
+
 ## 2026-09-10
 
 - [feature] add Linux shell command toolkit and enable chat memory (2026-09-10)

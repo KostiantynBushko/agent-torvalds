@@ -197,7 +197,7 @@ def render_footer(
 
     input_text = Text.from_markup(f"{prompt_label}[bold white]{cursor_rendered}[/bold white]")
     hints_text = Text.from_markup(
-        "[dim][\\stats | \\toggle-hitl | \\clear | \\help | \\exit | PgUp/PgDn: Scroll][/dim]"
+        "[dim][\\stats | \\tools | \\projects | \\chat-sessions | \\help | \\exit | PgUp/PgDn: Scroll][/dim]"
     )
 
     footer_table.add_row(input_text, hints_text)

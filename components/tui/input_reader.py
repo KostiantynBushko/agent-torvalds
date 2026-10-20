@@ -38,6 +38,8 @@ class NonBlockingInputReader:
         self._is_active = False
         self._old_termios = None
         self._is_tty = sys.stdin.isatty() if hasattr(sys.stdin, "isatty") else False
+        self._pending: str = ""
+        self._fd: Optional[int] = None
 
     def start(self) -> None:
         """Initialize non-blocking raw/cbreak terminal mode on POSIX."""
@@ -45,10 +47,12 @@ class NonBlockingInputReader:
             return
         if not IS_WINDOWS and self._is_tty:
             try:
-                self._old_termios = termios.tcgetattr(sys.stdin.fileno())
-                tty.setcbreak(sys.stdin.fileno())
+                self._fd = sys.stdin.fileno()
+                self._old_termios = termios.tcgetattr(self._fd)
+                tty.setcbreak(self._fd)
             except Exception:
-                pass
+                self._fd = None
+        self._pending = ""
         self._is_active = True
 
     def stop(self) -> None:
@@ -57,10 +61,13 @@ class NonBlockingInputReader:
             return
         if not IS_WINDOWS and self._is_tty and self._old_termios is not None:
             try:
-                termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, self._old_termios)
+                fd = self._fd if self._fd is not None else sys.stdin.fileno()
+                termios.tcsetattr(fd, termios.TCSADRAIN, self._old_termios)
             except Exception:
                 pass
             self._old_termios = None
+        self._fd = None
+        self._pending = ""
         self._is_active = False
 
     def __enter__(self):
@@ -80,6 +87,8 @@ class NonBlockingInputReader:
             except Exception:
                 return False
         else:
+            if self._pending:
+                return True
             try:
                 r, _, _ = select.select([sys.stdin], [], [], 0)
                 return bool(r)
@@ -146,15 +155,69 @@ class NonBlockingInputReader:
         # Printable character
         return ch
 
-    def _poll_posix(self) -> Optional[str]:
-        """Read and decode keystroke on POSIX using sys.stdin and escape parsing."""
-        try:
-            ch = sys.stdin.read(1)
-        except Exception:
-            return None
+    def _read_raw(self) -> str:
+        """
+        Read a chunk of pending input from the terminal.
 
+        Uses ``os.read`` on the raw file descriptor rather than
+        ``sys.stdin.read(1)``: in cbreak mode the buffered reader waits for a
+        full line, which would stall the render loop and swallow every
+        character after the first one.
+
+        Returns:
+            The raw characters read, or an empty string when nothing is
+            available.
+        """
+        if self._pending:
+            return self._pending
+
+        fd = self._fd if self._fd is not None else None
+        if fd is None:
+            try:
+                fd = sys.stdin.fileno()
+            except Exception:
+                return ""
+
+        try:
+            data = os.read(fd, 1024)
+        except (BlockingIOError, InterruptedError):
+            return ""
+        except Exception:
+            return ""
+
+        if not data:
+            return ""
+
+        return data.decode("utf-8", "replace")
+
+    def _next_char(self) -> str:
+        """
+        Return the next character from the pending buffer.
+
+        Returns:
+            A single character, or an empty string when the buffer is empty.
+        """
+        if not self._pending:
+            self._pending = self._read_raw()
+        if not self._pending:
+            return ""
+        return self._pending[0]
+
+    def _consume(self, count: int = 1) -> None:
+        """
+        Drop the first ``count`` characters from the pending buffer.
+
+        Args:
+            count: Number of characters to discard.
+        """
+        self._pending = self._pending[count:]
+
+    def _poll_posix(self) -> Optional[str]:
+        """Read and decode keystroke on POSIX using the raw terminal fd."""
+        ch = self._next_char()
         if not ch:
             return None
+        self._consume(1)
 
         # Standard control keys
         if ch in ("\r", "\n"):
@@ -172,12 +235,19 @@ class NonBlockingInputReader:
         if ch == "\x1b":
             # Check if additional characters follow immediately
             r, _, _ = select.select([sys.stdin], [], [], 0.05)
-            if not r:
+            if not r and not self._pending:
                 return "ESCAPE"
 
-            seq = sys.stdin.read(1)
+            seq = self._next_char()
+            if not seq:
+                return "ESCAPE"
+            self._consume(1)
+
             if seq == "[":
-                code = sys.stdin.read(1)
+                code = self._next_char()
+                if not code:
+                    return "ESCAPE"
+                self._consume(1)
                 if code == "A":
                     return "UP"
                 elif code == "B":
@@ -192,7 +262,10 @@ class NonBlockingInputReader:
                     return "END"
                 elif code in ("1", "2", "3", "4", "5", "6"):
                     # Extended codes like \x1b[3~ (delete), \x1b[5~ (pgup), \x1b[6~ (pgdn)
-                    next_ch = sys.stdin.read(1)
+                    next_ch = self._next_char()
+                    if not next_ch:
+                        return "ESCAPE"
+                    self._consume(1)
                     if next_ch == "~":
                         if code == "3":
                             return "DELETE"
