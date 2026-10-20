@@ -9,6 +9,7 @@ and SQLAlchemy ORM models (chat_manager.storage.models.User, chat_manager.storag
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import datetime
@@ -82,6 +83,26 @@ def _dataclass_to_orm_user(user: User) -> ORMUser:
     )
 
 
+def _parse_metadata(raw: str | None) -> dict:
+    """Parse a JSON metadata blob into a dict.
+
+    Args:
+        raw: Raw JSON string from the database (may be None or invalid).
+
+    Returns:
+        Parsed metadata dict, or an empty dict when the value is missing or
+        cannot be parsed.
+    """
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning(f"Could not parse session metadata: {raw!r}")
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _orm_session_to_dataclass(orm_session: ORMSession) -> Session:
     """Convert ORM Session to dataclass Session."""
     return Session(
@@ -90,7 +111,7 @@ def _orm_session_to_dataclass(orm_session: ORMSession) -> Session:
         session_name=orm_session.session_name,
         session_type=SessionType(orm_session.session_type) if isinstance(orm_session.session_type, str) else orm_session.session_type,
         chat_key=orm_session.chat_key,
-        metadata={},
+        metadata=_parse_metadata(orm_session.session_metadata),
         created_at=orm_session.created_at,
         updated_at=orm_session.updated_at,
         is_active=bool(orm_session.is_active),
@@ -100,13 +121,19 @@ def _orm_session_to_dataclass(orm_session: ORMSession) -> Session:
 def _dataclass_to_orm_session(session: Session) -> ORMSession:
     """Convert dataclass Session to ORM Session."""
     session_type_val = session.session_type.value if isinstance(session.session_type, SessionType) else session.session_type
+    try:
+        metadata_json = json.dumps(session.metadata or {})
+    except (TypeError, ValueError):
+        logger.warning("Could not serialise session metadata, storing empty object")
+        metadata_json = "{}"
+
     return ORMSession(
         session_id=session.session_id,
         user_id=session.user_id,
         session_name=session.session_name,
         session_type=session_type_val,
         chat_key=session.chat_key,
-        session_metadata="{}",
+        session_metadata=metadata_json,
         created_at=session.created_at,
         updated_at=session.updated_at,
         is_active=session.is_active,
@@ -374,10 +401,13 @@ class CustomDBConnector:
                 ORMSession.user_id == user_id, ORMSession.is_active.is_(True)
             ).update({"is_active": False, "updated_at": datetime.now()})
 
-            # Activate the target session
+            # Activate the target session (must belong to the given user)
             target = (
                 session.query(ORMSession)
-                .filter(ORMSession.session_id == session_id)
+                .filter(
+                    ORMSession.session_id == session_id,
+                    ORMSession.user_id == user_id,
+                )
                 .first()
             )
             if target:
@@ -387,32 +417,81 @@ class CustomDBConnector:
                 session.refresh(target)
                 logger.info(f"Activated session: {target.session_name}")
                 return _orm_session_to_dataclass(target)
+            logger.warning(
+                f"Session '{session_id}' not found for user '{user_id}'"
+            )
             return None
         finally:
             session.close()
 
-    def delete_session(self, session_id: str) -> bool:
+    def delete_session(self, session_id: str, user_id: str | None = None) -> bool:
         """Delete a session by ID.
 
         Args:
             session_id: The session to delete.
+            user_id: Optional owner. When given, the session is only deleted
+                if it belongs to this user (multi-user isolation).
 
         Returns:
-            True if deleted, False if not found.
+            True if deleted, False if not found or not owned by the user.
         """
         self._ensure_connected()
         session = self._session_factory()
         try:
-            target = (
-                session.query(ORMSession)
-                .filter(ORMSession.session_id == session_id)
-                .first()
+            query = session.query(ORMSession).filter(
+                ORMSession.session_id == session_id
             )
+            if user_id is not None:
+                query = query.filter(ORMSession.user_id == user_id)
+
+            target = query.first()
             if target:
                 session.delete(target)
                 session.commit()
                 logger.info(f"Deleted session: {session_id}")
                 return True
             return False
+        finally:
+            session.close()
+
+    def update_session(self, session_obj: Session) -> Session | None:
+        """Update an existing session record.
+
+        Args:
+            session_obj: Session object carrying the new field values.
+
+        Returns:
+            The updated Session, or None if it does not exist.
+        """
+        self._ensure_connected()
+        session = self._session_factory()
+        try:
+            target = (
+                session.query(ORMSession)
+                .filter(ORMSession.session_id == session_obj.session_id)
+                .first()
+            )
+            if target is None:
+                logger.warning(f"Session '{session_obj.session_id}' not found")
+                return None
+
+            target.session_name = session_obj.session_name
+            target.session_type = (
+                session_obj.session_type.value
+                if isinstance(session_obj.session_type, SessionType)
+                else session_obj.session_type
+            )
+            target.session_metadata = _dataclass_to_orm_session(
+                session_obj
+            ).session_metadata
+            target.updated_at = datetime.now()
+
+            session.commit()
+            session.refresh(target)
+            logger.info(f"Updated session: {target.session_name}")
+            return _orm_session_to_dataclass(target)
+        except Exception:
+            session.rollback()
+            raise
         finally:
             session.close()
