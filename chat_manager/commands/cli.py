@@ -1,10 +1,13 @@
 """CLI commands for ChatHistoryManager.
 
 Provides interactive commands for session management:
-- \\chat-sessions: List all sessions
+- \\chat-sessions / \\chat-list: List all sessions
 - \\chat-select <id>: Switch to a session
 - \\chat-create <name> [type]: Create a new session
 - \\chat-delete <id>: Delete a session
+- \\chat-rename <id> <new name>: Rename a session
+- \\chat-info: Show details of the active session
+- \\chat-clear: Clear the active session's message history
 """
 
 from __future__ import annotations
@@ -120,3 +123,83 @@ def cmd_chat_delete(manager: ChatHistoryManager, session_id: str) -> str:
     if success:
         return f"Session '{session_id}' deleted."
     return f"Session '{session_id}' not found or could not be deleted."
+
+
+def cmd_chat_rename(manager: ChatHistoryManager, session_id: str, new_name: str) -> str:
+    """Rename a session.
+
+    Args:
+        manager: The ChatHistoryManager instance.
+        session_id: The session to rename.
+        new_name: The new human-readable name.
+
+    Returns:
+        Status message.
+    """
+    if not manager.is_initialized:
+        return "ChatHistoryManager not initialized."
+
+    if not new_name or not new_name.strip():
+        return "Session name cannot be empty."
+
+    session = manager.rename_session(session_id, new_name.strip())
+    if session is None:
+        return f"Session '{session_id}' not found."
+
+    return f"Renamed session to: '{session.session_name}' ({session.session_id})"
+
+
+def cmd_chat_info(manager: ChatHistoryManager) -> str:
+    """Show details of the active session.
+
+    Args:
+        manager: The ChatHistoryManager instance.
+
+    Returns:
+        Formatted session details.
+    """
+    if not manager.is_initialized:
+        return "ChatHistoryManager not initialized."
+
+    session = manager.get_active_session()
+    if session is None:
+        return "No active session."
+
+    created = session.created_at.strftime("%Y-%m-%d %H:%M") if session.created_at else "N/A"
+    updated = session.updated_at.strftime("%Y-%m-%d %H:%M") if session.updated_at else "N/A"
+    user = manager.current_user.username if manager.current_user else "unknown"
+
+    lines = [
+        f"Active session for user '{user}':",
+        f"  ID:       {session.session_id}",
+        f"  Name:     {session.session_name}",
+        f"  Type:     {session.session_type.value}",
+        f"  Chat key: {session.chat_key}",
+        f"  Created:  {created}",
+        f"  Updated:  {updated}",
+    ]
+    return "\n".join(lines)
+
+
+def cmd_chat_clear(manager: ChatHistoryManager) -> str:
+    """Clear the message history of the active session.
+
+    Args:
+        manager: The ChatHistoryManager instance.
+
+    Returns:
+        Status message.
+    """
+    if not manager.is_initialized:
+        return "ChatHistoryManager not initialized."
+
+    session = manager.get_active_session()
+    if session is None:
+        return "No active session."
+
+    try:
+        manager.clear_messages()
+    except RuntimeError as e:
+        return f"Could not clear messages: {e}"
+
+    return f"Cleared message history for session '{session.session_name}'."

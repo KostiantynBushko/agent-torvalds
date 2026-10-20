@@ -20,10 +20,17 @@ if TYPE_CHECKING:
 
 CHAT_COMMANDS = {
     "\\chat-sessions": "list",
+    "\\chat-list": "list",
     "\\chat-select": "select",
     "\\chat-create": "create",
     "\\chat-delete": "delete",
+    "\\chat-rename": "rename",
+    "\\chat-info": "info",
+    "\\chat-clear": "clear",
 }
+
+# Prefixes of the commands that accept an argument.
+CHAT_COMMAND_PREFIXES = tuple(f"{cmd} " for cmd in CHAT_COMMANDS)
 
 
 def is_chat_command(cmd: str) -> bool:
@@ -36,9 +43,9 @@ def is_chat_command(cmd: str) -> bool:
         True if it's a chat command, False otherwise.
     """
     cmd_lower = cmd.strip().lower()
-    return cmd_lower in CHAT_COMMANDS or cmd_lower.startswith(
-        (k + " " for k in CHAT_COMMANDS)
-    )
+    if not cmd_lower:
+        return False
+    return cmd_lower in CHAT_COMMANDS or cmd_lower.startswith(CHAT_COMMAND_PREFIXES)
 
 
 def handle_chat_command(cmd: str) -> str | None:
@@ -56,6 +63,9 @@ def handle_chat_command(cmd: str) -> str | None:
         cmd_chat_select,
         cmd_chat_create,
         cmd_chat_delete,
+        cmd_chat_rename,
+        cmd_chat_info,
+        cmd_chat_clear,
     )
 
     manager = get_chat_manager()
@@ -64,8 +74,8 @@ def handle_chat_command(cmd: str) -> str | None:
 
     cmd_lower = cmd.strip().lower()
 
-    # \chat-sessions
-    if cmd_lower == "\\chat-sessions":
+    # \chat-sessions / \chat-list
+    if cmd_lower in ("\\chat-sessions", "\\chat-list"):
         return cmd_chat_sessions(manager)
 
     # \chat-select <session_id>
@@ -90,5 +100,24 @@ def handle_chat_command(cmd: str) -> str | None:
         if not session_id:
             return "Usage: \\chat-delete <session_id>"
         return cmd_chat_delete(manager, session_id)
+
+    # \chat-rename <session_id> <new name>
+    if cmd_lower.startswith("\\chat-rename "):
+        parts = cmd.strip().split(maxsplit=2)
+        if len(parts) < 3:
+            return "Usage: \\chat-rename <session_id> <new name>"
+        session_id = parts[1].strip()
+        new_name = parts[2].strip()
+        if not session_id or not new_name:
+            return "Usage: \\chat-rename <session_id> <new name>"
+        return cmd_chat_rename(manager, session_id, new_name)
+
+    # \chat-info
+    if cmd_lower == "\\chat-info":
+        return cmd_chat_info(manager)
+
+    # \chat-clear
+    if cmd_lower == "\\chat-clear":
+        return cmd_chat_clear(manager)
 
     return None
