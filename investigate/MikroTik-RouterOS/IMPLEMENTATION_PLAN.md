@@ -1,10 +1,22 @@
 # IMPLEMENTATION PLAN: MikroTik RouterOS Toolkit
 
-**Date:** 2026-10-21
+**Date:** 2026-10-21 (revised for the `toolkits/` layout requirement)
 **Repository:** agent-torvalds
 **Branch:** `feature/mikrotik-routeros-toolkit` (in the `self-development` clone)
 **Status:** Proposed — based on `INVESTIGATION_REPORT.md`
 **Estimated Effort:** ~6 working days
+**Authoritative layout spec:** [MODULE_SPECIFICATION.md](MODULE_SPECIFICATION.md)
+
+> ⚠️ **The toolkit home directory is `toolkits/MikroTik-RouterOS/`** (capital
+> `M`, `T`, `R`, `O`, `S`; hyphen between `MikroTik` and `RouterOS`), created
+> under a new `toolkits/` directory at the repository root. The previous
+> lowercase `toolkits/mikrotik/` path is **obsolete**.
+>
+> Because the hyphen makes the package unreachable by a plain `import`
+> statement, all consumers use the alias `toolkits.mikrotik_routeros`, which is
+> registered in `toolkits/__init__.py`. See
+> [MODULE_SPECIFICATION.md §3](MODULE_SPECIFICATION.md#3-the-hyphen-problem-and-the-alias)
+> for the empirically verified behaviour matrix.
 
 ---
 
@@ -45,6 +57,19 @@
   cd self-development
   git checkout -b feature/mikrotik-routeros-toolkit master
   ```
+- [ ] **Create the toolkit home directory** (required layout):
+  ```bash
+  cd self-development
+  mkdir -p toolkits/MikroTik-RouterOS
+  ```
+  The directory name is **exact** — `MikroTik-RouterOS`, capital `M`/`T`/`R`/`O`/`S`.
+  A wrong-case directory fails with a confusing `ModuleNotFoundError` on
+  Linux/macOS.
+- [ ] Add `toolkits/__init__.py` with the **import alias shim** that registers
+      `toolkits.mikrotik_routeros` → `toolkits.MikroTik-RouterOS`.
+      The shim must catch `Exception` (not just `ImportError`) so that
+      `import toolkits` can never fail because of an optional dependency.
+      See [MODULE_SPECIFICATION.md §3.3](MODULE_SPECIFICATION.md#33-the-resolution-a-sysmodules-alias).
 - [ ] Add the optional dependencies to `self-development/requirements.txt`:
   ```ini
   # ---------------------------------------------------------------------------
@@ -69,17 +94,26 @@
 ## 3. Phase 1 — Core Package
 
 **Duration:** 2 days
-**Location:** `self-development/toolkits/mikrotik/`
+**Location:** `self-development/toolkits/MikroTik-RouterOS/`
 
 The core package must **not** import LlamaIndex — that keeps it independently testable and lets it
 reuse the SSH toolkit's primitives (see Q1).
 
-### 3.1 `toolkits/mikrotik/__init__.py`
+### 3.0 Import rules (binding — see MODULE_SPECIFICATION.md §4.2)
+
+| # | Rule | Why |
+|---|---|---|
+| I1 | Use **relative imports** inside the package: `from .config import MikroTikTarget`. | The absolute form contains the hyphen and is a `SyntaxError`. |
+| I2 | Import the package from consumers via the alias: `from toolkits.mikrotik_routeros import ...`. | A plain `import` statement can never name a hyphenated package. |
+| I3 | Import `asyncssh` / `pydantic` **lazily** or behind `try/except ImportError`. | The agent must boot without the optional dependencies. |
+| I4 | Never import LlamaIndex from inside the package. | Keeps the core independently testable. |
+
+### 3.1 `toolkits/MikroTik-RouterOS/__init__.py`
 
 - [ ] Export the public API: `MikroTikTarget`, `TargetRegistry`, `RouterOSSession`,
       `CommandResult`, `CommandCategory`, `get_registry`, `load_targets`.
 
-### 3.2 `toolkits/mikrotik/config.py`
+### 3.2 `toolkits/MikroTik-RouterOS/config.py`
 
 - [ ] `MikroTikTarget` (pydantic v2):
   - `id: str` — logical name used by the agent
@@ -99,20 +133,20 @@ reuse the SSH toolkit's primitives (see Q1).
   - env-var fallback: `MIKROTIK_PASSWORD`, `MIKROTIK_KEY`
 - [ ] Validator: reject an id that is not a safe identifier; reject `port` outside 1–65535.
 
-### 3.3 `toolkits/mikrotik/models.py`
+### 3.3 `toolkits/MikroTik-RouterOS/models.py`
 
 - [ ] `CommandResult` — exactly the shape from `INVESTIGATION_REPORT.md` §6.4.
 - [ ] `RouterIdentity` — model, serial number, RouterOS version, uptime, cpu/load, memory, disk.
 - [ ] `CommandCategory` — `READ_ONLY | LOW | MEDIUM | HIGH | CRITICAL`.
 
-### 3.4 `toolkits/mikrotik/exceptions.py`
+### 3.4 `toolkits/MikroTik-RouterOS/exceptions.py`
 
 - [ ] Hierarchy mapped 1:1 onto the error taxonomy (§7.3):
   `MikroTikError` → `AuthError`, `HostKeyError`, `ConnectionError_`, `CommandTimeoutError`,
   `CommandRejectedError`, `MultilineUnsupportedError`, `InteractiveInputRequiredError`,
   `SafeModeError`, `PagingError`, `NotAuthorizedError`.
 
-### 3.5 `toolkits/mikrotik/parser.py`
+### 3.5 `toolkits/MikroTik-RouterOS/parser.py`
 
 - [ ] `parse_print_table(text) -> list[dict]` — parse the RouterOS `print` output:
   - the `Flags:`/`Columns:` header lines
@@ -122,7 +156,7 @@ reuse the SSH toolkit's primitives (see Q1).
 - [ ] `parse_detail(text) -> list[dict]` — parse the script-friendly `detail` format.
 - [ ] `parse_identity(text) -> RouterIdentity` — parse `/system/resource/print`.
 
-### 3.6 `toolkits/mikrotik/session.py` — the core
+### 3.6 `toolkits/MikroTik-RouterOS/session.py` — the core
 
 - [ ] Embed the **validated** regexes from `INVESTIGATION_REPORT.md` §5.3:
   ```python
@@ -150,7 +184,7 @@ reuse the SSH toolkit's primitives (see Q1).
 - [ ] **Multiline guard** — reject a command containing `\n`, `;`, `&&` or `|`
       with `MultilineUnsupportedError`.
 
-### 3.7 `toolkits/mikrotik/safety.py`
+### 3.7 `toolkits/MikroTik-RouterOS/safety.py`
 
 - [ ] `classify(command) -> (CommandCategory, reasons)` — implement the table in §7.4.
 - [ ] `requires_confirmation(category) -> bool`
@@ -159,11 +193,26 @@ reuse the SSH toolkit's primitives (see Q1).
 - [ ] `is_management_path_change(command, current_interfaces) -> bool` — escalate to Critical
       when the change could drop the management path.
 
-### 3.8 Phase 1 exit criteria
+### 3.8 `toolkits/MikroTik-RouterOS/__init__.py` — public API
+
+- [ ] Re-export the public API so it is importable from the package root:
+  ```python
+  from .config import MikroTikTarget, TargetRegistry, load_targets
+  from .models import CommandResult, CommandCategory, RouterIdentity
+  from .session import RouterOSSession
+  from .exceptions import (MikroTikError, AuthError, HostKeyError, ...)
+  from .safety import classify, requires_confirmation, requires_hitl
+  ```
+- [ ] `__all__` lists every exported name.
+- [ ] `__version__ = "0.1.0"`.
+
+### 3.9 Phase 1 exit criteria
 
 - [ ] `pytest tests/test_mikrotik_session.py tests/test_mikrotik_parser.py tests/test_mikrotik_safety.py` green
-- [ ] No LlamaIndex import anywhere under `toolkits/mikrotik/`
+- [ ] No LlamaIndex import anywhere under `toolkits/MikroTik-RouterOS/`
 - [ ] The 15-case prompt corpus test is green (regression guard for risk R2)
+- [ ] `from toolkits.mikrotik_routeros import MikroTikTarget` works from a consumer module
+- [ ] The package imports cleanly with **zero** optional dependencies installed
 
 ---
 
@@ -180,6 +229,17 @@ reuse the SSH toolkit's primitives (see Q1).
   Category: Network
   Retriever Keywords: mikrotik, routeros, router, ssh, network, firewall, interface, ip, vlan, dhcp
   """
+  ```
+- [ ] Import the core package **through the alias**, guarded so a missing
+      optional dependency degrades gracefully instead of breaking the boot:
+  ```python
+  try:
+      from toolkits.mikrotik_routeros import (
+          MikroTikTarget, TargetRegistry, load_targets, RouterOSSession,
+          CommandResult, CommandCategory, MikroTikError,
+      )
+  except ImportError:
+      ...
   ```
 - [ ] Implement the 8 tools from §7.1, each with a full Google-style docstring
       (`Args` / `Returns` / `Example` / `Keywords`).
@@ -225,13 +285,40 @@ reuse the SSH toolkit's primitives (see Q1).
 - [ ] `tests/test_mikrotik_safety.py` — the full classifier table + injection patterns.
 - [ ] `tests/test_mikrotik_parser.py` — `print`/`detail` parsing fixtures.
 - [ ] `tests/test_mikrotik_config.py` — YAML loading, `SecretStr` redaction, validation.
+- [ ] `toolkits/MikroTik-RouterOS/tests/test_package_layout.py` — asserts the layout
+      contract: the alias resolves, the package imports with no optional
+      dependencies, and no LlamaIndex import exists under the package.
+- [ ] Module-local tests live in `toolkits/MikroTik-RouterOS/tests/`. The pytest
+      contract is **three** changes, not one:
+  ```ini
+  [pytest]
+  testpaths = tests chat_manager/tests toolkits/MikroTik-RouterOS/tests
+  import-mode = importlib
+  ```
+  1. **No `__init__.py`** in the package-local test directory. With it, pytest
+     resolves the test module against the *root* `tests` package, relative
+     imports fail with *"attempted relative import beyond top-level package"*,
+     and a basename collision with a root test file aborts collection.
+  2. `import-mode = importlib` so relative imports resolve against
+     `toolkits.MikroTik-RouterOS.tests`.
+  3. The `testpaths` entry, otherwise a bare `pytest` run **silently does not
+     collect** the package-local tests.
+
+  Verified: `import-mode` alone leaves the existing suite unchanged
+  (76 failed / 722 passed in both modes — the 76 are pre-existing and
+  unrelated); adding the `testpaths` entry yields 723 passed.
+  See [MODULE_SPECIFICATION.md §3.4](MODULE_SPECIFICATION.md#34-where-tests-must-live-and-the-exact-pytest-contract).
 - [ ] Integration test, opt-in via `MIKROTIK_TEST_HOST`:
   ```python
   @pytest.mark.integration
   @pytest.mark.skipif(not os.getenv("MIKROTIK_TEST_HOST"), reason="no router configured")
   def test_read_only_command_against_real_router(): ...
   ```
-- [ ] Register the `integration` marker in `pytest.ini`.
+- [ ] Register the `integration` marker in `pytest.ini`:
+  ```ini
+  markers =
+      integration: tests that require a real device or network access
+  ```
 
 **Test-quality requirements**
 
@@ -258,6 +345,9 @@ reuse the SSH toolkit's primitives (see Q1).
 
 | # | Criterion |
 |---|---|
+| D0 | `toolkits/MikroTik-RouterOS/` exists at the repository root with the exact specified name, under a new `toolkits/` directory |
+| D0b | `toolkits/__init__.py` registers the `toolkits.mikrotik_routeros` alias and never raises |
+| D0c | The core package imports with **zero** optional dependencies installed |
 | D1 | The agent can connect to a MikroTik router over SSH and run a read-only command end-to-end |
 | D2 | Write commands are classified, confirmed and audited |
 | D3 | A critical change automatically takes a `/export` backup first |
@@ -268,6 +358,10 @@ reuse the SSH toolkit's primitives (see Q1).
 | D8 | `pytest` is green; the prompt-regex corpus test is permanently green |
 | D9 | The existing `\help` output lists the new commands |
 | D10 | All work is confined to the `self-development` clone on its own branch |
+| D11 | No LlamaIndex import exists under `toolkits/MikroTik-RouterOS/` |
+| D12 | The package-local test directory contains **no** `__init__.py` |
+| D13 | `pytest.ini` sets `import-mode = importlib` **and** lists the package-local test directory in `testpaths` |
+| D14 | A bare `pytest` run collects the package-local tests |
 
 ---
 
@@ -275,7 +369,8 @@ reuse the SSH toolkit's primitives (see Q1).
 
 | # | Question | Recommendation | Owner |
 |---|---|---|---|
-| Q1 | Should this toolkit reuse `toolkits/ssh_toolkit/` from the `feature/ssh-toolkit` branch (config, models, exceptions) or ship its own? | **Reuse.** The branch already has `SSHConfig`/`SSHResult`/typed exceptions and the same architectural decision (core package + root adapter). Merge that branch first, then have `toolkits/mikrotik/` depend on it. | Maintainer |
+| Q1 | Should this toolkit reuse `toolkits/ssh_toolkit/` from the `feature/ssh-toolkit` branch (config, models, exceptions) or ship its own? | **Reuse.** The branch already has `SSHConfig`/`SSHResult`/typed exceptions and the same architectural decision (core package + root adapter). Merge that branch first, then have `toolkits/MikroTik-RouterOS/` depend on it. | Maintainer |
+| Q1b | The `feature/ssh-toolkit` branch also creates `toolkits/__init__.py` — how are the two reconciled? | **Manual merge.** Keep the SSH-toolkit docstring *and* the MikroTik alias block in the same file. The SSH package `toolkits/ssh_toolkit/` is underscore-named and needs no alias. | Maintainer |
 | Q2 | Should the RouterOS API (`routeros_api`) be a first-class second transport? | **Phase 2.** Ship SSH only in v1; add the API later for structured reads if parsing proves painful. It doubles the credential surface. | Maintainer |
 | Q3 | Which account should the agent use on the router? | A **dedicated `agent` user** in a restricted policy group, with public-key auth and `password-authentication=no`. Never `admin`. | Operator |
 | Q4 | Should write operations require HITL approval by default, or only above a risk threshold? | **Threshold** (as designed in §7.4): reads and cosmetic changes run automatically; high/critical require explicit approval. | Maintainer |

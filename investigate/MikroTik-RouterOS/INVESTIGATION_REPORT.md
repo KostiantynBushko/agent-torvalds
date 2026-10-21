@@ -518,7 +518,7 @@ agent_tool_retriever.py  ── include_mikrotik_tools flag
 agent_mikrotik_toolkit.py            ← LlamaIndex adapter (project root, flat pattern)
     │  tool functions, get_all_tools()
     ▼
-toolkits/mikrotik/                   ← core package (no LlamaIndex imports)
+toolkits/MikroTik-RouterOS/         ← core package (no LlamaIndex imports)
     ├── config.py        MikroTikTarget, TargetRegistry, YAML loading, SecretStr
     ├── models.py        CommandResult, RouterIdentity, CommandCategory
     ├── exceptions.py    MikroTikError hierarchy
@@ -532,6 +532,30 @@ toolkits/mikrotik/                   ← core package (no LlamaIndex imports)
 > (`toolkits/ssh_toolkit/` + a thin `agent_ssh_toolkit.py` adapter). The Mikrotik toolkit can then
 > **reuse** that branch's `SSHConfig`/`SSHResult`/`exceptions` once the two branches are merged —
 > a deliberate point of compatibility.
+
+> ⚠️ **The hyphen in `MikroTik-RouterOS`.** The directory name contains a hyphen,
+> which is not a valid Python identifier. `from toolkits.MikroTik-RouterOS import ...`
+> is therefore a **`SyntaxError`**, and an *absolute* import inside the package
+> fails the same way. Two consequences, both verified empirically against
+> Python 3.12.3 / pytest 9.1.1:
+>
+> 1. **Inside the package** use only **relative** imports (`from .config import ...`).
+> 2. **Consumers** use the alias `toolkits.mikrotik_routeros`, which
+>    `toolkits/__init__.py` registers in `sys.modules`:
+>    ```python
+>    from toolkits.mikrotik_routeros import MikroTikTarget
+>    ```
+>
+> A test module placed **inside** the hyphenated directory also needs a
+> specific pytest contract: **no `__init__.py`** in that directory, plus
+> `--import-mode=importlib`, plus the directory listed in `testpaths`.
+> Without the `__init__.py`, pytest's default `prepend` mode cannot resolve
+> the relative import at all; with it, pytest resolves the module against the
+> *root* `tests` package and the relative import fails with *"attempted
+> relative import beyond top-level package"*. The full behaviour matrix and
+> the verified fix are in
+> [MODULE_SPECIFICATION.md §3](MODULE_SPECIFICATION.md#3-the-hyphen-problem-and-the-alias)
+> and [§3.4](MODULE_SPECIFICATION.md#34-where-tests-must-live-and-the-exact-pytest-contract).
 
 ### 6.2 Transport Strategy
 
@@ -732,12 +756,12 @@ Work happens in the `self-development` clone, on a dedicated branch.
 
 ### Phase 1 — Core Package (2 days)
 
-- [ ] `toolkits/mikrotik/config.py` — `MikroTikTarget` (pydantic v2, `SecretStr` password),
+- [ ] `toolkits/MikroTik-RouterOS/config.py` — `MikroTikTarget` (pydantic v2, `SecretStr` password),
       `TargetRegistry`, YAML loader `mikrotik_targets.yaml`
-- [ ] `toolkits/mikrotik/models.py` — `CommandResult`, `RouterIdentity`, `CommandCategory`
-- [ ] `toolkits/mikrotik/exceptions.py` — typed hierarchy mapping to the §7.3 taxonomy
-- [ ] `toolkits/mikrotik/parser.py` — RouterOS `print` table parser → `rows: list[dict]`
-- [ ] `toolkits/mikrotik/session.py` — `RouterOSSession` with:
+- [ ] `toolkits/MikroTik-RouterOS/models.py` — `CommandResult`, `RouterIdentity`, `CommandCategory`
+- [ ] `toolkits/MikroTik-RouterOS/exceptions.py` — typed hierarchy mapping to the §7.3 taxonomy
+- [ ] `toolkits/MikroTik-RouterOS/parser.py` — RouterOS `print` table parser → `rows: list[dict]`
+- [ ] `toolkits/MikroTik-RouterOS/session.py` — `RouterOSSession` with:
   - [ ] `PROMPT_RE` / `CONTINUATION_RE` / `VALUE_REQUEST_RE` (validated regexes from §5.3)
   - [ ] `exec` transport (one-shot) and `session` transport (stateful)
   - [ ] banner tolerance, command-echo stripping, prompt-path extraction
@@ -745,7 +769,7 @@ Work happens in the `self-development` clone, on a dedicated branch.
   - [ ] safe-mode detection and Ctrl+X / Ctrl+D handling
   - [ ] paging detection, `without-paging` auto-append
   - [ ] timeouts on connect, banner and per-command
-- [ ] `toolkits/mikrotik/safety.py` — command classifier (§7.4) + risk levels
+- [ ] `toolkits/MikroTik-RouterOS/safety.py` — command classifier (§7.4) + risk levels
 
 ### Phase 2 — Agent Adapter (1 day)
 
@@ -769,6 +793,9 @@ Work happens in the `self-development` clone, on a dedicated branch.
 - [ ] `tests/test_mikrotik_parser.py` — `print` table parsing fixtures
 - [ ] Integration test against a **real** RouterOS (CHR or physical) — skipped unless
       `MIKROTIK_TEST_HOST` is set
+- [ ] Package-local tests in `toolkits/MikroTik-RouterOS/tests/` — **no `__init__.py`**,
+      plus `import-mode = importlib` and the `testpaths` entry in `pytest.ini`
+      (see [MODULE_SPECIFICATION.md §3.4](MODULE_SPECIFICATION.md#34-where-tests-must-live-and-the-exact-pytest-contract))
 
 ### Phase 5 — Documentation (0.5 day)
 

@@ -6,7 +6,17 @@
 **Status:** Proposed
 **Priority:** Medium
 **Estimated Effort:** ~6 working days
-**Related:** [INVESTIGATION_REPORT.md](INVESTIGATION_REPORT.md) · [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
+**Related:** [INVESTIGATION_REPORT.md](INVESTIGATION_REPORT.md) ·
+[MODULE_SPECIFICATION.md](MODULE_SPECIFICATION.md) ·
+[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)
+
+> ⚠️ **Layout (revised 2026-10-21).** The toolkit home directory is
+> **`toolkits/MikroTik-RouterOS/`** under a new `toolkits/` directory at the
+> repository root — *not* the lowercase `toolkits/mikrotik/` shown in the
+> original architecture diagram below. Because the hyphen makes the package
+> unreachable by a plain `import` statement, consumers import it through the
+> alias `toolkits.mikrotik_routeros`. The authoritative rules are in
+> [MODULE_SPECIFICATION.md](MODULE_SPECIFICATION.md).
 
 ---
 
@@ -87,7 +97,7 @@ agent_tool_retriever.py            (include_mikrotik_tools flag)
     ▼
 agent_mikrotik_toolkit.py          (LlamaIndex adapter — project root, flat pattern)
     ▼
-toolkits/mikrotik/                 (core package — no LlamaIndex imports)
+toolkits/MikroTik-RouterOS/        (core package — no LlamaIndex imports)
     ├── config.py      targets, credentials, registry
     ├── models.py      CommandResult, RouterIdentity
     ├── exceptions.py  typed error hierarchy
@@ -95,6 +105,23 @@ toolkits/mikrotik/                 (core package — no LlamaIndex imports)
     ├── safety.py      command classifier, confirmation policy
     └── parser.py      RouterOS print/detail table parser
 ```
+
+**Import path.** The directory name contains a hyphen, which is not a valid
+Python identifier, so `from toolkits.MikroTik-RouterOS import ...` is a
+`SyntaxError`. `toolkits/__init__.py` therefore registers the alias
+`toolkits.mikrotik_routeros` → `toolkits.MikroTik-RouterOS`, and consumers use:
+
+```python
+from toolkits.mikrotik_routeros import MikroTikTarget
+```
+
+Inside the package, only **relative** imports (`from .config import ...`) are
+valid. See [MODULE_SPECIFICATION.md §3](MODULE_SPECIFICATION.md#3-the-hyphen-problem-and-the-alias).
+
+The module-local `toolkits/MikroTik-RouterOS/tests/` directory additionally
+requires **no `__init__.py`**, `import-mode = importlib` in `pytest.ini`, and
+an entry in `testpaths` — see
+[MODULE_SPECIFICATION.md §3.4](MODULE_SPECIFICATION.md#34-where-tests-must-live-and-the-exact-pytest-contract).
 
 ### 3.2 Two transports, one result shape
 
@@ -186,7 +213,7 @@ and redacted from every outgoing string. `list_mikrotik_targets()` exposes only 
 | Phase | Content | Duration |
 |---|---|---|
 | 0 | Branch + optional dependencies in `requirements.txt` | 0.5 d |
-| 1 | Core package `toolkits/mikrotik/` (config, models, exceptions, parser, session, safety) | 2 d |
+| 1 | Core package `toolkits/MikroTik-RouterOS/` (config, models, exceptions, parser, session, safety) | 2 d |
 | 2 | Agent adapter `agent_mikrotik_toolkit.py` + the 8 tools | 1 d |
 | 3 | Integration into `agent_tool_retriever.py`, `agent-torvalds.py`, `command_registry.py` | 0.5 d |
 | 4 | Tests (unit + opt-in integration) | 1.5 d |
