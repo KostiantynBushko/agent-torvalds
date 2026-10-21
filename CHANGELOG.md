@@ -74,6 +74,19 @@
 - `tests/test_mikrotik_integration.py` — the opt-in suite against a real
   router, skipped unless `MIKROTIK_TEST_HOST` is set.
 
+### Documentation
+- **Module README** — `toolkits/MikroTik-RouterOS/README.md` documents the
+  reusable core package: the layout, the import contract (and why the hyphen
+  forces the `toolkits.mikrotik_routeros` alias), the public API, the risk
+  classifier and its rule order, the safety model, the two transports, the
+  uniform result shape, the error taxonomy, the configuration reference, the
+  library-only usage, the security notes and the limitations.
+- **Root README** — the module README is linked from the new *Module
+  documentation* index, from the MikroTik section and from the configuration
+  section. The *Project Structure* tree now lists the `toolkits/` package,
+  the `agent_mikrotik_toolkit.py` adapter and
+  `mikrotik_targets.yaml.example`, all of which were missing.
+
 ## [Unreleased] - Interactive Help Command
 
 ### Features

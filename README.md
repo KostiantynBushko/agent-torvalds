@@ -16,6 +16,17 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 
 > **Note**: The files ending in `*_toolkit.py` are **not agents** themselves - they are **toolkits** that provide tools/functions the agent can call and perform.
 
+### Module documentation
+
+Each module has its own README with the full reference:
+
+| Module | README |
+|---|---|
+| Project Manager | [project_manager/README.md](project_manager/README.md) |
+| Chat History Manager | [chat_manager/README.md](chat_manager/README.md) |
+| Components | [components/README.md](components/README.md) |
+| MikroTik RouterOS Toolkit | [toolkits/MikroTik-RouterOS/README.md](toolkits/MikroTik-RouterOS/README.md) |
+
 ### 1. Math Toolkit (`agent_math_toolkit.py`)
 - Provides mathematical operations: addition, multiplication, division
 - Enables precise numerical calculations
@@ -167,7 +178,9 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 - Four interactive commands: `\routers`, `\router-health <target>`,
   `\router-interfaces <target>`, `\router-backup <target>`
 - Optional dependency (`asyncssh`) — the agent still boots without it
-- 148 unit tests plus an opt-in integration suite against a real router
+- 150 unit tests plus an opt-in integration suite against a real router
+- See the [MikroTik RouterOS Toolkit README](toolkits/MikroTik-RouterOS/README.md)
+  for the module reference
 - See [MikroTik RouterOS Toolkit docs](docs/mikrotik-toolkit.md) for details
 
 ---
@@ -332,8 +345,10 @@ tracked.
 The SSH transport needs the optional `asyncssh` package. The agent boots
 without it, and the toolkit reports that it is unavailable.
 
-See [MikroTik RouterOS Toolkit docs](docs/mikrotik-toolkit.md) for the
-complete reference.
+See the [MikroTik RouterOS Toolkit README](toolkits/MikroTik-RouterOS/README.md)
+for the module reference and the
+[MikroTik RouterOS Toolkit docs](docs/mikrotik-toolkit.md) for the
+complete end-user reference.
 
 ---
 
@@ -515,6 +530,7 @@ agent-torvalds/
 | agent_git_toolkit.py           # Git repository management toolkit
 | agent_github_toolkit.py        # GitHub API and PR management toolkit
 | agent_apt_toolkit.py           # APT package management toolkit
+| agent_mikrotik_toolkit.py      # MikroTik RouterOS toolkit (LlamaIndex adapter)
 | agent_db_toolkit.py            # Database query toolkit (PostgreSQL and MySQL)
 | agent_chat_memory.py           # Chat memory module with LlamaIndex
 | agent_cache_system.py          # Persistent cache for operational context
@@ -524,6 +540,7 @@ agent-torvalds/
 | agent-torvalds-cpp.py          # C++ toolkit integration
 | spinner_manager.py             # Global console spinner management
 | db_toolkit_config.yaml         # Database configuration
+| mikrotik_targets.yaml.example  # MikroTik router target configuration (example)
 | requirements.txt               # Project dependencies
 | LICENSE                        # MIT License
 | CHANGELOG.md                   # Version history
@@ -552,6 +569,20 @@ agent-torvalds/
 | +-- human_loop_handler.py     # HITL callback handler
 | +-- timeout_manager.py        # Timeout management for HITL
 | +-- hitl_runtime_toggle.py    # Runtime toggle for HITL
+| toolkits/                     # Reusable toolkit packages (no LlamaIndex imports)
+| +-- __init__.py               # Package root + import alias shim
+| +-- MikroTik-RouterOS/        # MikroTik RouterOS toolkit (core library)
+| +-- +-- README.md             # MikroTik RouterOS module documentation
+| +-- +-- __init__.py           # Public API surface
+| +-- +-- config.py             # Targets, target registry, YAML loader
+| +-- +-- models.py             # CommandResult, RouterIdentity, CommandCategory
+| +-- +-- exceptions.py         # Typed error hierarchy
+| +-- +-- parser.py             # print / detail / identity parsing
+| +-- +-- session.py            # RouterOSSession (exec + session transports)
+| +-- +-- safety.py             # Risk classifier + confirmation policy
+| +-- +-- _compat.py            # Optional-dependency compatibility layer
+| +-- +-- py.typed              # PEP 561 marker
+| +-- +-- tests/                # Module-local tests (no __init__.py)
 | chat_manager/                 # Chat History Manager (multi-user, multi-session)
 | +-- README.md                 # Chat History Manager documentation
 | +-- __init__.py
