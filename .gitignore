@@ -132,3 +132,8 @@ Thumbs.db
 
 # Self-development directory
 self-development/
+
+# MikroTik RouterOS target configuration - it holds real credentials.
+# Only the annotated example (mikrotik_targets.yaml.example) is tracked.
+mikrotik_targets.yaml
+mikrotik_targets.local.yaml

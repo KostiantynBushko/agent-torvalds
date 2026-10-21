@@ -93,3 +93,18 @@ pandas>=2.0.0
 pytest>=8.4
 # Required for the @pytest.mark.asyncio tests in tests/test_event_consumer_hitl.py
 pytest-asyncio>=0.23.8
+
+# ---------------------------------------------------------------------------
+# MikroTik RouterOS Toolkit Dependencies
+# ---------------------------------------------------------------------------
+# Async SSH transport for the MikroTik RouterOS toolkit (agent_mikrotik_toolkit.py).
+# NOTE: optional - the toolkit degrades gracefully if it is not installed.
+asyncssh>=2.24.1
+
+# Validation layer for the MikroTik target/config/result models.
+# NOTE: optional - the toolkit degrades gracefully if it is not installed.
+pydantic>=2.9
+
+# RouterOS REST/binary API client (TCP 8728) - optional secondary channel used
+# for structured reads. NOT a replacement for the SSH transport.
+routeros_api>=0.21.0

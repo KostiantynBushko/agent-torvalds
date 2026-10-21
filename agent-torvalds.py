@@ -74,6 +74,7 @@ from agent_linux_toolkit import get_all_tools as get_linux_tools
 from agent_windows_toolkit import get_all_tools as get_windows_tools
 from agent_github_toolkit import get_all_tools as get_github_tools
 from agent_apt_toolkit import get_all_tools as get_apt_tools
+from agent_mikrotik_toolkit import get_all_tools as get_mikrotik_tools
 from agent_cache_system import (
     get_all_tools as get_cache_tools,
     start_session,
@@ -109,6 +110,10 @@ from components.command_registry import (
 from components.tui.project_manager_view import (
     handle_project_command_markdown,
     is_project_command,
+)
+from components.mikrotik_commands import (
+    handle_mikrotik_command,
+    is_mikrotik_command,
 )
 
 # ---------------------------------------------------------------------------
@@ -475,6 +480,7 @@ def _collect_all_tools() -> List[FunctionTool]:
         + get_apt_tools()
         + get_cache_tools()
         + get_project_manager_tools()
+        + get_mikrotik_tools()
     )
 
     os_name = platform.system()
@@ -1245,6 +1251,16 @@ async def main():
                 project_response = f"# Project Command\n\n**Error:** {e}"
             if project_response:
                 console.print(Markdown(project_response))
+            continue
+
+        # Check for MikroTik RouterOS commands
+        if is_mikrotik_command(cmd):
+            try:
+                mikrotik_response = await handle_mikrotik_command(cmd)
+            except Exception as e:
+                mikrotik_response = f"**Error:** {e}"
+            if mikrotik_response:
+                console.print(Markdown(mikrotik_response))
             continue
 
         # Check for chat session commands (Step 10)

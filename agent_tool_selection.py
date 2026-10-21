@@ -64,6 +64,16 @@ def _discover_tools() -> List[FunctionTool]:
     tools.extend(_get_pm())
     tools.extend(_get_analysis())
 
+    # MikroTik RouterOS toolkit. The adapter degrades gracefully when the
+    # optional 'asyncssh' dependency is missing, so a broken or absent
+    # toolkit must never break the selection menu.
+    try:
+        from agent_mikrotik_toolkit import get_all_tools as _get_mikrotik
+        tools.extend(_get_mikrotik())
+    except ImportError:
+        # The MikroTik toolkit is optional - skip it when it is not installed.
+        pass
+
     # Platform-specific
     if sys.platform.startswith("linux"):
         from agent_linux_toolkit import get_all_tools as _get_linux
@@ -195,6 +205,19 @@ _ACTION_PATTERNS: list = [
 
     # --- Database ---
     (r"(?i)\brun.*sql.*query",           "query"),
+
+    # --- Network / MikroTik RouterOS ---
+    # These patterns come before the generic data ones, because the
+    # RouterOS paths ("/ip/firewall/filter") would otherwise be mistaken
+    # for a data-analysis verb.
+    (r"(?i)\blist.*mikrotik.*router",        "discover"),
+    (r"(?i)\bcheck.*mikrotik.*router",        "diagnose"),
+    (r"(?i)\brun.*routeros.*command",         "execute"),
+    (r"(?i)\bread.*routeros.*config",         "inspect"),
+    (r"(?i)\bexport.*configuration.*mikrotik", "backup"),
+    (r"(?i)\bget.*identity.*mikrotik",        "inspect"),
+    (r"(?i)\blist.*network.*interfaces",       "inspect"),
+    (r"(?i)\bget.*health.*mikrotik",          "diagnose"),
 
     # --- Package Management ---
     (r"(?i)\bfind.*package.*provides",   "discover"),
