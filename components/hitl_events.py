@@ -5,6 +5,32 @@ Custom event types for the HITL system that enable communication between
 the agent workflow and the human user. These events serve as the primary
 mechanism for asking questions, collecting answers, and managing timeouts.
 
+Framework contract
+-------------------
+The ``workflows`` library provides a first-class HITL mechanism:
+
+* ``InputRequiredEvent`` — *"Automatically written to the event stream if
+  returned from a step.  If returned from a step, it does not need to be
+  consumed by other steps and will pass validation.  It's expected that the
+  caller will respond to this event and send back a HumanResponseEvent."*
+* ``HumanResponseEvent`` — carries the human's answer back into the workflow;
+  it is dispatched to the step that accepts it.
+
+To comply with that contract the HITL events **subclass** the framework
+events:
+
+* ``AgentQuestionEvent`` extends ``InputRequiredEvent`` — it is the
+  "terminal" event of a step, so the framework publishes it to the event
+  stream automatically and the workflow *waits* for the answer.
+* ``AgentAnswerEvent`` extends ``HumanResponseEvent`` — it is the event the
+  caller sends back; a step that accepts it is resumed with the answer.
+
+Subclassing keeps the existing class names (and therefore the existing
+``EventConsumer`` routing) while making the events behave exactly as the
+framework expects.  See ``investigate/hitl-investigate/`` for the
+investigation that proved the previous, non-conforming implementation could
+never deliver an answer to the agent.
+
 Usage:
     from components.hitl_events import AgentQuestionEvent, AgentAnswerEvent
 
@@ -30,7 +56,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from workflows.events import Event
+from workflows.events import HumanResponseEvent, InputRequiredEvent
 
 
 # Valid input types for HITL questions
@@ -42,13 +68,14 @@ VALID_INPUT_TYPES: frozenset = frozenset({
 })
 
 
-class AgentQuestionEvent(Event):
+class AgentQuestionEvent(InputRequiredEvent):
     """Event signalling that the agent has a question requiring human input.
 
-    This event is emitted by the agent when it needs to ask the user a
-    question before it can proceed.  The HITL handler listens for this
-    event, prompts the user (via console or whiptail), and emits an
-    ``AgentAnswerEvent`` in response.
+    This event is produced by the HITL agent step when it needs to ask the
+    user a question before it can proceed.  Because it extends
+    ``InputRequiredEvent``, the ``workflows`` runtime publishes it to the
+    event stream automatically and the workflow waits for the matching
+    ``AgentAnswerEvent``.
 
     Fields:
         question: The question text to display to the user.
@@ -82,9 +109,13 @@ class AgentQuestionEvent(Event):
         input_type: str = "text",
         options: Optional[List[str]] = None,
         context: Optional[str] = None,
+        prefix: str = "",
     ) -> None:
-        # Pass all Pydantic model fields to super().__init__() so validation succeeds
+        # Pass all Pydantic model fields to super().__init__() so validation
+        # succeeds.  ``prefix`` belongs to InputRequiredEvent and carries the
+        # label the consumer shows in front of the question.
         super().__init__(
+            prefix=prefix,
             question=question,
             question_id=question_id,
             timeout=timeout,
@@ -120,12 +151,16 @@ class AgentQuestionEvent(Event):
         )
 
 
-class AgentAnswerEvent(Event):
+class AgentAnswerEvent(HumanResponseEvent):
     """Event carrying the human's response back to the agent.
 
-    This event is emitted after the user answers (or times out on) a
-    question.  The ``question_id`` links the answer back to the original
-    ``AgentQuestionEvent``.
+    This event is sent by the consumer after the user answers (or times out
+    on) a question.  The ``question_id`` links the answer back to the
+    original ``AgentQuestionEvent``.
+
+    Because it extends ``HumanResponseEvent``, the ``workflows`` runtime
+    dispatches it to the step that is waiting for it, and that step resumes
+    with the answer in hand.
 
     Fields:
         question_id: ID of the question being answered.
@@ -143,9 +178,13 @@ class AgentAnswerEvent(Event):
         question_id: str,
         answer: str,
         was_timeout: bool = False,
+        response: Optional[str] = None,
     ) -> None:
-        # Pass all Pydantic model fields to super().__init__() so validation succeeds
+        # ``response`` mirrors the HumanResponseEvent field so that the
+        # framework's own consumers (and any code written against the
+        # framework contract) see the answer in the expected place.
         super().__init__(
+            response=answer if response is None else response,
             question_id=question_id,
             answer=answer,
             was_timeout=was_timeout,

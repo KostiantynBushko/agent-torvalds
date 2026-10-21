@@ -149,6 +149,7 @@ from components.event_consumer import EventConsumer
 # HITL Components
 # ---------------------------------------------------------------------------
 from components.human_loop_handler import HumanLoopHandler
+from components.hitl_agent import HITLFunctionAgent
 from components.timeout_manager import TimeoutManager
 from components.hitl_runtime_toggle import HITLRuntimeToggle
 from components.console_input_module import ConsoleInputModule
@@ -183,6 +184,16 @@ HITL_METHOD = os.environ.get("TORVALDS_HITL_METHOD", "console")
 HITL_TIMEOUT = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "30"))
 HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
 HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").lower() == "true"
+
+# ---------------------------------------------------------------------------
+# Active HITL configuration (mutated by the CLI flags in main())
+# ---------------------------------------------------------------------------
+# Module-level so the agent factory and the runtime loop see the effective
+# configuration.  The CLI flags override the environment variables.
+hitl_enabled: bool = HITL_ENABLED
+hitl_method: str = HITL_METHOD
+hitl_timeout: int = HITL_TIMEOUT
+hitl_default_answer: str = HITL_DEFAULT_ANSWER
 
 # TUI Configuration
 TUI_ENABLED_DEFAULT = os.environ.get("TORVALDS_TUI_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -515,6 +526,7 @@ def create_agent(
             max_iterations=MAX_ITERATIONS,
             similarity_top_k=top_k,
             callback_manager=callback_manager,
+            agent_class=HITLFunctionAgent,
         )
     else:
         if tools is None:
@@ -525,7 +537,7 @@ def create_agent(
             if not is_tui:
                 console.print(f"[dim]Loading {len(tools)} user-selected tools[/dim]")
 
-        agent = FunctionAgent(
+        agent = HITLFunctionAgent(
             tools=tools,
             llm=llm,
             max_iterations=MAX_ITERATIONS,
@@ -534,7 +546,25 @@ def create_agent(
             callback_manager=callback_manager,
         )
 
+    # The HITL agent needs to know the HITL configuration.  It is applied
+    # here (and re-applied per request) so the agent asks the human and
+    # waits for the answer.
+    _apply_hitl_config_to_agent(agent)
+
     return agent
+
+
+def _apply_hitl_config_to_agent(agent) -> None:
+    """Apply the current HITL configuration to *agent*.
+
+    The agent raises the question and waits for the answer; the
+    ``EventConsumer`` prompts the user.
+    """
+    if not isinstance(agent, HITLFunctionAgent):
+        return
+    agent.hitl_enabled = hitl_enabled
+    agent.hitl_default_timeout = hitl_timeout
+    agent.hitl_default_answer = hitl_default_answer
 
 
 # ---------------------------------------------------------------------------
@@ -743,6 +773,12 @@ async def prompt_handler(
     # (LlamaIndex never emits CBEventType.FUNCTION_CALL).
     if event_consumer is not None:
         event_consumer.set_stats_handler(stats_handler)
+        event_consumer.set_human_loop_handler(human_loop_handler)
+
+    # Keep the agent's HITL configuration in sync with the runtime toggle so
+    # the agent only asks when HITL is enabled.
+    _apply_hitl_config_to_agent(agent)
+    agent.hitl_enabled = human_loop_handler._is_hitl_enabled()
 
     try:
         chat_memory = agent_chat_memory.get_chat_memory()
@@ -768,6 +804,7 @@ async def prompt_handler(
                 console=console,
                 verbose=ENABLE_VERBOSE_EVENTS,
                 stats_handler=stats_handler,
+                human_loop_handler=human_loop_handler,
             )
         else:
             # The shared consumer is reused across requests; make sure it
@@ -882,6 +919,7 @@ async def run_classic_repl(
         hitl_timeout=hitl_timeout,
         hitl_default_answer=args.hitl_default_answer,
         hitl_enabled=human_loop_handler.enable_hitl,
+        human_loop_handler=human_loop_handler,
     )
 
     while True:
@@ -983,6 +1021,8 @@ async def main():
     events_enabled = ENABLE_EVENT_STREAMING and not args.no_events
     verbose_events = ENABLE_VERBOSE_EVENTS or args.verbose_events
 
+    global hitl_enabled, hitl_method, hitl_timeout, hitl_default_answer
+
     hitl_enabled = HITL_ENABLED and not args.no_hitl
     hitl_method = args.hitl_method
     hitl_timeout = args.hitl_timeout
@@ -1014,6 +1054,9 @@ async def main():
     human_loop_handler.enable_hitl = hitl_enabled
     human_loop_handler.input_method = hitl_method
     human_loop_handler.default_timeout = hitl_timeout
+    # The CLI default answer must reach the handler as well, otherwise the
+    # timeout fallback ignores --hitl-default-answer (defect #6).
+    human_loop_handler.default_answer = hitl_default_answer
 
     # Check whether TUI mode should be launched
     is_interactive_tty = sys.stdin.isatty() if hasattr(sys.stdin, "isatty") else False
@@ -1229,6 +1272,7 @@ async def main():
         hitl_timeout=hitl_timeout,
         hitl_default_answer=hitl_default_answer,
         hitl_enabled=hitl_enabled,
+        human_loop_handler=human_loop_handler,
     )
     event_consumer.console_input = tui_input_module
 
