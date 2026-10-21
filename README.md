@@ -148,6 +148,28 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 - Graceful fallback to an in-memory message store when PostgreSQL is unavailable
 - 104 hermetic unit tests
 - See [Chat History Manager README](chat_manager/README.md) for details
+
+### 18. MikroTik RouterOS Toolkit (`agent_mikrotik_toolkit.py`)
+- SSH-based configuration and monitoring of MikroTik routers
+- Eight tools: list targets, test connection, run a command, read a config
+  section, export the configuration, read the identity, list the interfaces,
+  read the health
+- Reusable core package in `toolkits/MikroTik-RouterOS/` with **no**
+  LlamaIndex imports, so it also works as a plain library
+- Rule-based risk classifier in front of every write: reads run directly,
+  changes need `confirm=True`, and HIGH / CRITICAL changes additionally need
+  a human approval
+- A command that would drop the management path is escalated to `CRITICAL`
+- Multi-line and chained commands are refused outright — the MikroTik SSH
+  server has no pseudo-terminal
+- Host-key verification with a hard stop (`HOST_KEY_MISMATCH`) on a change
+- Secrets are redacted from every result, log line and exception message
+- Four interactive commands: `\routers`, `\router-health <target>`,
+  `\router-interfaces <target>`, `\router-backup <target>`
+- Optional dependency (`asyncssh`) — the agent still boots without it
+- 148 unit tests plus an opt-in integration suite against a real router
+- See [MikroTik RouterOS Toolkit docs](docs/mikrotik-toolkit.md) for details
+
 ---
 
 ## Key Features
@@ -171,6 +193,8 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 | **Project Path Loading** | `--project-path` flag to load, scan, and register a specific project on startup |
 | **Human-in-the-Loop** | Interactive questioning with timeout handling and runtime toggle |
 | **Technical Computing** | Engineering and scientific computation support |
+| **Network Devices** | MikroTik RouterOS configuration and monitoring over SSH, with a risk-classified write path and human approval for destructive changes |
+| **Router Commands** | `\routers`, `\router-health <target>`, `\router-interfaces <target>`, `\router-backup <target>` |
 
 ---
 
@@ -284,6 +308,32 @@ CLI flags:
 |---|---|
 | `--no-chat-history` | Disable the ChatHistoryManager and fall back to the legacy single-session chat memory |
 | `--no-session-select` | Skip the interactive startup session selection menu |
+
+### MikroTik RouterOS Configuration
+
+The routers are described in `mikrotik_targets.yaml` in the repository root.
+Copy the annotated example and fill it in:
+
+```bash
+cp mikrotik_targets.yaml.example mikrotik_targets.yaml
+```
+
+`mikrotik_targets.yaml` is in `.gitignore`, so a real configuration with real
+credentials never reaches the repository — only the `.example` file is
+tracked.
+
+| Variable | Default | Description |
+|---|---|---|
+| `MIKROTIK_TARGETS` | `mikrotik_targets.yaml` | Path of the target configuration file |
+| `MIKROTIK_PASSWORD` | - | Fallback password for targets that do not carry one |
+| `MIKROTIK_KEY` | - | Fallback private-key path for targets that do not carry one |
+| `MIKROTIK_SKIP_APPROVAL` | `false` | Skip the human approval for HIGH / CRITICAL commands. **Off by default** |
+
+The SSH transport needs the optional `asyncssh` package. The agent boots
+without it, and the toolkit reports that it is unavailable.
+
+See [MikroTik RouterOS Toolkit docs](docs/mikrotik-toolkit.md) for the
+complete reference.
 
 ---
 

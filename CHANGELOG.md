@@ -1,5 +1,79 @@
 # Changelog
 
+## [Unreleased] - MikroTik RouterOS Toolkit
+
+### Features
+- **MikroTik RouterOS toolkit** — the agent can now inspect and configure
+  MikroTik routers over SSH. Eight tools are exposed: list the configured
+  routers, test the connection, run a single RouterOS CLI command, read a
+  configuration section, export the configuration, read the device identity,
+  list the interfaces, and read the health (CPU, memory, disk, recent
+  errors).
+- **Reusable core package** — the library half lives in
+  `toolkits/MikroTik-RouterOS/` and imports **no** LlamaIndex, so it stays
+  independently testable and can be used as a plain library. The directory
+  name contains a hyphen, so consumers import it through the alias
+  `toolkits.mikrotik_routeros`, which `toolkits/__init__.py` registers.
+- **Risk-classified write path** — every command is classified before it
+  runs. Reads and cosmetic changes execute directly, a configuration change
+  needs `confirm=True`, and a HIGH or CRITICAL change additionally needs an
+  explicit human approval through the existing console prompt. A
+  `confirm=True` flag is *not* a substitute for that approval, and a
+  timeout is a refusal rather than an approval.
+- **Management-path escalation** — a command that would disable, remove or
+  rename the interface carrying the current session is escalated to
+  `CRITICAL`, because it would cut the agent off from the router mid-change.
+- **Multi-line guard** — a command containing a newline, `;`, `&&`, `||`, a
+  pipe or a script block is refused with `MULTILINE_UNSUPPORTED` before it
+  reaches the router. MikroTik's SSH server provides no pseudo-terminal, so
+  such a command cannot be delivered — and it is a common prompt-injection
+  vector.
+- **Two SSH transports** — a stateless `exec` channel for reads (the
+  router's error text arrives cleanly separated on stderr) and a stateful
+  `session` channel for changes and for verbatim captures such as
+  `/export`. `mode="auto"` picks between them.
+- **Structured errors** — every tool returns a dictionary with `ok=False` and
+  a machine-readable code (`AUTH_FAILED`, `HOST_KEY_MISMATCH`, `UNREACHABLE`,
+  `TIMEOUT`, `COMMAND_REJECTED`, `MULTILINE_UNSUPPORTED`,
+  `INTERACTIVE_INPUT_REQUIRED`, `SAFE_MODE_ACTIVE`, `PAGING_DETECTED`,
+  `NOT_AUTHORIZED`, `PROMPT_NOT_DETECTED`, `UNKNOWN_TARGET`). A tool never
+  raises.
+- **Secret redaction** — the password and the key passphrase are held as
+  `SecretStr` and are scrubbed from every tool result, every log line and
+  every exception message.
+- **Host-key verification** — the router's host key is checked against
+  `known_hosts`; a changed key is a hard stop (`HOST_KEY_MISMATCH`), never
+  an automatic retry.
+- **Four interactive commands** — `\routers`, `\router-health <target>`,
+  `\router-interfaces <target>` and `\router-backup <target>` work in the
+  classic REPL and in the multi-window TUI, and are listed by `\help` under
+  **Network Devices (MikroTik RouterOS)**.
+- **Target configuration** — the routers are described in
+  `mikrotik_targets.yaml`, with an annotated
+  `mikrotik_targets.yaml.example`. The real file is in `.gitignore`, so
+  credentials never reach the repository. `MIKROTIK_TARGETS`,
+  `MIKROTIK_PASSWORD` and `MIKROTIK_KEY` provide the fallbacks.
+- **Graceful degradation** — `asyncssh` and `pydantic` are optional. The
+  agent boots without them, and the toolkit reports that it is unavailable
+  instead of breaking the boot.
+
+### Tests
+- `tests/test_mikrotik_toolkit.py` — the tool layer with a mocked transport:
+  the uniform result shape, the safety gate, the confirmation and approval
+  policy, the multi-line guard, the error-code mapping, the redaction and
+  the tool registration.
+- `tests/test_mikrotik_session.py` — every error of the taxonomy mapped to
+  its code, the timeout plumbing and the safe-mode and prompt-not-detected
+  results.
+- `tests/test_mikrotik_safety.py` — the classifier table, the injection
+  patterns, the management-path escalation and the confirmation policy.
+- `tests/test_mikrotik_parser.py` — the `print`, `detail`, identity and
+  property parsing fixtures.
+- `tests/test_mikrotik_config.py` — the tolerant YAML loader, the
+  environment fallbacks, the validation and the redaction.
+- `tests/test_mikrotik_integration.py` — the opt-in suite against a real
+  router, skipped unless `MIKROTIK_TEST_HOST` is set.
+
 ## [Unreleased] - Interactive Help Command
 
 ### Features

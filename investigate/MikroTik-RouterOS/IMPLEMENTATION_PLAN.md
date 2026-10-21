@@ -3,7 +3,8 @@
 **Date:** 2026-10-21 (revised for the `toolkits/` layout requirement)
 **Repository:** agent-torvalds
 **Branch:** `feature/mikrotik-routeros-toolkit` (in the `self-development` clone)
-**Status:** Proposed — based on `INVESTIGATION_REPORT.md`
+**Status:** Phases 0-5 implemented — the feature is complete except for the
+real-router validation (precondition P6)
 **Estimated Effort:** ~6 working days
 **Authoritative layout spec:** [MODULE_SPECIFICATION.md](MODULE_SPECIFICATION.md)
 
@@ -222,7 +223,7 @@ reuse the SSH toolkit's primitives (see Q1).
 **Duration:** 1 day
 **Location:** `self-development/agent_mikrotik_toolkit.py` (project root — flat pattern)
 
-- [ ] Module docstring with the retrieval metadata block:
+- [x] Module docstring with the retrieval metadata block:
   ```python
   """
   MikroTik RouterOS Toolkit - SSH-based router configuration and monitoring.
@@ -231,7 +232,7 @@ reuse the SSH toolkit's primitives (see Q1).
   Retriever Keywords: mikrotik, routeros, router, ssh, network, firewall, interface, ip, vlan, dhcp
   """
   ```
-- [ ] Import the core package **through the alias**, guarded so a missing
+- [x] Import the core package **through the alias**, guarded so a missing
       optional dependency degrades gracefully instead of breaking the boot:
   ```python
   try:
@@ -242,14 +243,14 @@ reuse the SSH toolkit's primitives (see Q1).
   except ImportError:
       ...
   ```
-- [ ] Implement the 8 tools from §7.1, each with a full Google-style docstring
+- [x] Implement the 8 tools from §7.1, each with a full Google-style docstring
       (`Args` / `Returns` / `Example` / `Keywords`).
-- [ ] `get_all_tools() -> list[FunctionTool]` — every description ends with `Category: Network`.
-- [ ] Registry bootstrap at import time: `load_targets()` — **must not raise** when the
+- [x] `get_all_tools() -> list[FunctionTool]` — every description ends with `Category: Network`.
+- [x] Registry bootstrap at import time: `load_targets()` — **must not raise** when the
       config file is absent.
-- [ ] Error handling: return a structured `dict` with `ok=False` and an `error` code —
+- [x] Error handling: return a structured `dict` with `ok=False` and an `error` code —
       never raise out of a tool function (existing toolkit convention).
-- [ ] Redaction: a helper that strips any known secret from an outgoing string.
+- [x] Redaction: a helper that strips any known secret from an outgoing string.
 
 ---
 
@@ -257,9 +258,9 @@ reuse the SSH toolkit's primitives (see Q1).
 
 **Duration:** 0.5 day
 
-- [ ] `agent_tool_retriever.py`:
-  - [ ] add `include_mikrotik_tools: bool = True` to `build_tool_retriever(...)`
-  - [ ] add the guarded import block:
+- [x] `agent_tool_retriever.py`:
+  - [x] add `include_mikrotik_tools: bool = True` to `build_tool_retriever(...)`
+  - [x] add the guarded import block:
     ```python
     if include_mikrotik_tools:
         try:
@@ -268,11 +269,14 @@ reuse the SSH toolkit's primitives (see Q1).
         except ImportError:
             pass
     ```
-- [ ] `agent-torvalds.py`:
-  - [ ] `from agent_mikrotik_toolkit import get_all_tools as get_mikrotik_tools`
-  - [ ] aggregate into the agent's tool list
-- [ ] `components/command_registry.py` — register the new commands so `\help` lists them.
-- [ ] Optional: a `/router` style alias so the operator can invoke a command directly.
+- [x] `agent-torvalds.py`:
+  - [x] `from agent_mikrotik_toolkit import get_all_tools as get_mikrotik_tools`
+  - [x] aggregate into the agent's tool list
+- [x] `agent-torvalds-mw.py` — the same aggregation, so the multi-window TUI stays
+      in parity with the classic orchestrator (the parity test enforces this).
+- [x] `components/command_registry.py` — register the new commands so `\help` lists them.
+- [x] `components/mikrotik_commands.py` — the handler behind `\routers`,
+      `\router-health`, `\router-interfaces` and `\router-backup`.
 
 ---
 
@@ -280,16 +284,16 @@ reuse the SSH toolkit's primitives (see Q1).
 
 **Duration:** 1.5 days
 
-- [ ] `tests/test_mikrotik_toolkit.py` — tool-level tests with a mocked transport.
-- [ ] `tests/test_mikrotik_session.py` — prompt parsing, echo stripping, error detection,
-      safe mode, paging, the multiline guard, timeouts.
-- [ ] `tests/test_mikrotik_safety.py` — the full classifier table + injection patterns.
-- [ ] `tests/test_mikrotik_parser.py` — `print`/`detail` parsing fixtures.
-- [ ] `tests/test_mikrotik_config.py` — YAML loading, `SecretStr` redaction, validation.
-- [ ] `toolkits/MikroTik-RouterOS/tests/test_package_layout.py` — asserts the layout
+- [x] `tests/test_mikrotik_toolkit.py` — tool-level tests with a mocked transport.
+- [x] `tests/test_mikrotik_session.py` — the error taxonomy, the transport contract,
+      the timeout plumbing, safe mode and prompt-not-detected.
+- [x] `tests/test_mikrotik_safety.py` — the full classifier table + injection patterns.
+- [x] `tests/test_mikrotik_parser.py` — `print`/`detail` parsing fixtures.
+- [x] `tests/test_mikrotik_config.py` — YAML loading, `SecretStr` redaction, validation.
+- [x] `toolkits/MikroTik-RouterOS/tests/test_package_layout.py` — asserts the layout
       contract: the alias resolves, the package imports with no optional
       dependencies, and no LlamaIndex import exists under the package.
-- [ ] Module-local tests live in `toolkits/MikroTik-RouterOS/tests/`. The pytest
+- [x] Module-local tests live in `toolkits/MikroTik-RouterOS/tests/`. The pytest
       contract is **three** changes, not one:
   ```ini
   [pytest]
@@ -309,13 +313,13 @@ reuse the SSH toolkit's primitives (see Q1).
   (76 failed / 722 passed in both modes — the 76 are pre-existing and
   unrelated); adding the `testpaths` entry yields 723 passed.
   See [MODULE_SPECIFICATION.md §3.4](MODULE_SPECIFICATION.md#34-where-tests-must-live-and-the-exact-pytest-contract).
-- [ ] Integration test, opt-in via `MIKROTIK_TEST_HOST`:
+- [x] Integration test, opt-in via `MIKROTIK_TEST_HOST`:
   ```python
   @pytest.mark.integration
   @pytest.mark.skipif(not os.getenv("MIKROTIK_TEST_HOST"), reason="no router configured")
   def test_read_only_command_against_real_router(): ...
   ```
-- [ ] Register the `integration` marker in `pytest.ini`:
+- [x] Register the `integration` marker in `pytest.ini`:
   ```ini
   markers =
       integration: tests that require a real device or network access
@@ -323,10 +327,10 @@ reuse the SSH toolkit's primitives (see Q1).
 
 **Test-quality requirements**
 
-- [ ] No test requires network access unless explicitly marked `integration`.
-- [ ] A test asserts that a secret value never appears in a tool result or a log record.
-- [ ] A test asserts that a multi-line command is rejected with `MULTILINE_UNSUPPORTED`.
-- [ ] A test asserts that a `HIGH`/`CRITICAL` command without `confirm=True` is refused.
+- [x] No test requires network access unless explicitly marked `integration`.
+- [x] A test asserts that a secret value never appears in a tool result or a log record.
+- [x] A test asserts that a multi-line command is rejected with `MULTILINE_UNSUPPORTED`.
+- [x] A test asserts that a `HIGH`/`CRITICAL` command without `confirm=True` is refused.
 
 ---
 
@@ -334,15 +338,41 @@ reuse the SSH toolkit's primitives (see Q1).
 
 **Duration:** 0.5 day
 
-- [ ] `docs/mikrotik-toolkit.md` — configuration, the target file format, the tool reference,
+- [x] `docs/mikrotik-toolkit.md` — configuration, the target file format, the tool reference,
       the transport-selection rules, the safety model, and the **multiline limitation**.
-- [ ] `mikrotik_targets.yaml.example` — an annotated example (no real secrets).
-- [ ] `README.md` — a short "Network devices" section.
-- [ ] `CHANGELOG.md` — an entry for the new toolkit.
+- [x] `mikrotik_targets.yaml.example` — an annotated example (no real secrets).
+- [x] `README.md` — a short "Network devices" section.
+- [x] `CHANGELOG.md` — an entry for the new toolkit.
+- [x] `.gitignore` — the real `mikrotik_targets.yaml` is ignored so credentials
+      never reach the repository.
 
 ---
 
 ## 8. Definition of Done
+
+### Verification status
+
+| # | Criterion | Status |
+|---|---|---|
+| D0 | `toolkits/MikroTik-RouterOS/` exists at the repository root with the exact specified name, under a new `toolkits/` directory | ✅ |
+| D0b | `toolkits/__init__.py` registers the `toolkits.mikrotik_routeros` alias and never raises | ✅ |
+| D0c | The core package imports with **zero** optional dependencies installed | ✅ |
+| D1 | The agent can connect to a MikroTik router over SSH and run a read-only command end-to-end | ⚠️ needs a real router (P6) |
+| D2 | Write commands are classified, confirmed and audited | ✅ |
+| D3 | A critical change automatically takes a `/export` backup first | ✅ the backup runs after the approval and before the change; the export is returned in `backup` |
+| D4 | Multi-line input is rejected with a clear, actionable error | ✅ |
+| D5 | A changed host key produces a hard stop (`HOST_KEY_MISMATCH`) | ✅ |
+| D6 | No secret ever appears in a tool result, a log line or an exception message | ✅ |
+| D7 | The agent still boots when `asyncssh` is not installed | ✅ |
+| D8 | `pytest` is green; the prompt-regex corpus test is permanently green | ✅ (no regression against the baseline) |
+| D9 | The existing `\help` output lists the new commands | ✅ |
+| D10 | All work is confined to the `self-development` clone on its own branch | ✅ |
+| D11 | No LlamaIndex import exists under `toolkits/MikroTik-RouterOS/` | ✅ |
+| D12 | The package-local test directory contains **no** `__init__.py` | ✅ |
+| D13 | `pytest.ini` sets `--import-mode=importlib` in `addopts` **and** lists the package-local test directory in `testpaths` | ✅ |
+| D14 | A bare `pytest` run collects the package-local tests | ✅ |
+
+### The original criteria
 
 | # | Criterion |
 |---|---|

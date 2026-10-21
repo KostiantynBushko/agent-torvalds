@@ -37,6 +37,7 @@ def build_tool_retriever(
     include_xlsx_tools: bool = True,
     include_data_analysis_tools: bool = True,
     include_project_manager_tools: bool = True,  # NEW: Step 05
+    include_mikrotik_tools: bool = True,  # NEW: MikroTik RouterOS toolkit
 ) -> tuple:
     """
     Build a tool retriever that loads tools on-demand based on query semantics.
@@ -110,6 +111,20 @@ def build_tool_retriever(
             all_tools.extend(_get_pm())
         except ImportError:
             # Project manager toolkit not available — skip gracefully
+            pass
+
+    # -----------------------------------------------------------------------
+    # 3b. MikroTik RouterOS toolkit
+    # -----------------------------------------------------------------------
+    # The toolkit needs the optional 'asyncssh' dependency.  It is imported
+    # behind a guard so that a missing dependency degrades gracefully
+    # instead of breaking the agent boot.
+    if include_mikrotik_tools:
+        try:
+            from agent_mikrotik_toolkit import get_all_tools as _get_mikrotik
+            all_tools.extend(_get_mikrotik())
+        except ImportError:
+            # MikroTik toolkit not available — skip gracefully
             pass
 
     # -----------------------------------------------------------------------

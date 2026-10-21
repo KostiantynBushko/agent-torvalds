@@ -71,3 +71,26 @@ before any commit is created.
 | Plan | `investigate/MikroTik-RouterOS/IMPLEMENTATION_PLAN.md` |
 | Proposal | `investigate/MikroTik-RouterOS/PROPOSAL_mikrotik_toolkit.md` |
 | Investigation | `investigate/MikroTik-RouterOS/INVESTIGATION_REPORT.md` |
+| Specification | `investigate/MikroTik-RouterOS/MODULE_SPECIFICATION.md` |
+| Phases | 0-5 implemented. Only the real-router validation (precondition P6) is outstanding - it needs a physical router or a CHR image, and MikroTik's download server is unreachable from this environment. |
+
+### Where the code lives
+
+| Path | Role |
+|---|---|
+| `toolkits/MikroTik-RouterOS/` | The core package. No LlamaIndex imports; importable as `toolkits.mikrotik_routeros`. |
+| `agent_mikrotik_toolkit.py` | The LlamaIndex adapter - the eight tools. |
+| `components/mikrotik_commands.py` | The `\routers` / `\router-*` interactive commands. |
+| `docs/mikrotik-toolkit.md` | The operator documentation. |
+| `mikrotik_targets.yaml.example` | The annotated target file. The real one is git-ignored. |
+
+### Verifying the contracts
+
+```bash
+self-development/.venv/bin/python \
+    self-development/investigate/MikroTik-RouterOS/verify_layout_contract.py
+self-development/.venv/bin/python \
+    self-development/investigate/MikroTik-RouterOS/verify_test_contract.py
+```
+
+Both must report a full pass (20/20 and 13/13).

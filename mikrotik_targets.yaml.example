@@ -1,0 +1,74 @@
+# ---------------------------------------------------------------------------
+# MikroTik RouterOS target configuration - EXAMPLE
+#
+# Copy this file to `mikrotik_targets.yaml` in the repository root and fill
+# in the real values:
+#
+#     cp mikrotik_targets.yaml.example mikrotik_targets.yaml
+#
+# `mikrotik_targets.yaml` is in .gitignore, so a real configuration with
+# real credentials never reaches the repository.
+#
+# Point the agent at a different file with the MIKROTIK_TARGETS environment
+# variable:
+#
+#     export MIKROTIK_TARGETS=/etc/agent-torvalds/routers.yaml
+#
+# ---------------------------------------------------------------------------
+# The list of routers. Every entry needs at least an id and a host.
+targets:
+  # -- A router that authenticates with a private key (recommended) --------
+  - id: core-rtr-01
+    host: 10.0.0.1
+    port: 22
+    username: agent
+    group: core
+
+    # The private key used for the SSH login. Prefer a key over a password.
+    key_path: ~/.ssh/mikrotik_agent_ed25519
+
+    # The passphrase of the private key, if it has one.
+    # key_passphrase: ""
+
+    # The OpenSSH known_hosts file used to verify the router's host key.
+    # Leave it out to use the default (~/.ssh/known_hosts).
+    # known_hosts: ~/.ssh/known_hosts
+
+    # NEVER enable this in production. It disables the host-key check,
+    # which removes the protection against a man-in-the-middle attack.
+    allow_unknown_host_key: false
+
+    # Timeouts in seconds.
+    connect_timeout: 10
+    command_timeout: 30
+
+  # -- A router that authenticates with a password -------------------------
+  - id: edge-rtr-02
+    host: 10.0.1.1
+    port: 22
+    username: agent
+    group: edge
+
+    # The password. Leave it out and set MIKROTIK_PASSWORD in the
+    # environment instead - that keeps the secret out of the file.
+    # password: "change-me"
+
+    connect_timeout: 10
+    command_timeout: 30
+
+# ---------------------------------------------------------------------------
+# Environment variable fallbacks
+# ---------------------------------------------------------------------------
+# When a target does not carry its own credentials, these are used:
+#
+#   MIKROTIK_PASSWORD  - the password for the target
+#   MIKROTIK_KEY       - the path to the private key for the target
+#
+# ---------------------------------------------------------------------------
+# Other settings
+# ---------------------------------------------------------------------------
+# The RouterOS console parameters appended to the username with "+".
+# The default "c" disables the console colours, which removes the ANSI
+# escapes from the output and makes the parsing reliable.
+#
+# console_login_params: "c"
