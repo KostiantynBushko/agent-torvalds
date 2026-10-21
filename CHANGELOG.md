@@ -1,5 +1,47 @@
 # Changelog
 
+## [Unreleased] - Agent Cache Zero Stats Fix
+
+### Fixes
+- **Zero request statistics** — the persisted `request_stats` entries in the agent
+  cache always recorded `llm_calls`, `total_tokens`, `prompt_tokens`,
+  `completion_tokens` and `tool_call_count` as `0`, while only `duration_ms` was
+  correct. Three independent root causes were fixed:
+  - **Callback manager wiring** — `llama_index.core.llms.callbacks.llm_chat_callback`
+    resolves the callback manager from the **LLM instance**, not from the agent.
+    `FunctionAgent` is a Pydantic model with no `callback_manager` field, so
+    `FunctionAgent(callback_manager=...)` and `agent.run(callback_manager=...)` are
+    silently discarded and the stats handler never received a single event. The new
+    `components.stats_handler.bind_callback_manager()` installs the manager on the
+    LLM, where the events are actually delivered.
+  - **Tool call accounting** — `CBEventType.FUNCTION_CALL` is never emitted by
+    llama-index 0.14.x, so tool calls are now sourced from the workflow event
+    stream. `EventConsumer` feeds them into the handler via the new
+    `begin_tool_call()` / `end_tool_call()` API, keyed by `tool_id` so concurrent
+    calls to the same tool stay correctly paired.
+  - **Numeric normalisation** — `save_request_stats()` wrote `None` for missing
+    numeric fields, which made `get_stats_summary()` raise `TypeError` during
+    aggregation and degrade the summary to `{"error": ...}`. All numeric fields are
+    now normalised through `agent_cache_system._as_number()`.
+
+### Improved
+- **Token usage extraction** — the new `components.stats_handler._extract_usage()`
+  helper probes several provider response shapes (`raw["usage"]`,
+  `raw["usage_metadata"]`, the raw Ollama `prompt_eval_count`/`eval_count` format,
+  `additional_kwargs["usage"]` and the `usage`/`usage_metadata` attributes) instead
+  of only reading `raw["usage"]`.
+
+### Tests
+- `tests/test_stats_wiring.py` — 27 tests covering the callback manager binding,
+  the tool-call accounting path and the numeric normalisation, using
+  `MockFunctionCallingLLM` so no network access is required.
+- `tests/test_stats_mock.py` — fixed the `EventPayload.TOOL_NAME` payload key,
+  which does not exist in llama-index 0.14.x and made `test_token_extraction` fail.
+
+### Investigation
+- `investigate/agent-cache-zero-stats/` — root-cause analysis, reproduction and
+  verification scripts for the zero-statistics bug.
+
 ## [Unreleased] - Multi-Window Agent Parity
 
 ### Features

@@ -131,6 +131,7 @@ from project_manager.prompt_engine import PromptTemplateEngine
 from components.stats_handler import (
     RequestStatsHandler,
     StatsRenderer,
+    bind_callback_manager,
     STATS_ENABLED,
     STATS_PERSIST,
     STATS_VERBOSE,
@@ -477,10 +478,14 @@ def create_agent(
         tools: Pre-selected list of tools (used when --select is active).
                If None and use_retriever is False, all tools are loaded.
         system_prompt: Optional custom system prompt (includes project context).
-        callback_manager: Optional callback manager passed to the LLM at
-                         creation time so LLM-level events (token streaming,
-                         LLM call start/end) propagate through stats and HITL
-                         handlers.
+        callback_manager: Optional callback manager to install on the LLM
+                         instance. This is the manager LlamaIndex actually uses
+                         for LLM-level events (token streaming, LLM call
+                         start/end). The manager passed to ``FunctionAgent`` is
+                         silently dropped — FunctionAgent is a Pydantic model
+                         with no ``callback_manager`` field — so it must be
+                         bound to the LLM (see
+                         ``components.stats_handler.bind_callback_manager``).
 
     Returns:
         FunctionAgent instance.
@@ -728,6 +733,17 @@ async def prompt_handler(
     callback_handlers.append(human_loop_handler)
     callback_manager = CallbackManager(callback_handlers)
 
+    # The LLM's own callback_manager is the one LlamaIndex actually uses
+    # (llm_chat_callback resolves it from the LLM instance). Passing
+    # callback_manager to agent.run() is silently dropped by pydantic, so the
+    # handler would never receive an event and every metric would stay 0.
+    bind_callback_manager(agent, callback_manager)
+
+    # Feed tool calls into the stats handler from the workflow event stream
+    # (LlamaIndex never emits CBEventType.FUNCTION_CALL).
+    if event_consumer is not None:
+        event_consumer.set_stats_handler(stats_handler)
+
     try:
         chat_memory = agent_chat_memory.get_chat_memory()
         increment_session_commands()
@@ -751,7 +767,12 @@ async def prompt_handler(
                 state_handler=state_handler,
                 console=console,
                 verbose=ENABLE_VERBOSE_EVENTS,
+                stats_handler=stats_handler,
             )
+        else:
+            # The shared consumer is reused across requests; make sure it
+            # points at the handler for *this* request.
+            event_consumer.set_stats_handler(stats_handler)
 
         human_loop_handler.event_consumer = event_consumer
         result = await event_consumer.consume_events(workflow_handler, cmd)

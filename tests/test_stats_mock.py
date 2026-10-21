@@ -95,7 +95,7 @@ def test_token_extraction():
         event_type=CBEventType.FUNCTION_CALL,
         event_id="tool-001",
         payload={
-            EventPayload.TOOL_NAME: "add",
+            EventPayload.TOOL: "add",
         },
     )
     handler.on_event_end(

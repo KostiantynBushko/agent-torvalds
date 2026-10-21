@@ -171,6 +171,7 @@ class EventConsumer:
         hitl_timeout: int = 30,
         hitl_default_answer: str = "",
         hitl_enabled: bool = True,
+        stats_handler: Optional[Any] = None,
     ):
         logger.debug(
             "EventConsumer.__init__: spinner=%r, state=%r, verbose=%s, "
@@ -193,6 +194,11 @@ class EventConsumer:
         self.hitl_enabled = hitl_enabled
         self.console_input = ConsoleInputModule(console)
         
+        # Per-request stats handler. LlamaIndex never emits
+        # CBEventType.FUNCTION_CALL, so tool call counts are sourced from the
+        # workflow event stream and fed into the handler from here.
+        self.stats_handler = stats_handler
+        
         # Runtime toggle (set during consume_events or via setter)
         self.runtime_toggle = None
         
@@ -213,6 +219,18 @@ class EventConsumer:
         """
         logger.debug("EventConsumer.set_runtime_toggle: toggle=%r", toggle)
         self.runtime_toggle = toggle
+
+    def set_stats_handler(self, stats_handler: Optional[Any]) -> None:
+        """Attach (or clear) the per-request stats handler.
+        
+        The event consumer is shared across requests, but the stats handler
+        is created per request, so it is re-pointed before every run.
+        
+        Args:
+            stats_handler: RequestStatsHandler instance or None to disable.
+        """
+        logger.debug("EventConsumer.set_stats_handler: stats_handler=%r", stats_handler)
+        self.stats_handler = stats_handler
 
     async def consume_events(
         self,
@@ -399,6 +417,17 @@ class EventConsumer:
         self.state.set("current_tool", tool_name)
         self.state.increment("tool_calls")
         
+        # Feed the stats handler: LlamaIndex never emits
+        # CBEventType.FUNCTION_CALL, so the workflow event stream is the only
+        # source of tool-call truth.
+        if self.stats_handler is not None:
+            try:
+                # Pass the tool_id: the workflow runs tool calls concurrently,
+                # so the id keeps concurrent calls to the same tool apart.
+                self.stats_handler.begin_tool_call(tool_name, tool_id=event.tool_id)
+            except Exception as exc:
+                logger.warning("EventConsumer._on_tool_call: stats handler error: %s", exc)
+        
         # Pause spinner for interactive tools
         if tool_name in self._interactive_tools:
             logger.debug("EventConsumer._on_tool_call: pausing spinner for interactive tool=%s", tool_name)
@@ -451,6 +480,18 @@ class EventConsumer:
         logger.debug("EventConsumer._on_tool_call_result: is_error=%s, result_content_len=%d",
                      is_error, len(result_content))
         self.state.add_tool_call(tool_name, result_content, error=is_error)
+        
+        # Close out the tool call in the stats handler.
+        if self.stats_handler is not None:
+            try:
+                self.stats_handler.end_tool_call(
+                    tool_name,
+                    succeeded=not is_error,
+                    error_message=(result_content[:200] if is_error else ""),
+                    tool_id=event.tool_id,
+                )
+            except Exception as exc:
+                logger.warning("EventConsumer._on_tool_call_result: stats handler error: %s", exc)
         
         # Show result in verbose mode
         if self._verbose and not is_error:

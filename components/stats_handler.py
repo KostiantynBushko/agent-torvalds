@@ -123,6 +123,82 @@ EVENTS_TO_IGNORE: list[CBEventType] = [e for e in ALL_EVENTS if e not in EVENTS_
 logger.debug("Events of interest: %s", [e.value for e in EVENTS_OF_INTEREST])
 
 
+def _extract_usage(response: Any) -> Dict[str, Any]:
+    """
+    Extract the token-usage mapping from a LlamaIndex LLM response.
+
+    Different LLM integrations expose usage differently, so several
+    shapes are probed:
+
+    * ``response.raw["usage"]`` — Ollama (``prompt_tokens`` /
+      ``completion_tokens``) and most OpenAI-compatible providers.
+    * ``response.raw["usage_metadata"]`` — some providers.
+    * ``response.raw["prompt_eval_count"]`` / ``["eval_count"]`` — the raw
+      Ollama wire format, used when ``usage`` was not populated.
+    * ``response.additional_kwargs["usage"]`` — fallback location.
+    * ``response.usage`` / ``response.usage_metadata`` — attribute access.
+
+    Args:
+        response: The LLM response object carried by the callback payload.
+
+    Returns:
+        dict: The usage mapping, or an empty dict when none could be found.
+    """
+    if response is None:
+        return {}
+
+    def _from_mapping(mapping: Any) -> Dict[str, Any]:
+        if not isinstance(mapping, dict):
+            return {}
+        usage = mapping.get("usage")
+        if isinstance(usage, dict) and usage:
+            return usage
+        usage = mapping.get("usage_metadata")
+        if isinstance(usage, dict) and usage:
+            return usage
+        # Raw Ollama wire format.
+        if "prompt_eval_count" in mapping or "eval_count" in mapping:
+            prompt = mapping.get("prompt_eval_count") or 0
+            completion = mapping.get("eval_count") or 0
+            return {
+                "prompt_tokens": prompt,
+                "completion_tokens": completion,
+                "total_tokens": prompt + completion,
+            }
+        # Token counts sitting directly on the payload. Both the
+        # prompt/completion and the input/output spellings are accepted.
+        prompt = mapping.get("prompt_tokens") or mapping.get("input_tokens")
+        completion = mapping.get("completion_tokens") or mapping.get("output_tokens")
+        if prompt is not None or completion is not None:
+            prompt = prompt or 0
+            completion = completion or 0
+            return {
+                "prompt_tokens": prompt,
+                "completion_tokens": completion,
+                "total_tokens": mapping.get("total_tokens") or (prompt + completion),
+            }
+        return {}
+
+    # Attribute access first (covers response.usage / response.usage_metadata).
+    for attr in ("usage", "usage_metadata"):
+        value = getattr(response, attr, None)
+        if isinstance(value, dict) and value:
+            return value
+
+    raw = getattr(response, "raw", None)
+    usage = _from_mapping(raw)
+    if usage:
+        return usage
+
+    additional = getattr(response, "additional_kwargs", None)
+    if isinstance(additional, dict):
+        usage = _from_mapping(additional)
+        if usage:
+            return usage
+
+    return {}
+
+
 class RequestStatsHandler(BaseCallbackHandler):
     """
     Custom callback handler that collects per-request statistics.
@@ -154,6 +230,16 @@ class RequestStatsHandler(BaseCallbackHandler):
         )
         self._llm_start_times: Dict[str, float] = {}
         self._tool_start_times: Dict[str, tuple] = {}
+        # Tool calls sourced from the workflow event stream (LlamaIndex never
+        # emits CBEventType.FUNCTION_CALL, so they arrive via EventConsumer).
+        #
+        # Keyed by tool_id when available. The workflow executes tool calls
+        # CONCURRENTLY (one ``call_tool`` step per call), so several calls to
+        # the same tool can be in flight at the same time. Keying by tool
+        # name alone would collapse them into a single entry and mis-pair the
+        # start times with the wrong results. A FIFO list per key keeps the
+        # pairing correct even when the same tool is called twice at once.
+        self._pending_tool_starts: Dict[str, List[float]] = {}
 
         logger.debug(
             "RequestStatsHandler created — request_id=%s, query='%s'",
@@ -232,20 +318,18 @@ class RequestStatsHandler(BaseCallbackHandler):
             # Try to get tokens from response payload
             response = payload.get(EventPayload.RESPONSE)
             if response:
-                raw = getattr(response, "raw", None)
-                if isinstance(raw, dict):
-                    usage = raw.get("usage", raw.get("usage_metadata", {}))
-                    if usage and isinstance(usage, dict):
-                        prompt_tokens = (
-                            usage.get("prompt_tokens", 0)
-                            or usage.get("input_tokens", 0)
-                            or 0
-                        )
-                        completion_tokens = (
-                            usage.get("completion_tokens", 0)
-                            or usage.get("output_tokens", 0)
-                            or 0
-                        )
+                usage = _extract_usage(response)
+                if usage:
+                    prompt_tokens = (
+                        usage.get("prompt_tokens", 0)
+                        or usage.get("input_tokens", 0)
+                        or 0
+                    )
+                    completion_tokens = (
+                        usage.get("completion_tokens", 0)
+                        or usage.get("output_tokens", 0)
+                        or 0
+                    )
 
         self.stats.total_prompt_tokens += prompt_tokens
         self.stats.total_completion_tokens += completion_tokens
@@ -284,6 +368,123 @@ class RequestStatsHandler(BaseCallbackHandler):
             tool_name, duration_ms, len(self.stats.tool_calls),
         )
 
+    # ------------------------------------------------------------------
+    # Public API — tool calls sourced from the workflow event stream
+    # ------------------------------------------------------------------
+    #
+    # LlamaIndex 0.14.x never emits CBEventType.FUNCTION_CALL: the enum
+    # value exists but nothing raises it, and FunctionAgent publishes tool
+    # activity on the *workflow event stream* (ToolCall / ToolCallResult
+    # events) instead. EventConsumer receives those events and feeds them
+    # back into this handler through the methods below.
+
+    def begin_tool_call(self, tool_name: str, tool_id: str = "") -> None:
+        """
+        Record the start of a tool invocation.
+
+        Args:
+            tool_name: Name of the tool being invoked.
+            tool_id: Optional identifier of the specific invocation. The
+                workflow runs tool calls concurrently, so the id is used to
+                keep concurrent calls to the *same* tool apart.
+        """
+        key = tool_id or tool_name
+        self._pending_tool_starts.setdefault(key, []).append(time.monotonic())
+        logger.debug(
+            "  → Tool call started: tool='%s', key='%s', pending=%d",
+            tool_name, key, len(self._pending_tool_starts),
+        )
+
+    def end_tool_call(
+        self,
+        tool_name: str,
+        succeeded: bool = True,
+        error_message: str = "",
+        tool_id: str = "",
+    ) -> None:
+        """
+        Record the completion of a tool invocation.
+
+        Args:
+            tool_name: Name of the tool that finished.
+            succeeded: Whether the tool call completed successfully.
+            error_message: Optional error detail when the call failed.
+            tool_id: Optional identifier of the specific invocation, matching
+                the one passed to :meth:`begin_tool_call`.
+        """
+        # Prefer the id-keyed bucket; fall back to the name-keyed one for
+        # callers that do not provide ids.
+        key = tool_id or tool_name
+        queue = self._pending_tool_starts.get(key)
+        start = queue.pop(0) if queue else None
+        if not queue:
+            self._pending_tool_starts.pop(key, None)
+
+        if start is None:
+            # No matching start was recorded (e.g. only the result was
+            # observed) — still count the call so the count stays truthful.
+            start = time.monotonic()
+            logger.debug("  → Tool call end without start: tool='%s'", tool_name)
+
+        end = time.monotonic()
+        record = ToolCallRecord(
+            tool_name=tool_name,
+            start_time=start,
+            end_time=end,
+            duration_ms=(end - start) * 1000,
+            succeeded=succeeded,
+            error_message=error_message,
+        )
+        self.stats.tool_calls.append(record)
+
+        if not succeeded and error_message:
+            self.stats.errors.append(f"Tool '{tool_name}' failed: {error_message}")
+
+        logger.debug(
+            "  → Tool call recorded: tool='%s', duration=%.1fms, succeeded=%s, "
+            "total_tool_calls=%d",
+            tool_name, record.duration_ms, succeeded, len(self.stats.tool_calls),
+        )
+
+    def record_tool_call(
+        self,
+        tool_name: str,
+        duration_ms: float = 0.0,
+        succeeded: bool = True,
+        error_message: str = "",
+    ) -> None:
+        """
+        Record a completed tool call in one shot.
+
+        Convenience wrapper for callers that already know the duration.
+
+        Args:
+            tool_name: Name of the tool that was invoked.
+            duration_ms: How long the call took, in milliseconds.
+            succeeded: Whether the tool call completed successfully.
+            error_message: Optional error detail when the call failed.
+        """
+        end = time.monotonic()
+        start = end - (duration_ms / 1000.0)
+
+        record = ToolCallRecord(
+            tool_name=tool_name,
+            start_time=start,
+            end_time=end,
+            duration_ms=duration_ms,
+            succeeded=succeeded,
+            error_message=error_message,
+        )
+        self.stats.tool_calls.append(record)
+
+        if not succeeded and error_message:
+            self.stats.errors.append(f"Tool '{tool_name}' failed: {error_message}")
+
+        logger.debug(
+            "  → Tool call recorded: tool='%s', duration=%.1fms, total_tool_calls=%d",
+            tool_name, duration_ms, len(self.stats.tool_calls),
+        )
+
     def finalize(self) -> RequestStats:
         """Finalize and return the collected stats."""
         self.stats.end_time = time.monotonic()
@@ -304,6 +505,70 @@ class RequestStatsHandler(BaseCallbackHandler):
             len(self.stats.errors),
         )
         return self.stats
+
+
+# ---------------------------------------------------------------------------
+# Callback manager wiring
+# ---------------------------------------------------------------------------
+
+
+def bind_callback_manager(agent: Any, callback_manager: Optional[Any]) -> bool:
+    """
+    Bind a callback manager to the LLM instance backing an agent.
+
+    Why this is needed
+    ------------------
+    ``llama_index.core.llms.callbacks.llm_chat_callback`` resolves the
+    callback manager from the **LLM instance**, not from the agent::
+
+        callback_manager = getattr(_self, "callback_manager", None)
+        if not isinstance(callback_manager, CallbackManager):
+            _self.callback_manager = CallbackManager()
+        yield _self.callback_manager
+
+    Meanwhile ``FunctionAgent`` is a Pydantic model that has **no**
+    ``callback_manager`` field, so ``FunctionAgent(callback_manager=...)`` and
+    ``agent.run(callback_manager=...)`` are silently discarded (Pydantic's
+    default ``extra`` behaviour is to ignore unknown kwargs).
+
+    The practical consequence is that a handler attached to the manager
+    passed to ``agent.run()`` never receives a single event, while the
+    manager that *does* receive events — the one on the LLM — stays empty.
+    The result is that every event-derived metric (LLM calls, tokens) is
+    permanently zero.
+
+    This helper points the LLM's manager at the given one so that LLM-level
+    events actually reach the handlers.
+
+    Args:
+        agent: The agent whose ``llm`` should receive the manager.
+        callback_manager: The callback manager to install on the LLM.
+
+    Returns:
+        bool: True if the manager was successfully bound to an LLM.
+    """
+    if callback_manager is None:
+        return False
+
+    llm = getattr(agent, "llm", None)
+    if llm is None:
+        logger.warning(
+            "bind_callback_manager: agent has no 'llm' attribute — "
+            "callback events will not be received"
+        )
+        return False
+
+    try:
+        llm.callback_manager = callback_manager
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("bind_callback_manager: failed to set llm.callback_manager: %s", exc)
+        return False
+
+    logger.debug(
+        "bind_callback_manager: callback manager bound to LLM %s",
+        type(llm).__name__,
+    )
+    return True
 
 
 # ---------------------------------------------------------------------------
