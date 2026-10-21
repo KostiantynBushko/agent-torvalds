@@ -74,6 +74,23 @@ before any commit is created.
 | Specification | `investigate/MikroTik-RouterOS/MODULE_SPECIFICATION.md` |
 | Phases | 0-5 implemented. Only the real-router validation (precondition P6) is outstanding - it needs a physical router or a CHR image, and MikroTik's download server is unreachable from this environment. |
 
+### Latest change: the MikroTik tools in the selection menu
+
+The toolkit was fully wired into the retriever and into both
+orchestrators, but `agent_tool_selection._discover_tools()` - the one
+function that builds the `--select` menu - never imported the adapter, so
+the **Network** category was missing from the menu. Fixed, together with
+the action summary (the RouterOS path `/ip/firewall/filter` was matched by
+the data-analysis `filter` pattern) and locked down by
+`tests/test_tool_selection_menu.py`.
+
+| Path | Change |
+|---|---|
+| `agent_tool_selection.py` | The MikroTik adapter is imported by `_discover_tools()`; dedicated **Network** action patterns were added. |
+| `tests/test_tool_selection_menu.py` | New regression suite for the menu inventory and the **Network** category. |
+| `docs/mikrotik-toolkit.md` | New section 4.1 *Selecting the tools*. |
+| `README.md`, `CHANGELOG.md` | The **Network** category is documented. |
+
 ### Where the code lives
 
 | Path | Role |

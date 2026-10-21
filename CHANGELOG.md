@@ -57,7 +57,34 @@
   agent boots without them, and the toolkit reports that it is unavailable
   instead of breaking the boot.
 
+### Fixes
+- **The MikroTik tools were missing from the startup tool selection menu.**
+  `agent_tool_selection._discover_tools()` — the single function that
+  builds the `--select` menu — never imported the MikroTik adapter, so the
+  eight tools (category **Network**) were absent from the menu even though
+  the toolkit was fully wired into the retriever and into both
+  orchestrators. The operator could not see or select the capability.
+  The adapter is now imported by the discovery function, and the **Network**
+  category appears in the menu of the classic REPL (`--select`) and of the
+  multi-window TUI (`\tools`, `\tool-select`).
+- **The menu's action summary misread the RouterOS paths.** The summary is
+  built by matching the leading verb of a tool description, and the
+  fallback (the lowercased first word) produced the useless labels
+  `list, check, run, filter, export, get`. In addition, the RouterOS path
+  `/ip/firewall/filter` in the config tool's description was matched by
+  the data-analysis `filter` pattern, which reported the category as
+  doing data filtering. Dedicated **Network** patterns now map the eight
+  tools onto `discover, diagnose, execute, inspect, backup`.
+
 ### Tests
+- `tests/test_tool_selection_menu.py` — locks the selection menu against
+  the defect above: the MikroTik tools must be discoverable and must form
+  the **Network** category, the category must hold nothing else, the menu
+  must offer the same inventory as the retriever, and the MikroTik tools
+  must be present in every load path (menu, retriever, classic
+  orchestrator, multi-window orchestrator). The two pre-existing
+  inventory differences are pinned explicitly, so a *new* one still fails
+  the test.
 - `tests/test_mikrotik_toolkit.py` — the tool layer with a mocked transport:
   the uniform result shape, the safety gate, the confirmation and approval
   policy, the multi-line guard, the error-code mapping, the redaction and

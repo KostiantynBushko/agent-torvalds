@@ -177,6 +177,9 @@ Each module has its own README with the full reference:
 - Secrets are redacted from every result, log line and exception message
 - Four interactive commands: `\routers`, `\router-health <target>`,
   `\router-interfaces <target>`, `\router-backup <target>`
+- The eight tools form the **Network** category of the startup tool
+  selection menu (`--select`, and `\tools` / `\tool-select` in the TUI),
+  so they can be loaded on their own
 - Optional dependency (`asyncssh`) — the agent still boots without it
 - 150 unit tests plus an opt-in integration suite against a real router
 - See the [MikroTik RouterOS Toolkit README](toolkits/MikroTik-RouterOS/README.md)

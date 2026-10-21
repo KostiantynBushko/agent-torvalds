@@ -169,7 +169,29 @@ ssh-keyscan -H 10.0.0.1 >> ~/.ssh/known_hosts
 > classifier in front of it, so there is exactly **one** chokepoint for
 > confirmation, auditing and rollback.
 
-### 4.1 The result shape
+### 4.1 Selecting the tools
+
+The eight tools form the **Network** category of the startup tool
+selection menu, so they can be loaded on their own:
+
+```bash
+python agent-torvalds.py --select
+```
+
+```
+  [10] Network (8 tools)
+      Actions: discover, diagnose, execute, inspect, backup
+```
+
+Enter the index of the **Network** category (or a range that includes it)
+to load the MikroTik tools and nothing else. The same category is offered
+by the multi-window TUI through `\tools` and `\tool-select <spec>`.
+
+The category is always present: when the optional `asyncssh` dependency is
+missing, the tools still register and report the problem instead of
+breaking the menu.
+
+### 4.2 The result shape
 
 Every tool returns the same dictionary:
 
@@ -182,7 +204,7 @@ Every tool returns the same dictionary:
 `rows` holds the parsed table when the output was a `print` table, and
 `error` holds a machine-readable code when `ok` is `False`.
 
-### 4.2 The error codes
+### 4.3 The error codes
 
 | Code | Meaning | What to do |
 |---|---|---|
