@@ -102,7 +102,7 @@ agent-torvalds/                        # repository root
 │
 ├── mikrotik_targets.yaml.example      # annotated example config (no secrets)
 ├── requirements.txt                   # + optional asyncssh / pydantic / routeros_api
-├── pytest.ini                         # + import-mode=importlib
+├── pytest.ini                         # + addopts=--import-mode=importlib
 │                                      # + toolkits/MikroTik-RouterOS/tests in testpaths
 │                                      # + integration marker
 ├── docs/mikrotik-toolkit.md           # operator documentation
@@ -266,7 +266,7 @@ package-local test file shares its basename with a root test file
 | Requirement | Reason |
 |---|---|
 | The package-local test directory **must not** contain `__init__.py`. | Restores the correct package root for relative imports and removes the basename-collision abort. |
-| `pytest.ini` **must** set `import-mode = importlib`. | Makes the relative import resolve against `toolkits.MikroTik-RouterOS.tests`. |
+| `pytest.ini` **must** set `addopts = --import-mode=importlib`. | Makes the relative import resolve against `toolkits/MikroTik-RouterOS/tests`. There is no `import-mode` ini option in pytest 9.1.1 - see the note in §3.4. |
 | `pytest.ini` **must** add the package-local test dir to `testpaths`. | Otherwise a bare `pytest` run never collects the package-local tests. |
 
 The resulting `pytest.ini`:
@@ -277,10 +277,18 @@ testpaths = tests chat_manager/tests toolkits/MikroTik-RouterOS/tests
 python_files = test_*.py
 python_functions = test_*
 python_classes = Test*
-import-mode = importlib
+addopts = --import-mode=importlib
 collect_ignore =
     agent_apt_toolkit.py
 ```
+
+> ⚠️ **pytest 9.1.1 has no `import-mode` ini option.** The spelling
+> `import-mode = importlib` is **silently ignored** - pytest emits
+> `PytestConfigWarning: Unknown config option: import-mode` and continues
+> in the default `prepend` mode, which then fails to import the
+> package-local tests. The working spelling is an **`addopts`** entry:
+> `addopts = --import-mode=importlib`. This was verified empirically; see
+> `verify_test_contract.py`.
 
 #### Verification
 
@@ -297,7 +305,10 @@ in the baseline as well):
 |---|---|
 | default (`prepend`) | 76 failed, 722 passed, 1 error |
 | `--import-mode=importlib` | 76 failed, 722 passed, 1 error |
-| `import-mode = importlib` **+ extended `testpaths`** | 76 failed, **723** passed, 1 error |
+| `--import-mode=importlib` **+ extended `testpaths`** | 76 failed, **902** passed, 1 error |
+
+> The 902 includes the 180 package-local Phase 1 tests. The 76 failures are
+> pre-existing in the baseline and are unrelated to this feature.
 
 The switch is behaviour-neutral for the existing suite, and the extended
 `testpaths` adds the package-local test to the run.
@@ -382,7 +393,12 @@ from toolkits.mikrotik_routeros import (
 - [ ] `load_targets(path="mikrotik_targets.yaml")` — tolerant loader:
   - missing file → empty registry (never raises at import time)
   - env-var fallback: `MIKROTIK_PASSWORD`, `MIKROTIK_KEY`
-- [ ] Validator: reject an id that is not a safe identifier; reject `port` outside 1–65535.
+- [ ] Validator: reject an id that is not a safe slug; reject `port` outside 1–65535.
+      > **Note.** The id rule cannot be "must be a Python identifier": the
+      > specification's own example id, `core-rtr-01`, contains a hyphen and
+      > would be rejected by that stricter rule. The implemented rule accepts
+      > `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` and rejects whitespace, shell
+      > metacharacters, path separators and `..`.
 - [ ] Secrets are `SecretStr` and must be redacted in `repr`/`str`.
 
 ### 5.2 `models.py`
@@ -554,11 +570,11 @@ from toolkits.mikrotik_routeros import (
   ```ini
   [pytest]
   testpaths = tests chat_manager/tests toolkits/MikroTik-RouterOS/tests
-  import-mode = importlib
+  addopts = --import-mode=importlib
   markers =
       integration: tests that require a real device or network access
   ```
-  All three changes are required: `import-mode` enables relative imports in
+  All three changes are required: `addopts` enables relative imports in
   the package-local tests, the `testpaths` entry makes a bare `pytest` run
   collect them, and the marker registers the integration tests.
   *Verified:* the `import-mode` switch alone leaves the existing suite
@@ -590,7 +606,7 @@ from toolkits.mikrotik_routeros import (
   or the **alias** (`from toolkits.mikrotik_routeros import ...`).
   Never an absolute `from toolkits.MikroTik-RouterOS...` import — that is a
   `SyntaxError`.
-- `pytest.ini` must set `import-mode = importlib` and list
+- `pytest.ini` must set `addopts = --import-mode=importlib` and list
   `toolkits/MikroTik-RouterOS/tests` in `testpaths`, otherwise the
   package-local tests are silently **not collected**.
 
@@ -605,8 +621,8 @@ from toolkits.mikrotik_routeros import (
       under the package.
 - [ ] A test asserts the **package-local test contract** of §3.4: the test
       directory contains no `__init__.py`, and `pytest.ini` sets
-      `import-mode = importlib` and includes the package-local test
-      directory in `testpaths`.
+      `--import-mode=importlib` in `addopts` and includes the
+      package-local test directory in `testpaths`.
 
 ### 8.3 Integration test (opt-in)
 
@@ -644,7 +660,7 @@ markers =
 | D13 | No LlamaIndex import exists under `toolkits/MikroTik-RouterOS/` |
 | D14 | All work is confined to the `self-development` clone on its own branch |
 | D15 | The package-local test directory contains **no** `__init__.py` (§3.4) |
-| D16 | `pytest.ini` sets `import-mode = importlib` **and** lists the package-local test directory in `testpaths` |
+| D16 | `pytest.ini` sets `--import-mode=importlib` in `addopts` **and** lists the package-local test directory in `testpaths` |
 | D17 | A bare `pytest` run collects the package-local tests (not silently skipped) |
 | D18 | `verify_layout_contract.py` and `verify_test_contract.py` both report 100% pass |
 

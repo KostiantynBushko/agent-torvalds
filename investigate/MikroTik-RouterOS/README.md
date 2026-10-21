@@ -1,7 +1,8 @@
 # MikroTik RouterOS Toolkit — Investigation
 
 **Date:** 2026-10-21
-**Status:** Investigation complete — core technical risks validated empirically
+**Status:** Investigation complete — core technical risks validated empirically.
+**Phase 1 (core package) complete** — 180 package-local tests green.
 **Target:** A `agent_mikrotik_toolkit.py` adapter plus the core package
 `toolkits/MikroTik-RouterOS/` that connects to MikroTik routers over SSH, runs
 RouterOS CLI commands, and returns structured, safely-gated results.
@@ -31,12 +32,17 @@ cd self-development
 ```
 
 - `verify_layout_contract.py` must report **20/20 passed**.
-- `verify_test_contract.py` must report **12/12 passed** once Phase 1 lands
-  (10 passed + 2 pending before that).
+- `verify_test_contract.py` must report **13/13 passed** (it reported
+  10/12 with 2 pending before Phase 1 landed; the two extra checks are the
+  pytest contract rows that Phase 1 satisfied).
 
 A **FAIL** means the repository violates a contract the document states —
 the document is right, the implementation is wrong. A **PENDING** means a
 Phase 1 requirement has not been implemented yet.
+
+> **Note.** `verify_test_contract.py` only ever deletes the scratch files it
+> creates itself. It never touches the real test suite in
+> `toolkits/MikroTik-RouterOS/tests/`.
 
 ---
 
@@ -57,6 +63,8 @@ agent-torvalds/
 │       ├── parser.py               # print / detail / identity parsing
 │       ├── session.py              # RouterOSSession (exec + session transports)
 │       ├── safety.py               # risk classifier + confirmation policy
+│       ├── _compat.py              # optional-dependency compatibility layer
+│       ├── py.typed                # PEP 561 marker
 │       └── tests/                  # module-local tests (NO __init__.py - §3.4)
 ├── agent_mikrotik_toolkit.py       # LlamaIndex adapter (project root, flat pattern)
 └── tests/                          # project-level integration tests

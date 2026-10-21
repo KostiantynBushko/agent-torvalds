@@ -52,12 +52,12 @@
 
 **Duration:** 0.5 day
 
-- [ ] Create the branch in the self-development clone:
+- [x] Create the branch in the self-development clone:
   ```bash
   cd self-development
   git checkout -b feature/mikrotik-routeros-toolkit master
   ```
-- [ ] **Create the toolkit home directory** (required layout):
+- [x] **Create the toolkit home directory** (required layout):
   ```bash
   cd self-development
   mkdir -p toolkits/MikroTik-RouterOS
@@ -65,12 +65,12 @@
   The directory name is **exact** — `MikroTik-RouterOS`, capital `M`/`T`/`R`/`O`/`S`.
   A wrong-case directory fails with a confusing `ModuleNotFoundError` on
   Linux/macOS.
-- [ ] Add `toolkits/__init__.py` with the **import alias shim** that registers
+- [x] Add `toolkits/__init__.py` with the **import alias shim** that registers
       `toolkits.mikrotik_routeros` → `toolkits.MikroTik-RouterOS`.
       The shim must catch `Exception` (not just `ImportError`) so that
       `import toolkits` can never fail because of an optional dependency.
       See [MODULE_SPECIFICATION.md §3.3](MODULE_SPECIFICATION.md#33-the-resolution-a-sysmodules-alias).
-- [ ] Add the optional dependencies to `self-development/requirements.txt`:
+- [x] Add the optional dependencies to `self-development/requirements.txt`:
   ```ini
   # ---------------------------------------------------------------------------
   # MikroTik RouterOS Toolkit Dependencies
@@ -87,7 +87,7 @@
   # for structured reads. NOT a replacement for the SSH transport.
   routeros_api>=0.21.0
   ```
-- [ ] Confirm the imports are **guarded** so a missing dependency cannot break the agent boot.
+- [x] Confirm the imports are **guarded** so a missing dependency cannot break the agent boot.
 
 ---
 
@@ -110,12 +110,12 @@ reuse the SSH toolkit's primitives (see Q1).
 
 ### 3.1 `toolkits/MikroTik-RouterOS/__init__.py`
 
-- [ ] Export the public API: `MikroTikTarget`, `TargetRegistry`, `RouterOSSession`,
+- [x] Export the public API: `MikroTikTarget`, `TargetRegistry`, `RouterOSSession`,
       `CommandResult`, `CommandCategory`, `get_registry`, `load_targets`.
 
 ### 3.2 `toolkits/MikroTik-RouterOS/config.py`
 
-- [ ] `MikroTikTarget` (pydantic v2):
+- [x] `MikroTikTarget` (pydantic v2):
   - `id: str` — logical name used by the agent
   - `host: str`, `port: int = 22`
   - `username: str = "admin"`
@@ -127,75 +127,75 @@ reuse the SSH toolkit's primitives (see Q1).
   - `allow_unknown_host_key: bool = False` — opt-in insecure mode
   - `connect_timeout: int = 10`, `command_timeout: int = 30`
   - `console_login_params: str = "c"` — disables colour (documented RouterOS feature)
-- [ ] `TargetRegistry` — `register`, `get`, `list_targets`, `unregister`
-- [ ] `load_targets(path="mikrotik_targets.yaml")` — tolerant loader:
+- [x] `TargetRegistry` — `register`, `get`, `list_targets`, `unregister`
+- [x] `load_targets(path="mikrotik_targets.yaml")` — tolerant loader:
   - missing file → empty registry (never raises at import time)
   - env-var fallback: `MIKROTIK_PASSWORD`, `MIKROTIK_KEY`
-- [ ] Validator: reject an id that is not a safe identifier; reject `port` outside 1–65535.
+- [x] Validator: reject an id that is not a safe slug; reject `port` outside 1–65535.
 
 ### 3.3 `toolkits/MikroTik-RouterOS/models.py`
 
-- [ ] `CommandResult` — exactly the shape from `INVESTIGATION_REPORT.md` §6.4.
-- [ ] `RouterIdentity` — model, serial number, RouterOS version, uptime, cpu/load, memory, disk.
-- [ ] `CommandCategory` — `READ_ONLY | LOW | MEDIUM | HIGH | CRITICAL`.
+- [x] `CommandResult` — exactly the shape from `INVESTIGATION_REPORT.md` §6.4.
+- [x] `RouterIdentity` — model, serial number, RouterOS version, uptime, cpu/load, memory, disk.
+- [x] `CommandCategory` — `READ_ONLY | LOW | MEDIUM | HIGH | CRITICAL`.
 
 ### 3.4 `toolkits/MikroTik-RouterOS/exceptions.py`
 
-- [ ] Hierarchy mapped 1:1 onto the error taxonomy (§7.3):
+- [x] Hierarchy mapped 1:1 onto the error taxonomy (§7.3):
   `MikroTikError` → `AuthError`, `HostKeyError`, `ConnectionError_`, `CommandTimeoutError`,
   `CommandRejectedError`, `MultilineUnsupportedError`, `InteractiveInputRequiredError`,
   `SafeModeError`, `PagingError`, `NotAuthorizedError`.
 
 ### 3.5 `toolkits/MikroTik-RouterOS/parser.py`
 
-- [ ] `parse_print_table(text) -> list[dict]` — parse the RouterOS `print` output:
+- [x] `parse_print_table(text) -> list[dict]` — parse the RouterOS `print` output:
   - the `Flags:`/`Columns:` header lines
   - the ` # DST-ADDRESS GATEWAY` column-title line
   - numbered rows with a flag column
   - tolerate a missing flags column, a single row, an empty result set
-- [ ] `parse_detail(text) -> list[dict]` — parse the script-friendly `detail` format.
-- [ ] `parse_identity(text) -> RouterIdentity` — parse `/system/resource/print`.
+- [x] `parse_detail(text) -> list[dict]` — parse the script-friendly `detail` format.
+- [x] `parse_identity(text) -> RouterIdentity` — parse `/system/resource/print`.
 
 ### 3.6 `toolkits/MikroTik-RouterOS/session.py` — the core
 
-- [ ] Embed the **validated** regexes from `INVESTIGATION_REPORT.md` §5.3:
+- [x] Embed the **validated** regexes from `INVESTIGATION_REPORT.md` §5.3:
   ```python
   PROMPT_RE = re.compile(...)
   CONTINUATION_RE = re.compile(r"line\s+\d+\s+of\s+\d+\s*>\s*$")
   VALUE_REQUEST_RE = re.compile(r"^[A-Za-z0-9 _\-/()']+:\s*$")
   ```
-- [ ] `RouterOSSession` — async context manager:
-  - [ ] `connect()` — key auth preferred, password auth supported, host-key policy applied
-  - [ ] `_read_banner()` — tolerate the logo, the upgrade notice, the `/system note` and the
+- [x] `RouterOSSession` — async context manager:
+  - [x] `connect()` — key auth preferred, password auth supported, host-key policy applied
+  - [x] `_read_banner()` — tolerate the logo, the upgrade notice, the `/system note` and the
         *"Please press Enter to continue!"* prompt
-  - [ ] `_read_until_prompt(timeout)` — returns the buffer and the parsed prompt
-  - [ ] `run(command, timeout)` — write, read, strip the echo, strip the prompt, detect errors
-  - [ ] `run_exec(command, timeout)` — one-shot `conn.run()`; returns stdout/stderr/exit status
-  - [ ] `close()`
-- [ ] **Error detection** — recognise at least:
+  - [x] `_read_until_prompt(timeout)` — returns the buffer and the parsed prompt
+  - [x] `run(command, timeout)` — write, read, strip the echo, strip the prompt, detect errors
+  - [x] `run_exec(command, timeout)` — one-shot `conn.run()`; returns stdout/stderr/exit status
+  - [x] `close()`
+- [x] **Error detection** — recognise at least:
   `invalid command name X`, `bad command name X`, `no such item (N)`,
   `failure: already have such address`, `syntax error (line 1 column N)`.
-- [ ] **Safe mode** — detect `<SAFE>` in the prompt; expose `enter_safe_mode()` (Ctrl+X) and
+- [x] **Safe mode** — detect `<SAFE>` in the prompt; expose `enter_safe_mode()` (Ctrl+X) and
       `exit_safe_mode(save=False)` (Ctrl+D).
-- [ ] **Paging control** — auto-append `without-paging` to `print` commands; detect the paging
+- [x] **Paging control** — auto-append `without-paging` to `print` commands; detect the paging
       prompt and abort with `PagingError`.
-- [ ] **Fallback** — if no prompt is seen before the timeout, return the raw buffer with
+- [x] **Fallback** — if no prompt is seen before the timeout, return the raw buffer with
       `PROMPT_NOT_DETECTED` rather than hanging or silently truncating.
-- [ ] **Multiline guard** — reject a command containing `\n`, `;`, `&&` or `|`
+- [x] **Multiline guard** — reject a command containing `\n`, `;`, `&&` or `|`
       with `MultilineUnsupportedError`.
 
 ### 3.7 `toolkits/MikroTik-RouterOS/safety.py`
 
-- [ ] `classify(command) -> (CommandCategory, reasons)` — implement the table in §7.4.
-- [ ] `requires_confirmation(category) -> bool`
-- [ ] `requires_hitl(category) -> bool`
-- [ ] `contains_injection_patterns(command) -> list[str]`
-- [ ] `is_management_path_change(command, current_interfaces) -> bool` — escalate to Critical
+- [x] `classify(command) -> (CommandCategory, reasons)` — implement the table in §7.4.
+- [x] `requires_confirmation(category) -> bool`
+- [x] `requires_hitl(category) -> bool`
+- [x] `contains_injection_patterns(command) -> list[str]`
+- [x] `is_management_path_change(command, current_interfaces) -> bool` — escalate to Critical
       when the change could drop the management path.
 
 ### 3.8 `toolkits/MikroTik-RouterOS/__init__.py` — public API
 
-- [ ] Re-export the public API so it is importable from the package root:
+- [x] Re-export the public API so it is importable from the package root:
   ```python
   from .config import MikroTikTarget, TargetRegistry, load_targets
   from .models import CommandResult, CommandCategory, RouterIdentity
@@ -203,16 +203,17 @@ reuse the SSH toolkit's primitives (see Q1).
   from .exceptions import (MikroTikError, AuthError, HostKeyError, ...)
   from .safety import classify, requires_confirmation, requires_hitl
   ```
-- [ ] `__all__` lists every exported name.
-- [ ] `__version__ = "0.1.0"`.
+- [x] `__all__` lists every exported name.
+- [x] `__version__ = "0.1.0"`.
 
 ### 3.9 Phase 1 exit criteria
 
-- [ ] `pytest tests/test_mikrotik_session.py tests/test_mikrotik_parser.py tests/test_mikrotik_safety.py` green
-- [ ] No LlamaIndex import anywhere under `toolkits/MikroTik-RouterOS/`
-- [ ] The 15-case prompt corpus test is green (regression guard for risk R2)
-- [ ] `from toolkits.mikrotik_routeros import MikroTikTarget` works from a consumer module
-- [ ] The package imports cleanly with **zero** optional dependencies installed
+- [x] Package-local suite green: 180 tests in `toolkits/MikroTik-RouterOS/tests/`
+      (the root-level `tests/test_mikrotik_*.py` mirrors are Phase 4)
+- [x] No LlamaIndex import anywhere under `toolkits/MikroTik-RouterOS/`
+- [x] The 15-case prompt corpus test is green (regression guard for risk R2)
+- [x] `from toolkits.mikrotik_routeros import MikroTikTarget` works from a consumer module
+- [x] The package imports cleanly with **zero** optional dependencies installed
 
 ---
 
@@ -360,7 +361,7 @@ reuse the SSH toolkit's primitives (see Q1).
 | D10 | All work is confined to the `self-development` clone on its own branch |
 | D11 | No LlamaIndex import exists under `toolkits/MikroTik-RouterOS/` |
 | D12 | The package-local test directory contains **no** `__init__.py` |
-| D13 | `pytest.ini` sets `import-mode = importlib` **and** lists the package-local test directory in `testpaths` |
+| D13 | `pytest.ini` sets `--import-mode=importlib` in `addopts` **and** lists the package-local test directory in `testpaths` |
 | D14 | A bare `pytest` run collects the package-local tests |
 
 ---
