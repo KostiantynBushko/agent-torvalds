@@ -122,6 +122,7 @@ from components.event_consumer import EventConsumer
 # HITL Components (Step 8: Agent Integration)
 # ---------------------------------------------------------------------------
 from components.human_loop_handler import HumanLoopHandler
+from components.hitl_agent import HITLFunctionAgent
 from components.timeout_manager import TimeoutManager
 from components.hitl_runtime_toggle import HITLRuntimeToggle
 from components.console_input_module import ConsoleInputModule
@@ -163,6 +164,17 @@ HITL_METHOD = os.environ.get("TORVALDS_HITL_METHOD", "console")  # "console" or 
 HITL_TIMEOUT = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "30"))
 HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
 HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").lower() == "true"
+
+# ---------------------------------------------------------------------------
+# Active HITL configuration (mutated by the CLI flags in main())
+# ---------------------------------------------------------------------------
+# These are module-level so both the agent factory and the runtime loop see
+# the effective configuration.  The CLI flags override the environment
+# variables in main().
+hitl_enabled: bool = HITL_ENABLED
+hitl_method: str = HITL_METHOD
+hitl_timeout: int = HITL_TIMEOUT
+hitl_default_answer: str = HITL_DEFAULT_ANSWER
 
 # ---------------------------------------------------------------------------
 # Runtime Prompt Injection Configuration
@@ -518,6 +530,7 @@ def create_agent(
             max_iterations=MAX_ITERATIONS,
             similarity_top_k=top_k,
             callback_manager=callback_manager,
+            agent_class=HITLFunctionAgent,
         )
     else:
         # ---- Full / selected tool loading mode ----
@@ -527,7 +540,7 @@ def create_agent(
         else:
             console.print(f"[dim]Loading {len(tools)} user-selected tools[/dim]")
 
-        agent = FunctionAgent(
+        agent = HITLFunctionAgent(
             tools=tools,
             llm=llm,
             max_iterations=MAX_ITERATIONS,
@@ -536,7 +549,25 @@ def create_agent(
             callback_manager=callback_manager,
         )
 
+    # The HITL agent needs to know the HITL configuration.  It is applied
+    # here (and re-applied in main() when the CLI flags are parsed) so the
+    # agent asks the human and waits for the answer.
+    _apply_hitl_config_to_agent(agent)
+
     return agent
+
+
+def _apply_hitl_config_to_agent(agent) -> None:
+    """Apply the current HITL configuration to *agent*.
+
+    The agent raises the question and waits for the answer; the
+    ``EventConsumer`` prompts the user.
+    """
+    if not isinstance(agent, HITLFunctionAgent):
+        return
+    agent.hitl_enabled = hitl_enabled
+    agent.hitl_default_timeout = hitl_timeout
+    agent.hitl_default_answer = hitl_default_answer
 
 
 # ---------------------------------------------------------------------------
@@ -746,6 +777,12 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
     # (LlamaIndex never emits CBEventType.FUNCTION_CALL).
     if event_consumer is not None:
         event_consumer.set_stats_handler(stats_handler)
+        event_consumer.set_human_loop_handler(human_loop_handler)
+
+    # Keep the agent's HITL configuration in sync with the runtime toggle so
+    # the agent only asks when HITL is enabled.
+    _apply_hitl_config_to_agent(agent)
+    agent.hitl_enabled = human_loop_handler._is_hitl_enabled()
 
     try:
         chat_memory = agent_chat_memory.get_chat_memory()
@@ -773,6 +810,7 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
                 console=console,
                 verbose=ENABLE_VERBOSE_EVENTS,
                 stats_handler=stats_handler,
+                human_loop_handler=human_loop_handler,
             )
         else:
             # The shared consumer is reused across requests; make sure it
@@ -866,6 +904,8 @@ async def main():
     verbose_events = ENABLE_VERBOSE_EVENTS or args.verbose_events
 
     # HITL configuration (CLI overrides env vars)
+    global hitl_enabled, hitl_method, hitl_timeout, hitl_default_answer
+
     hitl_enabled = HITL_ENABLED and not args.no_hitl
     hitl_method = args.hitl_method
     hitl_timeout = args.hitl_timeout
@@ -880,6 +920,9 @@ async def main():
     human_loop_handler.enable_hitl = hitl_enabled
     human_loop_handler.input_method = hitl_method
     human_loop_handler.default_timeout = hitl_timeout
+    # The CLI default answer must reach the handler as well, otherwise the
+    # timeout fallback ignores --hitl-default-answer (defect #6).
+    human_loop_handler.default_answer = hitl_default_answer
 
     # Re-initialize input modules based on method
     if hitl_method == "whiptail":
@@ -1089,6 +1132,7 @@ async def main():
         hitl_timeout=hitl_timeout,
         hitl_default_answer=hitl_default_answer,
         hitl_enabled=hitl_enabled,
+        human_loop_handler=human_loop_handler,
     )
 
     while True:

@@ -7,10 +7,17 @@ progress, and tracks tool calls and results.
 
 Now includes HITL (Human-in-the-Loop) support:
 - Handles InputRequiredEvent from LlamaIndex workflows
-- Handles custom AgentQuestionEvent from HITL handler
+- Handles AgentQuestionEvent raised by components.hitl_agent.HITLFunctionAgent
 - Pauses/resumes spinner during human prompts
-- Sends HumanResponseEvent back to the workflow
+- Sends AgentAnswerEvent (a HumanResponseEvent) back to the workflow, which
+  resumes the step that is waiting for the human
 - Integrates with runtime toggle for dynamic HITL enable/disable
+
+This consumer is the *single* place where the user is prompted.  The
+question reaches it through the workflow event stream (the framework writes
+an InputRequiredEvent to the stream when a step waits for human input) and
+the answer travels back through ctx.send_event(), which dispatches it to the
+waiting step.
 
 Usage:
     consumer = EventConsumer(
@@ -92,15 +99,19 @@ except ImportError:
             self.tool_id = tool_id
 
 
-# Import custom HITL events
+# Import custom HITL events.  They subclass the framework events
+# (InputRequiredEvent / HumanResponseEvent) so the workflows runtime
+# publishes the question to the event stream and routes the answer back to
+# the step that is waiting for it.
 try:
     from components.hitl_events import AgentQuestionEvent, AgentAnswerEvent
     CUSTOM_HITL_EVENTS_AVAILABLE = True
 except ImportError:
     CUSTOM_HITL_EVENTS_AVAILABLE = False
     # Fallback dummy classes for custom HITL events
-    class AgentQuestionEvent(Event):
-        def __init__(self, question="", question_id="", timeout=30, default_answer="", input_type="text", options=None, context=None):
+    class AgentQuestionEvent(InputRequiredEvent):
+        def __init__(self, question="", question_id="", timeout=30, default_answer="", input_type="text", options=None, context=None, prefix=""):
+            super().__init__(prefix=prefix)
             self.question = question
             self.question_id = question_id
             self.timeout = timeout
@@ -109,8 +120,9 @@ except ImportError:
             self.options = options or []
             self.context = context
 
-    class AgentAnswerEvent(Event):
-        def __init__(self, question_id="", answer="", was_timeout=False):
+    class AgentAnswerEvent(HumanResponseEvent):
+        def __init__(self, question_id="", answer="", was_timeout=False, response=None):
+            super().__init__(response=answer if response is None else response)
             self.question_id = question_id
             self.answer = answer
             self.was_timeout = was_timeout
@@ -172,6 +184,7 @@ class EventConsumer:
         hitl_default_answer: str = "",
         hitl_enabled: bool = True,
         stats_handler: Optional[Any] = None,
+        human_loop_handler: Optional[Any] = None,
     ):
         logger.debug(
             "EventConsumer.__init__: spinner=%r, state=%r, verbose=%s, "
@@ -198,6 +211,9 @@ class EventConsumer:
         # CBEventType.FUNCTION_CALL, so tool call counts are sourced from the
         # workflow event stream and fed into the handler from here.
         self.stats_handler = stats_handler
+
+        # Optional HITL handler, used to record the question/answer history.
+        self.human_loop_handler = human_loop_handler
         
         # Runtime toggle (set during consume_events or via setter)
         self.runtime_toggle = None
@@ -219,6 +235,18 @@ class EventConsumer:
         """
         logger.debug("EventConsumer.set_runtime_toggle: toggle=%r", toggle)
         self.runtime_toggle = toggle
+
+    def set_human_loop_handler(self, human_loop_handler: Optional[Any]) -> None:
+        """Attach (or clear) the HITL handler used for question history.
+
+        Args:
+            human_loop_handler: HumanLoopHandler instance or None to disable.
+        """
+        logger.debug(
+            "EventConsumer.set_human_loop_handler: human_loop_handler=%r",
+            human_loop_handler,
+        )
+        self.human_loop_handler = human_loop_handler
 
     def set_stats_handler(self, stats_handler: Optional[Any]) -> None:
         """Attach (or clear) the per-request stats handler.
@@ -345,18 +373,22 @@ class EventConsumer:
         elif isinstance(event, StopEvent):
             logger.debug("EventConsumer._handle_event: dispatching _on_stop_event")
             await self._on_stop_event(event)
+        elif isinstance(event, AgentQuestionEvent):
+            # AgentQuestionEvent extends InputRequiredEvent, so it must be
+            # checked *before* the generic InputRequiredEvent branch.
+            logger.debug("EventConsumer._handle_event: dispatching _on_agent_question")
+            await self._on_agent_question(event)
+        elif isinstance(event, AgentAnswerEvent):
+            # AgentAnswerEvent extends HumanResponseEvent, so it must be
+            # checked *before* the generic HumanResponseEvent branch.
+            logger.debug("EventConsumer._handle_event: dispatching _on_agent_answer")
+            await self._on_agent_answer(event)
         elif isinstance(event, InputRequiredEvent):
             logger.debug("EventConsumer._handle_event: dispatching _on_input_required")
             await self._on_input_required(event)
         elif isinstance(event, HumanResponseEvent):
             logger.debug("EventConsumer._handle_event: dispatching _on_human_response")
             await self._on_human_response(event)
-        elif isinstance(event, AgentQuestionEvent):
-            logger.debug("EventConsumer._handle_event: dispatching _on_agent_question")
-            await self._on_agent_question(event)
-        elif isinstance(event, AgentAnswerEvent):
-            logger.debug("EventConsumer._handle_event: dispatching _on_agent_answer")
-            await self._on_agent_answer(event)
         elif self._verbose and event_type not in VERBOSE_IGNORE_EVENTS:
             # Log other events in verbose mode (excluding high-frequency ones)
             logger.debug("EventConsumer._handle_event: verbose log for unhandled event=%s", event_type)
@@ -626,8 +658,15 @@ class EventConsumer:
         self.state.set("last_human_response", event.response)
 
     async def _on_agent_question(self, event: AgentQuestionEvent) -> None:
-        """Handle AgentQuestionEvent — custom HITL question from agent.
-        
+        """Handle AgentQuestionEvent — the agent needs human input.
+
+        This is the *single* place where the user is prompted.  The event
+        arrives on the workflow event stream because the agent step used
+        ``ctx.wait_for_event(..., waiter_event=AgentQuestionEvent(...))``;
+        the framework publishes the waiter event to the stream and suspends
+        the step.  The answer is sent back with ``ctx.send_event()``, which
+        dispatches it to the waiting step and resumes the agent.
+
         Args:
             event: AgentQuestionEvent with question details.
         """
@@ -636,84 +675,179 @@ class EventConsumer:
             "input_type=%s, timeout=%d",
             event.question_id, event.question, event.input_type, event.timeout,
         )
-        
+
         if not self._is_hitl_enabled():
             logger.debug("EventConsumer._on_agent_question: HITL disabled, skipping")
             return
-        
+
         self._hitl_question_count += 1
         logger.debug("EventConsumer._on_agent_question: question_count=%d", self._hitl_question_count)
-        
+
         # Pause spinner
         self.spinner.pause()
         self.state.set("workflow_paused", True)
         logger.debug("EventConsumer._on_agent_question: spinner paused")
-        
+
         # Display question
         context_str = f"\n   [dim]{event.context}[/dim]" if event.context else ""
         self.console.print(
             f"\n[magenta]🤖 Agent asks: {event.question}[/magenta]{context_str}"
         )
-        
+
+        answer = ""
+        was_timeout = False
         try:
-            # Get user input with timeout
-            logger.debug("EventConsumer._on_agent_question: waiting for user input (timeout=%ds)", event.timeout)
-            response = await self.console_input.prompt(
-                message="Your response: ",
-                default=event.default_answer,
-                timeout=event.timeout,
-            )
-            logger.debug("EventConsumer._on_agent_question: received response=%r", response)
-            
-            was_timeout = (response == event.default_answer and not response.strip())
-            
+            answer, was_timeout = await self._collect_answer(event)
+
             if was_timeout:
                 self._hitl_timeout_count += 1
-                logger.debug("EventConsumer._on_agent_question: timeout, timeout_count=%d", self._hitl_timeout_count)
+                logger.debug(
+                    "EventConsumer._on_agent_question: timeout, timeout_count=%d",
+                    self._hitl_timeout_count,
+                )
                 self.console.print(
-                    f"[yellow]⏱️  Timeout — using default answer[/yellow]"
+                    "[yellow]⏱️  Timeout — using default answer[/yellow]"
                 )
             else:
                 logger.debug("EventConsumer._on_agent_question: valid response")
                 self.console.print("[green]✅ Response sent to agent[/green]")
-            
-            # Send answer back as AgentAnswerEvent
-            if hasattr(self, '_current_handler') and self._current_handler:
-                logger.debug("EventConsumer._on_agent_question: sending AgentAnswerEvent")
-                self._current_handler.ctx.send_event(
-                    AgentAnswerEvent(
-                        question_id=event.question_id,
-                        answer=response,
-                        was_timeout=was_timeout,
-                    )
-                )
-            else:
-                logger.warning("EventConsumer._on_agent_question: no current handler to send answer")
-        
-        except asyncio.TimeoutError:
-            self._hitl_timeout_count += 1
-            logger.debug("EventConsumer._on_agent_question: TimeoutError, timeout_count=%d", self._hitl_timeout_count)
-            self.console.print(
-                f"[yellow]⏱️  Timeout — using default: '{event.default_answer}'[/yellow]"
-            )
-            if hasattr(self, '_current_handler') and self._current_handler:
-                logger.debug("EventConsumer._on_agent_question: sending default AgentAnswerEvent")
-                self._current_handler.ctx.send_event(
-                    AgentAnswerEvent(
-                        question_id=event.question_id,
-                        answer=event.default_answer,
-                        was_timeout=True,
-                    )
-                )
+
         except Exception as e:
             logger.error("EventConsumer._on_agent_question: error: %s", e, exc_info=True)
             self.console.print(
                 f"[red]⚠️  Error collecting response: {e}[/red]"
             )
-        finally:
-            logger.debug("EventConsumer._on_agent_question: resuming spinner in finally")
-            self.spinner.resume()
-            self.state.set("workflow_paused", False)
+            answer = event.default_answer
+            was_timeout = True
+
+        # Record the answer for the HITL history.
+        self._record_answer(
+            event.question_id,
+            answer,
+            was_timeout,
+            question=getattr(event, "question", ""),
+            timeout=getattr(event, "timeout", None),
+            default_answer=getattr(event, "default_answer", ""),
+        )
+
+        # Send the answer back into the workflow.  The waiting step accepts
+        # AgentAnswerEvent, so the runtime resolves the waiter and replays
+        # the step with the answer.
+        self._send_answer(event, answer, was_timeout)
+
+        # Resume spinner
+        logger.debug("EventConsumer._on_agent_question: resuming spinner in finally")
+        self.spinner.resume()
+        self.state.set("workflow_paused", False)
+
+    async def _collect_answer(
+        self, event: AgentQuestionEvent
+    ) -> tuple[str, bool]:
+        """Collect the human's answer for *event*.
+
+        Returns:
+            ``(answer, was_timeout)`` tuple.
+        """
+        input_type = getattr(event, "input_type", "text")
+        default_answer = getattr(event, "default_answer", "")
+        timeout = getattr(event, "timeout", self.hitl_timeout)
+
+        if input_type == "yesno":
+            default_yes = default_answer.strip().lower() in ("yes", "y", "true", "1")
+            result = await self.console_input.confirm(
+                message=event.question,
+                default_yes=default_yes,
+                timeout=timeout,
+            )
+            return ("yes" if result else "no", False)
+
+        if input_type == "menu":
+            options = list(getattr(event, "options", []) or [])
+            if options:
+                result = await self.console_input.menu(
+                    message=event.question,
+                    options=options,
+                    timeout=timeout,
+                )
+                return (result, result == options[0] and not default_answer)
+
+        if input_type == "password":
+            result = await self.console_input.password(
+                message="Enter password: ",
+                timeout=timeout,
+            )
+            return (result, not result)
+
+        # ``prompt_with_status`` reports a timeout explicitly, so "the user
+        # typed the default answer" and "the user did not answer" can be
+        # told apart.  Older/custom input modules only offer ``prompt()``;
+        # they are used as a fallback.
+        prompt_with_status = getattr(self.console_input, "prompt_with_status", None)
+        if prompt_with_status is not None:
+            response, was_timeout = await prompt_with_status(
+                message="Your response: ",
+                default=default_answer,
+                timeout=timeout,
+            )
+            if was_timeout:
+                response = default_answer
+            return (response, was_timeout)
+
+        response = await self.console_input.prompt(
+            message="Your response: ",
+            default=default_answer,
+            timeout=timeout,
+        )
+        # An empty answer means the user did not respond.
+        was_timeout = not response.strip()
+        if was_timeout:
+            response = default_answer
+        return (response, was_timeout)
+
+    def _send_answer(
+        self,
+        event: AgentQuestionEvent,
+        answer: str,
+        was_timeout: bool,
+    ) -> None:
+        """Send the human's answer back to the waiting workflow step."""
+        if not self._current_handler:
+            logger.warning("EventConsumer._on_agent_question: no current handler to send answer")
+            return
+
+        logger.debug("EventConsumer._on_agent_question: sending AgentAnswerEvent")
+        self._current_handler.ctx.send_event(
+            AgentAnswerEvent(
+                question_id=event.question_id,
+                answer=answer,
+                was_timeout=was_timeout,
+            )
+        )
+
+    def _record_answer(
+        self,
+        question_id: str,
+        answer: str,
+        was_timeout: bool,
+        question: str = "",
+        timeout: Optional[int] = None,
+        default_answer: str = "",
+    ) -> None:
+        """Forward the answer to the HITL history handler (if attached)."""
+        handler = getattr(self, "human_loop_handler", None)
+        if handler is None:
+            return
+        try:
+            handler.record_answer(
+                question_id,
+                answer,
+                was_timeout=was_timeout,
+                question=question,
+                timeout=timeout,
+                default_answer=default_answer,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("EventConsumer._record_answer: handler error: %s", exc)
 
     async def _on_agent_answer(self, event: AgentAnswerEvent) -> None:
         """Handle AgentAnswerEvent — answer received for a HITL question.
