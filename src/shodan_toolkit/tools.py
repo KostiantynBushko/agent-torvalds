@@ -41,6 +41,7 @@ __all__ = [
     "get_client",
     "TOOL_REGISTRY",
     "ToolDefinition",
+    "MUTATING_SHODAN_SUBCOMMANDS",
 ]
 
 
@@ -397,11 +398,91 @@ def shodan_download(
     return _ok(result)
 
 
+#: Subcommands that change account state, consume credits, or touch the
+#: local filesystem.  ``shodan_raw`` refuses to run these so that the tool
+#: stays inside the "read-only" category it is registered under.
+MUTATING_SHODAN_SUBCOMMANDS = frozenset(
+    {
+        # Alerts — create/delete network monitors.
+        "alert create",
+        "alert remove",
+        "alert clear",
+        "alert import",
+        "alert domain",
+        # Scans — consume scan credits.
+        "scan submit",
+        "scan internet",
+        # Bulk downloads — consume credits and write files.
+        "data download",
+        "download",
+        # Organisation membership — mutates the account.
+        "org add",
+        "org remove",
+        # Local credential handling.
+        "init",
+    }
+)
+
+
+#: Subcommand groups whose second word selects the actual action.
+_GROUP_SUBCOMMANDS = frozenset({"alert", "scan", "org", "data"})
+
+
+def _normalise_subcommand(args: Sequence[str]) -> str:
+    """Return the leading subcommand words of an argv list.
+
+    ``["alert", "create", "x"]`` becomes ``"alert create"``, while
+    ``["init", "KEY"]`` becomes ``"init"`` — a group name only absorbs a
+    second word when it is one of the known subcommand groups.
+
+    Options (``-``-prefixed tokens) are skipped, so ``["--color", "alert",
+    "list"]`` still resolves to ``"alert list"``.
+    """
+    words: List[str] = []
+    for arg in args:
+        if arg.startswith("-"):
+            continue
+        lowered = arg.lower()
+
+        if not words:
+            words.append(lowered)
+            continue
+
+        # Only a known group may absorb its second word.
+        if len(words) == 1 and words[0] in _GROUP_SUBCOMMANDS:
+            words.append(lowered)
+        break
+
+    return " ".join(words)
+
+
+def _is_mutating_command(args: Sequence[str]) -> bool:
+    """Return True when the argv invokes a state-changing subcommand.
+
+    Both the one-word form (``["init"]``) and the two-word form
+    (``["alert", "create"]``) are matched, so ``alert list`` stays allowed
+    while ``alert create`` is refused.
+    """
+    subcommand = _normalise_subcommand(args)
+    if not subcommand:
+        return False
+
+    if subcommand in MUTATING_SHODAN_SUBCOMMANDS:
+        return True
+
+    # A bare group name such as "alert" is not a runnable command, but treat
+    # it as mutating so it can never slip through to the CLI.
+    return subcommand in {"alert", "scan", "org", "data"}
+
+
 @_tool
 def shodan_raw(args: List[str]) -> str:
     """Run an arbitrary Shodan CLI command and return its raw output.
 
     This is an escape hatch for CLI functionality that has no dedicated tool.
+    It only runs *read-only* subcommands: commands that would change account
+    state, consume credits, or write files are refused, because this tool is
+    registered in the read-only category and is handed to autonomous agents.
 
     Args:
         args: The CLI arguments, without the leading "shodan". For example
@@ -409,7 +490,16 @@ def shodan_raw(args: List[str]) -> str:
 
     Returns:
         JSON with "success" and "data" containing the command's stdout.
+        Mutating commands return a "success": false payload explaining why.
     """
+    if _is_mutating_command(args):
+        return _fail(
+            "shodan_raw only runs read-only commands; "
+            f"'{_normalise_subcommand(args)}' changes account state or "
+            "consumes credits. Use the dedicated tool instead.",
+            command=" ".join(["shodan", *args]),
+        )
+
     client = get_client()
     result = client.run_raw(args)
     return _ok(

@@ -51,7 +51,7 @@ pip install -e ".[dev]"
 
 ### Requirements
 
-- Python 3.9+
+- Python 3.10+
 - The `shodan` CLI on `PATH` (installed automatically by the `cli` extra)
 - A free Shodan API key
 
@@ -148,6 +148,55 @@ knows whether the CLI and API key are configured.
 
 ---
 
+## Using it as a library
+
+The package is a normal Python distribution, so it can be consumed three
+ways — all of them supported:
+
+**1. As a standalone app** — install it and use the CLI:
+
+```bash
+pip install "shodan-toolkit[cli]"
+shodan-toolkit doctor
+shodan-toolkit search "nginx" --limit 5
+python -m shodan_toolkit search "nginx" --limit 5   # no console script needed
+```
+
+**2. As a Python module** — import it in your own scripts:
+
+```python
+from shodan_toolkit import ShodanClient
+
+client = ShodanClient()
+results = client.search("product:nginx", limit=10)
+```
+
+**3. Integrated into another project** — install it into that project's
+environment and mount the tools on your own agent:
+
+```bash
+pip install "shodan-toolkit[cli]"      # in the consuming project
+```
+
+```python
+from llama_index.core.agent.workflow import FunctionAgent
+from llama_index.core.llms import OpenAI
+from shodan_toolkit import get_all_tools
+
+agent = FunctionAgent(
+    name="shodan_agent",
+    llm=OpenAI(model="gpt-4o-mini"),
+    tools=get_all_tools(),
+)
+```
+
+The `llama-index-core` dependency is only needed for the *tool* and *agent*
+helpers. The core API — `ShodanClient`, the config layer and the parsers —
+has no LlamaIndex dependency at all, so it can be used in a project that
+does not want the agent stack.
+
+---
+
 ## Available tools
 
 ### Read-only (default — 12 tools)
@@ -165,7 +214,7 @@ knows whether the CLI and API key are configured.
 | `shodan_account_info` | Remaining query/scan credits. |
 | `shodan_list_alerts` | List configured network alerts. |
 | `shodan_list_scans` | List recent on-demand scans. |
-| `shodan_raw` | Escape hatch — run any CLI command and get raw output. |
+| `shodan_raw` | Escape hatch — run any *read-only* CLI command and get raw output. |
 
 ### Mutating (opt-in — 4 tools)
 
@@ -238,6 +287,14 @@ shodan-toolkit alerts
 shodan-toolkit init <api-key>
 ```
 
+The toolkit is also runnable as a module, which works even when the console
+script is not on `PATH`:
+
+```bash
+python -m shodan_toolkit doctor
+python -m shodan_toolkit search "nginx" --limit 5
+```
+
 ---
 
 ## Architecture
@@ -273,7 +330,7 @@ unparseable:
 
 | Concern | Handling |
 |---------|----------|
-| ANSI colour codes | `--no-color` flag + `NO_COLOR=1` + `TERM=dumb` |
+| ANSI colour codes | `NO_COLOR=1` + `TERM=dumb`; `--no-color` is passed only to `shodan search`, the one subcommand that accepts it |
 | Pager | `PAGER=cat`, `LESS=` (the CLI uses `click.echo_via_pager`) |
 | Interactive prompts | `SHODAN_CLI_NON_INTERACTIVE=1` |
 | Warning noise | `pkg_resources` deprecation warnings stripped from stderr |
@@ -287,10 +344,11 @@ prevents a broken CLI from another virtualenv being picked up by mistake.
 ## Testing
 
 ```bash
-pytest                      # 79 unit tests
-python examples/verify_parsers.py   # 51 checks against real CLI output
-python examples/smoke_test.py       # end-to-end against the real binary
-python examples/agent_demo.py       # agent integration, fully offline
+pytest                               # 134 unit tests
+python examples/verify_parsers.py    # 51 checks against real CLI output
+python examples/verify_argv.py       # 17 argument vectors vs. the real binary
+python examples/smoke_test.py        # end-to-end against the real binary
+python examples/agent_demo.py        # agent integration, fully offline
 ```
 
 The test suite never touches the network: the CLI is replaced with a
@@ -302,6 +360,14 @@ executed — catching regressions in flag construction.
 captured verbatim from the real `shodan` binary, so the parsing logic is
 validated against reality rather than assumptions.
 
+`examples/verify_argv.py` closes the remaining gap. It runs every argument
+vector the client can build against the *installed* binary and reports any
+that the CLI rejects. This matters because each Shodan subcommand declares
+its own options: passing `--no-color` to `shodan host` aborts the command
+with `No such option` before any API call happens. `tests/test_cli_contract.py`
+pins the same expectations as unit tests, so a regression is caught without a
+network or an installed CLI.
+
 ---
 
 ## Project layout
@@ -310,8 +376,10 @@ validated against reality rather than assumptions.
 shodan-toolkit/
 ├── pyproject.toml
 ├── README.md
+├── LICENSE
 ├── src/shodan_toolkit/
 │   ├── __init__.py       public API
+│   ├── __main__.py       `python -m shodan_toolkit` entry point
 │   ├── agent.py          FunctionAgent factory
 │   ├── cli.py            command-line interface
 │   ├── client.py         typed Python API
@@ -319,7 +387,7 @@ shodan-toolkit/
 │   ├── parsers.py        text → structured records
 │   ├── runner.py         subprocess execution
 │   └── tools.py          LlamaIndex FunctionTool wrappers
-├── tests/                79 unit tests
+├── tests/                134 unit tests
 └── examples/             verification and demo scripts
 ```
 
@@ -330,9 +398,10 @@ shodan-toolkit/
 - The API key is stored with `0600` permissions, matching `shodan init`.
 - Mutating tools are opt-in so an autonomous agent cannot silently create
   alerts or burn scan credits.
-- `shodan_raw` is a generic escape hatch — it can run any CLI command,
-  including mutating ones. Exclude it when handing tools to an untrusted
-  agent.
+- `shodan_raw` is an escape hatch, but it only runs read-only subcommands.
+  State-changing ones (`alert create`, `scan submit`, `download`, `init`,
+  `org add`, …) are refused with an explanatory error, so the tool cannot
+  bypass the read-only/mutating split that keeps autonomous agents safe.
 
 ## License
 
