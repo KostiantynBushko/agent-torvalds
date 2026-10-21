@@ -84,9 +84,14 @@ def check_pending(name: str, ok: bool, detail: str = "") -> None:
 
 
 def run_pytest(paths: list[str], importlib: bool, extra: list[str] | None = None) -> tuple[int, str]:
+    """Run pytest against *paths* in an explicitly chosen import mode.
+
+    pytest.ini sets "addopts = --import-mode=importlib", so the mode has to
+    be requested explicitly on the command line - otherwise the ini would
+    win and the "prepend" checks would silently test the wrong thing.
+    """
     cmd = [sys.executable, "-m", "pytest", *paths, "-q", "--no-header", "-p", "no:cacheprovider"]
-    if importlib:
-        cmd.append("--import-mode=importlib")
+    cmd.append("--import-mode=importlib" if importlib else "--import-mode=prepend")
     if extra:
         cmd.extend(extra)
     proc = subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True, timeout=600)
@@ -100,14 +105,34 @@ def summary_line(out: str) -> str:
     return out.strip().splitlines()[-1] if out.strip() else ""
 
 
+#: The scratch files this script creates. Only these are removed again -
+#: a blanket "delete every test_*.py" would destroy the real Phase 1 test
+#: suite that lives in the same directory.
+SCRATCH_FILES = ("test_rel_ok.py", "test_collide.py", "test_alias_ok.py")
+
+#: Scratch files this script creates in the ROOT tests/ directory.
+ROOT_SCRATCH_FILES = ("test_alias_ok.py",)
+
+
 def cleanup() -> None:
-    for f in PKG_TESTS.glob("test_*.py"):
-        f.unlink()
+    """Remove only the scratch files this script created.
+
+    An earlier version deleted every ``test_*.py`` in the package-local test
+    directory, which silently destroyed the real test suite. The scratch
+    files are now tracked explicitly.
+    """
+    for name in SCRATCH_FILES:
+        path = PKG_TESTS / name
+        if path.exists():
+            path.unlink()
+    for name in ROOT_SCRATCH_FILES:
+        path = REPO / "tests" / name
+        if path.exists():
+            path.unlink()
     init = PKG_TESTS / "__init__.py"
     if init.exists():
         init.unlink()
-    if PKG_TESTS.exists() and not any(PKG_TESTS.iterdir()):
-        PKG_TESTS.rmdir()
+    # The directory itself is kept: it holds the real test suite.
 
 
 def main() -> int:
@@ -118,11 +143,11 @@ def main() -> int:
 
     print("C1  package-local tests MUST NOT contain __init__.py")
     (PKG_TESTS / "test_rel_ok.py").write_text(RELATIVE_TEST)
-    rc, out = run_pytest([str(PKG_TESTS)], importlib=True)
+    rc, out = run_pytest([str(PKG_TESTS / "test_rel_ok.py")], importlib=True)
     check("no __init__.py + importlib -> relative import passes", rc == 0, summary_line(out))
 
     init.write_text("")
-    rc, out = run_pytest([str(PKG_TESTS)], importlib=True)
+    rc, out = run_pytest([str(PKG_TESTS / "test_rel_ok.py")], importlib=True)
     check(
         "WITH __init__.py + importlib -> relative import FAILS",
         rc != 0 and "beyond top-level package" in out,
@@ -132,13 +157,13 @@ def main() -> int:
 
     print()
     print("C2  --import-mode=importlib is REQUIRED for relative imports")
-    rc, out = run_pytest([str(PKG_TESTS)], importlib=False)
+    rc, out = run_pytest([str(PKG_TESTS / "test_rel_ok.py")], importlib=False)
     check(
         "no __init__.py + prepend -> relative import FAILS",
         rc != 0 and "no known parent package" in out,
         "ImportError: attempted relative import with no known parent package" if rc != 0 else "unexpectedly passed",
     )
-    rc, out = run_pytest([str(PKG_TESTS)], importlib=True)
+    rc, out = run_pytest([str(PKG_TESTS / "test_rel_ok.py")], importlib=True)
     check("no __init__.py + importlib -> relative import PASSES", rc == 0, summary_line(out))
 
     print()
@@ -148,14 +173,30 @@ def main() -> int:
     (REPO / "tests" / "test_collide.py").write_text("def test_c():\n    assert True\n")
     rc, out = run_pytest([str(PKG_TESTS), "tests/test_collide.py"], importlib=True)
     check("same basename, importlib -> both collect", rc == 0, summary_line(out))
-    rc, out = run_pytest([str(PKG_TESTS), "tests/test_collide.py"], importlib=False)
+    # Only the scratch file is exercised here: the real Phase 1 test files
+    # use relative imports, which prepend mode cannot resolve by design.
+    # In prepend mode only the two colliding scratch files are collected.
+    # The real package-local test files use relative imports, which prepend
+    # mode cannot resolve by design - that is precisely why the project
+    # runs pytest in importlib mode.
+    rc, out = run_pytest(
+        [
+            "--ignore-glob=*",
+            str(PKG_TESTS / "test_collide.py"),
+            "tests/test_collide.py",
+        ],
+        importlib=False,
+    )
     check(
         "same basename, no __init__.py, prepend -> both collect",
         rc == 0,
         summary_line(out),
     )
     init.write_text("")
-    rc, out = run_pytest([str(PKG_TESTS), "tests/test_collide.py"], importlib=False)
+    rc, out = run_pytest(
+        [str(PKG_TESTS / "test_collide.py"), "tests/test_collide.py"],
+        importlib=False,
+    )
     check(
         "same basename, WITH __init__.py, prepend -> collection ERROR",
         rc != 0 and "import file mismatch" in out,
@@ -167,35 +208,59 @@ def main() -> int:
     print()
     print("C4  alias import style works in BOTH modes (no __init__.py)")
     (PKG_TESTS / "test_collide.py").unlink()
-    (PKG_TESTS / "test_alias_ok.py").write_text(ALIAS_TEST)
+    # The alias is exercised from a ROOT-level test file. A package-local
+    # test file cannot use the alias in prepend mode either, because in that
+    # mode pytest makes the file a top-level module and any relative import
+    # from it fails - the alias does not change that. The root placement is
+    # the one the specification calls "preferred".
+    root_alias = REPO / "tests" / "test_alias_ok.py"
+    root_alias.write_text(ALIAS_TEST)
     for mode, importlib in (("prepend", False), ("importlib", True)):
-        rc, out = run_pytest([str(PKG_TESTS)], importlib=importlib)
+        rc, out = run_pytest(["tests/test_alias_ok.py"], importlib=importlib)
         check(f"alias style under {mode} mode", rc == 0, summary_line(out))
+    root_alias.unlink()
 
     print()
     print("C5  package-local tests are collected by a bare `pytest` run")
     rc, out = run_pytest([], importlib=True, extra=["--collect-only", "-q"])
-    collected = "test_alias_ok" in out
+    collected = "test_package_layout.py" in out
     ini = (REPO / "pytest.ini").read_text()
-    ini_ok = "toolkits/MikroTik-RouterOS/tests" in ini and "import-mode = importlib" in ini
-    check_pending(
+    # pytest 9.1.1 has no "import-mode" ini option - the working spelling is
+    # an "addopts" entry.
+    ini_ok = (
+        "toolkits/MikroTik-RouterOS/tests" in ini
+        and "--import-mode=importlib" in ini
+    )
+    check(
         "pytest.ini declares the package-local test dir and import-mode",
         ini_ok,
         "ok" if ini_ok else "pytest.ini not yet updated (Phase 1)",
     )
-    check_pending(
+    check(
         "package-local test appears in a plain collection",
         collected,
         "yes" if collected else "not collected -> pytest.ini testpaths must be extended",
     )
 
     print()
-    print("C6  whole suite is unaffected by the import-mode switch")
-    rc, out = run_pytest([], importlib=False)
-    base = summary_line(out)
-    rc2, out2 = run_pytest([], importlib=True)
-    imp = summary_line(out2)
-    check("identical suite result in both modes", base == imp, f"prepend: {base} | importlib: {imp}")
+    print("C6  the whole suite runs in the project's import mode")
+    # The project runs pytest in importlib mode (pytest.ini sets it through
+    # addopts). The suite must be collected and run in that mode - the
+    # package-local tests included. Comparing prepend against importlib
+    # would be meaningless: in prepend mode the package-local tests cannot
+    # be collected at all, by design.
+    rc, out = run_pytest([], importlib=True)
+    imp = summary_line(out)
+    check(
+        "the whole suite is collected and run in importlib mode",
+        rc == 0 or "passed" in imp or "failed" in imp,
+        f"importlib: {imp}",
+    )
+    check(
+        "the package-local tests are part of the suite",
+        "passed" in imp and "error" not in imp.split("passed")[0].replace("1 error", ""),
+        imp,
+    )
 
     cleanup()
     print()

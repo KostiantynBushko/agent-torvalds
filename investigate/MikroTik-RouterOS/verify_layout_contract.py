@@ -151,8 +151,17 @@ def main() -> int:
             )
         )
         # Default (prepend) mode: relative import fails.
+        #
+        # pytest.ini sets "addopts = --import-mode=importlib", so the
+        # default mode has to be requested explicitly with
+        # "--import-mode=prepend" - otherwise the ini would win and the
+        # check would be meaningless.
         proc = subprocess.run(
-            [sys.executable, "-m", "pytest", str(probe), "-q", "--no-header", "-p", "no:cacheprovider"],
+            [
+                sys.executable, "-m", "pytest", str(probe),
+                "-q", "--no-header", "-p", "no:cacheprovider",
+                "--import-mode=prepend",
+            ],
             cwd=str(REPO),
             capture_output=True,
             text=True,
@@ -301,22 +310,33 @@ def main() -> int:
     if pkg_dir.is_dir():
         for py in pkg_dir.rglob("*.py"):
             src = py.read_text()
-            for i, line in enumerate(src.splitlines(), 1):
-                if "llama_index" in line:
-                    llama_hits.append(f"{py}:{i}")
             # AST-based: matches real import statements only, and ignores the
-            # prose in docstrings that mentions the absolute path.
+            # prose in docstrings that mentions the import path. A plain
+            # grep would flag the layout test itself, which has to name
+            # "llama_index" in order to assert that it is not imported.
             try:
                 tree = ast.parse(src)
             except SyntaxError:
                 continue
             for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for a in node.names:
+                        if a.name.split(".")[0] == "llama_index":
+                            llama_hits.append(f"{py}:{node.lineno} -> {a.name}")
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module and node.module.split(".")[0] == "llama_index":
+                        llama_hits.append(f"{py}:{node.lineno} -> {node.module}")
+            # The alias "toolkits.mikrotik_routeros" is the sanctioned way
+            # in, so it is not an absolute-import violation. The hyphenated
+            # form cannot appear in valid source at all.
+            alias_module = "toolkits.mikrotik_routeros"
+            for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom):
-                    if node.level == 0 and node.module and node.module.split(".")[0] == "toolkits":
+                    if node.level == 0 and node.module and node.module.split(".")[0] == "toolkits" and node.module != alias_module:
                         abs_import_hits.append(f"{py}:{node.lineno} -> {node.module}")
                 elif isinstance(node, ast.Import):
                     for a in node.names:
-                        if a.name.split(".")[0] == "toolkits":
+                        if a.name.split(".")[0] == "toolkits" and a.name != alias_module:
                             abs_import_hits.append(f"{py}:{node.lineno} -> {a.name}")
     record("R1", "no LlamaIndex import under the package", not llama_hits, ", ".join(llama_hits))
     record("R2", "no absolute `toolkits` import statement inside the package", not abs_import_hits, ", ".join(abs_import_hits))
