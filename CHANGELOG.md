@@ -1,5 +1,119 @@
 # Changelog
 
+## [Unreleased] - MikroTik RouterOS Toolkit
+
+### Features
+- **MikroTik RouterOS toolkit** — the agent can now inspect and configure
+  MikroTik routers over SSH. Eight tools are exposed: list the configured
+  routers, test the connection, run a single RouterOS CLI command, read a
+  configuration section, export the configuration, read the device identity,
+  list the interfaces, and read the health (CPU, memory, disk, recent
+  errors).
+- **Reusable core package** — the library half lives in
+  `toolkits/MikroTik-RouterOS/` and imports **no** LlamaIndex, so it stays
+  independently testable and can be used as a plain library. The directory
+  name contains a hyphen, so consumers import it through the alias
+  `toolkits.mikrotik_routeros`, which `toolkits/__init__.py` registers.
+- **Risk-classified write path** — every command is classified before it
+  runs. Reads and cosmetic changes execute directly, a configuration change
+  needs `confirm=True`, and a HIGH or CRITICAL change additionally needs an
+  explicit human approval through the existing console prompt. A
+  `confirm=True` flag is *not* a substitute for that approval, and a
+  timeout is a refusal rather than an approval.
+- **Management-path escalation** — a command that would disable, remove or
+  rename the interface carrying the current session is escalated to
+  `CRITICAL`, because it would cut the agent off from the router mid-change.
+- **Multi-line guard** — a command containing a newline, `;`, `&&`, `||`, a
+  pipe or a script block is refused with `MULTILINE_UNSUPPORTED` before it
+  reaches the router. MikroTik's SSH server provides no pseudo-terminal, so
+  such a command cannot be delivered — and it is a common prompt-injection
+  vector.
+- **Two SSH transports** — a stateless `exec` channel for reads (the
+  router's error text arrives cleanly separated on stderr) and a stateful
+  `session` channel for changes and for verbatim captures such as
+  `/export`. `mode="auto"` picks between them.
+- **Structured errors** — every tool returns a dictionary with `ok=False` and
+  a machine-readable code (`AUTH_FAILED`, `HOST_KEY_MISMATCH`, `UNREACHABLE`,
+  `TIMEOUT`, `COMMAND_REJECTED`, `MULTILINE_UNSUPPORTED`,
+  `INTERACTIVE_INPUT_REQUIRED`, `SAFE_MODE_ACTIVE`, `PAGING_DETECTED`,
+  `NOT_AUTHORIZED`, `PROMPT_NOT_DETECTED`, `UNKNOWN_TARGET`). A tool never
+  raises.
+- **Secret redaction** — the password and the key passphrase are held as
+  `SecretStr` and are scrubbed from every tool result, every log line and
+  every exception message.
+- **Host-key verification** — the router's host key is checked against
+  `known_hosts`; a changed key is a hard stop (`HOST_KEY_MISMATCH`), never
+  an automatic retry.
+- **Four interactive commands** — `\routers`, `\router-health <target>`,
+  `\router-interfaces <target>` and `\router-backup <target>` work in the
+  classic REPL and in the multi-window TUI, and are listed by `\help` under
+  **Network Devices (MikroTik RouterOS)**.
+- **Target configuration** — the routers are described in
+  `mikrotik_targets.yaml`, with an annotated
+  `mikrotik_targets.yaml.example`. The real file is in `.gitignore`, so
+  credentials never reach the repository. `MIKROTIK_TARGETS`,
+  `MIKROTIK_PASSWORD` and `MIKROTIK_KEY` provide the fallbacks.
+- **Graceful degradation** — `asyncssh` and `pydantic` are optional. The
+  agent boots without them, and the toolkit reports that it is unavailable
+  instead of breaking the boot.
+
+### Fixes
+- **The MikroTik tools were missing from the startup tool selection menu.**
+  `agent_tool_selection._discover_tools()` — the single function that
+  builds the `--select` menu — never imported the MikroTik adapter, so the
+  eight tools (category **Network**) were absent from the menu even though
+  the toolkit was fully wired into the retriever and into both
+  orchestrators. The operator could not see or select the capability.
+  The adapter is now imported by the discovery function, and the **Network**
+  category appears in the menu of the classic REPL (`--select`) and of the
+  multi-window TUI (`\tools`, `\tool-select`).
+- **The menu's action summary misread the RouterOS paths.** The summary is
+  built by matching the leading verb of a tool description, and the
+  fallback (the lowercased first word) produced the useless labels
+  `list, check, run, filter, export, get`. In addition, the RouterOS path
+  `/ip/firewall/filter` in the config tool's description was matched by
+  the data-analysis `filter` pattern, which reported the category as
+  doing data filtering. Dedicated **Network** patterns now map the eight
+  tools onto `discover, diagnose, execute, inspect, backup`.
+
+### Tests
+- `tests/test_tool_selection_menu.py` — locks the selection menu against
+  the defect above: the MikroTik tools must be discoverable and must form
+  the **Network** category, the category must hold nothing else, the menu
+  must offer the same inventory as the retriever, and the MikroTik tools
+  must be present in every load path (menu, retriever, classic
+  orchestrator, multi-window orchestrator). The two pre-existing
+  inventory differences are pinned explicitly, so a *new* one still fails
+  the test.
+- `tests/test_mikrotik_toolkit.py` — the tool layer with a mocked transport:
+  the uniform result shape, the safety gate, the confirmation and approval
+  policy, the multi-line guard, the error-code mapping, the redaction and
+  the tool registration.
+- `tests/test_mikrotik_session.py` — every error of the taxonomy mapped to
+  its code, the timeout plumbing and the safe-mode and prompt-not-detected
+  results.
+- `tests/test_mikrotik_safety.py` — the classifier table, the injection
+  patterns, the management-path escalation and the confirmation policy.
+- `tests/test_mikrotik_parser.py` — the `print`, `detail`, identity and
+  property parsing fixtures.
+- `tests/test_mikrotik_config.py` — the tolerant YAML loader, the
+  environment fallbacks, the validation and the redaction.
+- `tests/test_mikrotik_integration.py` — the opt-in suite against a real
+  router, skipped unless `MIKROTIK_TEST_HOST` is set.
+
+### Documentation
+- **Module README** — `toolkits/MikroTik-RouterOS/README.md` documents the
+  reusable core package: the layout, the import contract (and why the hyphen
+  forces the `toolkits.mikrotik_routeros` alias), the public API, the risk
+  classifier and its rule order, the safety model, the two transports, the
+  uniform result shape, the error taxonomy, the configuration reference, the
+  library-only usage, the security notes and the limitations.
+- **Root README** — the module README is linked from the new *Module
+  documentation* index, from the MikroTik section and from the configuration
+  section. The *Project Structure* tree now lists the `toolkits/` package,
+  the `agent_mikrotik_toolkit.py` adapter and
+  `mikrotik_targets.yaml.example`, all of which were missing.
+
 ## [Unreleased] - Interactive Help Command
 
 ### Features

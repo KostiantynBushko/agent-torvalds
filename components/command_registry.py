@@ -34,6 +34,7 @@ from typing import Iterator, List, Optional, Tuple
 FEATURE_HITL = "hitl"
 FEATURE_CHAT_HISTORY = "chat_history"
 FEATURE_PROJECT_MANAGER = "project_manager"
+FEATURE_MIKROTIK = "mikrotik"
 FEATURE_TUI = "tui"
 
 
@@ -79,6 +80,7 @@ class HelpOptions:
         hitl: Show the Human-in-the-Loop commands.
         chat_history: Show the Chat History Manager commands.
         project_manager: Show the Project / workspace commands.
+        mikrotik: Show the MikroTik RouterOS commands.
         tui: Show commands that only exist inside the multi-window TUI.
         keyboard_shortcuts: Show the TUI keyboard navigation cheat sheet.
     """
@@ -86,6 +88,7 @@ class HelpOptions:
     hitl: bool = True
     chat_history: bool = True
     project_manager: bool = True
+    mikrotik: bool = True
     tui: bool = False
     keyboard_shortcuts: bool = False
 
@@ -230,6 +233,36 @@ COMMAND_SPECS: Tuple[CommandSpec, ...] = (
         feature=FEATURE_PROJECT_MANAGER,
     ),
 
+    # ---- MikroTik RouterOS ----------------------------------------------
+    CommandSpec(
+        name="\\routers",
+        description="List the configured MikroTik routers and their status.",
+        usage="\\routers",
+        category="Network",
+        feature=FEATURE_MIKROTIK,
+    ),
+    CommandSpec(
+        name="\\router-health",
+        description="Show the health of a MikroTik router (CPU, memory, disk).",
+        usage="\\router-health <target>",
+        category="Network",
+        feature=FEATURE_MIKROTIK,
+    ),
+    CommandSpec(
+        name="\\router-interfaces",
+        description="List the network interfaces of a MikroTik router.",
+        usage="\\router-interfaces <target>",
+        category="Network",
+        feature=FEATURE_MIKROTIK,
+    ),
+    CommandSpec(
+        name="\\router-backup",
+        description="Export the configuration of a MikroTik router.",
+        usage="\\router-backup <target>",
+        category="Network",
+        feature=FEATURE_MIKROTIK,
+    ),
+
     # ---- Chat history ----------------------------------------------------
     CommandSpec(
         name="\\chat-sessions",
@@ -294,6 +327,7 @@ CATEGORY_ORDER: Tuple[str, ...] = (
     "HITL",
     "Tools",
     "Projects",
+    "Network",
     "Chat",
 )
 
@@ -303,6 +337,7 @@ CATEGORY_TITLES = {
     "HITL": "Human-in-the-Loop (HITL)",
     "Tools": "Tool Selection",
     "Projects": "Project Management",
+    "Network": "Network Devices (MikroTik RouterOS)",
     "Chat": "Chat History",
 }
 
@@ -518,6 +553,7 @@ __all__ = [
     "FEATURE_HITL",
     "FEATURE_CHAT_HISTORY",
     "FEATURE_PROJECT_MANAGER",
+    "FEATURE_MIKROTIK",
     "FEATURE_TUI",
     "COMMAND_SPECS",
     "CATEGORY_ORDER",
