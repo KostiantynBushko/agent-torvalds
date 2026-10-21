@@ -133,7 +133,7 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
   - Chat History Manager: multi-user, multi-session history with `\chat-*` commands
   - Runtime Prompt Injection: dynamic system prompt derived from the active project
   - Callback-manager propagation for LLM-level event tracking
-- TUI slash commands: `\tools`, `\tool-list`, `\projects`, `\project-info`,
+- TUI slash commands: `\help`, `\tools`, `\tool-list`, `\projects`, `\project-info`,
   `\project-status`, `\project-summary`, `\chat-sessions`, `\chat-select`, `\chat-info`, …
 - Seamless fallback to the classic linear REPL via `--no-tui` or in headless/piped environments
 
@@ -164,6 +164,7 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 | **Chat Memory** | Persistent conversation memory with LlamaIndex integration |
 | **Multi-Session Chat History** | Isolated per-session conversations, multi-user scoping, and database-persisted active session |
 | **Chat Session Commands** | `\chat-sessions`, `\chat-select`, `\chat-create`, `\chat-delete`, `\chat-rename`, `\chat-info`, `\chat-clear` |
+| **Interactive Help** | `\help` lists every available command with its description, filtered by the features enabled in the current session |
 | **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
 | **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
 | **On-Demand Tool Loading** | Semantic tool retrieval to reduce context window pollution |

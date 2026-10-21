@@ -1,5 +1,45 @@
 # Changelog
 
+## [Unreleased] - Interactive Help Command
+
+### Features
+- **`\help` command** — typing `\help` in any interactive session now lists
+  every available command together with a short description, grouped by
+  category (General, Statistics, HITL, Tools, Projects, Chat). It works in the
+  multi-window TUI (rendered as Markdown in the document pane) and in the
+  classic linear REPL of both `agent-torvalds.py` and `agent-torvalds-mw.py`.
+- **Central command registry** — the new `components/command_registry.py`
+  declares every interactive command exactly once, with its description,
+  usage, category, aliases and the feature flag that gates it. Both
+  orchestrators render their help screen from this registry, so the help
+  output can no longer drift away from the real behaviour. The help screen is
+  filtered by the features that are actually enabled in the current session
+  (HITL runtime toggle, Chat History Manager, Project Manager, TUI-only
+  commands), so it never advertises a command that would fail.
+- **TUI keyboard cheat sheet** — the TUI help screen also lists the keyboard
+  navigation shortcuts (Enter, PgUp/PgDn, Up/Down, Left/Right, Home/End,
+  Ctrl+C).
+
+### Fixes
+- **Classic REPL project commands** — `agent-torvalds.py` never dispatched the
+  `\projects` / `\project-info` / `\project-status` / `\project-summary`
+  commands, even though the multi-window agent did. The classic orchestrator
+  now handles them, which keeps both agents behaviourally identical.
+- **Unbound `hitl_response` in the classic REPL** — in `agent-torvalds.py` the
+  variable was read outside the `if runtime_toggle_enabled:` block that
+  assigns it, raising `UnboundLocalError` whenever the runtime toggle was
+  disabled (`--hitl-no-runtime-toggle` or `TORVALDS_HITL_RUNTIME_TOGGLE=false`).
+- **Missing HITL commands in the TUI** — the multi-window TUI only handled
+  `\toggle-hitl` and `\hitl-status`. It now routes every HITL command
+  (`\hitl-on`, `\hitl-off`, `\hitl-help`) through the runtime toggle.
+
+### Tests
+- `tests/test_help_command.py` — 32 tests covering the command registry
+  (uniqueness, descriptions, alias handling, feature filtering, rendering),
+  the `\help` command in the TUI and in both classic REPLs, and consistency
+  between the registry and the real dispatchers (HITL toggle, chat manager,
+  project view, tool selection view).
+
 ## [Unreleased] - Agent Cache Zero Stats Fix
 
 ### Fixes

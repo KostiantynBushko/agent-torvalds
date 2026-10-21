@@ -19,6 +19,7 @@ from typing import Any, Callable, Coroutine, Dict, List, Optional
 from rich.console import Console
 from rich.live import Live
 
+from components.command_registry import HelpOptions, build_help_markdown, is_help_command
 from components.tui.layout_manager import (
     build_torvalds_layout,
     render_header,
@@ -33,44 +34,20 @@ from components.tui.telemetry_view import TelemetryView
 
 logger = logging.getLogger(__name__)
 
-HELP_TEXT = """# Torvalds AI Agent — Help & Commands
 
-### Interactive Slash Commands:
-- `\\stats` : View request statistics summary in this document viewer.
-- `\\toggle-hitl` : Toggle Human-In-The-Loop confirmation on/off.
-- `\\hitl-status` : Show HITL configuration, question counts, and timeouts.
-- `\\clear` : Clear current document view.
-- `\\help` : Show this help message.
-- `\\exit` or `\\quit` : Exit the Torvalds agent session.
-
-### Tool Selection:
-- `\\tools` : Open the interactive tool category selection menu.
-- `\\tool-list` : List every available tool with its description.
-- `\\tool-select <spec>` : Select categories non-interactively (e.g. `\\tool-select 1-3,7`).
-
-### Project Management:
-- `\\projects` : List registered projects in the workspace.
-- `\\project-info <name>` : Show details for a registered project.
-- `\\project-status` : Show the git status of the active project.
-- `\\project-summary` : Show a full workspace summary.
-
-### Chat History:
-- `\\chat-sessions` : List all chat sessions for the current user.
-- `\\chat-select <id>` : Switch the active chat session.
-- `\\chat-create <name> [type]` : Create a new chat session.
-- `\\chat-delete <id>` : Delete a chat session.
-- `\\chat-rename <id> <new name>` : Rename a chat session.
-- `\\chat-info` : Show details of the active chat session.
-- `\\chat-clear` : Clear the active session message history.
-
-### Keyboard Navigation:
-- **Enter** : Submit prompt / confirm HITL answer
-- **PgUp / PgDn** : Scroll document viewer up and down
-- **Up / Down** : Browse previous input command history
-- **Left / Right** : Move cursor horizontally in the input bar
-- **Home / End** : Jump to start / end of the input line
-- **Ctrl+C** : Cancel current input or exit if buffer is empty
-"""
+#: The default TUI help screen, generated from the central command registry.
+#: Kept as a module-level constant for existing importers and tests; the
+#: running application uses :meth:`TuiApp._build_help_markdown` instead, which
+#: takes the session's feature flags into account.
+HELP_TEXT = build_help_markdown(
+    HelpOptions(
+        hitl=True,
+        chat_history=True,
+        project_manager=True,
+        tui=True,
+        keyboard_shortcuts=True,
+    )
+)
 
 
 class TuiApp:
@@ -314,8 +291,8 @@ class TuiApp:
             self.state.show_notification("Document pane cleared.")
             return
 
-        if cmd_lower == "\\help":
-            self.state.set_markdown_content(HELP_TEXT)
+        if is_help_command(cmd):
+            self.state.set_markdown_content(self._build_help_markdown())
             return
 
         if cmd_lower == "\\stats":
@@ -328,6 +305,12 @@ class TuiApp:
 
         if cmd_lower == "\\hitl-status":
             self._render_hitl_status_to_markdown()
+            return
+
+        # The remaining HITL commands (\hitl-on, \hitl-off, \hitl-help) are
+        # handled by the runtime toggle itself.
+        if self.hitl_toggle and self.hitl_toggle.is_hitl_command(cmd):
+            asyncio.create_task(self._run_hitl_command(cmd))
             return
 
         # ---- Tool selection commands ----
@@ -411,6 +394,26 @@ class TuiApp:
         finally:
             self.state.set_busy(False)
             self._refresh_cache_metrics()
+
+    def _build_help_markdown(self) -> str:
+        """
+        Build the help screen for the current session.
+
+        The command list comes from the central registry, filtered by the
+        feature flags that are actually enabled in this TUI session, so the
+        help screen never advertises a command that would fail.
+
+        Returns:
+            str: Markdown document describing every available command.
+        """
+        options = HelpOptions(
+            hitl=True,
+            chat_history=self.chat_history_enabled,
+            project_manager=self.project_manager_enabled,
+            tui=True,
+            keyboard_shortcuts=True,
+        )
+        return build_help_markdown(options)
 
     def _render_stats_to_markdown(self) -> None:
         """Format request statistics summary into Markdown view."""
@@ -602,6 +605,29 @@ class TuiApp:
                 pass
         except Exception:
             pass
+
+    async def _run_hitl_command(self, cmd: str) -> None:
+        r"""
+        Run a HITL runtime-toggle command and show its output.
+
+        Args:
+            cmd: The HITL command to execute (e.g. ``\hitl-on``).
+        """
+        if not self.hitl_toggle:
+            return
+
+        try:
+            result = await self.hitl_toggle.process_command(cmd)
+        except Exception as e:  # pragma: no cover - defensive
+            self.state.set_markdown_content(f"# HITL Command\n\n**Error:** {e}")
+            return
+
+        if result:
+            self.state.set_markdown_content(
+                "# HITL Command\n\n```text\n" + result + "\n```"
+            )
+
+        self.state.hitl_enabled = self.hitl_toggle.is_enabled
 
     async def _toggle_hitl_action(self) -> None:
         """Toggle HITL runtime state and notify."""

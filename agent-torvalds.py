@@ -99,6 +99,19 @@ from chat_manager.startup import (
 from chat_manager.commands.handler import is_chat_command, handle_chat_command
 
 # ---------------------------------------------------------------------------
+# Interactive command registry (powers the \help command)
+# ---------------------------------------------------------------------------
+from components.command_registry import (
+    HelpOptions,
+    build_help_text,
+    is_help_command,
+)
+from components.tui.project_manager_view import (
+    handle_project_command_markdown,
+    is_project_command,
+)
+
+# ---------------------------------------------------------------------------
 # Stats handler
 # ---------------------------------------------------------------------------
 from components.stats_handler import (
@@ -847,6 +860,36 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
         return f"Error: {e}\n{traceback.format_exc()}", None
 
 
+def render_help_text(
+    chat_history_enabled: bool = True,
+    runtime_toggle_enabled: bool = True,
+) -> str:
+    """
+    Print the help screen listing every available command.
+
+    The command list is produced by the central command registry and filtered
+    by the feature flags that are active in this session, so the help screen
+    never advertises a command that is currently disabled.
+
+    Args:
+        chat_history_enabled: Whether the Chat History Manager is active.
+        runtime_toggle_enabled: Whether the HITL runtime toggle is active.
+
+    Returns:
+        str: The plain-text help screen that was printed.
+    """
+    options = HelpOptions(
+        hitl=runtime_toggle_enabled,
+        chat_history=chat_history_enabled,
+        project_manager=True,
+        tui=False,
+        keyboard_shortcuts=False,
+    )
+    text = build_help_text(options)
+    console.print(Markdown(f"```text\n{text}```"))
+    return text
+
+
 def render_stats_summary(summary: dict) -> None:
     """Render the stats summary table."""
     if "message" in summary:
@@ -1048,6 +1091,8 @@ async def main():
         if active_project:
             console.print(f"[dim]Active projects: {len(active_project)} registered[/dim]")
 
+    console.print("[dim]Type '\\help' to list all available commands.[/dim]")
+    console.print("[dim]Type '\\projects' to list registered projects.[/dim]")
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
     if chat_history_enabled:
@@ -1162,6 +1207,14 @@ async def main():
             console.print("[yellow]Goodbye![/yellow]")
             break
 
+        if is_help_command(cmd):
+            # Show the help screen with every available command
+            render_help_text(
+                chat_history_enabled=chat_history_enabled,
+                runtime_toggle_enabled=runtime_toggle_enabled,
+            )
+            continue
+
         if cmd.lower() == "\\stats":
             # Show statistics summary
             summary = get_stats_summary()
@@ -1184,6 +1237,16 @@ async def main():
         if not cmd:
             continue
 
+        # Check for project management commands
+        if is_project_command(cmd):
+            try:
+                project_response = handle_project_command_markdown(cmd)
+            except Exception as e:
+                project_response = f"# Project Command\n\n**Error:** {e}"
+            if project_response:
+                console.print(Markdown(project_response))
+            continue
+
         # Check for chat session commands (Step 10)
         if chat_history_enabled and is_chat_command(cmd):
             try:
@@ -1195,6 +1258,7 @@ async def main():
             continue
 
         # Check for HITL commands (only if runtime toggle is enabled)
+        hitl_response = None
         if runtime_toggle_enabled:
             hitl_response = await handle_hitl_command(cmd)
         if hitl_response:
