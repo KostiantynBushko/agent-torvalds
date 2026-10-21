@@ -143,8 +143,12 @@ def create_agent_with_retriever(
         system_prompt: System prompt string.
         max_iterations: Max agent iterations per query.
         similarity_top_k: Tools retrieved per query.
-        callback_manager: Optional callback manager to propagate to the agent
-                         for LLM-level event tracking (stats, HITL, etc.).
+        callback_manager: Optional callback manager to install on the LLM
+                         instance for LLM-level event tracking (stats, HITL,
+                         etc.). The manager passed to ``FunctionAgent`` is
+                         silently dropped — FunctionAgent is a Pydantic model
+                         with no ``callback_manager`` field — so it is bound to
+                         the LLM here.
 
     Returns:
         FunctionAgent configured with tool_retriever.
@@ -160,7 +164,19 @@ def create_agent_with_retriever(
         memory=memory,
         system_prompt=system_prompt,
         max_iterations=max_iterations,
+        # NOTE: FunctionAgent is a Pydantic model with no 'callback_manager'
+        # field, so this argument is silently ignored. The callback manager
+        # that actually receives LLM events is the one on the LLM instance —
+        # it is bound per request by components.stats_handler.bind_callback_manager.
         callback_manager=callback_manager,
     )
+
+    # Make sure the LLM carries the callback manager even if the agent was
+    # created without one: llm_chat_callback resolves the manager from the
+    # LLM instance, and an empty manager means no events are delivered.
+    if callback_manager is not None:
+        from components.stats_handler import bind_callback_manager
+
+        bind_callback_manager(agent, callback_manager)
 
     return agent
