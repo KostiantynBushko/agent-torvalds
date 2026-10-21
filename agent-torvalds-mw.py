@@ -111,6 +111,15 @@ from chat_manager.startup import (
 from chat_manager.commands.handler import is_chat_command, handle_chat_command
 
 # ---------------------------------------------------------------------------
+# Interactive command registry (powers the \help command)
+# ---------------------------------------------------------------------------
+from components.command_registry import (
+    HelpOptions,
+    build_help_text,
+    is_help_command,
+)
+
+# ---------------------------------------------------------------------------
 # Project Management (project detection, workspace config, git status)
 # ---------------------------------------------------------------------------
 from project_manager.agent_project_manager_toolkit import (
@@ -868,6 +877,40 @@ def render_stats_summary(summary: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Help Screen
+# ---------------------------------------------------------------------------
+
+def render_help_text(
+    chat_history_enabled: bool = True,
+    runtime_toggle_enabled: bool = True,
+) -> str:
+    """
+    Print the help screen listing every available command.
+
+    The command list is produced by the central command registry and filtered
+    by the feature flags that are active in this session, so the help screen
+    never advertises a command that is currently disabled.
+
+    Args:
+        chat_history_enabled: Whether the Chat History Manager is active.
+        runtime_toggle_enabled: Whether the HITL runtime toggle is active.
+
+    Returns:
+        str: The plain-text help screen that was printed.
+    """
+    options = HelpOptions(
+        hitl=runtime_toggle_enabled,
+        chat_history=chat_history_enabled,
+        project_manager=True,
+        tui=False,
+        keyboard_shortcuts=False,
+    )
+    text = build_help_text(options)
+    console.print(Markdown(f"```text\n{text}```"))
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Classic Linear REPL Mode
 # ---------------------------------------------------------------------------
 
@@ -889,6 +932,7 @@ async def run_classic_repl(
     console.print(f"[dim]Stats: {'enabled' if stats_enabled else 'disabled'}[/dim]")
     console.print(f"[dim]Event streaming: {'enabled' if events_enabled else 'disabled'}[/dim]")
     console.print(f"[dim]HITL: {'enabled' if human_loop_handler.enable_hitl else 'disabled'} (method={hitl_method}, timeout={hitl_timeout}s)[/dim]")
+    console.print("[dim]Type '\\help' to list all available commands.[/dim]")
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
     console.print("[dim]Type '\\projects' to list registered projects.[/dim]")
@@ -936,6 +980,13 @@ async def run_classic_repl(
             _shutdown_chat_manager()
             console.print("[yellow]Goodbye![/yellow]")
             break
+
+        if is_help_command(cmd):
+            render_help_text(
+                chat_history_enabled=chat_history_enabled,
+                runtime_toggle_enabled=runtime_toggle_enabled,
+            )
+            continue
 
         if cmd.lower() == "\\stats":
             summary = get_stats_summary()

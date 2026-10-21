@@ -27,11 +27,11 @@ Capabilities:
 - Background progress monitoring & real-time telemetry
 
 ### Commands & Shortcuts:
+- `\\help` : Show every available command with its description
 - `\\stats` : View request statistics summary
 - `\\toggle-hitl` : Toggle Human-In-The-Loop confirmation at runtime
 - `\\hitl-status` : Inspect HITL settings and question counts
 - `\\clear` : Clear this document viewer pane
-- `\\help` : Show help and navigation cheat sheet
 - `\\exit` or `\\quit` : Gracefully terminate agent session
 - `PgUp` / `PgDn` : Scroll up and down through document responses
 - `Up` / `Down` : Browse command history in the input bar
