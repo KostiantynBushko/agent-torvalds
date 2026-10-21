@@ -188,14 +188,27 @@ def _cmd_doctor(client: ShodanClient, args: argparse.Namespace) -> int:
 
     checks: List[dict] = []
 
+    # Distinguish "not installed" from "installed but not runnable" — the
+    # latter is the common `pkg_resources` breakage, and needs a different
+    # remedy than "pip install shodan".
+    executable_found = client.runner.resolve_executable() is not None
     cli_available = client.is_available()
+
+    if cli_available:
+        cli_detail = client.config.executable
+    elif executable_found:
+        cli_detail = (
+            f"'{client.config.executable}' was found but does not run "
+            "(broken installation; see the version check below)"
+        )
+    else:
+        cli_detail = f"'{client.config.executable}' not found on PATH"
+
     checks.append(
         {
             "name": "shodan_cli",
             "ok": cli_available,
-            "detail": client.config.executable
-            if cli_available
-            else f"'{client.config.executable}' not found on PATH",
+            "detail": cli_detail,
         }
     )
 
@@ -231,6 +244,28 @@ def _cmd_doctor(client: ShodanClient, args: argparse.Namespace) -> int:
             "detail": config.config_path or "(defaults)",
         }
     )
+
+    # Warn when the resolved `shodan` belongs to a different virtualenv than
+    # the one running the toolkit — a common source of confusing failures
+    # when the toolkit is installed as a library.
+    resolved = client.runner.resolve_executable()
+    if resolved:
+        interpreter = client.runner.interpreter_of(resolved)
+        if interpreter:
+            current = os.path.dirname(os.path.abspath(sys.executable))
+            if os.path.dirname(os.path.abspath(interpreter)) != current:
+                checks.append(
+                    {
+                        "name": "shodan_cli_env",
+                        "ok": False,
+                        "detail": (
+                            f"'{resolved}' belongs to {interpreter}, but the "
+                            f"toolkit runs under {sys.executable}. Install the "
+                            "CLI in this environment: pip install "
+                            f"'shodan-toolkit[cli]'"
+                        ),
+                    }
+                )
 
     try:
         import llama_index.core  # noqa: F401

@@ -227,9 +227,65 @@ class ShodanRunner:
 
         return shutil.which(self.executable)
 
+    def interpreter_of(self, executable: Optional[str] = None) -> Optional[str]:
+        """Return the Python interpreter a console script points at.
+
+        A ``pip``-installed console script starts with a shebang naming the
+        interpreter it was installed for.  When the resolved ``shodan`` comes
+        from a *different* environment than the one running the toolkit, its
+        dependencies may be missing (the classic ``pkg_resources`` breakage),
+        which is worth reporting.
+
+        Args:
+            executable: Path to inspect.  Defaults to the resolved executable.
+
+        Returns:
+            The interpreter path from the shebang, or ``None`` when the file
+            is not a console script.
+        """
+        target = executable or self.resolve_executable()
+        if not target:
+            return None
+
+        try:
+            with open(target, encoding="utf-8", errors="replace") as handle:
+                first = handle.readline().strip()
+        except OSError:
+            return None
+
+        if not first.startswith("#!"):
+            return None
+
+        parts = first[2:].strip().split()
+        if not parts:
+            return None
+
+        # Handle "/usr/bin/env python3" style shebangs.
+        if os.path.basename(parts[0]) == "env" and len(parts) > 1:
+            return parts[1]
+        return parts[0]
+
     def is_available(self) -> bool:
-        """Return True when the Shodan CLI can be located."""
-        return self.resolve_executable() is not None
+        """Return True when the Shodan CLI is present *and* runnable.
+
+        Merely finding the executable on disk is not enough: the Shodan CLI
+        1.31.0 imports ``pkg_resources``, which was removed in setuptools 81+.
+        Such a broken installation still *exists* but fails immediately with
+        ``ModuleNotFoundError``, so a pure existence check would report a
+        healthy CLI and hide the real problem.
+
+        This check therefore executes the binary and looks for a successful
+        exit.  It is deliberately cheap (``shodan --help``) and never raises.
+        """
+        if self.resolve_executable() is None:
+            return False
+
+        try:
+            result = self.run(["--help"], check=False)
+        except Exception:
+            return False
+
+        return result.ok
 
     def version(self) -> str:
         """Return the version string reported by the Shodan CLI."""

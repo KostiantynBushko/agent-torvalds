@@ -219,7 +219,6 @@ class ShodanClient:
         facet_names = list(facets) if facets else ["country", "org"]
         args = [
             "stats",
-            "--no-color",
             "--limit",
             str(limit),
             "--facets",
@@ -247,7 +246,7 @@ class ShodanClient:
         if not query:
             raise ShodanError("A search query is required.")
 
-        args = ["trends", "--no-color"]
+        args = ["trends"]
         if facets:
             args += ["--facets", ",".join(facets)]
         args.append(query)
@@ -309,7 +308,7 @@ class ShodanClient:
         if not ip:
             raise ShodanError("An IP address is required.")
 
-        args = ["host", "--no-color", "--format", "pretty"]
+        args = ["host", "--format", "pretty"]
         if history:
             args.append("--history")
         args.append(ip)
@@ -332,7 +331,7 @@ class ShodanClient:
         """Return the caller's public IP address as seen by Shodan."""
         args = ["myip"]
         if ipv6:
-            args.insert(0, "--ipv6")
+            args.append("--ipv6")
         result = self._runner.run(args)
         return result.output
 
@@ -360,7 +359,7 @@ class ShodanClient:
         if not domain:
             raise ShodanError("A domain name is required.")
 
-        args = ["domain", "--no-color"]
+        args = ["domain"]
         if details:
             args.append("--details")
         if history:

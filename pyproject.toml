@@ -7,17 +7,16 @@ name = "shodan-toolkit"
 version = "0.1.0"
 description = "Python wrapper for the Shodan CLI exposing tools for LlamaIndex FunctionAgent"
 readme = "README.md"
-requires-python = ">=3.9"
-license = { text = "MIT" }
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Kostiantyn Bushko" }]
 keywords = ["shodan", "llama-index", "agent", "security", "tools", "function-tool"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -68,21 +67,22 @@ addopts = "-v --tb=short"
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
-# UP006/UP007/UP035/UP045: the package supports Python 3.9, where PEP 604
-# unions ("X | None") and builtin generics are not valid at runtime in the
-# annotations pydantic evaluates.  Keep typing.Dict/List/Optional.
+# UP006/UP007/UP035/UP045: the package supports Python 3.10, but the
+# annotations are still evaluated at runtime by pydantic and by
+# llama-index's schema builder.  Keep typing.Dict/List/Optional so the
+# package stays importable on 3.10 without surprises.
 ignore = ["E501", "B008", "SIM108", "UP006", "UP007", "UP035", "UP045"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E402"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_unused_configs = true
 ignore_missing_imports = true
 disallow_untyped_defs = false
