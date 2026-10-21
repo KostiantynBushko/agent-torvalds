@@ -332,6 +332,35 @@ def increment_session_commands() -> None:
 # Request statistics persistence
 # ---------------------------------------------------------------------------
 
+
+def _as_number(value, default: float = 0) -> float:
+    """
+    Coerce a value to a number, falling back to *default* when impossible.
+
+    Statistics entries are persisted as JSON and later aggregated with
+    ``sum()``. A ``None`` (or non-numeric) value would raise ``TypeError``
+    during aggregation, so every numeric field is normalised on the way in
+    and on the way out.
+
+    Args:
+        value: The raw value to coerce.
+        default: Value returned when *value* is None or not numeric.
+
+    Returns:
+        float: The coerced number.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return value
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def save_request_stats(stats_dict: dict) -> str:
     """
     Save request statistics to the cache for historical analysis.
@@ -349,17 +378,20 @@ def save_request_stats(stats_dict: dict) -> str:
         if "request_stats" not in cache:
             cache["request_stats"] = []
 
+        # Normalise every numeric field: a missing key must be written as 0,
+        # never as None. Otherwise get_stats_summary()'s summation raises
+        # TypeError on None and the summary degrades to {"error": ...}.
         cache["request_stats"].append({
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "request_id": stats_dict.get("request_id"),
-            "duration_ms": stats_dict.get("total_duration_ms"),
-            "llm_calls": stats_dict.get("llm_call_count"),
-            "total_tokens": stats_dict.get("total_tokens"),
-            "prompt_tokens": stats_dict.get("total_prompt_tokens"),
-            "completion_tokens": stats_dict.get("total_completion_tokens"),
-            "tools_used": stats_dict.get("tools_used", []),
-            "tool_call_count": stats_dict.get("tool_call_count", 0),
-            "error_count": stats_dict.get("error_count", 0),
+            "duration_ms": _as_number(stats_dict.get("total_duration_ms")),
+            "llm_calls": _as_number(stats_dict.get("llm_call_count")),
+            "total_tokens": _as_number(stats_dict.get("total_tokens")),
+            "prompt_tokens": _as_number(stats_dict.get("total_prompt_tokens")),
+            "completion_tokens": _as_number(stats_dict.get("total_completion_tokens")),
+            "tools_used": stats_dict.get("tools_used") or [],
+            "tool_call_count": _as_number(stats_dict.get("tool_call_count")),
+            "error_count": _as_number(stats_dict.get("error_count")),
         })
 
         # Keep last N requests
@@ -386,11 +418,13 @@ def get_stats_summary() -> dict:
         if not stats_list:
             return {"message": "No request statistics available yet."}
 
-        total_tokens = sum(s.get("total_tokens", 0) for s in stats_list)
-        total_duration = sum(s.get("duration_ms", 0) for s in stats_list)
-        total_llm_calls = sum(s.get("llm_calls", 0) for s in stats_list)
-        total_errors = sum(s.get("error_count", 0) for s in stats_list)
-        total_tool_calls = sum(s.get("tool_call_count", 0) for s in stats_list)
+        # Use _as_number so legacy entries (or hand-edited ones) carrying
+        # None cannot break the aggregation.
+        total_tokens = sum(_as_number(s.get("total_tokens")) for s in stats_list)
+        total_duration = sum(_as_number(s.get("duration_ms")) for s in stats_list)
+        total_llm_calls = sum(_as_number(s.get("llm_calls")) for s in stats_list)
+        total_errors = sum(_as_number(s.get("error_count")) for s in stats_list)
+        total_tool_calls = sum(_as_number(s.get("tool_call_count")) for s in stats_list)
 
         return {
             "total_requests": len(stats_list),
