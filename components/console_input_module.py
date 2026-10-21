@@ -66,6 +66,32 @@ class ConsoleInputModule:
         Returns:
             User's response or *default* on timeout / empty input.
         """
+        response, _ = await ConsoleInputModule.prompt_with_status(
+            message=message, default=default, timeout=timeout
+        )
+        return response
+
+    @staticmethod
+    async def prompt_with_status(
+        message: str,
+        default: str = "",
+        timeout: int = 30,
+    ) -> tuple[str, bool]:
+        """Prompt the user and report whether the prompt timed out.
+
+        ``prompt()`` cannot distinguish "the user typed the default answer"
+        from "the user did not answer at all" — both return *default*.  The
+        HITL consumer needs that distinction to log timeouts correctly.
+
+        Args:
+            message: Question / prompt to display.
+            default: Value returned when the user times out or submits
+                     an empty response.
+            timeout: Seconds to wait for input.
+
+        Returns:
+            ``(response, was_timeout)`` tuple.
+        """
         loop = asyncio.get_event_loop()
 
         def _ask() -> str:
@@ -81,10 +107,13 @@ class ConsoleInputModule:
                 timeout=timeout,
             )
             if isinstance(response, str):
-                return response if response.strip() else default
-            return default
+                if response.strip():
+                    return response, False
+                # An empty answer is treated as "no answer given".
+                return default, True
+            return default, True
         except asyncio.TimeoutError:
-            return default
+            return default, True
 
     async def confirm(
         self,

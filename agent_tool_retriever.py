@@ -133,6 +133,7 @@ def create_agent_with_retriever(
     max_iterations: int = 50,
     similarity_top_k: int = 8,
     callback_manager: Optional[CallbackManager] = None,
+    agent_class: type = FunctionAgent,
 ) -> FunctionAgent:
     """
     Create a FunctionAgent that uses on-demand tool retrieval.
@@ -150,6 +151,11 @@ def create_agent_with_retriever(
                          with no ``callback_manager`` field — so it is bound to
                          the LLM here.
 
+        agent_class: Agent class to instantiate.  Defaults to
+                     ``FunctionAgent``; the HITL-aware orchestrator passes
+                     ``components.hitl_agent.HITLFunctionAgent`` so the agent
+                     can ask the human and wait for the answer.
+
     Returns:
         FunctionAgent configured with tool_retriever.
     """
@@ -158,7 +164,7 @@ def create_agent_with_retriever(
         similarity_top_k=similarity_top_k,
     )
 
-    agent = FunctionAgent(
+    agent = agent_class(
         llm=llm,
         tool_retriever=tool_retriever,
         memory=memory,
