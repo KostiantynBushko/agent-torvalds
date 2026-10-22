@@ -70,6 +70,12 @@ from llama_index.core.base.llms.types import ChatMessage
 from workflows import Context, step
 from workflows.events import StopEvent
 
+from components.hitl_timeout import (
+    NO_TIMEOUT,
+    describe_timeout,
+    is_no_timeout,
+    normalize_timeout,
+)
 from components.hitl_events import AgentAnswerEvent, AgentQuestionEvent
 
 logger = logging.getLogger(__name__)
@@ -208,14 +214,16 @@ class HITLFunctionAgent(FunctionAgent):
         hitl_enabled: Master switch for HITL.  When ``False`` the agent
             behaves exactly like a plain ``FunctionAgent``.
         hitl_default_timeout: Default number of seconds to wait for an
-            answer before falling back to ``hitl_default_answer``.
+            answer before falling back to ``hitl_default_answer``.  ``-1``
+            (the default) means *no timeout*: the agent waits for the
+            human indefinitely.
         hitl_default_answer: Fallback answer used on timeout.
         hitl_question_patterns: Optional list of regex strings overriding
             the built-in question detection patterns.
     """
 
     hitl_enabled: bool = True
-    hitl_default_timeout: int = 30
+    hitl_default_timeout: int = NO_TIMEOUT
     hitl_default_answer: str = ""
     hitl_question_patterns: Optional[List[str]] = None
 
@@ -289,10 +297,10 @@ class HITLFunctionAgent(FunctionAgent):
         input_type = detect_input_type(text)
 
         logger.info(
-            "HITL question detected (%s, type=%s, timeout=%ds)",
+            "HITL question detected (%s, type=%s, timeout=%s)",
             question_id,
             input_type,
-            timeout,
+            describe_timeout(timeout),
         )
 
         question_event = AgentQuestionEvent(
@@ -313,7 +321,16 @@ class HITLFunctionAgent(FunctionAgent):
                 waiter_event=question_event,
                 waiter_id=waiter_id,
                 requirements={"question_id": question_id},
-                timeout=timeout + 5,
+                # ``None`` means "wait forever".  The extra 5 seconds are a
+                # grace period on top of a *finite* timeout, so the step
+                # does not give up before the consumer had a chance to
+                # answer.  With no timeout (-1) there is nothing to pad:
+                # the agent waits for the human for as long as it takes.
+                timeout=(
+                    None
+                    if is_no_timeout(timeout)
+                    else normalize_timeout(timeout) + 5
+                ),
             )
         except asyncio.TimeoutError:
             logger.warning(

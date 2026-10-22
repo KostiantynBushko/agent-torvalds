@@ -5,6 +5,9 @@ Extends the existing WhiptailPasswordPrompter for general HITL input.
 Provides dialog-based interaction with timeout support.  Falls back to
 default values when whiptail is unavailable or an error occurs.
 
+The default timeout is ``-1``, which means *no timeout*: the dialog waits
+for the human indefinitely.  See ``components/hitl_timeout.py``.
+
 Usage:
     from components.whiptail_input_module import WhiptailInputModule
 
@@ -27,6 +30,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import List, Optional
+
+from components.hitl_timeout import NO_TIMEOUT, normalize_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +86,7 @@ class WhiptailInputModule:
         self,
         message: str,
         default: str = "",
-        timeout: int = 30,
+        timeout: int = NO_TIMEOUT,
         title: Optional[str] = None,
     ) -> str:
         """Prompt user for input via whiptail dialog with timeout.
@@ -89,7 +94,8 @@ class WhiptailInputModule:
         Args:
             message: Question to display.
             default: Value returned on timeout or error.
-            timeout: Seconds to wait for a response.
+            timeout: Seconds to wait for a response.  ``-1`` (the default)
+                     means *no timeout*: wait for the human indefinitely.
             title: Optional dialog title override.
 
         Returns:
@@ -114,9 +120,10 @@ class WhiptailInputModule:
                 return wt.prompt(msg=message, default=default, password=False)
 
             loop = asyncio.get_event_loop()
+            # ``None`` means "wait forever" for asyncio.
             response = await asyncio.wait_for(
                 loop.run_in_executor(None, _ask),
-                timeout=timeout,
+                timeout=normalize_timeout(timeout),
             )
             return response if response.strip() else default
 
@@ -131,7 +138,7 @@ class WhiptailInputModule:
         self,
         message: str,
         default_yes: bool = True,
-        timeout: int = 30,
+        timeout: int = NO_TIMEOUT,
         title: Optional[str] = None,
     ) -> bool:
         """Ask for yes / no confirmation via whiptail dialog.
@@ -139,7 +146,8 @@ class WhiptailInputModule:
         Args:
             message: Question to display.
             default_yes: Default value on timeout / error.
-            timeout: Seconds to wait.
+            timeout: Seconds to wait.  ``-1`` (the default) means *no
+                     timeout*: wait for the human indefinitely.
             title: Optional dialog title override.
 
         Returns:
@@ -171,9 +179,10 @@ class WhiptailInputModule:
                 return result.returncode == 0
 
             loop = asyncio.get_event_loop()
+            # ``None`` means "wait forever" for asyncio.
             return await asyncio.wait_for(
                 loop.run_in_executor(None, _ask),
-                timeout=timeout,
+                timeout=normalize_timeout(timeout),
             )
 
         except asyncio.TimeoutError:
@@ -187,7 +196,7 @@ class WhiptailInputModule:
         self,
         message: str,
         options: List[str],
-        timeout: int = 30,
+        timeout: int = NO_TIMEOUT,
         title: Optional[str] = None,
     ) -> str:
         """Display a numbered menu via whiptail dialog.
@@ -195,7 +204,8 @@ class WhiptailInputModule:
         Args:
             message: Menu title / question.
             options: List of choice descriptions.
-            timeout: Seconds to wait.
+            timeout: Seconds to wait.  ``-1`` (the default) means *no
+                     timeout*: wait for the human indefinitely.
             title: Optional dialog title override.
 
         Returns:
@@ -224,9 +234,10 @@ class WhiptailInputModule:
                 return wt.menu(msg=message, items=items)
 
             loop = asyncio.get_event_loop()
+            # ``None`` means "wait forever" for asyncio.
             tag = await asyncio.wait_for(
                 loop.run_in_executor(None, _ask),
-                timeout=timeout,
+                timeout=normalize_timeout(timeout),
             )
 
             try:

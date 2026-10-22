@@ -11,6 +11,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from components.hitl_timeout import NO_TIMEOUT, is_no_timeout, normalize_timeout
+
 logger = logging.getLogger(__name__)
 
 
@@ -94,7 +96,9 @@ class TuiState:
         self.hitl_active: bool = False
         self.hitl_prompt: str = ""
         self.hitl_input_type: str = "text"  # "text", "yesno", "password"
-        self.hitl_timeout: int = 30
+        # ``-1`` means "no timeout": the TUI waits for the human
+        # indefinitely and shows no countdown.
+        self.hitl_timeout: int = NO_TIMEOUT
         self.hitl_start_time: float = 0.0
         self.hitl_default_answer: str = ""
         self.hitl_enabled: bool = True
@@ -259,9 +263,16 @@ class TuiState:
             return None
 
     def get_hitl_time_remaining(self) -> Optional[float]:
-        """Calculate remaining time for active HITL prompt."""
+        """Calculate remaining time for active HITL prompt.
+
+        Returns ``None`` when there is no countdown to show — either no
+        prompt is active, or the prompt has no timeout (``-1``), in which
+        case the agent waits for the human indefinitely.
+        """
         with self._lock:
             if not self.hitl_active:
+                return None
+            if is_no_timeout(self.hitl_timeout):
                 return None
             elapsed = time.time() - self.hitl_start_time
             remaining = max(0.0, self.hitl_timeout - elapsed)
@@ -345,6 +356,8 @@ class TuiInputModule:
             message: The question or confirmation prompt.
             default: Fallback answer on timeout.
             timeout: Timeout in seconds (defaults to state.hitl_timeout).
+                ``-1`` means *no timeout*: wait for the human
+                indefinitely.
             
         Returns:
             The user's input string, or default on timeout.
@@ -367,8 +380,11 @@ class TuiInputModule:
             self.state.cursor_pos = 0
 
         try:
-            if timeout_val and timeout_val > 0:
-                answer = await asyncio.wait_for(future, timeout=float(timeout_val))
+            # ``None`` means "wait forever" — that is what the no-timeout
+            # convention (-1) translates to.
+            wait_timeout = normalize_timeout(timeout_val)
+            if wait_timeout is not None:
+                answer = await asyncio.wait_for(future, timeout=wait_timeout)
             else:
                 answer = await future
 

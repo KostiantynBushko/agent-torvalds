@@ -38,7 +38,7 @@ Usage:
     q = AgentQuestionEvent(
         question="Should I install this package?",
         question_id="pkg-install-001",
-        timeout=60,
+        timeout=60,          # -1 (the default) means "wait forever"
         default_answer="yes",
         input_type="yesno",
         context="User requested to install nginx",
@@ -57,6 +57,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from workflows.events import HumanResponseEvent, InputRequiredEvent
+
+from components.hitl_timeout import NO_TIMEOUT, validate_timeout
 
 
 # Valid input types for HITL questions
@@ -82,7 +84,8 @@ class AgentQuestionEvent(InputRequiredEvent):
         question_id: Unique identifier for this question (used to match
                      answers back to questions).
         timeout: Seconds to wait for a response before falling back to
-                 ``default_answer``.  Default is 30.
+                 ``default_answer``.  ``-1`` (the default) means *no
+                 timeout*: the agent waits for the human indefinitely.
         default_answer: Fallback value used when the user does not respond
                         within the timeout.  Default is ``""``.
         input_type: Expected input format — one of ``"text"``, ``"yesno"``,
@@ -94,7 +97,7 @@ class AgentQuestionEvent(InputRequiredEvent):
 
     question: str
     question_id: str
-    timeout: int = 30
+    timeout: int = NO_TIMEOUT
     default_answer: str = ""
     input_type: str = "text"
     options: List[str] = []
@@ -104,7 +107,7 @@ class AgentQuestionEvent(InputRequiredEvent):
         self,
         question: str,
         question_id: str,
-        timeout: int = 30,
+        timeout: int = NO_TIMEOUT,
         default_answer: str = "",
         input_type: str = "text",
         options: Optional[List[str]] = None,
@@ -131,8 +134,9 @@ class AgentQuestionEvent(InputRequiredEvent):
             raise ValueError("question must not be empty")
         if not self.question_id:
             raise ValueError("question_id must not be empty")
-        if self.timeout < 0:
-            raise ValueError("timeout must be non-negative")
+        # ``-1`` is valid and means "no timeout" — wait for the human
+        # indefinitely.  Anything below that is a typo.
+        validate_timeout(self.timeout)
         if self.input_type not in VALID_INPUT_TYPES:
             raise ValueError(
                 f"input_type must be one of {VALID_INPUT_TYPES}, "

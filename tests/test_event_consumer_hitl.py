@@ -254,7 +254,8 @@ class TestHITLConfiguration:
             console=mock_console,
         )
         
-        assert consumer.hitl_timeout == 30
+        # The default is -1: no timeout, the agent waits for the user.
+        assert consumer.hitl_timeout == -1
         assert consumer.hitl_default_answer == ""
         assert consumer.hitl_enabled is True
 
