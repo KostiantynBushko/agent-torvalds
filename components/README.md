@@ -94,6 +94,29 @@ Real-time event streaming and consumer.
 
 ---
 
+### `ollama_config.py`
+Resolution of the Ollama endpoint used by the chat and the embedding model.
+
+**Purpose:** Provides a single source of truth for the address of the local
+Ollama server, so the chat model and the embedding model can never drift
+apart.
+
+**Features:**
+- Reads `TORVALDS_OLLAMA_HOST`, then `OLLAMA_HOST`, then falls back to
+  `http://localhost:11434`
+- Normalises a bare `host:port` into a full URL with the `http://` scheme
+  (the Ollama *server* accepts `OLLAMA_HOST=0.0.0.0:11434`, the HTTP client
+  needs a URL)
+
+**Usage:**
+```python
+from components.ollama_config import get_ollama_base_url
+
+base_url = get_ollama_base_url()   # e.g. 'http://localhost:11434'
+```
+
+---
+
 ### `__init__.py`
 Package initialization file.
 

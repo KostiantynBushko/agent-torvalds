@@ -206,6 +206,7 @@ Each module has its own README with the full reference:
 | **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
 | **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
 | **On-Demand Tool Loading** | Semantic tool retrieval to reduce context window pollution |
+| **Local-First LLM** | Chat and embedding models served by a local Ollama instance - no cloud API, nothing leaves the machine |
 | **Project Path Loading** | `--project-path` flag to load, scan, and register a specific project on startup |
 | **Human-in-the-Loop** | Interactive questioning with runtime toggle; by default there is **no timeout** — the agent waits for the user |
 | **Technical Computing** | Engineering and scientific computation support |
@@ -233,22 +234,219 @@ source .venv/bin/activate
 # 4. Install dependencies
 pip install -r requirements.txt
 
-# 5. Configure database connections (if using DB toolkit)
+# 5. Install Ollama and pull the models (REQUIRED - see below)
+# Linux:
+curl -fsSL https://ollama.com/install.sh | sh
+# macOS:
+#   brew install ollama
+# Windows: download OllamaSetup.exe from https://ollama.com/download
+ollama pull richardyoung/qwen3.6-27b-abliterated:Q4_K_M   # chat model
+ollama pull nomic-embed-text                              # embedding model
+
+# 6. Configure database connections (if using DB toolkit)
 # Edit db_toolkit_config.yaml with your database credentials
+
+# 7. Run the agent
+python agent-torvalds.py
 ```
+
+Step 5 is mandatory: the agent has no cloud fallback. It talks to a local
+Ollama server for both the chat model and the embedding model. The
+[Local LLM Setup](#local-llm-setup-ollama) section below walks through it in
+detail.
 
 ### Prerequisites
 
 - Python 3.8+
+- **Ollama** running locally, with the chat model and the embedding model
+  pulled (see [Local LLM Setup](#local-llm-setup-ollama)) - **required**
 - PostgreSQL (optional, for database toolkit)
 - MySQL (optional, for database toolkit)
 - Git installed on the system
-- Ollama (optional, for on-demand tool retrieval with embeddings)
 - Debian/Ubuntu system (for APT package management toolkit)
 
 ---
 
+## Local LLM Setup (Ollama)
+
+Torvalds runs entirely on your own hardware. The chat model and the embedding
+model are served by a local [Ollama](https://ollama.com) instance, so no
+prompt, file or command ever leaves the machine.
+
+The agent needs **two** models:
+
+| Purpose | Model | Required for | Download |
+|---|---|---|---|
+| Chat & tool calling | `richardyoung/qwen3.6-27b-abliterated:Q4_K_M` (default) | every run | ~16 GB |
+| Embeddings | `nomic-embed-text` | the default tool-retrieval mode | ~274 MB |
+
+> The embedding model is only needed in the **default (retriever) mode**.
+> With `--full` or `--select` the agent loads the tools directly and never
+> builds the vector index, so `nomic-embed-text` can be skipped.
+
+A full walkthrough, including Docker, remote endpoints and the complete
+troubleshooting matrix, is in **[docs/ollama-setup.md](docs/ollama-setup.md)**.
+
+### Step 1 — Install Ollama
+
+**Linux** — installs the binary to `/usr/local/bin/ollama` and registers a
+`systemd` service that starts on boot:
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+
+# The service is usually started automatically; otherwise:
+sudo systemctl start ollama
+sudo systemctl status ollama
+```
+
+**macOS** — via Homebrew, or download `Ollama-darwin.zip` from
+<https://ollama.com/download>:
+
+```bash
+brew install ollama
+ollama serve            # the desktop app starts the server for you
+```
+
+**Windows** — download `OllamaSetup.exe` from <https://ollama.com/download>
+and run it. The app starts the server automatically.
+
+**Docker** — a containerised server with the models kept in a named volume:
+
+```bash
+docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
+```
+
+### Step 2 — Verify that the server is up
+
+```bash
+curl http://localhost:11434/api/version
+# {"version":"0.33.2"}
+```
+
+`ollama list` prints the models that are currently installed. An empty table
+means no model has been pulled yet.
+
+### Step 3 — Pull the models
+
+```bash
+# Chat model - the default the agent expects (~16 GB)
+ollama pull richardyoung/qwen3.6-27b-abliterated:Q4_K_M
+
+# Embedding model - required by the default tool-retrieval mode (~274 MB)
+ollama pull nomic-embed-text
+
+# Confirm both are present
+ollama list
+```
+
+Smaller chat models, if the 16 GB one does not fit your machine:
+
+```bash
+ollama pull qwen2.5-coder:7b-instruct-q4_K_M                                # ~4.7 GB
+ollama pull richardyoung/qwen3-8b-abliterated:Q4_K_M                         # ~5.0 GB
+ollama pull richardyoung/qwen2.5-coder-14b-instruct-abliterated:Q4_K_M      # ~9.0 GB
+```
+
+### Step 4 — Point the agent at the model
+
+The default model is the one pulled above, so nothing has to be configured.
+Set `TORVALDS_MODEL` only when you choose a different one:
+
+```bash
+export TORVALDS_MODEL="qwen2.5-coder:7b-instruct-q4_K_M"
+```
+
+If Ollama does not listen on `http://localhost:11434` (another host, a
+container, a non-default port), point the agent at it:
+
+```bash
+export TORVALDS_OLLAMA_HOST="http://192.168.1.10:11434"
+```
+
+A bare `host:port` is accepted as well - the scheme is filled in for you.
+`OLLAMA_HOST` is honoured as a fallback, but `TORVALDS_OLLAMA_HOST` wins when
+both are set.
+
+### Step 5 — Run the agent
+
+```bash
+source .venv/bin/activate
+python agent-torvalds.py
+```
+
+The multi-window TUI variant:
+
+```bash
+python agent-torvalds-mw.py
+```
+
+The **first** request is slow: Ollama loads the model into RAM/VRAM on the
+first call. Watch the loaded models with `ollama ps` and free the memory
+again with `ollama stop <model>`.
+
+### Verify the whole chain without starting the agent
+
+```bash
+# Chat model
+curl http://localhost:11434/api/generate -d '{
+  "model": "richardyoung/qwen3.6-27b-abliterated:Q4_K_M",
+  "prompt": "Reply with exactly: OK",
+  "stream": false
+}'
+
+# Embedding model
+curl http://localhost:11434/api/embeddings -d '{
+  "model": "nomic-embed-text",
+  "prompt": "hello world"
+}'
+```
+
+Both endpoints must answer before the agent is started.
+
+### Hardware sizing
+
+| Model | Disk | RAM/VRAM needed (Q4) | Notes |
+|---|---|---|---|
+| `qwen2.5-coder:7b-instruct-q4_K_M` | 4.7 GB | ~6 GB | fastest, smallest machines |
+| `richardyoung/qwen3-8b-abliterated:Q4_K_M` | 5.0 GB | ~7 GB | |
+| `richardyoung/qwen2.5-coder-14b-instruct-abliterated:Q4_K_M` | 9.0 GB | ~12 GB | good balance |
+| `richardyoung/qwen3.6-27b-abliterated:Q4_K_M` | 16 GB | ~20 GB | default, best quality |
+| `nomic-embed-text` | 274 MB | ~0.3 GB | embeddings only |
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Connection refused` / `Could not reach Ollama` | the server is not running | `ollama serve`, or `sudo systemctl start ollama` |
+| `model '...' not found` (404) | the model was never pulled, or the tag is wrong | `ollama pull <model>` - the tag must match `ollama list` exactly |
+| `nomic-embed-text` not found | the embedding model is missing | `ollama pull nomic-embed-text` |
+| `address already in use ... 11434` | an Ollama instance is already listening | it is already running - check `ollama list` |
+| The first answer takes minutes | the model is being loaded into memory | expected on the first call; `ollama ps` shows what is resident |
+| The process is killed / out of memory | the model does not fit | use a smaller model, or `ollama stop <model>` to unload |
+| Answers are slow | running on CPU only | smaller model, or give Ollama GPU acceleration |
+| The agent starts but every request fails | wrong endpoint | check `TORVALDS_OLLAMA_HOST` and `curl http://localhost:11434/api/version` |
+
+---
+
 ## Configuration
+
+### Ollama / LLM Configuration
+
+The agent is configured through environment variables. All of them can also be
+given inline, e.g. `TORVALDS_MODEL=qwen2.5-coder:7b python agent-torvalds.py`.
+
+| Variable | Default | Description |
+|---|---|---|
+| `TORVALDS_MODEL` | `richardyoung/qwen3.6-27b-abliterated:Q4_K_M` | Chat model served by Ollama. Must be pulled with `ollama pull` first |
+| `TORVALDS_OLLAMA_HOST` | `http://localhost:11434` | Endpoint of the Ollama server. A bare `host:port` is accepted and gets `http://` prepended |
+| `OLLAMA_HOST` | - | Fallback for `TORVALDS_OLLAMA_HOST` when the latter is not set |
+| `TORVALDS_REQUEST_TIMEOUT` | `99999` | LLM request timeout in seconds |
+| `TORVALDS_MAX_ITERATIONS` | `50` | Maximum tool-calling iterations per request |
+| `TORVALDS_SIMILARITY_TOP_K` | `8` | Number of tools retrieved per query in retriever mode |
+
+See the [Local LLM Setup](#local-llm-setup-ollama) section for the complete
+installation and model-pull walkthrough.
 
 ### Database Configuration
 
@@ -576,11 +774,13 @@ agent-torvalds/
 | docs/                         # Documentation and proposals
 | +-- proposals/                # Design proposals
 | +-- agent_cache_system.md
+| +-- ollama-setup.md           # Local LLM setup: install Ollama, pull models, run the agent
 | +-- extended_logging_statistics.md
 | +-- on_demand_tool_loading.md
 | components/                   # Helper modules and utilities
 | +-- README.md                 # Components documentation
 | +-- __init__.py
+| +-- ollama_config.py          # Ollama endpoint resolution (TORVALDS_OLLAMA_HOST)
 | +-- whiptail_password.py      # Whiptail password prompter
 | +-- spinner_controller.py     # Spinner controller
 | +-- state_handler.py          # State management handler
@@ -657,6 +857,7 @@ agent-torvalds/
 | +-- test_stats.py
 | +-- test_stats_mock.py
 | +-- test_logging_cli.py
+| +-- test_ollama_config.py
 ```
 
 ---
