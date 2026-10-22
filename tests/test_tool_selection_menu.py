@@ -15,12 +15,18 @@ lock the menu against it:
 * the MikroTik tools must be reachable through every load path (menu,
   retriever, classic orchestrator, multi-window orchestrator).
 
+The Shodan toolkit is locked down the same way, under the ``Security``
+category: the twelve read-only tools must be discoverable, selectable and
+rendered, and the four write-capable tools must stay out of the menu
+unless the operator opts in.
+
 Run with:
     pytest tests/test_tool_selection_menu.py -v
 """
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import io
 import os
@@ -48,6 +54,58 @@ MIKROTIK_TOOL_NAMES = {
     "get_routeros_interfaces",
     "get_routeros_health",
 }
+
+# ---------------------------------------------------------------------------
+# The Shodan tools, by name
+# ---------------------------------------------------------------------------
+
+#: The twelve read-only Shodan tools. The four write-capable tools only
+#: join them when the operator opts in with
+#: ``TORVALDS_SHODAN_ALLOW_MUTATING=1``.
+SHODAN_READONLY_TOOL_NAMES = {
+    "shodan_search",
+    "shodan_count",
+    "shodan_host",
+    "shodan_stats",
+    "shodan_trends",
+    "shodan_domain_info",
+    "shodan_honeyscore",
+    "shodan_myip",
+    "shodan_account_info",
+    "shodan_list_alerts",
+    "shodan_list_scans",
+    "shodan_raw",
+}
+
+#: The four Shodan tools that change account state or consume credits.
+SHODAN_MUTATING_TOOL_NAMES = {
+    "shodan_create_alert",
+    "shodan_delete_alert",
+    "shodan_submit_scan",
+    "shodan_download",
+}
+
+#: The environment variable that opts the agent into the write-capable
+#: Shodan tools. The adapter reads it itself, so every load path - the
+#: menu, the retriever and both orchestrators - behaves identically.
+SHODAN_MUTATING_ENV_VAR = "TORVALDS_SHODAN_ALLOW_MUTATING"
+
+
+@contextlib.contextmanager
+def _shodan_opt_in(value: str | None = None):
+    """Control the mutating-tools opt-in for the duration of the block.
+
+    The menu is read-only by default and the opt-in is an environment
+    variable, so a developer who has it exported in their shell would
+    otherwise see the tests below fail. ``value=None`` removes the
+    variable, which is the state of a clean environment.
+    """
+    with patch.dict(os.environ):
+        os.environ.pop(SHODAN_MUTATING_ENV_VAR, None)
+        if value is not None:
+            os.environ[SHODAN_MUTATING_ENV_VAR] = value
+        yield
+
 
 #: Tool names the discovery menu and the retriever are allowed to share
 #: with the orchestrators' ``--full`` inventory. The Excel and data
@@ -283,6 +341,31 @@ class TestMenuParity(unittest.TestCase):
                 f"MikroTik tools missing from the {label}: {sorted(missing)}",
             )
 
+    def test_shodan_is_in_every_load_path(self):
+        """The Shodan tools must be selectable and loadable everywhere."""
+        from agent_tool_selection import _discover_tools
+
+        with _shodan_opt_in():
+            menu_names = {t.metadata.name for t in _discover_tools()}
+            classic_names = {
+                t.metadata.name for t in _load_classic_agent()._collect_all_tools()
+            }
+            mw_names = {t.metadata.name for t in _load_mw_agent()._collect_all_tools()}
+            retriever_names = _retriever_tool_names()
+
+        for label, names in (
+            ("selection menu", menu_names),
+            ("classic orchestrator", classic_names),
+            ("multi-window orchestrator", mw_names),
+            ("retriever", retriever_names),
+        ):
+            missing = SHODAN_READONLY_TOOL_NAMES - names
+            self.assertEqual(
+                missing,
+                set(),
+                f"Shodan tools missing from the {label}: {sorted(missing)}",
+            )
+
     def test_menu_orchestrator_difference_is_known(self):
         """
         The menu may not hide a toolkit the orchestrators expose.
@@ -374,6 +457,203 @@ class TestSelectingNetwork(unittest.TestCase):
         output = buffer.getvalue()
         self.assertIn("Network", output)
         self.assertIn("8 tools", output)
+
+
+# ---------------------------------------------------------------------------
+# The Shodan tools in the selection menu
+# ---------------------------------------------------------------------------
+
+class TestSecurityCategory(unittest.TestCase):
+    """The Shodan tools must form the 'Security' category in the menu."""
+
+    @classmethod
+    def setUpClass(cls):
+        from agent_tool_selection import _discover_tools, group_tools_by_category
+
+        with _shodan_opt_in():
+            cls.tools = _discover_tools()
+            cls.groups = group_tools_by_category(cls.tools)
+
+    def test_security_category_exists(self):
+        self.assertIn(
+            "Security",
+            self.groups,
+            "The 'Security' category is missing from the selection menu",
+        )
+
+    def test_security_category_holds_the_shodan_tools(self):
+        security_names = {t.metadata.name for t in self.groups.get("Security", [])}
+        self.assertEqual(
+            security_names,
+            SHODAN_READONLY_TOOL_NAMES,
+            "The 'Security' category does not hold exactly the read-only Shodan tools",
+        )
+
+    def test_the_write_tools_are_not_in_the_menu(self):
+        """The menu must not offer the credit-consuming tools by default."""
+        security_names = {t.metadata.name for t in self.groups.get("Security", [])}
+        self.assertEqual(
+            security_names & SHODAN_MUTATING_TOOL_NAMES,
+            set(),
+            "The write-capable Shodan tools are exposed without the opt-in",
+        )
+
+    def test_every_shodan_tool_reaches_the_menu(self):
+        names = {t.metadata.name for t in self.tools}
+        self.assertEqual(
+            SHODAN_READONLY_TOOL_NAMES - names,
+            set(),
+            "Some Shodan tools are missing from the selection menu",
+        )
+
+    def test_the_shodan_tools_are_not_spread_over_other_categories(self):
+        """A Shodan tool must not be filed under a foreign category."""
+        for category, tools in self.groups.items():
+            if category == "Security":
+                continue
+            foreign = {t.metadata.name for t in tools} & SHODAN_READONLY_TOOL_NAMES
+            self.assertEqual(
+                foreign,
+                set(),
+                f"Shodan tools are grouped under '{category}': {sorted(foreign)}",
+            )
+
+
+class TestSecurityCategoryDescription(unittest.TestCase):
+    """The Security summary must describe real capabilities."""
+
+    def test_security_summary_is_meaningful(self):
+        from agent_shodan_toolkit import get_all_tools
+        from agent_tool_selection import _build_category_description
+
+        with _shodan_opt_in():
+            summary = _build_category_description(get_all_tools())
+
+        self.assertTrue(summary.startswith("Actions: "), summary)
+        self.assertIn("discover", summary)
+        self.assertIn("inspect", summary)
+        self.assertIn("diagnose", summary)
+        self.assertIn("execute", summary)
+
+    def test_no_verb_fallback_leaks_into_the_summary(self):
+        """Every tool must map to a canonical action, not a raw verb."""
+        from agent_shodan_toolkit import get_all_tools
+        from agent_tool_selection import _build_category_description
+
+        with _shodan_opt_in():
+            summary = _build_category_description(get_all_tools())
+
+        self.assertNotRegex(
+            summary,
+            r"(^|,\s*)get($|,)",
+            f"the summary contains a raw verb fallback: {summary}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Selecting the Security category end to end
+# ---------------------------------------------------------------------------
+
+class TestSelectingSecurity(unittest.TestCase):
+    """Selecting the 'Security' category must return the Shodan tools."""
+
+    def test_select_tools_by_category_returns_shodan_tools(self):
+        from agent_tool_selection import select_tools_by_category
+
+        with _shodan_opt_in():
+            tools = select_tools_by_category(categories=["Security"])
+
+        self.assertEqual(
+            {t.metadata.name for t in tools},
+            SHODAN_READONLY_TOOL_NAMES,
+        )
+
+    def test_select_tools_by_category_is_case_insensitive(self):
+        from agent_tool_selection import select_tools_by_category
+
+        with _shodan_opt_in():
+            tools = select_tools_by_category(categories=["security"])
+
+        self.assertEqual(
+            {t.metadata.name for t in tools},
+            SHODAN_READONLY_TOOL_NAMES,
+        )
+
+    def test_interactive_selection_picks_the_security_category(self):
+        """Drive the interactive flow and pick the 'Security' index."""
+        from agent_tool_selection import _discover_tools, group_tools_by_category
+
+        with _shodan_opt_in():
+            tools = _discover_tools()
+            groups = group_tools_by_category(tools)
+            categories = list(groups.keys())
+
+            self.assertIn("Security", categories)
+            index = categories.index("Security") + 1
+
+            import builtins
+
+            prompts: list[str] = []
+            original_input = builtins.input
+
+            def fake_input(prompt=""):
+                prompts.append(prompt)
+                return str(index)
+
+            builtins.input = fake_input
+            try:
+                from agent_tool_selection import select_tools_interactively
+
+                selected = select_tools_interactively(all_tools=tools)
+            finally:
+                builtins.input = original_input
+
+        self.assertEqual(len(prompts), 1)
+        self.assertEqual(
+            {t.metadata.name for t in selected},
+            SHODAN_READONLY_TOOL_NAMES,
+        )
+
+    def test_menu_displays_the_security_category(self):
+        """The rendered menu must mention the Security category."""
+        from agent_tool_selection import (
+            _discover_tools,
+            display_categories_for_selection,
+            group_tools_by_category,
+        )
+
+        with _shodan_opt_in():
+            groups = group_tools_by_category(_discover_tools())
+
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                display_categories_for_selection(groups)
+
+        output = buffer.getvalue()
+        self.assertIn("Security", output)
+        self.assertIn("12 tools", output)
+
+    def test_the_write_tools_join_the_menu_after_the_opt_in(self):
+        """With the opt-in, the write-capable tools join the category."""
+        from agent_tool_selection import (
+            _discover_tools,
+            display_categories_for_selection,
+            group_tools_by_category,
+        )
+
+        with _shodan_opt_in("1"):
+            groups = group_tools_by_category(_discover_tools())
+            security_names = {t.metadata.name for t in groups.get("Security", [])}
+
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                display_categories_for_selection(groups)
+
+        self.assertEqual(
+            security_names,
+            SHODAN_READONLY_TOOL_NAMES | SHODAN_MUTATING_TOOL_NAMES,
+        )
+        self.assertIn("16 tools", buffer.getvalue())
 
 
 if __name__ == "__main__":
