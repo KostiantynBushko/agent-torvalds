@@ -344,12 +344,26 @@ prevents a broken CLI from another virtualenv being picked up by mistake.
 ## Testing
 
 ```bash
-pytest                               # 134 unit tests
+pytest                               # 153 tests
 python examples/verify_parsers.py    # 51 checks against real CLI output
 python examples/verify_argv.py       # 17 argument vectors vs. the real binary
 python examples/smoke_test.py        # end-to-end against the real binary
 python examples/agent_demo.py        # agent integration, fully offline
 ```
+
+The suite covers the library and the agent adapter alike, because both
+live under `tests/`:
+
+| File | Covers |
+|---|---|
+| `tests/test_client.py`, `tests/test_parsers.py`, `tests/test_config_cli.py` | the client, the parsers, the configuration |
+| `tests/test_cli_contract.py`, `tests/test_runner_availability.py` | the CLI contract, the availability check |
+| `tests/test_raw_guard.py`, `tests/test_tools.py` | the read-only guard, the tool registry |
+| `tests/test_agent_adapter.py` | the agent adapter: the tool registration, the degradation contract, the load-path parity |
+
+`tests/test_agent_adapter.py` reaches into the agent repository that
+surrounds the toolkit, so it skips itself when the toolkit is used as a
+standalone distribution.
 
 The test suite never touches the network: the CLI is replaced with a
 `FakeRunner` that records the argument vector and replays canned output.
@@ -387,7 +401,8 @@ shodan-toolkit/
 │   ├── parsers.py        text → structured records
 │   ├── runner.py         subprocess execution
 │   └── tools.py          LlamaIndex FunctionTool wrappers
-├── tests/                134 unit tests
+├── tests/                153 tests
+├── conftest.py           makes `src/` importable for the test run
 └── examples/             verification and demo scripts
 ```
 

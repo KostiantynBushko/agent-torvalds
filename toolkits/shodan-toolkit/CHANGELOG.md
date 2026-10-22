@@ -38,6 +38,13 @@ All notable changes to this project are documented in this file.
 - **`tests/test_runner_availability.py`.** Covers the availability check
   against missing, healthy and broken CLI installations.
 - **`tests/test_raw_guard.py`.** Covers the `shodan_raw` read-only guard.
+- **`tests/test_agent_adapter.py`.** Covers the agent adapter that lives
+  outside this package: the tool registration, the degradation contract and
+  the load-path parity. It skips itself when the toolkit is used as a
+  standalone distribution.
+- **`conftest.py`.** Puts the `src/` directory on `sys.path`, so the suite
+  runs against the in-repository copy without `pip install -e .`, and no
+  matter which directory pytest is started from.
 - **`shodan_cli_env` check in `doctor`.** Warns when the resolved `shodan`
   belongs to a different virtualenv than the one running the toolkit — a
   common source of confusing failures when the toolkit is used as a library.

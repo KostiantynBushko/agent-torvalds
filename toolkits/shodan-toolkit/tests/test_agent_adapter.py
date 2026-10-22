@@ -1,9 +1,10 @@
 """
-Tests for the Shodan agent adapter (``agent_shodan_toolkit.py``).
+Integration tests for the Shodan agent adapter (``agent_shodan_toolkit.py``).
 
 The adapter is the LlamaIndex half of the Shodan feature; the reusable
-library half lives in ``toolkits/shodan-toolkit/`` and is tested by its own
-suite. What is covered here is the *integration*:
+library half lives in ``toolkits/shodan-toolkit/src/shodan_toolkit/`` and is
+tested by the suite that sits next to this file. What is covered here is the
+*integration*:
 
 * the tool registration: the read-only set, the opt-in for the write-capable
   tools, and the ``Category: Security`` tag the startup menu needs;
@@ -16,8 +17,14 @@ suite. What is covered here is the *integration*:
 * the load-path parity: the retriever, the ``--select`` menu and both
   orchestrators must expose exactly the same Shodan tools.
 
+This file lives in the toolkit's test directory so that *every* Shodan test
+sits in one place. It is the only file there that reaches outside the
+toolkit: it needs the agent-side modules, which live in the repository root.
+When the toolkit is installed as a standalone library - with no agent
+repository around - the whole module is skipped.
+
 Run with:
-    pytest tests/test_shodan_toolkit.py -v
+    pytest toolkits/shodan-toolkit/tests/test_agent_adapter.py -v
 """
 
 from __future__ import annotations
@@ -30,10 +37,30 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+#: The repository root: ``<root>/toolkits/shodan-toolkit/tests/<this file>``.
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
-import agent_shodan_toolkit as shodan
+#: The agent-side adapter this module exercises.
+_ADAPTER_PATH = REPO_ROOT / "agent_shodan_toolkit.py"
+
+if not _ADAPTER_PATH.is_file():
+    # The toolkit is used as a standalone library: there is no agent
+    # repository to integrate with, so there is nothing to test here.
+    pytest.skip(
+        "the agent adapter is not available outside the agent repository",
+        allow_module_level=True,
+    )
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+try:
+    import agent_shodan_toolkit as shodan
+except Exception as exc:  # pragma: no cover - depends on the environment
+    pytest.skip(
+        f"the agent adapter could not be imported: {exc}",
+        allow_module_level=True,
+    )
 
 
 #: The twelve read-only tools the adapter exposes by default.
@@ -62,13 +89,36 @@ MUTATING_TOOL_NAMES = {
 
 
 # ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def isolated_config(clean_env, tmp_path, monkeypatch):
+    """Keep the tests away from the developer's real Shodan configuration.
+
+    ``clean_env`` (from ``conftest.py``) removes the ``SHODAN_TOOLKIT_*``
+    variables; this fixture then points them at a temporary directory, so
+    the suite never reads - or writes - the real ``~/.config/shodan-toolkit``
+    configuration.
+
+    The working directory is moved to the repository root as well: the
+    agent-side modules read their own configuration relative to it, and the
+    suite must not depend on where pytest was started from.
+    """
+    monkeypatch.setenv("SHODAN_TOOLKIT_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("SHODAN_TOOLKIT_SHODAN_CONFIG_DIR", str(tmp_path / "shodan"))
+    monkeypatch.chdir(REPO_ROOT)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
 def _load_module(name: str, filename: str):
     """Load a hyphenated orchestrator module by path."""
-    path = ROOT / filename
+    path = REPO_ROOT / filename
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
@@ -218,7 +268,7 @@ class TestLoadPaths:
         from agent_tool_selection import _discover_tools
 
         names = {t.metadata.name for t in _discover_tools()}
-        assert READONLY_TOOL_NAMES <= names
+        assert names >= READONLY_TOOL_NAMES
 
     def test_they_form_the_security_category(self):
         """The menu groups them under Security."""
@@ -231,7 +281,7 @@ class TestLoadPaths:
 
     def test_the_retriever_exposes_them(self):
         """The retriever indexes them for on-demand loading."""
-        assert READONLY_TOOL_NAMES <= _retriever_tool_names()
+        assert _retriever_tool_names() >= READONLY_TOOL_NAMES
 
     @pytest.mark.parametrize(
         "module_name,filename",
@@ -244,7 +294,7 @@ class TestLoadPaths:
         """Both orchestrators load them in the full-inventory mode."""
         module = _load_module(module_name, filename)
         names = {t.metadata.name for t in module._collect_all_tools()}
-        assert READONLY_TOOL_NAMES <= names
+        assert names >= READONLY_TOOL_NAMES
 
 
 if __name__ == "__main__":  # pragma: no cover

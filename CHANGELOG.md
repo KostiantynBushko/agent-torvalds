@@ -33,9 +33,9 @@
 - **`docs/shodan-toolkit.md`** — the end-user reference: installation,
   configuration, the tools, the read-only / write split, the limitations,
   the security model and the troubleshooting table.
-- **`tests/test_shodan_toolkit.py`** — 19 tests for the adapter: the tool
-  registration, the degradation contract, the error-payload convention, the
-  raw-command guard and the load-path parity.
+- **`toolkits/shodan-toolkit/tests/test_agent_adapter.py`** — 19 tests for
+  the adapter: the tool registration, the degradation contract, the
+  error-payload convention, the raw-command guard and the load-path parity.
 
 ### Security
 - **Read-only by default** — the four tools that change account state or
@@ -65,6 +65,18 @@
 - `pytest.ini` puts `toolkits/shodan-toolkit/src` on the path and adds the
   toolkit's own test suite to `testpaths`, so the 133 upstream tests run
   against the in-repository copy - the same code the adapter loads.
+- **Every Shodan test now lives under `toolkits/shodan-toolkit/tests/`.**
+  The adapter suite moved there from `tests/test_shodan_toolkit.py` and is
+  now `tests/test_agent_adapter.py`, so the whole feature - the library and
+  its agent integration - is tested from one directory. The moved file
+  skips itself when the toolkit is used as a standalone library, because
+  the agent-side modules it needs do not exist there.
+- **`toolkits/shodan-toolkit/conftest.py`** — puts the toolkit's `src/`
+  directory on `sys.path`. pytest picks the nearest configuration file when
+  it is pointed at a path inside the toolkit, and `pyproject.toml` is the
+  one it finds; without this the suite could only be run from the
+  repository root. The upstream files themselves are untouched, so
+  `git subtree pull` keeps working.
 
 ## [Unreleased] - HITL: no timeout by default
 
