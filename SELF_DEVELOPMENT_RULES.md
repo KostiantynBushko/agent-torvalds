@@ -66,11 +66,66 @@ before any commit is created.
 
 | Item | Status |
 |---|---|
-| Branch | `feature/hitl-no-timeout` (off `master`, `1736839`) |
-| Scope | HITL: no timeout by default — the agent waits for the user |
-| Status | Implemented, tests green, **committed** and pushed to `origin/feature/hitl-no-timeout` |
+| Branch | `feature/shodan-toolkit` (off `master`, `b068337`) |
+| Scope | Shodan internet-exposure toolkit — the project moved into `toolkits/shodan-toolkit/` and wired into the agent |
+| Status | Implemented, tests green, **committed** on the branch. Push pending operator approval |
 
-### Latest change: the HITL timeout is now "no timeout" by default
+### Latest change: the Shodan toolkit
+
+The `shodan-toolkit` project, which lived in its own repository, was moved
+into this one and turned into a first-class toolkit.
+
+**The move.** The commits were transplanted with `git subtree`, so the
+history is preserved rather than squashed:
+
+```
+*   Add 'toolkits/shodan-toolkit/' from commit '26b1fb2...'
+|\
+| * 26b1fb2 chore: remove project-root RULES.md
+| * 72b3239 fix: correct Shodan CLI argument vectors and harden library packaging
+| * 6d33069 Initial commit: shodan-toolkit
+* b068337 fix: make the HITL timeout default to "no timeout" (wait for the user) (#23)
+```
+
+Every file under `toolkits/shodan-toolkit/` has the same blob hash as in the
+upstream repository, so the upstream project stays the source of truth and
+`git subtree pull` can bring in later work. The upstream repository is
+registered as the remote `shodan-local`.
+
+**The integration.** The toolkit is wired into every load path, exactly like
+the MikroTik toolkit:
+
+| Path | Change |
+|---|---|
+| `toolkits/shodan-toolkit/` | The upstream project, verbatim. |
+| `toolkits/__init__.py` | Registers the alias `toolkits.shodan_toolkit` next to `toolkits.mikrotik_routeros`. |
+| `agent_shodan_toolkit.py` | The LlamaIndex adapter. Re-uses the upstream tool functions verbatim; only the descriptions are rewritten so they carry `Category: Security`. |
+| `agent_tool_retriever.py` | New `include_shodan_tools` flag (on by default). |
+| `agent_tool_selection.py` | The tools are discovered for the startup menu, and dedicated action patterns were added. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | The tools are loaded in the full-inventory mode. |
+| `docs/shodan-toolkit.md` | The end-user reference. |
+| `tests/test_shodan_toolkit.py` | 19 tests for the adapter. |
+| `pytest.ini` | `toolkits/shodan-toolkit/src` on the path; the upstream suite added to `testpaths`. |
+| `README.md`, `CHANGELOG.md` | The toolkit is documented. |
+
+**Read-only by default.** The four tools that change account state or
+consume credits (alerts, scans, downloads) are not exposed. The opt-in is
+`TORVALDS_SHODAN_ALLOW_MUTATING=1`, which the adapter reads itself, so the
+retriever, the `--select` menu and both orchestrators behave identically.
+`shodan_raw` cannot be used to bypass the split: the toolkit screens the
+subcommand and refuses the mutating ones.
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/tests/test_shodan_toolkit.py -q
+self-development/.venv/bin/python -m pytest self-development/toolkits/shodan-toolkit/tests -q
+```
+
+19 tests and 133 tests pass. The upstream suite is part of the standard
+`pytest` run.
+
+### Previous work: the HITL timeout is now "no timeout" by default
 
 The Human-in-the-Loop timeout used to default to 30 seconds, so the agent
 gave up on the user and fell back to the default answer. The default is
@@ -116,7 +171,7 @@ The full suite shows **no new failures** against the baseline: the failure
 set at `HEAD` (`1736839`) and after the change is byte-identical —
 77 pre-existing failures, unchanged (76 failed + 1 error).
 
-### Previous work: the MikroTik RouterOS toolkit
+### Earlier work: the MikroTik RouterOS toolkit
 
 | Item | Status |
 |---|---|
