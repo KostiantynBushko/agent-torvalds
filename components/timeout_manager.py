@@ -6,10 +6,14 @@ prompt functions with configurable timeout handling, tracks timed-out
 questions for review, and supplies fallback answers when users do not
 respond in time.
 
+The default timeout is ``-1``, which means *no timeout*: the agent waits
+for the human's answer indefinitely.  See ``components.hitl_timeout.py``
+for the full convention.
+
 Usage:
     from components.timeout_manager import TimeoutManager
 
-    manager = TimeoutManager(default_timeout=30)
+    manager = TimeoutManager(default_timeout=-1)  # wait forever
 
     # Wrap any async prompt function
     answer, timed_out = await manager.prompt_with_timeout(
@@ -29,6 +33,12 @@ import asyncio
 from datetime import datetime
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
+from components.hitl_timeout import (
+    NO_TIMEOUT,
+    normalize_timeout,
+    validate_timeout,
+)
+
 
 class TimeoutManager:
     """Centralized timeout management for HITL prompts.
@@ -41,17 +51,21 @@ class TimeoutManager:
 
     Attributes:
         default_timeout: Default timeout in seconds when none is specified
-                         on individual prompts.
+                         on individual prompts.  ``-1`` means *no timeout*:
+                         the prompt waits for the human indefinitely.
     """
 
-    def __init__(self, default_timeout: int = 30) -> None:
+    def __init__(self, default_timeout: int = NO_TIMEOUT) -> None:
         """Initialise the TimeoutManager.
 
         Args:
-            default_timeout: Default timeout in seconds (default: 30).
+            default_timeout: Default timeout in seconds (default: ``-1``,
+                meaning *no timeout* — wait for the human indefinitely).
+
+        Raises:
+            ValueError: If *default_timeout* is below ``-1``.
         """
-        if default_timeout < 0:
-            raise ValueError("default_timeout must be non-negative")
+        validate_timeout(default_timeout)
         self.default_timeout = default_timeout
         self._timed_out_questions: List[Dict[str, Any]] = []
 
@@ -76,7 +90,8 @@ class TimeoutManager:
             prompt_fn: Async callable that prompts the user and returns
                        a ``str`` answer.
             timeout: Seconds to wait.  Uses ``default_timeout`` when
-                     ``None``.
+                     ``None``.  A negative value (or ``-1``) means *no
+                     timeout*: the prompt waits indefinitely.
             default_answer: Fallback value returned on timeout.
             question_id: Optional identifier for tracking and logging.
 
@@ -85,11 +100,13 @@ class TimeoutManager:
             ``True`` if the timeout fired.
         """
         effective_timeout = timeout if timeout is not None else self.default_timeout
+        # ``None`` means "wait forever" for asyncio.
+        wait_timeout = normalize_timeout(effective_timeout)
 
         try:
             answer = await asyncio.wait_for(
                 prompt_fn(),
-                timeout=effective_timeout,
+                timeout=wait_timeout,
             )
             return answer, False
 
@@ -120,7 +137,8 @@ class TimeoutManager:
 
         Args:
             prompt_fn: Async callable that prompts the user.
-            timeout: Seconds per attempt.
+            timeout: Seconds per attempt.  A negative value (or ``-1``)
+                     means *no timeout*: each attempt waits indefinitely.
             default_answer: Fallback value after all retries exhausted.
             question_id: Optional identifier for tracking.
             max_retries: Number of retry attempts (default: 1).
@@ -130,13 +148,14 @@ class TimeoutManager:
             A tuple ``(answer, was_timeout, attempts_made)``.
         """
         effective_timeout = timeout if timeout is not None else self.default_timeout
+        wait_timeout = normalize_timeout(effective_timeout)
         total_attempts = 1 + max_retries
 
         for attempt in range(total_attempts):
             try:
                 answer = await asyncio.wait_for(
                     prompt_fn(),
-                    timeout=effective_timeout,
+                    timeout=wait_timeout,
                 )
                 return answer, False, attempt + 1
 

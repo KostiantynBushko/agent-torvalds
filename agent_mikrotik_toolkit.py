@@ -409,7 +409,9 @@ async def _request_approval(command: str, target: Any, reasons: list[str]) -> bo
     try:
         from components.console_input_module import ConsoleInputModule
 
-        timeout = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "30"))
+        # ``-1`` means "no timeout": wait for the operator as long as it
+        # takes.  See components/hitl_timeout.py.
+        timeout = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "-1"))
         answer = await ConsoleInputModule.prompt(
             message=message, default="n", timeout=timeout
         )

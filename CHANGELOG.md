@@ -1,5 +1,55 @@
 # Changelog
 
+## [Unreleased] - HITL: no timeout by default
+
+### Fixed
+- **The agent no longer gives up on the user** — the Human-in-the-Loop
+  timeout now defaults to **`-1`, which means "no timeout"**. The agent
+  waits for the answer constantly, for as long as the human needs, instead
+  of falling back to the default answer after 30 seconds. The value can be
+  set to a positive number (`--hitl-timeout 60` or
+  `TORVALDS_HITL_TIMEOUT=60`) to restore a deadline.
+- **`-1` is no longer mangled on the way to the prompt** — the value used
+  to be corrupted at four different places, each of which would have
+  turned "wait forever" into a short wait:
+  - `asyncio.wait_for()` treats every value `<= 0` as *expire
+    immediately*, so the raw `-1` was passed straight through by the
+    timeout manager and both input modules. They now translate it into
+    the `None` that asyncio understands as "wait indefinitely".
+  - `HumanLoopHandler` clamped the value with `max(1, default_timeout)`,
+    which turned `-1` into 1 second.
+  - The agent step padded the timeout with a 5 second grace period
+    (`timeout=timeout + 5`), which would have turned `-1` into a 4 second
+    deadline. The grace period now only applies to a *finite* timeout.
+  - The TUI counted down from a negative value and displayed `0s`; it now
+    shows no countdown at all.
+- **`-1` is accepted as a valid timeout** by `AgentQuestionEvent` and
+  `TimeoutManager` instead of being rejected as "negative". Values below
+  `-1` are still rejected as typos.
+
+### Added
+- **`components/hitl_timeout.py`** — the single source of truth for the
+  convention. It provides `NO_TIMEOUT` (`-1`), `normalize_timeout()` (the
+  translation into the `None` that `asyncio.wait_for` and
+  `Context.wait_for_event` expect), `is_no_timeout()`, `validate_timeout()`
+  and `describe_timeout()` (which renders `-1` as `none` in the status
+  output).
+
+### Changed
+- Every HITL default is now `-1` instead of `30`: the orchestrators
+  (`agent-torvalds.py`, `agent-torvalds-mw.py`), the timeout manager, the
+  console and whiptail input modules, the HITL event classes, the agent
+  step, the event consumer, the TUI state bridge, the MikroTik approval
+  prompt and the project-manager disambiguation prompt.
+- The HITL status output shows `Timeout: none` instead of `Timeout: 30s`.
+
+### Tests
+- **`tests/test_hitl_no_timeout.py`** — 28 new tests covering the helper
+  module, the timeout manager, the console input module, every component
+  default, the agent step (in particular that `-1` reaches
+  `wait_for_event()` as `None` and not as a small number) and both
+  orchestrators.
+
 ## [Unreleased] - MikroTik RouterOS Toolkit
 
 ### Features

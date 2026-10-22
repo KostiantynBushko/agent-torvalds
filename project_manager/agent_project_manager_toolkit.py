@@ -24,6 +24,8 @@ from llama_index.core.tools import FunctionTool
 from project_manager import ProjectManager, ProjectScanner, WorkspaceConfig
 from project_manager.git_status import GitStatusChecker
 
+from components.hitl_timeout import describe_timeout
+
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -85,11 +87,15 @@ def _check_ambiguity(candidates: List[tuple]) -> bool:
 
 
 def _get_hitl_timeout() -> int:
-    """Get HITL timeout from environment."""
+    """Get HITL timeout from environment.
+
+    ``-1`` means "no timeout": the agent waits for the user indefinitely.
+    See ``components/hitl_timeout.py``.
+    """
     try:
-        return int(os.environ.get("TORVALDS_HITL_TIMEOUT", "30"))
+        return int(os.environ.get("TORVALDS_HITL_TIMEOUT", "-1"))
     except (ValueError, TypeError):
-        return 30
+        return -1
 
 
 # =============================================================================
@@ -869,7 +875,7 @@ def _resolve_ambiguity_sync(candidates: List[tuple], path: str) -> Dict[str, Any
     prompt_text = (
         f"\nMultiple project types detected in '{path}':\n"
         f"\n" + "\n".join(options) +
-        f"\n\nEnter the number of the correct project type (default: 1, timeout: {timeout}s):"
+        f"\n\nEnter the number of the correct project type (default: 1, timeout: {describe_timeout(timeout)}):"
     )
 
     # Use ConsoleInputModule for synchronous-style input

@@ -50,10 +50,35 @@ async def parse_agent_output(self, ctx, ev):
         waiter_event=AgentQuestionEvent(...),   # -> published to the stream
         waiter_id=f"hitl_{question_id}",
         requirements={"question_id": question_id},
-        timeout=timeout + 5,
+        # ``None`` means "wait forever".  The 5 second grace period only
+        # applies to a *finite* timeout; with the default timeout of -1
+        # (no timeout) there is nothing to pad.
+        timeout=(
+            None
+            if is_no_timeout(timeout)
+            else normalize_timeout(timeout) + 5
+        ),
     )
     # ... feed the answer back into the scratchpad and continue
 ```
+
+### The timeout convention
+
+The HITL timeout defaults to **`-1`, which means "no timeout"**: the agent
+waits for the human's answer for as long as it takes. The convention lives
+in one place, `components/hitl_timeout.py`, and every component in the HITL
+chain uses it, because the raw value does not survive the trip on its own:
+
+* `asyncio.wait_for()` expires **immediately** for any value `<= 0`, so
+  `-1` has to be translated into the `None` that asyncio calls "forever";
+* `Context.wait_for_event()` takes the same `None`;
+* `HumanLoopHandler` used to clamp the value with `max(1, ...)`, which
+  turned `-1` into 1 second;
+* the agent step used to pad the timeout with `timeout + 5`, which would
+  have turned `-1` into a 4 second deadline.
+
+See `verify_hitl_no_timeout.py` below and the `CHANGELOG.md` entry for the
+full list.
 
 `AgentQuestionEvent` now subclasses `InputRequiredEvent` and
 `AgentAnswerEvent` subclasses `HumanResponseEvent`, so the existing class
@@ -73,6 +98,9 @@ cd self-development
 
 # End-to-end round-trip through the real consumer + agent (8/8)
 ../.venv/bin/python investigate/hitl-investigate/verify_hitl_roundtrip.py
+
+# The "no timeout" convention, traced end to end (12/12)
+../.venv/bin/python investigate/hitl-investigate/verify_hitl_no_timeout.py
 
 # Root-cause diagnostics — contrast the broken and the fixed mechanism
 ../.venv/bin/python investigate/hitl-investigate/diag_callback_events.py

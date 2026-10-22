@@ -207,7 +207,7 @@ Each module has its own README with the full reference:
 | **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
 | **On-Demand Tool Loading** | Semantic tool retrieval to reduce context window pollution |
 | **Project Path Loading** | `--project-path` flag to load, scan, and register a specific project on startup |
-| **Human-in-the-Loop** | Interactive questioning with timeout handling and runtime toggle |
+| **Human-in-the-Loop** | Interactive questioning with runtime toggle; by default there is **no timeout** — the agent waits for the user |
 | **Technical Computing** | Engineering and scientific computation support |
 | **Network Devices** | MikroTik RouterOS configuration and monitoring over SSH, with a risk-classified write path and human approval for destructive changes |
 | **Router Commands** | `\routers`, `\router-health <target>`, `\router-interfaces <target>`, `\router-backup <target>` |
@@ -301,7 +301,7 @@ Configure per-request statistics via environment variables:
 |---|---|---|
 | `TORVALDS_HITL_ENABLED` | `true` | Enable/disable HITL interactions |
 | `TORVALDS_HITL_METHOD` | `console` | Input method: `console` or `whiptail` |
-| `TORVALDS_HITL_TIMEOUT` | `30` | Timeout in seconds for HITL prompts |
+| `TORVALDS_HITL_TIMEOUT` | `-1` | Timeout in seconds for HITL prompts. `-1` = **no timeout**: the agent waits for the user as long as it takes |
 | `TORVALDS_HITL_DEFAULT_ANSWER` | `""` | Default fallback answer on timeout |
 | `TORVALDS_HITL_RUNTIME_TOGGLE` | `true` | Enable/disable runtime toggle commands |
 
@@ -466,7 +466,11 @@ from agent_stats_handler import RequestStatsHandler, StatsRenderer
 
 ### Human-in-the-Loop
 ```bash
-# Start agent with HITL enabled (default)
+# Start agent with HITL enabled (default).
+# The default timeout is -1: no timeout — the agent waits for the user.
+python agent-torvalds.py --hitl-enabled --hitl-method console
+
+# Give the user 60 seconds to answer instead
 python agent-torvalds.py --hitl-enabled --hitl-method console --hitl-timeout 60
 
 # Start agent with HITL disabled
@@ -478,6 +482,22 @@ python agent-torvalds.py --hitl-disabled
 # \hitl-on       - Enable HITL
 # \hitl-off      - Disable HITL
 ```
+
+#### Timeout semantics
+
+The default timeout is **`-1`**, which means **no timeout**: the agent waits
+for the answer for as long as the human needs, and never falls back to the
+default answer on a timer.
+
+| Value | Meaning |
+|---|---|
+| `-1` (default) | **No timeout** — wait for the user indefinitely. |
+| `0` | Expire immediately (useful for scripted runs). |
+| `n > 0` | Wait at most *n* seconds, then use the default answer. |
+
+The value is configured with `--hitl-timeout` or the `TORVALDS_HITL_TIMEOUT`
+environment variable, and it applies uniformly to the agent question, the
+console/whiptail prompt and the multi-window TUI.
 
 ### Chat History Manager
 ```python
@@ -645,7 +665,7 @@ agent-torvalds/
 
 ### Latest Features Added
 - **Chat History Manager**: Multi-user, multi-session chat history with isolated per-session message storage, database-persisted active session, and seven `\chat-*` runtime commands
-- **Human-in-the-Loop (HITL)**: Interactive questioning with timeout handling and runtime toggle
+- **Human-in-the-Loop (HITL)**: Interactive questioning with runtime toggle; no timeout by default — the agent waits for the user
 - **APT Package Management Toolkit**: Full Debian/Ubuntu package installation with multiple password methods
 - **Windows PowerShell Toolkit**: Native Windows PowerShell support for command execution
 - **GitHub Toolkit**: Complete PR lifecycle management including creation, review, commenting, and merging

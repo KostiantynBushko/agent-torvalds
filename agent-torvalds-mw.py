@@ -45,7 +45,8 @@ Environment Variables:
     TORVALDS_TUI_PAGING         Enable scroll buffer pagination (default: true)
     TORVALDS_HITL_ENABLED       Enable/disable HITL (default: true)
     TORVALDS_HITL_METHOD        Input method: 'console' or 'whiptail' (default: console)
-    TORVALDS_HITL_TIMEOUT       Timeout in seconds for HITL prompts (default: 30)
+    TORVALDS_HITL_TIMEOUT       Timeout in seconds for HITL prompts; -1 = wait
+                                for the user forever, no timeout (default: -1)
     TORVALDS_HITL_DEFAULT_ANSWER Default answer on timeout (default: empty)
     TORVALDS_HITL_RUNTIME_TOGGLE Enable/disable runtime toggle commands (default: true)
     TORVALDS_PROMPT_INJECTION   Enable/disable runtime prompt injection (default: true)
@@ -161,6 +162,7 @@ from components.event_consumer import EventConsumer
 from components.human_loop_handler import HumanLoopHandler
 from components.hitl_agent import HITLFunctionAgent
 from components.timeout_manager import TimeoutManager
+from components.hitl_timeout import describe_timeout
 from components.hitl_runtime_toggle import HITLRuntimeToggle
 from components.console_input_module import ConsoleInputModule
 from components.whiptail_input_module import WhiptailInputModule
@@ -195,7 +197,9 @@ ENABLE_VERBOSE_EVENTS = os.environ.get("TORVALDS_VERBOSE_EVENTS", "true").lower(
 
 HITL_ENABLED = os.environ.get("TORVALDS_HITL_ENABLED", "true").lower() == "true"
 HITL_METHOD = os.environ.get("TORVALDS_HITL_METHOD", "console")
-HITL_TIMEOUT = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "30"))
+# ``-1`` means *no timeout*: the agent waits for the user's answer
+# constantly, for as long as it takes.  See components/hitl_timeout.py.
+HITL_TIMEOUT = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "-1"))
 HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
 HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").lower() == "true"
 
@@ -646,7 +650,10 @@ def parse_args():
         "--hitl-timeout",
         type=int,
         default=HITL_TIMEOUT,
-        help="HITL prompt timeout in seconds (default: %(default)s)",
+        help=(
+            "HITL prompt timeout in seconds; -1 means no timeout — the agent "
+            "waits for the user forever (default: %(default)s)"
+        ),
     )
     parser.add_argument(
         "--hitl-default-answer",
@@ -937,7 +944,10 @@ async def run_classic_repl(
     console.print(f"[dim]Logging: {args.log_level}[/dim]")
     console.print(f"[dim]Stats: {'enabled' if stats_enabled else 'disabled'}[/dim]")
     console.print(f"[dim]Event streaming: {'enabled' if events_enabled else 'disabled'}[/dim]")
-    console.print(f"[dim]HITL: {'enabled' if human_loop_handler.enable_hitl else 'disabled'} (method={hitl_method}, timeout={hitl_timeout}s)[/dim]")
+    console.print(
+        f"[dim]HITL: {'enabled' if human_loop_handler.enable_hitl else 'disabled'} "
+        f"(method={hitl_method}, timeout={describe_timeout(hitl_timeout)})[/dim]"
+    )
     console.print("[dim]Type '\\help' to list all available commands.[/dim]")
     console.print("[dim]Type '\\exit' or '\\quit' to terminate.[/dim]")
     console.print("[dim]Type '\\stats' to view statistics summary.[/dim]")
@@ -1005,7 +1015,7 @@ async def run_classic_repl(
             console.print(f"\n[cyan]HITL Status:[/cyan]")
             console.print(f"  Enabled: {'🟢 YES' if status_info['enabled'] else '🔴 NO'}")
             console.print(f"  Method: {hitl_method}")
-            console.print(f"  Timeout: {hitl_timeout}s")
+            console.print(f"  Timeout: {describe_timeout(hitl_timeout)}")
             console.print(f"  Questions asked: {hitl_stats['question_count']}")
             console.print(f"  Timeouts: {hitl_stats['timeout_count']}")
             console.print(f"  Toggle count: {status_info['toggle_count']}")

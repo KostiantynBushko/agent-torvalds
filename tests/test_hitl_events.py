@@ -29,7 +29,7 @@ class TestAgentQuestionEventInstantiation(unittest.TestCase):
         )
         self.assertEqual(event.question, "What is your name?")
         self.assertEqual(event.question_id, "q-001")
-        self.assertEqual(event.timeout, 30)  # default
+        self.assertEqual(event.timeout, -1)  # default: no timeout, wait forever
         self.assertEqual(event.default_answer, "")  # default
         self.assertEqual(event.input_type, "text")  # default
         self.assertEqual(event.options, [])  # default
@@ -115,11 +115,20 @@ class TestAgentQuestionEventValidation(unittest.TestCase):
             event.validate()
         self.assertIn("question_id", str(ctx.exception).lower())
 
-    def test_negative_timeout_raises(self):
-        """Negative timeout should raise ValueError."""
+    def test_no_timeout_is_valid(self):
+        """-1 means "no timeout" and must be accepted."""
         event = AgentQuestionEvent(
             question="Hello?",
             question_id="q-012",
+            timeout=-1,
+        )
+        event.validate()  # must not raise
+
+    def test_timeout_below_minimum_raises(self):
+        """Timeouts below -1 are typos and should raise ValueError."""
+        event = AgentQuestionEvent(
+            question="Hello?",
+            question_id="q-013",
             timeout=-5,
         )
         with self.assertRaises(ValueError) as ctx:
