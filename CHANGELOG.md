@@ -1,5 +1,55 @@
 # Changelog
 
+## [Unreleased] - Local LLM setup (Ollama)
+
+### Documentation
+- **README.md - "Local LLM Setup (Ollama)"** - a step-by-step guide to
+  running the agent against a local Ollama instance: installing Ollama on
+  Linux, macOS, Windows and Docker, verifying the server, pulling the chat
+  and embedding models, pointing the agent at the model and starting the
+  agent. It also carries a hardware-sizing table and a troubleshooting
+  matrix.
+- **`docs/ollama-setup.md`** - the long form of the same guide, with the
+  agent/Ollama architecture, the complete environment-variable reference,
+  the model catalogue, a three-step verification of the whole chain
+  (`/api/generate`, `/api/embeddings` and the agent's own client) and the
+  housekeeping commands (`ollama ps` / `stop` / `rm`).
+- The installation steps in the README now include the Ollama install and
+  the two `ollama pull` commands, and Ollama moved from "optional" to
+  **required** in the prerequisites - the agent has no cloud fallback.
+
+### Added
+- **`components/ollama_config.py`** - the single source of truth for the
+  Ollama endpoint. `get_ollama_base_url()` resolves
+  `TORVALDS_OLLAMA_HOST`, then `OLLAMA_HOST`, then
+  `http://localhost:11434`, and normalises a bare `host:port` into a full
+  URL with the `http://` scheme.
+- **`TORVALDS_OLLAMA_HOST`** - points the agent at an Ollama server that does
+  not listen on the default endpoint (another host, a container, a
+  non-default port). It is used for the chat model in both orchestrators
+  and for the embedding model in the tool retriever.
+
+### Changed
+- The chat model (`agent-torvalds.py`, `agent-torvalds-mw.py`) and the
+  embedding model (`agent_tool_retriever.py`) now use the resolved Ollama
+  endpoint instead of the hard-coded `http://localhost:11434`. The default
+  behaviour is unchanged.
+
+### Tests
+- **`tests/test_ollama_config.py`** - 12 new tests covering the endpoint
+  resolution: the default, the `TORVALDS_OLLAMA_HOST` override, the
+  `OLLAMA_HOST` fallback, the precedence between the two, the
+  `host:port` -> `http://host:port` normalisation, and the integration with
+  the two orchestrators and the tool retriever.
+
+### Verified
+- The chain was checked end to end against a live local Ollama 0.33.2
+  server: the default chat model
+  (`richardyoung/qwen3.6-27b-abliterated:Q4_K_M`) answers, and
+  `nomic-embed-text` returns a 768-dimension embedding.
+- The full test suite shows no new failures: the failure set is
+  byte-identical to the baseline (77 pre-existing failures, unchanged).
+
 ## [Unreleased] - HITL: no timeout by default
 
 ### Fixed

@@ -66,11 +66,54 @@ before any commit is created.
 
 | Item | Status |
 |---|---|
+| Branch | `feature/docs/ollama-local-setup` (off `master`, `b068337`) |
+| Scope | Document and enable the local Ollama setup: install Ollama, pull the models, run the agent |
+| Status | Implemented, verified against a live Ollama server, **not yet committed** — awaiting operator approval |
+
+### Latest change: the local LLM setup is documented end to end
+
+The agent has no cloud fallback: it serves the chat model and the embedding
+model from a local Ollama instance, but the README only mentioned Ollama as
+"optional, for on-demand tool retrieval with embeddings". That was wrong —
+Ollama *is* the LLM backend — and there was no instruction anywhere for
+installing it, pulling the models or pointing the agent at them.
+
+| Path | Change |
+|---|---|
+| `README.md` | New **"Local LLM Setup (Ollama)"** section: install (Linux/macOS/Windows/Docker), verify the server, pull the chat and the embedding model, configure `TORVALDS_MODEL` / `TORVALDS_OLLAMA_HOST`, run the agent, hardware sizing and a troubleshooting matrix. The installation steps now include the Ollama install and the two `ollama pull` commands, and Ollama moved to **required** in the prerequisites. |
+| `docs/ollama-setup.md` | **New.** The long form of the guide: architecture, the full environment-variable reference, the model catalogue with hardware sizing, a three-step verification of the whole chain and the housekeeping commands. |
+| `components/ollama_config.py` | **New.** `get_ollama_base_url()` resolves the endpoint: `TORVALDS_OLLAMA_HOST` → `OLLAMA_HOST` → `http://localhost:11434`, normalising a bare `host:port` into a full URL. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | The chat model is created with `base_url=OLLAMA_BASE_URL`. |
+| `agent_tool_retriever.py` | The embedding model is created with `base_url=get_ollama_base_url()`. |
+| `CHANGELOG.md` | Entry for the documentation and the new configuration variable. |
+
+The default behaviour is unchanged: with nothing configured the agent still
+talks to `http://localhost:11434`, which is where a standard Ollama install
+listens.
+
+### Verifying the change
+
+The chain was checked against a live local Ollama 0.33.2 server:
+
+```bash
+# chat model
+curl http://localhost:11434/api/generate -d '{"model":"richardyoung/qwen3.6-27b-abliterated:Q4_K_M","prompt":"Reply with exactly: OK","stream":false}'
+# embedding model
+curl http://localhost:11434/api/embeddings -d '{"model":"nomic-embed-text","prompt":"hello world"}'
+```
+
+Both answer, and the agent's own client returns `OK` for the chat model and a
+768-dimension embedding for `nomic-embed-text`.
+
+### Previous work: the HITL "no timeout" default
+
+| Item | Status |
+|---|---|
 | Branch | `feature/hitl-no-timeout` (off `master`, `1736839`) |
 | Scope | HITL: no timeout by default — the agent waits for the user |
 | Status | Implemented, tests green, **committed** and pushed to `origin/feature/hitl-no-timeout` |
 
-### Latest change: the HITL timeout is now "no timeout" by default
+#### Latest change: the HITL timeout is now "no timeout" by default
 
 The Human-in-the-Loop timeout used to default to 30 seconds, so the agent
 gave up on the user and fell back to the default answer. The default is
