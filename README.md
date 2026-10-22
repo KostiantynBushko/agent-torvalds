@@ -26,6 +26,7 @@ Each module has its own README with the full reference:
 | Chat History Manager | [chat_manager/README.md](chat_manager/README.md) |
 | Components | [components/README.md](components/README.md) |
 | MikroTik RouterOS Toolkit | [toolkits/MikroTik-RouterOS/README.md](toolkits/MikroTik-RouterOS/README.md) |
+| Shodan Toolkit | [toolkits/shodan-toolkit/README.md](toolkits/shodan-toolkit/README.md) |
 
 ### 1. Math Toolkit (`agent_math_toolkit.py`)
 - Provides mathematical operations: addition, multiplication, division
@@ -186,6 +187,35 @@ Each module has its own README with the full reference:
   for the module reference
 - See [MikroTik RouterOS Toolkit docs](docs/mikrotik-toolkit.md) for details
 
+### 19. Shodan Toolkit (`agent_shodan_toolkit.py`)
+- Internet-exposure intelligence from the Shodan database: which hosts are
+  reachable, what software they run, which ports are open, which are
+  honeypots
+- Sixteen tools: search, count, host lookup, statistics, trends, DNS
+  records, honeypot score, public IP, account info, list alerts, list
+  scans, raw CLI, and the four write-capable tools
+- Wraps the official `shodan` CLI instead of reimplementing the API client,
+  so it inherits Shodan's own rate limiting and output formats - and
+  converts the human-readable tables into stable JSON for the model
+- Reusable core package in `toolkits/shodan-toolkit/` with **no**
+  LlamaIndex imports, so it also works as a plain library
+- **Read-only by default**: the four tools that change account state or
+  consume credits (alerts, scans, downloads) are opt-in via
+  `TORVALDS_SHODAN_ALLOW_MUTATING=1`
+- The `shodan_raw` tool is guarded: subcommands that change state, consume
+  credits or write files are refused, so it cannot be used to bypass the
+  read-only split
+- A tool never raises - a failure is returned as a `{"success": false,
+  "error": ...}` payload the model can reason about
+- The tools form the **Security** category of the startup tool selection
+  menu (`--select`, and `\tools` / `\tool-select` in the TUI), so they can
+  be loaded on their own
+- Optional dependency (`shodan` CLI) - the agent still boots without it
+- 133 upstream tests plus an integration suite for the adapter
+- See the [Shodan Toolkit README](toolkits/shodan-toolkit/README.md) for the
+  module reference
+- See [Shodan Toolkit docs](docs/shodan-toolkit.md) for details
+
 ---
 
 ## Key Features
@@ -211,6 +241,7 @@ Each module has its own README with the full reference:
 | **Technical Computing** | Engineering and scientific computation support |
 | **Network Devices** | MikroTik RouterOS configuration and monitoring over SSH, with a risk-classified write path and human approval for destructive changes |
 | **Router Commands** | `\routers`, `\router-health <target>`, `\router-interfaces <target>`, `\router-backup <target>` |
+| **Internet Exposure** | Shodan reconnaissance: host search, port and product statistics, DNS records, honeypot detection, trend analysis |
 
 ---
 
@@ -352,6 +383,31 @@ See the [MikroTik RouterOS Toolkit README](toolkits/MikroTik-RouterOS/README.md)
 for the module reference and the
 [MikroTik RouterOS Toolkit docs](docs/mikrotik-toolkit.md) for the
 complete end-user reference.
+
+### Shodan Toolkit Configuration
+
+The toolkit drives the official `shodan` CLI and needs a Shodan API key.
+
+```bash
+pip install "shodan>=1.31" "setuptools<81"
+shodan-toolkit init <your-api-key>     # writes ~/.config/shodan/api_key (mode 0600)
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `SHODAN_TOOLKIT_API_KEY` | - | API key (also accepts `SHODAN_API_KEY`) |
+| `SHODAN_TOOLKIT_EXECUTABLE` | `shodan` | Path to the Shodan CLI |
+| `SHODAN_TOOLKIT_TIMEOUT` | `120` | Per-command timeout in seconds |
+| `SHODAN_TOOLKIT_MAX_RESULTS` | `100` | Default result cap for searches |
+| `SHODAN_TOOLKIT_CONFIG` | `~/.config/shodan-toolkit/config.json` | Toolkit config file |
+| `TORVALDS_SHODAN_ALLOW_MUTATING` | unset | Expose the write-capable tools (alerts, scans, downloads). **Off by default** |
+
+The `shodan` CLI is an optional dependency - the agent boots without it, and
+the toolkit reports that it is unavailable.
+
+See the [Shodan Toolkit README](toolkits/shodan-toolkit/README.md) for the
+module reference and the [Shodan Toolkit docs](docs/shodan-toolkit.md) for
+the complete end-user reference.
 
 ---
 
