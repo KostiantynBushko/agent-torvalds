@@ -40,6 +40,11 @@ from llama_index.core.callbacks.base import BaseCallbackHandler
 from llama_index.core.callbacks.schema import CBEventType, EventPayload
 
 from components.hitl_events import AgentAnswerEvent, AgentQuestionEvent
+from components.hitl_timeout import (
+    NO_TIMEOUT,
+    describe_timeout,
+    validate_timeout,
+)
 from components.console_input_module import ConsoleInputModule
 from components.whiptail_input_module import WhiptailInputModule
 from components.spinner_controller import SpinnerController
@@ -113,7 +118,7 @@ class HumanLoopHandler(BaseCallbackHandler):
 
         handler = HumanLoopHandler(
             input_method="console",
-            default_timeout=30,
+            default_timeout=-1,   # -1 means "wait for the human forever"
             default_answer="yes",
             enable_hitl=True,
             runtime_toggle=hitl_toggle,  # Optional runtime toggle
@@ -126,7 +131,7 @@ class HumanLoopHandler(BaseCallbackHandler):
     def __init__(
         self,
         input_method: str = "console",
-        default_timeout: int = 30,
+        default_timeout: int = NO_TIMEOUT,
         default_answer: str = "",
         console: Optional[Console] = None,
         spinner: Optional[SpinnerController] = None,
@@ -139,7 +144,9 @@ class HumanLoopHandler(BaseCallbackHandler):
 
         Args:
             input_method: ``"console"`` or ``"whiptail"``.
-            default_timeout: Seconds to wait for user input.
+            default_timeout: Seconds to wait for user input.  ``-1`` (the
+                default) means *no timeout*: wait for the human
+                indefinitely.
             default_answer: Fallback value on timeout.
             console: Rich ``Console`` instance for display.
             spinner: ``SpinnerController`` to pause/resume during prompts.
@@ -158,7 +165,9 @@ class HumanLoopHandler(BaseCallbackHandler):
         )
 
         self.input_method = input_method if input_method in _INPUT_METHODS else "console"
-        self.default_timeout = max(1, default_timeout)
+        # ``-1`` means "no timeout" — wait for the human indefinitely.
+        validate_timeout(default_timeout)
+        self.default_timeout = default_timeout
         self.default_answer = default_answer
         self.console = console or Console()
         self.spinner = spinner
@@ -192,9 +201,9 @@ class HumanLoopHandler(BaseCallbackHandler):
         self._lock = asyncio.Lock()
 
         logger.debug(
-            "HumanLoopHandler initialised — method=%s, timeout=%ds, hitl=%s, runtime_toggle=%s",
+            "HumanLoopHandler initialised — method=%s, timeout=%s, hitl=%s, runtime_toggle=%s",
             self.input_method,
-            self.default_timeout,
+            describe_timeout(self.default_timeout),
             self.enable_hitl,
             bool(self.runtime_toggle),
         )

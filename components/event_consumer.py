@@ -24,7 +24,7 @@ Usage:
         spinner_controller=spinner_controller,
         state_handler=state_handler,
         console=console,
-        hitl_timeout=30,
+        hitl_timeout=-1,   # -1 means "no timeout": wait for the human
         hitl_default_answer="",
     )
     
@@ -40,6 +40,7 @@ from rich.console import Console
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
 from components.console_input_module import ConsoleInputModule
+from components.hitl_timeout import NO_TIMEOUT, describe_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +167,8 @@ class EventConsumer:
         spinner: SpinnerController for visual feedback.
         state: StateHandler for tracking workflow state.
         console: Rich Console for output.
-        hitl_timeout: Timeout in seconds for HITL prompts.
+        hitl_timeout: Timeout in seconds for HITL prompts.  ``-1`` means
+            *no timeout*: the agent waits for the human indefinitely.
         hitl_default_answer: Default answer when user times out.
         console_input: ConsoleInputModule for collecting user input.
         runtime_toggle: Optional HITLRuntimeToggle for dynamic HITL control.
@@ -180,7 +182,7 @@ class EventConsumer:
         interactive_tools: Optional[Set[str]] = None,
         verbose: bool = False,
         # HITL configuration
-        hitl_timeout: int = 30,
+        hitl_timeout: int = NO_TIMEOUT,
         hitl_default_answer: str = "",
         hitl_enabled: bool = True,
         stats_handler: Optional[Any] = None,
@@ -188,9 +190,9 @@ class EventConsumer:
     ):
         logger.debug(
             "EventConsumer.__init__: spinner=%r, state=%r, verbose=%s, "
-            "hitl_timeout=%d, hitl_default_answer=%r, hitl_enabled=%s",
+            "hitl_timeout=%s, hitl_default_answer=%r, hitl_enabled=%s",
             spinner_controller, state_handler, verbose,
-            hitl_timeout, hitl_default_answer, hitl_enabled,
+            describe_timeout(hitl_timeout), hitl_default_answer, hitl_enabled,
         )
         self.spinner = spinner_controller
         self.state = state_handler
@@ -588,7 +590,10 @@ class EventConsumer:
         
         try:
             # Get user input with timeout
-            logger.debug("EventConsumer._on_input_required: waiting for user input (timeout=%ds)", self.hitl_timeout)
+            logger.debug(
+                "EventConsumer._on_input_required: waiting for user input (timeout=%s)",
+                describe_timeout(self.hitl_timeout),
+            )
             response = await self.console_input.prompt(
                 message="Your response: ",
                 default=self.hitl_default_answer,

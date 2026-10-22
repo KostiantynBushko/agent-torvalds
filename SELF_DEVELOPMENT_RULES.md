@@ -4,7 +4,7 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-21
+**Last updated:** 2026-10-22
 
 ---
 
@@ -63,6 +63,60 @@ before any commit is created.
 ---
 
 ## Current self-development work
+
+| Item | Status |
+|---|---|
+| Branch | `feature/hitl-no-timeout` (off `master`, `1736839`) |
+| Scope | HITL: no timeout by default — the agent waits for the user |
+| Status | Implemented, tests green, **committed** and pushed to `origin/feature/hitl-no-timeout` |
+
+### Latest change: the HITL timeout is now "no timeout" by default
+
+The Human-in-the-Loop timeout used to default to 30 seconds, so the agent
+gave up on the user and fell back to the default answer. The default is
+now **`-1`, meaning "no timeout"**: the agent waits for the answer
+constantly, for as long as the human needs.
+
+The value was also corrupted on its way to the prompt in four different
+places, each of which turned "wait forever" into a short wait:
+
+| Place | What was wrong | Fix |
+|---|---|---|
+| `timeout_manager.py`, `console_input_module.py`, `whiptail_input_module.py` | `asyncio.wait_for()` expires **immediately** for any value `<= 0` | `normalize_timeout()` turns `-1` into the `None` asyncio calls "forever" |
+| `human_loop_handler.py` | `max(1, default_timeout)` turned `-1` into 1 second | the value is kept as-is |
+| `hitl_agent.py` | the step padded the timeout with `timeout=timeout + 5`, which would have turned `-1` into a 4 second deadline | the grace period now only applies to a finite timeout |
+| `tui/state_bridge.py` | counted down from a negative value and showed `0s` | no countdown is shown when there is no timeout |
+
+| Path | Change |
+|---|---|
+| `components/hitl_timeout.py` | **New.** The single source of truth: `NO_TIMEOUT`, `normalize_timeout()`, `is_no_timeout()`, `validate_timeout()`, `describe_timeout()`. |
+| `components/timeout_manager.py` | Default `-1`; `-1` accepted; `wait_for()` gets `None`. |
+| `components/console_input_module.py` | Default `-1`; `prompt_with_status()` and `password()` translate it. |
+| `components/whiptail_input_module.py` | Default `-1`; `prompt()`, `confirm()` and `menu()` translate it. |
+| `components/hitl_events.py` | `AgentQuestionEvent.timeout` defaults to `-1`; `validate()` accepts it. |
+| `components/human_loop_handler.py` | Default `-1`; the `max(1, ...)` clamp is gone. |
+| `components/hitl_agent.py` | Default `-1`; `wait_for_event()` gets `timeout=None`. |
+| `components/event_consumer.py` | Default `-1`. |
+| `components/tui/state_bridge.py`, `components/tui/tui_app.py` | Default `-1`; no countdown; the status shows `none`. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | `TORVALDS_HITL_TIMEOUT` defaults to `-1`; `--hitl-timeout` defaults to `-1`; the banner shows `none`. |
+| `agent_mikrotik_toolkit.py`, `project_manager/agent_project_manager_toolkit.py` | The two remaining places that read `TORVALDS_HITL_TIMEOUT` directly. |
+| `tests/test_hitl_no_timeout.py` | **New.** 28 tests. |
+| `README.md`, `CHANGELOG.md` | The convention is documented. |
+
+### Verifying the change
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/tests/test_hitl_no_timeout.py -q
+```
+
+28 passed, and the dedicated check
+`investigate/hitl-investigate/verify_hitl_no_timeout.py` reports 12/12.
+
+The full suite shows **no new failures** against the baseline: the failure
+set at `HEAD` (`1736839`) and after the change is byte-identical —
+77 pre-existing failures, unchanged (76 failed + 1 error).
+
+### Previous work: the MikroTik RouterOS toolkit
 
 | Item | Status |
 |---|---|

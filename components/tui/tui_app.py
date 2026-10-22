@@ -28,6 +28,7 @@ from components.tui.layout_manager import (
 )
 from components.tui.state_bridge import TuiState, TuiEventAdapter, TuiInputModule
 from components.tui.input_reader import NonBlockingInputReader
+from components.hitl_timeout import describe_timeout
 from components.tui.markdown_view import MarkdownView
 from components.tui.progress_view import ProgressView
 from components.tui.telemetry_view import TelemetryView
@@ -453,7 +454,7 @@ class TuiApp:
 | :--- | :--- |
 | **HITL Enabled** | {'🟢 YES' if status_info.get('enabled') else '🔴 NO'} |
 | **Method** | {hitl_stats.get('method', 'TUI Command Bar')} |
-| **Timeout** | {hitl_stats.get('timeout', 30)}s |
+| **Timeout** | {describe_timeout(hitl_stats.get('timeout'))} |
 | **Default Answer** | '{hitl_stats.get('default_answer', '')}' |
 | **Questions Asked** | {hitl_stats.get('question_count', 0)} |
 | **Timeouts** | {hitl_stats.get('timeout_count', 0)} |

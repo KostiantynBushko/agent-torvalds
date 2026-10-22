@@ -53,17 +53,24 @@ class TestTimeoutManagerInit(unittest.TestCase):
     """Test TimeoutManager initialisation."""
 
     def test_default_timeout(self):
+        """The default is -1, meaning "no timeout" (wait forever)."""
         mgr = TimeoutManager()
-        self.assertEqual(mgr.default_timeout, 30)
+        self.assertEqual(mgr.default_timeout, -1)
         self.assertEqual(len(mgr.get_timeout_log()), 0)
 
     def test_custom_timeout(self):
         mgr = TimeoutManager(default_timeout=60)
         self.assertEqual(mgr.default_timeout, 60)
 
-    def test_negative_timeout_raises(self):
+    def test_no_timeout_is_accepted(self):
+        """-1 means "no timeout" and must not be rejected."""
+        mgr = TimeoutManager(default_timeout=-1)
+        self.assertEqual(mgr.default_timeout, -1)
+
+    def test_below_minimum_timeout_raises(self):
+        """Values below -1 are typos and must be rejected."""
         with self.assertRaises(ValueError):
-            TimeoutManager(default_timeout=-1)
+            TimeoutManager(default_timeout=-2)
 
     def test_repr(self):
         mgr = TimeoutManager(default_timeout=15)
