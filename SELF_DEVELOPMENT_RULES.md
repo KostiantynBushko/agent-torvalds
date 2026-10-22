@@ -68,7 +68,7 @@ before any commit is created.
 |---|---|
 | Branch | `feature/docs/ollama-local-setup` (off `master`, `b068337`) |
 | Scope | Document and enable the local Ollama setup: install Ollama, pull the models, run the agent |
-| Status | Implemented, verified against a live Ollama server, **not yet committed** — awaiting operator approval |
+| Status | Implemented, verified against a live Ollama server, **committed** (`3398cdb`) and pushed to `origin/feature/docs/ollama-local-setup` |
 
 ### Latest change: the local LLM setup is documented end to end
 
