@@ -134,6 +134,7 @@ from components.stats_handler import (
 # ---------------------------------------------------------------------------
 # Components
 # ---------------------------------------------------------------------------
+from components.ollama_config import get_ollama_base_url
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
 from components.event_consumer import EventConsumer
@@ -171,6 +172,8 @@ REQUEST_TIMEOUT = int(os.environ.get("TORVALDS_REQUEST_TIMEOUT", "99999"))
 MAX_ITERATIONS = int(os.environ.get("TORVALDS_MAX_ITERATIONS", "50"))
 TOKEN_LIMITS = int(os.environ.get("TORVALDS_TOKEN_LIMIT", "400"))
 MODEL = os.environ.get("TORVALDS_MODEL", "richardyoung/qwen3.6-27b-abliterated:Q4_K_M")
+# Endpoint of the Ollama server that hosts the chat model.
+OLLAMA_BASE_URL = get_ollama_base_url()
 SIMILARITY_TOP_K = int(os.environ.get("TORVALDS_SIMILARITY_TOP_K", "8"))
 
 # Feature flags for event streaming
@@ -533,6 +536,7 @@ def create_agent(
     """
     llm = Ollama(
         model=MODEL,
+        base_url=OLLAMA_BASE_URL,
         request_timeout=REQUEST_TIMEOUT,
         temperature=0.0,
         callback_manager=callback_manager,
