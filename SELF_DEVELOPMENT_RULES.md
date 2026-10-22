@@ -104,7 +104,7 @@ the MikroTik toolkit:
 | `agent_tool_selection.py` | The tools are discovered for the startup menu, and dedicated action patterns were added. |
 | `agent-torvalds.py`, `agent-torvalds-mw.py` | The tools are loaded in the full-inventory mode. |
 | `docs/shodan-toolkit.md` | The end-user reference. |
-| `tests/test_shodan_toolkit.py` | 19 tests for the adapter. |
+| `toolkits/shodan-toolkit/tests/test_agent_adapter.py` | 19 tests for the adapter. |
 | `pytest.ini` | `toolkits/shodan-toolkit/src` on the path; the upstream suite added to `testpaths`. |
 | `README.md`, `CHANGELOG.md` | The toolkit is documented. |
 
@@ -118,12 +118,20 @@ subcommand and refuses the mutating ones.
 **Verifying the change**
 
 ```bash
-self-development/.venv/bin/python -m pytest self-development/tests/test_shodan_toolkit.py -q
 self-development/.venv/bin/python -m pytest self-development/toolkits/shodan-toolkit/tests -q
+self-development/.venv/bin/python -m pytest self-development/toolkits/shodan-toolkit/tests/test_agent_adapter.py -q
 ```
 
-19 tests and 133 tests pass. The upstream suite is part of the standard
+19 tests and 152 tests pass. The whole suite is part of the standard
 `pytest` run.
+
+**Every Shodan test lives under `toolkits/shodan-toolkit/tests/`.** The
+adapter suite used to sit in `tests/test_shodan_toolkit.py`, next to the
+other repository-level suites; it is now
+`toolkits/shodan-toolkit/tests/test_agent_adapter.py`, so the feature is
+tested from one directory. The file skips itself when the toolkit is used
+as a standalone library, because the agent-side modules it needs are not
+part of that distribution.
 
 ### Previous work: the HITL timeout is now "no timeout" by default
 

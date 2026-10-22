@@ -295,7 +295,7 @@ The guard is covered by the toolkit's own test suite
 |---|---|
 | `toolkits/shodan-toolkit/` | The core package. The upstream project, verbatim. |
 | `toolkits/shodan-toolkit/src/shodan_toolkit/` | The importable package (`runner`, `parsers`, `client`, `tools`, `agent`, `config`, `cli`). |
-| `toolkits/shodan-toolkit/tests/` | The upstream test suite - 133 tests. |
+| `toolkits/shodan-toolkit/tests/` | The whole test suite: 133 upstream tests plus the 19 adapter tests. |
 | `agent_shodan_toolkit.py` | The LlamaIndex adapter - the sixteen tools. |
 | `docs/shodan-toolkit.md` | This page. |
 
@@ -331,13 +331,30 @@ from toolkits.shodan_toolkit import ShodanClient, get_all_tools
 The alias is registered only if the package is importable, so
 `import toolkits` never fails when the toolkit is absent.
 
-### The upstream test suite
+### The test suite
 
-The toolkit's own tests are part of the repository's test run:
+Every Shodan test lives in one directory: `toolkits/shodan-toolkit/tests/`.
+It holds the upstream library tests and the adapter tests that check the
+integration with the agent.
 
 ```bash
 self-development/.venv/bin/python -m pytest toolkits/shodan-toolkit/tests -q
 ```
 
 `pytest.ini` puts `toolkits/shodan-toolkit/src` on the path, so the suite
-tests the in-repository copy - the same code the agent adapter loads.
+tests the in-repository copy - the same code the agent adapter loads. The
+toolkit also ships its own `conftest.py`, which puts that directory on
+`sys.path` in its own right, so the suite runs no matter which directory
+pytest is started from.
+
+| File | Tests | Covers |
+|---|---|---|
+| `tests/test_client.py`, `tests/test_parsers.py`, `tests/test_config_cli.py` | the library | the client, the parsers, the configuration |
+| `tests/test_cli_contract.py`, `tests/test_runner_availability.py` | the library | the CLI contract, the availability check |
+| `tests/test_raw_guard.py`, `tests/test_tools.py` | the library | the read-only guard, the tool registry |
+| `tests/test_agent_adapter.py` | the adapter | the tool registration, the degradation contract, the error-payload convention, the load-path parity |
+
+`tests/test_agent_adapter.py` is the only file there that reaches outside
+the toolkit: it exercises `agent_shodan_toolkit.py` and the agent's load
+paths, which live in the repository root. When the toolkit is installed as
+a standalone library those modules do not exist, so the file skips itself.
