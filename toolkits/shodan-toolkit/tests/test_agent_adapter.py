@@ -94,6 +94,18 @@ MUTATING_TOOL_NAMES = {
 
 
 @pytest.fixture(autouse=True)
+def no_mutating_opt_in(monkeypatch):
+    """Keep the operator's opt-in out of the tests.
+
+    ``TORVALDS_SHODAN_ALLOW_MUTATING=1`` enables the write-capable tools
+    in *every* load path, so a developer who has it exported would see
+    the read-only assertions below fail. The variable is removed for the
+    whole module; the tests that exercise the opt-in set it themselves.
+    """
+    monkeypatch.delenv("TORVALDS_SHODAN_ALLOW_MUTATING", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def isolated_config(clean_env, tmp_path, monkeypatch):
     """Keep the tests away from the developer's real Shodan configuration.
 

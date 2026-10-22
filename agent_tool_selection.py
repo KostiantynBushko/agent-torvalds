@@ -228,6 +228,7 @@ _ACTION_PATTERNS: list = [
     (r"(?i)\blook\s+up.*dns\s+records",  "inspect"),
     (r"(?i)\bcheck.*honeypot",            "diagnose"),
     (r"(?i)\bget.*account\s+information", "inspect"),
+    (r"(?i)\bget.*public\s+ip\s+address",  "inspect"),
     (r"(?i)\blist.*network\s+alerts",    "inspect"),
     (r"(?i)\blist.*on-demand\s+scans",   "inspect"),
     (r"(?i)\brun.*shodan.*command",       "execute"),

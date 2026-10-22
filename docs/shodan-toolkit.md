@@ -170,6 +170,39 @@ the startup tool selection menu, so they can be loaded on their own with
 | `shodan_submit_scan` | Submit an on-demand scan for netblocks *(write)* |
 | `shodan_download` | Download search results into a compressed JSON file *(write)* |
 
+### Selecting the tools
+
+The twelve read-only tools form the **Security** category of the startup
+tool selection menu, so they can be loaded on their own:
+
+```bash
+python agent-torvalds.py --select
+```
+
+```
+  [11] Security (12 tools)
+      Actions: discover, inspect, diagnose, execute
+```
+
+Enter the index of the **Security** category (or a range that includes it)
+to load the Shodan tools and nothing else. The same category is offered by
+the multi-window TUI through `\tools` and `\tool-select <spec>`.
+
+The category is always present: when the optional `shodan` CLI is missing,
+the tools still register and report the problem instead of breaking the
+menu.
+
+The four write-capable tools are **not** part of the category by default.
+`TORVALDS_SHODAN_ALLOW_MUTATING=1` adds them, and the category then shows
+sixteen tools:
+
+```bash
+TORVALDS_SHODAN_ALLOW_MUTATING=1 python agent-torvalds.py --select
+```
+
+The opt-in is read by the adapter itself, so the menu, the retriever and
+both orchestrators always agree on which tools are loaded.
+
 ### A typical investigation
 
 ```

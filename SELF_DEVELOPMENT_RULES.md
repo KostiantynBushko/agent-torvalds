@@ -68,7 +68,7 @@ before any commit is created.
 |---|---|
 | Branch | `feature/shodan-toolkit` (off `master`, `b068337`) |
 | Scope | Shodan internet-exposure toolkit — the project moved into `toolkits/shodan-toolkit/` and wired into the agent |
-| Status | Implemented, tests green, **committed** on the branch. Push pending operator approval |
+| Status | Implemented, tests green, **committed** on the branch. The Shodan tools in the selection menu are covered and **uncommitted** in the working tree. Push pending operator approval |
 
 ### Latest change: the Shodan toolkit
 
@@ -132,6 +132,31 @@ other repository-level suites; it is now
 tested from one directory. The file skips itself when the toolkit is used
 as a standalone library, because the agent-side modules it needs are not
 part of that distribution.
+
+### Latest change: the Shodan tools in the selection menu
+
+The Shodan toolkit was already wired into `_discover_tools()`, so the
+**Security** category showed up in the `--select` menu - but nothing
+locked that down. The MikroTik toolkit had lost its **Network** category
+the same way once, so the Shodan tools are now covered by the same kind of
+regression suite.
+
+| Path | Change |
+|---|---|
+| `tests/test_tool_selection_menu.py` | New `TestSecurityCategory`, `TestSecurityCategoryDescription` and `TestSelectingSecurity` suites: the category must exist, hold exactly the twelve read-only tools, be selectable through `select_tools_by_category()` and through the interactive prompt, and be rendered in the menu. The four write-capable tools must stay out unless the opt-in is set. |
+| `tests/test_tool_selection_menu.py` | `TestMenuParity` now checks that the Shodan tools are reachable through every load path (menu, retriever, both orchestrators). |
+| `agent_tool_selection.py` | `shodan_myip` did not match any action pattern and fell through to the raw first word, so the summary read `Actions: discover, inspect, diagnose, get, execute`. It is now `inspect`. |
+| `toolkits/shodan-toolkit/tests/test_agent_adapter.py` | An autouse fixture removes `TORVALDS_SHODAN_ALLOW_MUTATING`, so the suite no longer fails for a developer who has the opt-in exported. |
+| `docs/shodan-toolkit.md` | New *Selecting the tools* section. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/tests/test_tool_selection_menu.py -q
+self-development/.venv/bin/python -m pytest self-development/toolkits/shodan-toolkit/tests/test_agent_adapter.py -q
+```
+
+30 tests and 19 tests pass, with and without the opt-in exported.
 
 ### Previous work: the HITL timeout is now "no timeout" by default
 
