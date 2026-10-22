@@ -18,8 +18,14 @@ from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.embeddings.ollama import OllamaEmbedding
 import sys
 
-# Configure Ollama embedding model
-Settings.embed_model = OllamaEmbedding(model_name="nomic-embed-text")
+from components.ollama_config import get_ollama_base_url
+
+# Configure Ollama embedding model. The endpoint follows the same
+# TORVALDS_OLLAMA_HOST / OLLAMA_HOST rules as the chat model.
+Settings.embed_model = OllamaEmbedding(
+    model_name="nomic-embed-text",
+    base_url=get_ollama_base_url(),
+)
 
 
 def build_tool_retriever(
