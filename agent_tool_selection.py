@@ -74,6 +74,16 @@ def _discover_tools() -> List[FunctionTool]:
         # The MikroTik toolkit is optional - skip it when it is not installed.
         pass
 
+    # Shodan toolkit. The adapter degrades gracefully when the optional
+    # 'shodan' CLI is missing, so a broken or absent toolkit must never
+    # break the selection menu.
+    try:
+        from agent_shodan_toolkit import get_all_tools as _get_shodan
+        tools.extend(_get_shodan())
+    except ImportError:
+        # The Shodan toolkit is optional - skip it when it is not installed.
+        pass
+
     # Platform-specific
     if sys.platform.startswith("linux"):
         from agent_linux_toolkit import get_all_tools as _get_linux
@@ -205,6 +215,27 @@ _ACTION_PATTERNS: list = [
 
     # --- Database ---
     (r"(?i)\brun.*sql.*query",           "query"),
+
+    # --- Security / Shodan ---
+    # These come before the generic patterns, because a query such as
+    # "scan the network" must not be mistaken for a data-analysis action.
+    (r"(?i)\bsearch.*shodan.*database",   "discover"),
+    (r"(?i)\bcount.*hosts.*matching",     "discover"),
+    (r"(?i)\blook\s+up.*ip\s+address",   "inspect"),
+    (r"(?i)\bget.*information.*ip\s+address", "inspect"),
+    (r"(?i)\bget.*summary\s+statistics", "inspect"),
+    (r"(?i)\bquery.*historical\s+database", "inspect"),
+    (r"(?i)\blook\s+up.*dns\s+records",  "inspect"),
+    (r"(?i)\bcheck.*honeypot",            "diagnose"),
+    (r"(?i)\bget.*account\s+information", "inspect"),
+    (r"(?i)\bget.*public\s+ip\s+address",  "inspect"),
+    (r"(?i)\blist.*network\s+alerts",    "inspect"),
+    (r"(?i)\blist.*on-demand\s+scans",   "inspect"),
+    (r"(?i)\brun.*shodan.*command",       "execute"),
+    (r"(?i)\bcreate.*network\s+alert",    "create"),
+    (r"(?i)\bdelete.*network\s+alert",    "delete"),
+    (r"(?i)\bsubmit.*on-demand\s+scan",  "execute"),
+    (r"(?i)\bdownload.*search\s+results", "export"),
 
     # --- Network / MikroTik RouterOS ---
     # These patterns come before the generic data ones, because the

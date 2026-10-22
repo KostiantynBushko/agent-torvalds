@@ -66,6 +66,100 @@ before any commit is created.
 
 | Item | Status |
 |---|---|
+| Branch | `feature/shodan-toolkit` — merged into `master` and pushed to `origin` |
+| Scope | Shodan internet-exposure toolkit — the project moved into `toolkits/shodan-toolkit/` and wired into the agent |
+| Status | Implemented, tests green, **committed**, pushed and merged into `master` (with `origin/master` as of PR #24) |
+
+### Latest change: the Shodan toolkit
+
+The `shodan-toolkit` project, which lived in its own repository, was moved
+into this one and turned into a first-class toolkit.
+
+**The move.** The commits were transplanted with `git subtree`, so the
+history is preserved rather than squashed:
+
+```
+*   Add 'toolkits/shodan-toolkit/' from commit '26b1fb2...'
+|\
+| * 26b1fb2 chore: remove project-root RULES.md
+| * 72b3239 fix: correct Shodan CLI argument vectors and harden library packaging
+| * 6d33069 Initial commit: shodan-toolkit
+* b068337 fix: make the HITL timeout default to "no timeout" (wait for the user) (#23)
+```
+
+Every file under `toolkits/shodan-toolkit/` has the same blob hash as in the
+upstream repository, so the upstream project stays the source of truth and
+`git subtree pull` can bring in later work. The upstream repository is
+registered as the remote `shodan-local`.
+
+**The integration.** The toolkit is wired into every load path, exactly like
+the MikroTik toolkit:
+
+| Path | Change |
+|---|---|
+| `toolkits/shodan-toolkit/` | The upstream project, verbatim. |
+| `toolkits/__init__.py` | Registers the alias `toolkits.shodan_toolkit` next to `toolkits.mikrotik_routeros`. |
+| `agent_shodan_toolkit.py` | The LlamaIndex adapter. Re-uses the upstream tool functions verbatim; only the descriptions are rewritten so they carry `Category: Security`. |
+| `agent_tool_retriever.py` | New `include_shodan_tools` flag (on by default). |
+| `agent_tool_selection.py` | The tools are discovered for the startup menu, and dedicated action patterns were added. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | The tools are loaded in the full-inventory mode. |
+| `docs/shodan-toolkit.md` | The end-user reference. |
+| `toolkits/shodan-toolkit/tests/test_agent_adapter.py` | 19 tests for the adapter. |
+| `pytest.ini` | `toolkits/shodan-toolkit/src` on the path; the upstream suite added to `testpaths`. |
+| `README.md`, `CHANGELOG.md` | The toolkit is documented. |
+
+**Read-only by default.** The four tools that change account state or
+consume credits (alerts, scans, downloads) are not exposed. The opt-in is
+`TORVALDS_SHODAN_ALLOW_MUTATING=1`, which the adapter reads itself, so the
+retriever, the `--select` menu and both orchestrators behave identically.
+`shodan_raw` cannot be used to bypass the split: the toolkit screens the
+subcommand and refuses the mutating ones.
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/toolkits/shodan-toolkit/tests -q
+self-development/.venv/bin/python -m pytest self-development/toolkits/shodan-toolkit/tests/test_agent_adapter.py -q
+```
+
+19 tests and 152 tests pass. The whole suite is part of the standard
+`pytest` run.
+
+**Every Shodan test lives under `toolkits/shodan-toolkit/tests/`.** The
+adapter suite used to sit in `tests/test_shodan_toolkit.py`, next to the
+other repository-level suites; it is now
+`toolkits/shodan-toolkit/tests/test_agent_adapter.py`, so the feature is
+tested from one directory. The file skips itself when the toolkit is used
+as a standalone library, because the agent-side modules it needs are not
+part of that distribution.
+
+### Latest change: the Shodan tools in the selection menu
+
+The Shodan toolkit was already wired into `_discover_tools()`, so the
+**Security** category showed up in the `--select` menu - but nothing
+locked that down. The MikroTik toolkit had lost its **Network** category
+the same way once, so the Shodan tools are now covered by the same kind of
+regression suite.
+
+| Path | Change |
+|---|---|
+| `tests/test_tool_selection_menu.py` | New `TestSecurityCategory`, `TestSecurityCategoryDescription` and `TestSelectingSecurity` suites: the category must exist, hold exactly the twelve read-only tools, be selectable through `select_tools_by_category()` and through the interactive prompt, and be rendered in the menu. The four write-capable tools must stay out unless the opt-in is set. |
+| `tests/test_tool_selection_menu.py` | `TestMenuParity` now checks that the Shodan tools are reachable through every load path (menu, retriever, both orchestrators). |
+| `agent_tool_selection.py` | `shodan_myip` did not match any action pattern and fell through to the raw first word, so the summary read `Actions: discover, inspect, diagnose, get, execute`. It is now `inspect`. |
+| `toolkits/shodan-toolkit/tests/test_agent_adapter.py` | An autouse fixture removes `TORVALDS_SHODAN_ALLOW_MUTATING`, so the suite no longer fails for a developer who has the opt-in exported. |
+| `docs/shodan-toolkit.md` | New *Selecting the tools* section. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/tests/test_tool_selection_menu.py -q
+self-development/.venv/bin/python -m pytest self-development/toolkits/shodan-toolkit/tests/test_agent_adapter.py -q
+```
+
+30 tests and 19 tests pass, with and without the opt-in exported.
+
+### Previous work: the HITL timeout is now "no timeout" by default
+
 | Branch | `feature/docs/ollama-local-setup` (off `master`, `b068337`) |
 | Scope | Document and enable the local Ollama setup: install Ollama, pull the models, run the agent |
 | Status | Implemented, verified against a live Ollama server, **committed** (`3398cdb`) and pushed to `origin/feature/docs/ollama-local-setup` |
@@ -159,7 +253,7 @@ The full suite shows **no new failures** against the baseline: the failure
 set at `HEAD` (`1736839`) and after the change is byte-identical —
 77 pre-existing failures, unchanged (76 failed + 1 error).
 
-### Previous work: the MikroTik RouterOS toolkit
+### Earlier work: the MikroTik RouterOS toolkit
 
 | Item | Status |
 |---|---|
