@@ -44,6 +44,7 @@ def build_tool_retriever(
     include_data_analysis_tools: bool = True,
     include_project_manager_tools: bool = True,  # NEW: Step 05
     include_mikrotik_tools: bool = True,  # NEW: MikroTik RouterOS toolkit
+    include_shodan_tools: bool = True,  # NEW: Shodan internet-exposure toolkit
 ) -> tuple:
     """
     Build a tool retriever that loads tools on-demand based on query semantics.
@@ -131,6 +132,21 @@ def build_tool_retriever(
             all_tools.extend(_get_mikrotik())
         except ImportError:
             # MikroTik toolkit not available — skip gracefully
+            pass
+
+    # -----------------------------------------------------------------------
+    # 3c. Shodan toolkit
+    # -----------------------------------------------------------------------
+    # The toolkit drives the external 'shodan' CLI.  It is imported behind a
+    # guard so that a missing dependency degrades gracefully instead of
+    # breaking the agent boot.  Only the read-only tools are exposed unless
+    # TORVALDS_SHODAN_ALLOW_MUTATING is set.
+    if include_shodan_tools:
+        try:
+            from agent_shodan_toolkit import get_all_tools as _get_shodan
+            all_tools.extend(_get_shodan())
+        except ImportError:
+            # Shodan toolkit not available - skip gracefully
             pass
 
     # -----------------------------------------------------------------------

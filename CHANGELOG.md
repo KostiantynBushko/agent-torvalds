@@ -1,5 +1,108 @@
 # Changelog
 
+## [Unreleased] - Shodan Toolkit
+
+### Added
+- **Shodan toolkit** — the agent can now query the Shodan internet-exposure
+  database. Sixteen tools are exposed: `shodan_search`, `shodan_count`,
+  `shodan_host`, `shodan_stats`, `shodan_trends`, `shodan_domain_info`,
+  `shodan_honeyscore`, `shodan_myip`, `shodan_account_info`,
+  `shodan_list_alerts`, `shodan_list_scans`, `shodan_raw`, and the four
+  write-capable tools `shodan_create_alert`, `shodan_delete_alert`,
+  `shodan_submit_scan` and `shodan_download`.
+- **The project was moved into this repository** — the toolkit was developed
+  standalone and now lives in `toolkits/shodan-toolkit/`. The move used
+  `git subtree`, so the **original commits are preserved** in the history of
+  the `feature/shodan-toolkit` branch, grafted under the
+  `toolkits/shodan-toolkit/` prefix. The content is byte-identical to the
+  upstream project (every file has the same blob hash), so the upstream
+  repository stays the source of truth and `git subtree pull` can bring in
+  later upstream work.
+- **Reusable core package** — the library half keeps its upstream `src/`
+  layout and imports **no** LlamaIndex at import time, so it stays
+  independently testable and can be used as a plain library. The directory
+  name contains a hyphen, so consumers import it through the alias
+  `toolkits.shodan_toolkit`, which `toolkits/__init__.py` registers.
+- **`agent_shodan_toolkit.py`** — the LlamaIndex adapter. It does not
+  re-implement the tools: it re-uses the upstream functions verbatim and
+  only rewrites the descriptions so that every tool carries the
+  `Category: Security` tag the startup selection menu needs.
+- **The Security category** — the Shodan tools form their own category in
+  the startup tool selection menu (`--select`, and `\tools` /
+  `\tool-select` in the TUI), so they can be loaded on their own.
+- **`docs/shodan-toolkit.md`** — the end-user reference: installation,
+  configuration, the tools, the read-only / write split, the limitations,
+  the security model and the troubleshooting table.
+- **`toolkits/shodan-toolkit/tests/test_agent_adapter.py`** — 19 tests for
+  the adapter: the tool registration, the degradation contract, the
+  error-payload convention, the raw-command guard and the load-path parity.
+- **The Security category is locked down by a regression suite** —
+  `tests/test_tool_selection_menu.py` now covers the Shodan tools the same
+  way it covered the MikroTik ones: the category must exist, hold exactly
+  the twelve read-only tools, be selectable through
+  `select_tools_by_category()` and the interactive prompt, and be rendered
+  in the menu. The write-capable tools must stay out of the menu unless
+  `TORVALDS_SHODAN_ALLOW_MUTATING=1` is set, and the Shodan tools must be
+  reachable through every load path (menu, retriever, both orchestrators).
+
+### Fixed
+- **The Security summary no longer contains a raw verb** — the menu
+  describes a category with the canonical actions of its tools
+  (`Actions: discover, inspect, diagnose, execute`). `shodan_myip` ("Get the
+  public IP address Shodan sees for this machine") did not match any
+  action pattern and fell through to the raw first word, so the summary
+  read `Actions: discover, inspect, diagnose, get, execute`. The pattern
+  now maps it to `inspect`, like the other lookups.
+- **The Shodan tests no longer depend on the operator's environment** —
+  `TORVALDS_SHODAN_ALLOW_MUTATING=1` enables the write-capable tools in
+  every load path, so a developer who had it exported saw three adapter
+  tests fail. The variable is now removed for the duration of the suite,
+  and the tests that exercise the opt-in set it themselves.
+
+### Security
+- **Read-only by default** — the four tools that change account state or
+  consume credits (alerts, scans, downloads) are **not** exposed. The
+  opt-in is a single environment variable, `TORVALDS_SHODAN_ALLOW_MUTATING=1`,
+  which the adapter reads itself, so every load path (the retriever, the
+  `--select` menu and both orchestrators) behaves identically.
+- **The raw-command guard** — `shodan_raw` can run any CLI subcommand, so
+  the toolkit screens the subcommand and refuses the ones that change
+  state, consume credits or write files. It therefore cannot be used to
+  bypass the read-only split.
+- **No shell** — the `shodan` CLI is executed as an argument vector, never
+  through a shell, so a query string cannot become a shell command. The API
+  key is never passed on the command line either, so it cannot leak into a
+  log line or an error message.
+
+### Changed
+- `toolkits/__init__.py` now registers a second alias,
+  `toolkits.shodan_toolkit`, next to the existing
+  `toolkits.mikrotik_routeros`. Both are registered only if the package is
+  importable, so `import toolkits` never fails when an optional toolkit is
+  absent.
+- `agent_tool_retriever.py` gained an `include_shodan_tools` flag (on by
+  default), `agent_tool_selection.py` discovers the Shodan tools for the
+  startup menu, and both orchestrators (`agent-torvalds.py`,
+  `agent-torvalds-mw.py`) load them in the full-inventory mode.
+- `docs/shodan-toolkit.md` gained a **Selecting the tools** section: what
+  the Security entry in the menu looks like, how to pick it, and how the
+  four write-capable tools join it after the opt-in.
+- `pytest.ini` puts `toolkits/shodan-toolkit/src` on the path and adds the
+  toolkit's own test suite to `testpaths`, so the 133 upstream tests run
+  against the in-repository copy - the same code the adapter loads.
+- **Every Shodan test now lives under `toolkits/shodan-toolkit/tests/`.**
+  The adapter suite moved there from `tests/test_shodan_toolkit.py` and is
+  now `tests/test_agent_adapter.py`, so the whole feature - the library and
+  its agent integration - is tested from one directory. The moved file
+  skips itself when the toolkit is used as a standalone library, because
+  the agent-side modules it needs do not exist there.
+- **`toolkits/shodan-toolkit/conftest.py`** — puts the toolkit's `src/`
+  directory on `sys.path`. pytest picks the nearest configuration file when
+  it is pointed at a path inside the toolkit, and `pyproject.toml` is the
+  one it finds; without this the suite could only be run from the
+  repository root. The upstream files themselves are untouched, so
+  `git subtree pull` keeps working.
+
 ## [Unreleased] - Local LLM setup (Ollama)
 
 ### Documentation

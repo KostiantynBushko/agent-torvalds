@@ -1,0 +1,88 @@
+[build-system]
+requires = ["setuptools>=68,<81", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shodan-toolkit"
+version = "0.1.0"
+description = "Python wrapper for the Shodan CLI exposing tools for LlamaIndex FunctionAgent"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Kostiantyn Bushko" }]
+keywords = ["shodan", "llama-index", "agent", "security", "tools", "function-tool"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+]
+
+dependencies = [
+    "llama-index-core>=0.12",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+cli = ["shodan>=1.31", "setuptools<81"]
+agent = ["llama-index-llms-openai>=0.3"]
+ollama = ["llama-index-llms-ollama>=0.3"]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.4",
+    "mypy>=1.8",
+    "shodan>=1.31",
+    "setuptools<81",
+]
+
+[project.scripts]
+shodan-toolkit = "shodan_toolkit.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/KostiantynBushko/agent-torvalds"
+Repository = "https://github.com/KostiantynBushko/agent-torvalds"
+Issues = "https://github.com/KostiantynBushko/agent-torvalds/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["shodan_toolkit*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+# UP006/UP007/UP035/UP045: the package supports Python 3.10, but the
+# annotations are still evaluated at runtime by pydantic and by
+# llama-index's schema builder.  Keep typing.Dict/List/Optional so the
+# package stays importable on 3.10 without surprises.
+ignore = ["E501", "B008", "SIM108", "UP006", "UP007", "UP035", "UP045"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false

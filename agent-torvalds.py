@@ -76,6 +76,7 @@ from agent_windows_toolkit import get_all_tools as get_windows_tools
 from agent_github_toolkit import get_all_tools as get_github_tools
 from agent_apt_toolkit import get_all_tools as get_apt_tools
 from agent_mikrotik_toolkit import get_all_tools as get_mikrotik_tools
+from agent_shodan_toolkit import get_all_tools as get_shodan_tools
 from agent_cache_system import (
     get_all_tools as get_cache_tools,
     start_session,
@@ -488,6 +489,7 @@ def _collect_all_tools() -> List[FunctionTool]:
         + get_cache_tools()
         + get_project_manager_tools()
         + get_mikrotik_tools()
+        + get_shodan_tools()
     )
 
     os_name = platform.system()
