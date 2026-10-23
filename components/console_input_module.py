@@ -8,6 +8,13 @@ specified timeout period.
 The default timeout is ``-1``, which means *no timeout*: the prompt waits
 for the human indefinitely.  See ``components.hitl_timeout.py``.
 
+Readline Integration
+--------------------
+This module initializes Python's ``readline`` library at import time,
+enabling full cursor navigation (left/right arrows), multiline editing
+(proper backspace across lines), and command history (up/down arrows)
+for all console input prompts.
+
 Usage:
     from components.console_input_module import ConsoleInputModule
 
@@ -33,11 +40,103 @@ from __future__ import annotations
 
 import asyncio
 import getpass
+import sys
 from typing import List, Optional
 
 from rich.console import Console
 
 from components.hitl_timeout import NO_TIMEOUT, normalize_timeout
+
+# ---------------------------------------------------------------------------
+# Readline initialization for cursor navigation and multiline editing
+# ---------------------------------------------------------------------------
+#
+# Python's readline module provides:
+#   - Cursor movement with arrow keys (left/right to navigate within a line)
+#   - Multiline editing support (proper backspace across lines)
+#   - Command history (up/down arrows to navigate previous commands)
+#   - Emacs-style line editing (Ctrl+A, Ctrl+E, Ctrl+K, etc.)
+#
+# This is initialized once at module import time so all input() calls
+# throughout the application benefit from readline capabilities.
+# ---------------------------------------------------------------------------
+
+_readline_initialized = False
+
+
+def init_readline() -> None:
+    """Initialize readline for enhanced console input.
+
+    Enables cursor navigation, multiline editing, and command history
+    for all subsequent input() calls.  Safe to call multiple times.
+    """
+    global _readline_initialized
+    if _readline_initialized:
+        return
+
+    try:
+        import readline
+        import rlcompleter
+
+        # Use readline history file if available (persistent history)
+        history_file = None
+        try:
+            import os
+            from pathlib import Path
+
+            # Store history in user's home directory
+            home = Path.home()
+            history_dir = home / ".cache" / "agent-torvalds"
+            history_dir.mkdir(parents=True, exist_ok=True)
+            history_file = str(history_dir / "input_history")
+        except Exception:
+            pass
+
+        # Load history from file if it exists
+        if history_file and os.path.exists(history_file):
+            readline.read_history_file(history_file)
+            # Increase history size limit
+            readline.set_history_length(1000)
+
+        # Configure readline for better editing experience
+        readline.parse_and_bind("tab: complete")
+
+        # Enable emacs-style key bindings (default on Unix)
+        # This gives us:
+        #   Ctrl+A - move to beginning of line
+        #   Ctrl+E - move to end of line
+        #   Ctrl+K - kill to end of line
+        #   Ctrl+U - kill to beginning of line
+        #   Ctrl+W - kill previous word
+        #   Ctrl+Y - yank (paste) killed text
+        #   Alt+Backspace - kill previous word
+        readline.parse_and_bind("set editing-mode emacs")
+
+        # Enable multiline editing - allows proper cursor movement
+        # across multiple lines when text wraps
+        readline.parse_and_bind("set horizontal-scroll-mode off")
+
+        # Save history on exit
+        import atexit
+
+        def _save_history() -> None:
+            if history_file:
+                try:
+                    readline.write_history_file(history_file)
+                except Exception:
+                    pass
+
+        atexit.register(_save_history)
+
+        _readline_initialized = True
+    except ImportError:
+        # readline is not available on Windows by default;
+        # fall back gracefully without it
+        pass
+
+
+# Initialize readline at module import time
+init_readline()
 
 
 class ConsoleInputModule:
