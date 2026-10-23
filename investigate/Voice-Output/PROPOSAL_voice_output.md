@@ -1,9 +1,74 @@
 # PROPOSAL: Unified Voice Interface for the Torvalds Agent
 
-**Status:** Proposed — awaiting operator review
+**Status:** Accepted — **architecture reworked**, see the banner below
 **Scope:** Give `agent-torvalds` a single, configurable interface that lets it
 produce voice (and, later, accept it) using the local `audio.cpp` stack.
 **Companion document:** [`INVESTIGATION_REPORT.md`](./INVESTIGATION_REPORT.md)
+**Build document:** [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) — the
+authoritative plan, reworked to the component shape.
+
+---
+
+> ## ⚠️ The architecture changed after this document was written
+>
+> This proposal was written around a **toolkit**: a `toolkits/audio-toolkit/`
+> library plus an `agent_voice_toolkit.py` LlamaIndex adapter that exposed
+> four tools to the model.
+>
+> **That was the wrong shape, and the decision has been taken:** the voice
+> feature is a **component** — `components/voice/` — with an **on/off
+> switch**, and it exposes **no tools to the model at all**.
+>
+> The reasoning, in one line each:
+>
+> - Voice is *infrastructure*, not a model capability. The repository already
+>   has the convention for it: `components/README.md` says the folder holds
+>   "helper components and utility modules, **NOT** the agent's callable
+>   tools".
+> - The model has no business deciding *when* to speak, and a tool surface
+>   drags the feature into the retriever, the `--select` menu and the top-k
+>   retrieval budget for no benefit.
+> - **There is no "Torvalds voice".** The default is the stock Kokoro preset
+>   **`af_heart`**. Kokoro cannot clone (`supports_speaker_reference=false`),
+>   so a clone is not an option with the current stack.
+>
+> **What is still valid in this document:** the problem statement (§2), the
+> three-axis interface (§5), the backend contract and the HTTP/CLI/C-API
+> design (§6), the output sinks (§7), the text-preparation layer (§8), the
+> command surface (§10), the configuration reference (§12), the risks (§14)
+> and the metrics (§15). The empirical numbers in the investigation report
+> are unaffected.
+>
+> **What is superseded:** the file layout and the layering rules (§4.2, §4.3),
+> the tool API (§9), the integration points (§11) and the phase list (§13).
+> They are corrected inline below, and the reworked
+> [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) is the authoritative
+> build document.
+
+> ## ⚠️ The listening half is now proposed — see the companion proposal
+>
+> This document is about the **output** half. The operator asked whether the
+> **listening** half (ASR) should be combined with it in a single module. The
+> answer is **yes, with a caveat**, and it is written up in
+> **[`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md)**.
+>
+> **What that changes here:**
+>
+> - **§2.3** (the scope boundary) deferred Capability C — "speak *to* the
+>   agent" — as a separate proposal. That deferral is now **partly lifted**:
+>   the *push-to-talk* case (Level 1) is proposed for the same component,
+>   while continuous listening (Level 2) and full duplex (Level 3) remain
+>   deferred, for the reasons given in the companion proposal.
+> - **§16, question 4** (the open questions) refers to the same question.
+>
+> **What does not change:** the "no tools" decision. The listening half
+> contributes **no** tool either — the `transcribe_audio` tool stays deleted,
+> and the capability is reachable through `\voice transcribe <path>` instead.
+>
+> **The shape:** one component (`components/voice/`), two managers
+> (`VoiceSessionManager`, `ListeningSessionManager`), **one server**, one
+> command family (`\voice`), one error table — and a **separate microphone
+> switch that is off by default**, independent of the speaker.
 
 ---
 
@@ -17,7 +82,7 @@ produce voice (and, later, accept it) using the local `audio.cpp` stack.
 6. [Backends](#6-backends)
 7. [Output Sinks](#7-output-sinks)
 8. [Text Preparation](#8-text-preparation)
-9. [Tool API](#9-tool-api)
+9. [The Component API](#9-the-component-api)
 10. [Command Surface](#10-command-surface)
 11. [Integration Points](#11-integration-points)
 12. [Configuration Reference](#12-configuration-reference)
@@ -35,21 +100,23 @@ synthesise speech at **14.4× real time** on this machine sits two directories
 away, fully built, with its TTS weights already downloaded — and the two
 projects do not know about each other.
 
-This proposal adds a **voice subsystem** to the agent:
+This proposal adds a **voice component** to the agent:
 
-- a reusable toolkit (`toolkits/audio-toolkit/`) that knows how to turn text
-  into audio through `audio.cpp`, with no LlamaIndex dependency;
+- an internal component (`components/voice/`) that knows how to turn text
+  into audio through `audio.cpp`, with **no** LlamaIndex dependency and
+  **no** tools exposed to the model;
 - a **unified interface** defined as three orthogonal axes — *trigger*,
-  *backend*, *output* — so that "speak the answer", "announce progress" and
-  "speak to the agent" are configurations of one core rather than three
-  subsystems;
-- a `VoiceSessionManager` in `components/voice/` that wires the interface into
-  both orchestrators;
-- a `Voice` tool category so the agent can speak on its own initiative.
+  *backend*, *output* — so that "speak the answer" and "announce progress"
+  are configurations of one core rather than two subsystems;
+- a `VoiceSessionManager` that wires the interface into both orchestrators;
+- an **on/off switch** at three levels — environment, CLI flag and a runtime
+  command — so the operator decides whether the agent speaks at all, and can
+  change its mind mid-session.
 
 The headline capability: **every agent response can be spoken aloud**, with the
-text still shown. Voice is *additive* — the text is never replaced — so nothing
-is lost if the operator turns it off.
+text still shown. Voice is *additive* — the text is never replaced — and the
+component is **off by default**, so nothing is lost if the operator never
+turns it on.
 
 ---
 
@@ -62,7 +129,7 @@ The agent has no audio capability whatsoever:
 - `agent-torvalds.py` renders `Markdown(response)` to the terminal and nothing
   else. There is no path from a response to a sound.
 - There is no ASR path, so the agent cannot be spoken to.
-- There is no voice catalogue, so there is no way to pick or clone a voice.
+- There is no voice catalogue, so there is no way to pick a voice.
 - No configuration, no commands, no tests.
 
 The consequence for the operator is that a long, structured, technical answer —
@@ -86,15 +153,24 @@ Three reasons, each of which is a component of the proposal:
 | In scope | Out of scope (separate proposal) |
 |---|---|
 | Agent response → speech (Capability A) | Microphone capture → ASR → agent (Capability C) |
-| Agent-initiated announcements (Capability B) | Full-duplex conversation, barge-in at the *recognition* level |
-| Voice catalogue: presets, cloning references | Speaker diarisation, voice conversion chains |
+| Runtime announcements (Capability B) | Full-duplex conversation, barge-in at the *recognition* level |
+| Voice catalogue: presets | Speaker diarisation, voice conversion chains |
 | Output sinks: speaker, file | Subtitle/lyric generation, audio editing |
-| A `Voice` tool category | Replacing the text UI |
+| An on/off switch and a command surface | Replacing the text UI |
+| **No LLM-facing tools** | Agent-initiated speech via a tool |
 
 Capability C is deliberately deferred: it needs a different UI model (a
 continuous listening mode), turn detection, and a different failure contract.
 The interface below is designed so that adding it later is a new **input**
 axis, not a rewrite.
+
+> **Updated 2026-10-22.** The deferral above is **partly lifted** by
+> [`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md), which
+> argues that Capability C is really *three* capabilities — push-to-talk
+> dictation (L1), continuous open-mic listening (L2) and full duplex (L3) —
+> and that **L1 fits this proposal's contracts exactly** while L2 and L3 do
+> not. L1 is proposed as an addition to this same component; L2 and L3 remain
+> deferred.
 
 ---
 
@@ -103,13 +179,14 @@ axis, not a rewrite.
 | # | Principle | Consequence |
 |---|---|---|
 | **P1** | **Voice is additive, never a replacement** | The text is always printed. If synthesis fails, the turn is unaffected. |
-| **P2** | **The agent must never break because audio is missing** | Guarded imports; a missing `audio.cpp` yields a disabled feature and a clear message, never a traceback. |
+| **P2** | **The agent must never break because audio is missing** | Guarded imports; a missing `audio.cpp` yields a disabled component and a clear message, never a traceback. |
 | **P3** | **One interface, many capabilities** | Trigger × Backend × Output. No capability gets its own subsystem. |
-| **P4** | **Synthesis is not the agent's job** | The agent decides *what* to say; the voice subsystem decides *how* it is said. |
+| **P4** | **Synthesis is not the agent's job** | The agent decides *what* to say; the voice component decides *how* it is said. |
 | **P5** | **Fail fast, fail structured** | Every error path returns a machine-readable code, following the repo's existing convention. |
 | **P6** | **Never speak secrets** | Redaction plus code-block suppression by default. |
-| **P7** | **Follow the house pattern exactly** | `toolkits/` core + root adapter + `Category:` tag + `include_*_tools` flag + `\command` in the registry. |
+| **P7** | **Be a component, not a tool** | The feature lives in `components/voice/`, is switched on and off, and exposes no tools. The `components/` convention is followed exactly. |
 | **P8** | **Non-blocking and interruptible** | Synthesis and playback run off the event loop; playback can be stopped at any time. |
+| **P9** | **Off means off** | With the component off, no backend is probed, no thread is started, and the agent behaves identically to a build without it. |
 
 ---
 
@@ -123,80 +200,99 @@ axis, not a rewrite.
 │                                                                          │
 │   prompt_handler(...) ──► response_text ──┬──► console.print(Markdown)   │
 │                                              │                           │
-│                                              └──► VoiceSessionManager    │
-│                                                     .narrate(response)   │
+│                                              └──► narrate_response()     │
+│                                                     └─► VoiceSessionManager
+│                                                             .narrate()  │
 └─────────────────────────────────────────────────────────┬────────────────┘
                                                           │
         ┌─────────────────────────────────────────────────┼──────────────┐
         │                                                 │              │
         ▼                                                 ▼              ▼
 ┌────────────────┐   ┌──────────────────┐   ┌───────────────────┐   ┌──────────┐
-│ VoiceSession   │   │  VoiceToolkit    │   │  TextPreparation  │   │ Command  │
-│ Manager        │   │  (toolkits/)     │   │  to_speakable()   │   │ Surface  │
+│ VoiceSession   │   │  Voice Component |   │  TextPreparation  │   │ Command  │
+│ Manager        │   │  (components/)   │   │  to_speakable()   │   │ Surface  │
 │ components/    │   │                  │   │  chunk_text()     │   │ \voice   │
-│ voice/         │   │  backends/       │   │  redact()         │   │ \voices  │
-│                │   │   base.py        │   │                   │   │ \speak   │
-│  config.py     │   │   http.py        │   └───────────────────┘   └──────────┘
-│  session.py    │   │   cli.py         │            ▲
-│  narrator.py   │   │   capi.py (p3)   │────────────┘
-│                │   │  output.py       │
-│                │   │  voices.py       │
-└───────┬────────┘   └────────┬─────────┘
-        │                     │
-        └──────────┬──────────┘
-                   ▼
-        ┌────────────────────────────────┐
-        │  audio.cpp runtime             │
-        │  audiocpp_server (default)     │
-        │  audiocpp_cli   (fallback)     │
-        │  libaudiocpp    (phase 3)      │
-        └────────────────────────────────┘
+│ voice/         │   │  backends/       │   │  redact()         │   │          │
+│                │   │   base.py        │   └───────────────────┘   └──────────┘
+│  config.py     │   │   http.py        │            ▲
+│  session.py    │   │   cli.py         │────────────┘
+│  narrator.py   │   │   capi.py (p3)   │
+│  commands.py   │   │  output.py       │
+│  runtime.py    │   │  voices.py       │
+│  transport.py  │   └────────┬─────────┘
+│  server.py     │            │
+└───────┬────────┘   ┌────────┴─────────┐
+        │            │                  │
+        │   ┌────────▼────────┐  ┌──────▼──────────────────────┐
+        │   │ Listening       │  │  audio.cpp runtime           │
+        │   │ Session Manager │  │  audiocpp_server (default)   │
+        │   │ (the input half)│  │  audiocpp_cli   (fallback)   │
+        │   │  capture.py     │  │  libaudiocpp    (phase 3)    │
+        │   │  transcribe.py  │  └───────────────────────────────┘
+        │   │  silence.py     │      ▲        ▲
+        │   └─────────────────┘      │        │
+        └────────────────────────────┴────────┘
+                    one server, one transport
 ```
+
+> The **listening** half at the bottom of the diagram is the addition proposed
+> in [`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md). It
+> shares the `audiocpp_server` process, the transport and the error table
+> with the output half, and has **its own manager and its own switch**.
 
 ### 4.2 File layout
 
 ```
-toolkits/audio-toolkit/                 # core library — NO LlamaIndex imports
-    __init__.py                         # public API re-exports
-    config.py                           # VoiceConfig dataclass + env resolution
+components/voice/                      # the component — NO LlamaIndex imports
+    __init__.py                        # public API re-exports
+    config.py                          # VoiceConfig dataclass + env/CLI resolution
+    errors.py                          # VoiceError + error codes
+    text.py                            # to_speakable_text(), chunk_text(), redact()
+    output.py                          # SpeakerSink, FileSink, NullSink
+    voices.py                          # voice catalogue + capability probing
+    session.py                         # VoiceSessionManager — the runtime facade
+    narrator.py                        # post-response narration hook
+    commands.py                        # is_voice_command(), handle_voice_command()
+    runtime.py                         # the process-wide instance + close()
     backends/
         __init__.py
-        base.py                         # SpeechBackend ABC, SpeechRequest, SpeechResult
-        http.py                         # audiocpp_server REST client
-        cli.py                          # audiocpp_cli subprocess backend
-        capi.py                         # ctypes → libaudiocpp (phase 3, stub first)
-    output.py                           # SpeakerSink, FileSink, NullSink
-    voices.py                           # voice catalogue + capability probing
-    text.py                             # to_speakable_text(), chunk_text(), redact()
-    errors.py                           # VoiceError + error codes
+        base.py                        # SpeechBackend ABC, SpeechRequest, SpeechResult
+        http.py                        # audiocpp_server REST client
+        cli.py                         # audiocpp_cli subprocess backend
+        capi.py                        # ctypes → libaudiocpp (phase 3, stub first)
 
-agent_voice_toolkit.py                  # LlamaIndex adapter (the ONLY LlamaIndex file)
-components/voice/
-    __init__.py
-    config.py                           # VoiceConfig resolution (env + CLI)
-    session.py                          # VoiceSessionManager — the runtime facade
-    narrator.py                         # post-response narration hook
-
-docs/voice-toolkit.md                   # operator documentation
-docs/audiocpp-server.json.example       # recommended server config
-tests/test_voice_text.py                # text preparation
-tests/test_voice_backends.py            # backend contract (mocked)
-tests/test_voice_output.py              # sinks
-tests/test_voice_toolkit.py             # adapter
-tests/test_voice_menu.py                # \voice commands + --select parity
+docs/voice-component.md                # operator documentation
+docs/audiocpp-server.json.example      # recommended server config
+tests/test_voice_text.py               # text preparation
+tests/test_voice_backends.py           # backend contract (mocked)
+tests/test_voice_output.py             # sinks
+tests/test_voice_voices.py             # catalogue
+tests/test_voice_config.py             # configuration
+tests/test_voice_session.py            # the manager
+tests/test_voice_narrator.py           # the hook
+tests/test_voice_commands.py           # the \voice commands
+tests/test_voice_registry.py           # the command registry
+tests/test_voice_wiring.py             # the orchestrator integration + the "not a tool" guard
 ```
+
+**There is no `toolkits/audio-toolkit/` and no `agent_voice_toolkit.py`.**
+The component is an ordinary Python package: `components.voice` is a valid
+identifier, so it needs no import alias, no `sys.modules` trickery and no
+`pytest.ini` testpath — the tests live in `tests/`, which is already
+collected.
 
 ### 4.3 Layering rules (binding)
 
 | Layer | May import | Must NOT import |
 |---|---|---|
-| `toolkits/audio-toolkit/**` | stdlib, `requests`/`httpx` (optional) | `llama_index.*`, `components.*`, `agent_*.py` |
-| `agent_voice_toolkit.py` | `toolkits.audio_toolkit`, `llama_index.core.tools` | `components.voice.*` (keeps the adapter independent) |
-| `components/voice/**` | `toolkits.audio_toolkit` | `llama_index.*` |
-| `agent-torvalds*.py` | `components.voice`, `agent_voice_toolkit` | `toolkits.audio_toolkit` internals |
+| `components/voice/**` | stdlib, `requests` (optional, lazy) | `llama_index.*`, any `agent_*.py`, any `toolkits.*` |
+| `agent-torvalds*.py` | `components.voice` (public API only) | `components.voice` internals |
 
-The dependency direction is strictly inward: orchestrator → components → toolkit.
-This is the same rule the MikroTik toolkit established.
+The dependency direction is strictly inward: **orchestrator → component**.
+
+**There is no adapter layer.** A `components/voice/**` module that imports
+`llama_index` or an `agent_*.py` module is a defect, and the implementation
+plan enforces it mechanically with a test.
 
 ---
 
@@ -206,9 +302,9 @@ This is the same rule the MikroTik toolkit established.
 
 ```python
 class VoiceTrigger(str, Enum):
-    NEVER       = "never"        # voice disabled entirely
+    NEVER       = "never"        # the component never speaks on its own
     ON_RESPONSE = "on_response"  # speak each final response (Capability A)
-    ANNOUNCE    = "announce"     # only when the agent calls speak_text (B)
+    ANNOUNCE    = "announce"     # only when the runtime hands over text (B)
 
 class VoiceBackend(str, Enum):
     NONE = "none"   # no synthesis available
@@ -228,12 +324,12 @@ class VoiceOutput(str, Enum):
 @dataclass(frozen=True)
 class VoiceConfig:
     # --- axis 1: trigger ---
-    trigger: VoiceTrigger = VoiceTrigger.NEVER
+    trigger: VoiceTrigger = VoiceTrigger.ON_RESPONSE
 
     # --- axis 2: backend ---
     backend: VoiceBackend = VoiceBackend.HTTP
-    server_url: str = "http://127.0.0.1:8080"
-    server_model: str = ""              # model id registered in audiocpp_server
+    server_url: str = "http://127.0.0.1:8099"
+    server_model: str = "kokoro"        # model id registered in audiocpp_server
     cli_path: str = ""                  # path to audiocpp_cli
     cli_family: str = ""                # e.g. "kokoro_tts"
     cli_model_path: str = ""            # path to the GGUF
@@ -246,9 +342,7 @@ class VoiceConfig:
     player_cmd: str = ""                # override; default auto-detected
 
     # --- voice selection ---
-    voice_id: str = ""                  # preset voice, e.g. "af_heart"
-    voice_ref: str = ""                 # reference WAV for cloning
-    reference_text: str = ""
+    voice_id: str = "af_heart"          # a Kokoro preset
     language: str = ""                  # must match the voice for Kokoro
 
     # --- behaviour ---
@@ -260,6 +354,10 @@ class VoiceConfig:
     rate_limit_s: float = 0.0           # min gap between utterances
 ```
 
+> **`voice_ref` / `reference_text` are not in the dataclass.** The default
+> backend cannot clone, and a config field that is silently ignored is worse
+> than no field at all. They come back *with* a cloning-capable backend.
+
 ### 5.3 The runtime facade
 
 `VoiceSessionManager` is the single object both orchestrators talk to.
@@ -268,34 +366,56 @@ class VoiceConfig:
 class VoiceSessionManager:
     def __init__(self, config: VoiceConfig): ...
 
+    # --- the switch ---
+    @property
+    def enabled(self) -> bool: ...
+    def enable(self) -> None: ...
+    def disable(self) -> None: ...
+    def toggle(self) -> bool: ...
+    def set_trigger(self, trigger: VoiceTrigger) -> None: ...
+    def set_voice(self, voice_id: str) -> None: ...
+
     # --- capability ---
     def available(self) -> bool: ...          # is a backend usable at all?
     def status(self) -> dict: ...             # {enabled, backend, trigger, output, model, ...}
 
     # --- production ---
-    def narrate(self, text: str) -> None: ...  # post-response hook; non-blocking
-    async def speak(self, text: str, **opts) -> dict: ...  # awaited, tool-facing
+    def narrate(self, text: str) -> None: ...   # post-response hook; non-blocking
+    def announce(self, text: str) -> None: ...  # runtime announcement; non-blocking
+    async def speak(self, text: str, **opts) -> dict: ...  # awaited, command-facing
     def stop(self) -> bool: ...                 # interrupt playback
 
     # --- discovery ---
     def list_voices(self) -> list[dict]: ...
     def probe(self) -> dict: ...                # health of the configured backend
+    def close(self) -> None: ...                # stop playback, shut the worker down
 ```
 
 **`narrate()` is non-blocking by contract.** It prepares the text, dispatches
 synthesis to a worker thread, and returns immediately. The caller never awaits
 it. This is what keeps the TUI render loop free.
 
-**`speak()` is awaited** and returns the structured result — this is the tool
-path, where the agent wants to know whether the utterance was produced.
+**`speak()` is awaited** and returns the structured result — this is the path
+the `\voice speak` and `\voice test` commands use, where the operator wants
+to know whether the utterance was produced.
 
-### 5.4 How the three capabilities map onto the axes
+**The "off" contract.** When `enabled` is `False`, `narrate()` and
+`announce()` return immediately without preparing the text, without
+constructing a backend and without starting a thread; `speak()` returns
+`VOICE_DISABLED`. The backend is built **lazily**, on the first synthesis
+after the component is enabled.
+
+### 5.4 How the two capabilities map onto the axes
 
 | Capability | Configuration | Extra machinery |
 |---|---|---|
 | **A — speak the answer** | `trigger=on_response` | `narrate()` hook after `prompt_handler` |
-| **B — announce mid-workflow** | `trigger=announce` | the `speak_text` tool |
+| **B — speak mid-workflow** | `trigger=announce` | the `announce()` call from another component |
 | **C — speak *to* the agent** | *(future)* `trigger=on_speech_input` | mic capture + ASR + turn detection — **separate proposal** |
+
+> The last row is superseded in part by
+> [`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md), which
+> splits C into L1/L2/L3 and proposes adding L1 to this component.
 
 ---
 
@@ -308,7 +428,7 @@ class SpeechBackend(ABC):
     @abstractmethod
     def probe(self) -> BackendStatus: ...
     @abstractmethod
-    def list_voices(self) -> list[dict]: ...
+    def list_voices(self, model: str = "") -> list[dict]: ...
     @abstractmethod
     def synthesize(self, request: SpeechRequest) -> SpeechResult: ...
 ```
@@ -318,8 +438,6 @@ class SpeechBackend(ABC):
 class SpeechRequest:
     text: str
     voice_id: str = ""
-    voice_ref: str = ""
-    reference_text: str = ""
     language: str = ""
     seed: int | None = None
 
@@ -390,7 +508,7 @@ so the phase-3 work is an implementation, not a redesign.
 ### 6.4 Backend selection and fallback
 
 `TORVALDS_VOICE_BACKEND` selects the backend. If the selected backend's
-`probe()` fails at startup, the manager:
+`probe()` fails, the manager:
 
 1. logs a clear warning naming the backend and the reason;
 2. falls back to `cli` if a CLI path is configured and the CLI backend probes
@@ -441,8 +559,8 @@ model" call at startup.
 ## 8. Text Preparation
 
 This is the component that decides whether the feature sounds competent or
-like a broken robot. It lives in `toolkits/audio-toolkit/text.py` and is
-purely functional — fully unit-testable, no I/O.
+like a broken robot. It lives in `components/voice/text.py` and is purely
+functional — fully unit-testable, no I/O.
 
 ### 8.1 `to_speakable_text(markdown: str) -> str`
 
@@ -473,7 +591,7 @@ Sentence-aware:
    chunk shorter than `min_chars` unless it is the last one.
 
 The split points are respected by the *model* too: Kokoro accepts
-`text_chunk_size` (default 240 codepoints), so the toolkit may pass
+`text_chunk_size` (default 240 codepoints), so the component may pass
 `text_chunk_size=min(max_chars, 240)` for families that support it.
 
 ### 8.3 `redact(text: str) -> str`
@@ -499,87 +617,83 @@ The **full original text is still printed** — redaction only affects the audio
 
 ---
 
-## 9. Tool API
+## 9. The Component API
 
-The adapter `agent_voice_toolkit.py` exposes four tools under the
-**`Category: Voice`** tag.
+> **This section replaces the "Tool API" of the original proposal.** The
+> voice component exposes **no tools**. There is no `agent_voice_toolkit.py`,
+> no `Category: Voice`, no `speak_text` and no `transcribe_audio`.
 
-### 9.1 `speak_text`
-
-```python
-async def speak_text(
-    text: str,
-    voice_id: str = "",
-    language: str = "",
-    output: str = "",          # "", "speaker", "file"
-) -> dict
-```
-
-Speaks arbitrary text immediately. Returns:
-
-```json
-{
-  "ok": true,
-  "spoken": "Torvalds agent, operational.",
-  "voice_id": "af_heart",
-  "output": "speaker",
-  "duration_ms": 2100.4,
-  "wall_ms": 213.5,
-  "rtf": 0.069,
-  "sample_rate": 24000,
-  "audio_path": ""
-}
-```
-
-Failure:
-
-```json
-{
-  "ok": false,
-  "error": "VOICE_SERVER_UNAVAILABLE",
-  "detail": "Could not connect to http://127.0.0.1:8080 (connection refused)"
-}
-```
-
-### 9.2 `list_voices`
+### 9.1 The public API
 
 ```python
-async def list_voices(model: str = "") -> dict
+from components.voice import (
+    VoiceConfig, VoiceTrigger, VoiceBackend, VoiceOutput,
+    VoiceSessionManager, build_voice_config, narrate_response,
+    get_voice_manager, set_voice_manager, close_voice_manager,
+)
 ```
 
-Returns the catalogue from `GET /v1/audio/voices`, or the model-local list for
-the CLI backend, plus a `capabilities` block stating whether the model supports
-preset voices, speaker reference (cloning) and style control — so the agent
-knows that Kokoro cannot clone but MagpieTTS can.
+Everything outside `components/voice/` uses only these names.
 
-### 9.3 `stop_speaking`
+### 9.2 The narration hook
 
 ```python
-async def stop_speaking() -> dict
+def narrate_response(manager: Optional[VoiceSessionManager], text: str) -> None:
+    """Narrate a final agent response. A no-op when the manager is None."""
 ```
 
-Interrupts the current playback. Returns `{"ok": true, "stopped": true}`.
+It is a no-op when the manager is `None`, when the component is disabled, or
+when the trigger is not `on_response`. It never raises.
 
-### 9.4 `transcribe_audio` (phase 2, optional)
+### 9.3 The switch
 
 ```python
-async def transcribe_audio(path: str, language: str = "") -> dict
+manager.enabled          # -> bool
+manager.enable()         # turn the component on
+manager.disable()        # turn it off
+manager.toggle()         # flip it; returns the new state
 ```
 
-Wraps `POST /v1/audio/transcriptions`. Exposed as a *tool* (not an input
-channel) so the agent can transcribe a file the user points it at, without
-committing to a full voice-assistant mode.
+The switch is also reachable from the environment
+(`TORVALDS_VOICE_ENABLED`), from the CLI (`--voice` / `--no-voice`) and from
+the runtime (`\voice on` / `\voice off` / `\voice toggle`).
 
-### 9.5 Adapter conventions (compliance with the house pattern)
+### 9.4 The status
 
-- Module docstring ends with `Category: Voice` and a
-  `Retriever Keywords: voice, speech, speak, say, read aloud, tts, audio, ...`
-  line.
-- The core package is imported inside `try/except`; `VOICE_AVAILABLE` and
-  `VOICE_IMPORT_ERROR` are module-level, mirroring the MikroTik adapter.
-- No tool raises. Every failure is a structured payload.
-- `get_all_tools()` returns `[]` when the toolkit is unavailable — the agent
-  simply has no Voice category, and the `--select` menu shows nothing for it.
+```python
+manager.status()
+# {
+#   "enabled": True,
+#   "available": True,
+#   "trigger": "on_response",
+#   "backend": "http",
+#   "output": "speaker",
+#   "server_url": "http://127.0.0.1:8099",
+#   "server_model": "kokoro",
+#   "voice_id": "af_heart",
+#   "device": "speaker",
+#   "detail": "...",
+# }
+```
+
+### 9.5 The catalogue
+
+```python
+manager.list_voices()
+# [
+#   {"id": "af_heart", "name": "Heart", "language": "en-us",
+#    "gender": "female", "source": "preset",
+#    "capabilities": {"preset_voices": True,
+#                     "speaker_reference": False,
+#                     "style_control": False}},
+#   ...
+# ]
+```
+
+The `capabilities` block states whether the model supports preset voices,
+speaker reference (cloning) and style control. With the default Kokoro model,
+`speaker_reference` is `False` — which is exactly why there is no "Torvalds
+voice".
 
 ---
 
@@ -587,25 +701,34 @@ committing to a full voice-assistant mode.
 
 Registered in `components/command_registry.py` behind a new
 `FEATURE_VOICE = "voice"` flag, so the help screen only advertises them when
-the feature is enabled.
+the voice runtime toggle is permitted.
 
 | Command | Description |
 |---|---|
-| `\voice` | Show the voice status: backend, trigger, output, model, voice, device |
-| `\voice on` / `\voice off` | Enable / disable speaking the response at runtime |
+| `\voice` | Show the voice status: enabled, trigger, backend, output, model, voice, device |
+| `\voice on` / `\voice off` / `\voice toggle` | Enable / disable speaking the response at runtime |
 | `\voice trigger <never\|on_response\|announce>` | Set the trigger axis at runtime |
 | `\voice voice <id>` | Change the active preset voice |
 | `\voice voices` | List the available voices |
 | `\voice speak <text>` | Speak a line immediately (bypasses the trigger) |
 | `\voice stop` | Stop the current playback |
 | `\voice test` | Synthesise and play a short test phrase |
+| `\voice help` | The cheat sheet |
 
 `\voice` is a **runtime toggle**, like the existing `\toggle-hitl`, so the
-operator can enable voice mid-session without restarting.
+operator can enable voice mid-session without restarting. The commands stay
+visible even when voice is off, because `\voice on` is precisely how you turn
+it on.
 
 The dispatch follows the existing pattern: a `components/voice/commands.py`
 module with `is_voice_command(cmd)` and `handle_voice_command(cmd)`, wired into
 both orchestrators next to `is_mikrotik_command` / `is_project_command`.
+
+> **If the listening proposal is approved**, this same family gains
+> `\voice listen on|off`, `\voice dictate`, `\voice transcribe <path>` and
+> `\voice devices`, and the status line splits into two halves — the output
+> state and the microphone state. **No new registry entry, no new category
+> and no new feature flag.**
 
 ---
 
@@ -616,21 +739,27 @@ missed:
 
 | File | Change |
 |---|---|
-| `toolkits/audio-toolkit/**` | **New** — the core library |
-| `agent_voice_toolkit.py` | **New** — the LlamaIndex adapter |
-| `components/voice/{__init__,config,session,narrator,commands}.py` | **New** — the runtime facade |
-| `agent_tool_retriever.py` | New `include_voice_tools: bool = True` flag; load the adapter in the retriever path |
-| `agent_tool_selection.py` | `_discover_tools()` imports the adapter (inside `try/except`) so the **Voice** category appears in `--select`; add a dedicated action pattern for the Voice category so the summary is not generic |
-| `components/command_registry.py` | `FEATURE_VOICE` flag + the eight `\voice*` `CommandSpec`s |
-| `agent-torvalds.py` | Build the `VoiceConfig` from env + CLI flags; construct the `VoiceSessionManager`; call `narrate(response)` after `prompt_handler`; dispatch `\voice` commands; add the CLI flags |
+| `components/voice/**` | **New** — the component |
+| `components/command_registry.py` | `FEATURE_VOICE` flag + the `\voice` `CommandSpec` + the `Voice` category |
+| `agent-torvalds.py` | Build the `VoiceConfig` from env + CLI flags; construct the `VoiceSessionManager`; call `narrate_response(response)` after `prompt_handler`; dispatch the `\voice` commands; add the CLI flags; close the manager on exit |
 | `agent-torvalds-mw.py` | The same, plus the TUI state fields and a `\voice` command handler |
-| `components/tui/state_bridge.py` | `voice_active: bool`, `voice_status: str`, `voice_last_spoken: str` on `TuiState` |
-| `components/tui/tui_app.py` | Show the voice state in the telemetry pane; stop playback on `\exit` |
-| `components/ollama_config.py` (analogue) | New `components/voice/config.py` resolving `TORVALDS_VOICE_SERVER_URL` → `AUDIO_CPP_SERVER_URL` → `http://127.0.0.1:8080` |
-| `pytest.ini` | Add `toolkits/audio-toolkit/tests` to `testpaths` (if the toolkit ships its own suite) |
+| `components/tui/state_bridge.py` | `voice_enabled: bool`, `voice_status: str`, `voice_last_spoken: str` on `TuiState` |
+| `components/tui/telemetry_view.py` | Show the voice state in the telemetry pane |
+| `components/tui/tui_app.py` | Handle the `\voice` commands; stop playback on `\exit` |
+| `components/README.md` | A new section for the `voice/` component |
 | `requirements.txt` | `requests>=2.31.0` is **already present** — no new mandatory dependency |
-| `docs/voice-toolkit.md` | **New** — the operator guide |
+| `docs/voice-component.md` | **New** — the operator guide |
 | `README.md`, `CHANGELOG.md` | Document the feature |
+
+**And what is deliberately NOT touched:**
+
+| File | Why it stays as it is |
+|---|---|
+| `agent_tool_retriever.py` | There are no tools to retrieve. No `include_voice_tools` flag. |
+| `agent_tool_selection.py` | There is no `Voice` category in the `--select` menu. |
+| `_collect_all_tools()` in both orchestrators | Voice contributes no tools. |
+| `toolkits/__init__.py` | `components.voice` is a normal package — no import alias. |
+| `pytest.ini` | The tests live in `tests/`, which is already collected. |
 
 ### 11.1 The narration hook (both orchestrators)
 
@@ -644,9 +773,8 @@ console.rule("[blue]Agent Response[/blue]")
 console.print(Markdown(response))
 console.rule()
 
-# --- voice ---
-if voice_session is not None:
-    voice_session.narrate(response)      # non-blocking
+# --- voice (component, off by default, never blocks) ---
+narrate_response(voice_session, response)
 ```
 
 TUI — `agent-torvalds-mw.py` / `components/tui/tui_app.py`:
@@ -654,23 +782,16 @@ TUI — `agent-torvalds-mw.py` / `components/tui/tui_app.py`:
 ```python
 response, stats = await self.prompt_handler_fn(...)
 self.state.set_markdown_content(response)
-if self.voice_session is not None:
-    self.voice_session.narrate(response)  # non-blocking
+narrate_response(self.voice_session, response)
 ```
 
 Because `narrate()` returns immediately, the TUI's render loop is unaffected.
 
 ### 11.2 Interruption (barge-in)
 
-The classic REPL already handles `KeyboardInterrupt` around `console.input`.
-The TUI has an `input_reader` and a key handler. Both call:
-
-```python
-voice_session.stop()      # terminate the player process
-```
-
-before dispatching the new input, so typing during playback cuts the audio
-short rather than queueing behind it.
+Both front ends call `voice_session.stop()` **before** dispatching a new user
+input, so typing during playback cuts the audio short rather than queueing
+behind it.
 
 ---
 
@@ -680,20 +801,19 @@ short rather than queueing behind it.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `TORVALDS_VOICE_ENABLED` | `false` | Master switch. Voice is **off** by default. |
-| `TORVALDS_VOICE_TRIGGER` | `never` | `never` · `on_response` · `announce` |
+| `TORVALDS_VOICE_ENABLED` | `false` | **The initial state of the component.** Off by default. |
+| `TORVALDS_VOICE_RUNTIME_TOGGLE` | `true` | Whether the `\voice` commands exist. |
+| `TORVALDS_VOICE_TRIGGER` | `on_response` | `never` · `on_response` · `announce` |
 | `TORVALDS_VOICE_BACKEND` | `http` | `http` · `cli` · `capi` · `none` |
-| `TORVALDS_VOICE_SERVER_URL` | `http://127.0.0.1:8080` | `audiocpp_server` base URL |
-| `TORVALDS_VOICE_SERVER_MODEL` | *(empty)* | Model id registered in the server config |
+| `TORVALDS_VOICE_SERVER_URL` | `http://127.0.0.1:8099` | `audiocpp_server` base URL. Must match the operator's server config |
+| `TORVALDS_VOICE_SERVER_MODEL` | `kokoro` | Model id registered in the server config |
 | `TORVALDS_VOICE_CLI_PATH` | *(empty)* | Path to `audiocpp_cli` |
 | `TORVALDS_VOICE_CLI_FAMILY` | *(empty)* | e.g. `kokoro_tts` |
 | `TORVALDS_VOICE_CLI_MODEL` | *(empty)* | Path to the GGUF |
 | `TORVALDS_VOICE_CLI_BACKEND` | `cuda` | `cuda` · `cpu` · `vulkan` · `metal` |
 | `TORVALDS_VOICE_OUTPUT` | `speaker` | `speaker` · `file` · `none` |
 | `TORVALDS_VOICE_DIR` | `~/.cache/torvalds/voice` | Where `file` output is written |
-| `TORVALDS_VOICE_ID` | *(empty)* | Preset voice id, e.g. `af_heart` |
-| `TORVALDS_VOICE_REF` | *(empty)* | Reference WAV for cloning |
-| `TORVALDS_VOICE_REF_TEXT` | *(empty)* | Transcript of the reference audio |
+| `TORVALDS_VOICE_ID` | `af_heart` | Preset voice id. See §12.4 for the catalogue and the alternatives |
 | `TORVALDS_VOICE_LANGUAGE` | *(empty)* | Language code; must match the voice |
 | `TORVALDS_VOICE_SPEAK_CODE` | `false` | Speak fenced code blocks |
 | `TORVALDS_VOICE_REDACT` | `true` | Redact secret-looking strings |
@@ -704,7 +824,8 @@ short rather than queueing behind it.
 
 `--voice` / `--no-voice` (enable/disable), `--voice-trigger`,
 `--voice-backend`, `--voice-server-url`, `--voice-model`, `--voice-id`,
-`--voice-language`, `--voice-output`, `--voice-dir`, `--voice-timeout`.
+`--voice-language`, `--voice-output`, `--voice-dir`, `--voice-timeout`,
+`--no-voice-runtime-toggle`.
 
 CLI flags override environment variables, exactly as `--hitl-timeout` overrides
 `TORVALDS_HITL_TIMEOUT`.
@@ -714,7 +835,7 @@ CLI flags override environment variables, exactly as `--hitl-timeout` overrides
 ```json
 {
   "host": "127.0.0.1",
-  "port": 8080,
+  "port": 8099,
   "backend": "cuda",
   "device": 0,
   "threads": 2,
@@ -725,7 +846,7 @@ CLI flags override environment variables, exactly as `--hitl-timeout` overrides
   "idle_unload_ms": 300000,
   "models": [
     {
-      "id": "torvalds-voice",
+      "id": "kokoro",
       "family": "kokoro_tts",
       "path": "/home/kbush/ai-agent-investiagte/models/TTS/kokoro-82m-bf16.gguf",
       "task": "tts",
@@ -739,96 +860,110 @@ CLI flags override environment variables, exactly as `--hitl-timeout` overrides
 `max_loaded_models: 1` keeps exactly one TTS model resident, which bounds VRAM
 to a single model and is the right choice on an 8 GB card.
 
+> **If the listening proposal is approved**, this config gains a second model
+> entry and `max_loaded_models` becomes **2** — otherwise the server would
+> evict the TTS model every time the ASR model is needed.
+
+### 12.4 The default voice
+
+**Default: `af_heart`** - a clear American English female preset. It is the
+most legible of the Kokoro English voices, and English is what the agent
+speaks most of the time.
+
+**There is no cloned "Torvalds voice" in v1 - and there cannot be one with the
+current stack.** Kokoro 82M is a *preset-voice* model:
+`supports_speaker_reference=false`. It has no cloning head, so a `voice_ref`
+is ignored by the model. Cloning needs a cloning-capable family - MagpieTTS
+(1.9 GB) or OmniVoice (1.2 GB) - **plus** a reference recording, which is an
+operator task. Until then the preset catalogue is the whole story.
+
+The `torvalds-voice` string in the server config is therefore a **model id**,
+not a voice: it is the name the model is registered under. Naming it `kokoro`
+is more honest, and it is what the local server config already uses.
+
+**The catalogue** - 54 presets across 9 languages. The prefix is
+`<language><gender>`:
+
+| Prefix | Language | Gender | Voices |
+|---|---|---|---|
+| `af_` | American English | female | `alloy`, `aoede`, `bella`, `heart`, `jessica`, `kore`, `nicole`, `nova`, `river`, `sarah`, `sky` |
+| `am_` | American English | male | `adam`, `echo`, `eric`, `fenrir`, `liam`, `michael`, `onyx`, `puck`, `santa` |
+| `bf_` | British English | female | `alice`, `emma`, `isabella`, `lily` |
+| `bm_` | British English | male | `daniel`, `fable`, `george`, `lewis` |
+| `ef_` / `em_` | Spanish | female / male | `dora` / `alex`, `santa` |
+| `ff_` | French | female | `siwis` |
+| `hf_` / `hm_` | Hindi | female / male | `alpha`, `beta` / `omega`, `psi` |
+| `if_` / `im_` | Italian | female / male | `sara` / `nicola` |
+| `jf_` / `jm_` | Japanese | female / male | `alpha`, `gongitsune`, `nezumi`, `tebukuro` / `kumo` |
+| `pf_` / `pm_` | Portuguese | female / male | `dora` / `alex`, `santa` |
+| `zf_` / `zm_` | Chinese | female / male | `xiaobei`, `xiaoni`, `xiaoxiao`, `xiaoyi` / `yunjian`, `yunxi`, `yunxia`, `yunyang` |
+
+**Changing it** - three ways, in precedence order:
+
+```bash
+TORVALDS_VOICE_ID=am_michael python agent-torvalds.py    # 1. environment
+python agent-torvalds.py --voice-id am_michael            # 2. CLI flag
+\voice voice am_michael                                   # 3. runtime command
+```
+
+A male American English preset (`am_michael`, `am_onyx`) is the usual
+alternative when a less "assistant"-like tone is wanted.
+
 ---
 
 ## 13. Implementation Plan
 
-### Phase 0 — Foundation (no behaviour change)
+> The authoritative, phase-by-phase plan is
+> **[`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md)**, reworked to the
+> component shape. The summary below is the outline; the plan carries the
+> file-level detail, the binding contracts and the exit criteria.
 
-| Item | Detail |
-|---|---|
-| `toolkits/audio-toolkit/` skeleton | `errors.py`, `config.py`, `text.py` |
-| `text.py` | `to_speakable_text()`, `chunk_text()`, `redact()` — pure functions, fully unit-tested |
-| `tests/test_voice_text.py` | Table-driven tests: headings, emphasis, code blocks, lists, tables, URLs, unicode punctuation, chunk boundaries, redaction patterns |
-| Exit criterion | `pytest tests/test_voice_text.py` green; no agent files touched |
+| Phase | Item | Detail |
+|---|---|---|
+| **0** | **Scaffolding** | `components/voice/` skeleton with the final public API; the baseline test run; no agent files touched |
+| **1** | **The text layer** | `to_speakable_text()`, `chunk_text()`, `redact()` — pure functions, fully unit-tested |
+| **2** | **The backend contract + HTTP** | `SpeechBackend`, `SpeechRequest`, `SpeechResult`; the `audiocpp_server` client with its error mapping |
+| **3** | **The CLI backend + the sinks** | `audiocpp_cli` with `--request-sequence`; the C-API stub; `SpeakerSink` / `FileSink` / `NullSink` with device detection |
+| **4** | **The voice catalogue** | Normalisation across the backends, the capability block, **and the default voice: `af_heart`, no clone** |
+| **5** | **Configuration** | `VoiceConfig` + `build_voice_config()`: env → CLI override, invalid values fall back and warn |
+| **6** | **The session manager** | The on/off switch, the lazy backend, the fallback ladder, the worker thread, `stop()`, `close()` |
+| **7** | **The narration hook** | `narrate_response()` — a no-op when the component is off; never raises |
+| **8** | **The command surface** | `components/voice/commands.py` + `FEATURE_VOICE` in the central registry |
+| **9** | **Orchestrator integration** | The CLI flags, the manager construction, the hook, the dispatch, the barge-in, the TUI state and telemetry |
+| **10** | **Hardening** | Barge-in, redaction, long answers, the degradation ladder, headless, the layering guard and the "not a tool" guard |
+| **11** | **Documentation** | `docs/voice-component.md`, the server config example, `components/README.md`, `README.md`, `CHANGELOG.md` |
 
-**Why first:** the text layer is where the quality lives, it is the cheapest to
-test, and it is completely independent of `audio.cpp`.
+**Scope discipline:** Phases 0–11 constitute the deliverable "the agent can
+produce voice, and the operator can switch it off". The `capi` backend,
+streaming TTS, ASR and voice cloning are explicitly out of the initial scope
+and are individually approvable.
 
-### Phase 1 — Backend + output (the engine half)
-
-| Item | Detail |
-|---|---|
-| `backends/base.py` | `SpeechBackend`, `SpeechRequest`, `SpeechResult` |
-| `backends/http.py` | `audiocpp_server` client: `probe`, `list_voices`, `synthesize`, error mapping |
-| `backends/cli.py` | `audiocpp_cli` subprocess backend, `--request-sequence` for multi-chunk |
-| `backends/capi.py` | **Stub** — raises `VOICE_BACKEND_UNAVAILABLE` with a build hint |
-| `output.py` | `SpeakerSink` (ffplay → aplay), `FileSink`, `NullSink`; device detection |
-| `voices.py` | Catalogue normalisation across backends + capability probing |
-| `tests/test_voice_backends.py` | Contract tests against a mocked HTTP server and a mocked subprocess |
-| Exit criterion | The backends pass the same contract test suite |
-
-### Phase 2 — The unified interface (the seam)
-
-| Item | Detail |
-|---|---|
-| `components/voice/config.py` | `VoiceConfig` resolution: env → CLI override |
-| `components/voice/session.py` | `VoiceSessionManager`: backend selection, fallback, worker thread, `stop()` |
-| `components/voice/narrator.py` | The post-response hook: prepare → dispatch → play |
-| `tests/test_voice_session.py` | Manager behaviour: fallback, no-backend, stop, non-blocking |
-| Exit criterion | The manager can speak a string to a file sink in a unit test |
-
-### Phase 3 — Agent integration (the product)
-
-| Item | Detail |
-|---|---|
-| `agent_voice_toolkit.py` | The adapter: four tools, `Category: Voice` |
-| `agent_tool_retriever.py` | `include_voice_tools` flag + load path |
-| `agent_tool_selection.py` | `_discover_tools()` + a dedicated Voice action pattern |
-| `agent-torvalds.py` | CLI flags, manager construction, `narrate()` hook, `\voice` dispatch |
-| `agent-torvalds-mw.py` | Same, plus the TUI state fields and the telemetry pane entry |
-| `components/command_registry.py` | `FEATURE_VOICE` + the eight command specs |
-| `components/tui/state_bridge.py` | `voice_active`, `voice_status`, `voice_last_spoken` |
-| `tests/test_voice_toolkit.py` | Adapter contract |
-| `tests/test_voice_menu.py` | The Voice category is reachable through **every** load path (mirrors `TestMenuParity`) |
-| Exit criterion | `--voice` on the classic REPL speaks the answer; the `--select` menu shows a Voice category; the agent can call `speak_text` |
-
-### Phase 4 — Hardening
-
-| Item | Detail |
-|---|---|
-| Barge-in | `stop()` wired into the REPL's `KeyboardInterrupt` path and the TUI key handler |
-| Secret redaction | End-to-end test with a fake API key in the response |
-| Long-answer handling | A 20 000-character response speaks in order, in bounded chunks |
-| Degradation | Server down → CLI fallback → silent disable, each verified |
-| Headless | No audio device → automatic fallback to `file` output with a notice |
-
-### Phase 5 — Optional (each is a separate decision)
-
-| Item | Note |
-|---|---|
-| `capi` backend | Requires the third-party rebuild; only worth it if the HTTP hop ever shows up in a profile |
-| Streaming TTS | `mode: streaming` + SSE; lowers time-to-first-audio for long answers |
-| `transcribe_audio` tool | Wraps `/v1/audio/transcriptions`; the ASR half of Capability C |
-| Voice cloning | Requires a cloning-capable model (MagpieTTS, OmniVoice, VoxCPM2) and a reference WAV |
-
-**Scope discipline:** Phases 0–4 constitute the deliverable "the agent can
-produce voice". Phase 5 is explicitly out of the initial scope and is
-individually approvable.
+> **The ASR clause above is superseded in part** by
+> [`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md), which
+> proposes adding the **L1 (push-to-talk dictation)** case as Phases 12–18.
+> The `capi` backend, streaming TTS and voice cloning remain out of scope.
 
 ---
 
 ## 14. Risks & Mitigations
 
-See the full register in the investigation report (§8). The four that shape the
-implementation:
+See the full register in the investigation report (§8). The four that shape
+the implementation:
 
 | Risk | Mitigation | Where it lives |
 |---|---|---|
-| **The agent boot breaks without `audio.cpp`** | The core package is imported in a `try/except`; `get_all_tools()` returns `[]`; the manager is constructed lazily and probes the backend. A missing `ffplay` is detected at sink-selection time, not import time. | `agent_voice_toolkit.py`, `components/voice/session.py` |
-| **The TUI terminal is corrupted by the player** | `ffplay -nodisp`, `stdout`/`stderr` → `DEVNULL`, the player never inherits the TUI terminal. The TUI renders the voice state in its own pane. | `output.py` |
-| **The agent reads secrets aloud** | Redaction is **on by default**; code blocks are skipped by default; the voice feature is **off by default**; the full text is still printed. | `text.py` |
+| **The agent boot breaks without `audio.cpp`** | The component imports nothing optional at module scope; `requests` is imported lazily inside the HTTP backend; the backend itself is built lazily; a missing `ffplay` is detected at sink-selection time, not import time. | `components/voice/session.py`, `components/voice/backends/http.py` |
+| **The TUI terminal is corrupted by the player** | `ffplay -nodisp`, `stdout`/`stderr` → `DEVNULL`, the player never inherits the TUI terminal. The TUI renders the voice state in its own pane. | `components/voice/output.py` |
+| **The agent reads secrets aloud** | Redaction is **on by default**; code blocks are skipped by default; the component is **off by default**; the full text is still printed. | `components/voice/text.py` |
 | **The render loop blocks on synthesis** | `narrate()` is non-blocking by contract; synthesis and playback run in a worker thread; the TUI never awaits speech. | `components/voice/session.py` |
+
+*Risk R10 from the original register — "the feature diverges from the repo's
+toolkit conventions" — is **removed** by this rework: the feature is now a
+component, which is the convention it should have followed from the start.*
+
+> The input half adds its own register — ambient capture, ASR hallucination,
+> spoken prompt injection, capture/TUI contention — in
+> [`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md) §13.
 
 ---
 
@@ -836,12 +971,13 @@ implementation:
 
 | Metric | Target | How it is measured |
 |---|---|---|
-| Agent boot time with voice enabled | +< 50 ms | The manager is lazy; the backend is probed in the background |
+| Agent boot time with the component on | +< 50 ms | The manager is cheap; the backend is built lazily |
+| Agent boot time with the component off | +0 ms | No backend, no thread, no probe |
 | Time to first audio, typical response | < 1.5 s | `wall_ms` from the backend + player start-up |
 | Synthesis RTF (Kokoro, CUDA) | < 0.15 | `--metrics` / server `timing` |
 | Response latency impact (classic REPL) | 0 ms blocking | `narrate()` returns before the next prompt is shown |
 | Turn success rate with the server down | 100 % (text unaffected) | Degradation test |
-| Toolkit convention compliance | 100 % | The `TestMenuParity` mirror test |
+| Component convention compliance | 100 % | The layering test + the "not a tool" test |
 | Test coverage of `text.py` | > 90 % | `pytest --cov` |
 | Secret leakage in spoken output | 0 | Redaction test with a seeded key set |
 
@@ -849,35 +985,47 @@ implementation:
 
 ## 16. Open Questions
 
-These need an operator decision before Phase 3 closes:
+These need an operator decision before the integration phase closes:
 
-1. **Default voice.** Which preset should be the default for the `torvalds-voice`
-   model id? Kokoro ships 54 presets across 9 languages
-   (`af_heart`, `bf_emma`, `zf_xiaobei`, …). The English set is the obvious
-   default; the multilingual choice matters for a non-English operator.
-2. **Should the agent speak by default once enabled?** Currently
+1. ~~**Default voice.**~~ **DECIDED: `af_heart`.** The 54-preset catalogue is
+   documented in §12.4. Kokoro cannot clone, so a preset *is* the default voice;
+   `am_michael` / `am_onyx` are the male-English alternatives and
+   `TORVALDS_VOICE_ID` switches at runtime.
+2. ~~**Is a "Torvalds voice" (cloned) required?**~~ **DECIDED: no, not for v1.**
+   The operator does not have a cloned voice, and Kokoro cannot clone anyway
+   (`supports_speaker_reference=false`). v1 ships the preset catalogue; cloning
+   (MagpieTTS / OmniVoice + a reference recording) is out of scope.
+3. ~~**Toolkit or component?**~~ **DECIDED: component.** The feature lives in
+   `components/voice/`, exposes no tools to the model, and is switched on and
+   off at three levels (environment, CLI flag, runtime command).
+4. **Should the agent speak by default once enabled?** Currently
    `TORVALDS_VOICE_ENABLED=1` implies `trigger=on_response`. A more
-   conservative option is `enabled` + `trigger=announce`, so only the
-   agent's *own* announcements are spoken until the operator opts into
-   "speak every answer".
-3. **Is a "Torvalds voice" (cloned) required?** Cloning needs a
-   cloning-capable family (MagpieTTS 1.9 GB, OmniVoice 1.2 GB) rather than
-   Kokoro's 212 MB preset-only model, and a reference recording. The VRAM
-   budget allows it; the recording is an operator task.
-4. **Should the spoken text be persisted in the chat history?** The chat
+   conservative option is `enabled` + `trigger=announce`, so only explicit
+   announcements are spoken until the operator opts into "speak every answer".
+5. **Should the spoken text be persisted in the chat history?** The chat
    memory already stores the response; storing the *spoken* variant separately
    would let a future search find "what the agent said aloud".
-5. **Is the `audiocpp_server` lifecycle managed by the agent?** Options:
+6. **Is the `audiocpp_server` lifecycle managed by the agent?** Options:
    (a) the operator runs it (recommended — it keeps the model warm across
    turns); (b) the agent spawns it on demand and reaps it on exit;
    (c) a systemd user unit. Option (a) is the simplest and is what the
    proposal assumes.
-6. **Multi-turn continuity.** Should consecutive answers be spoken as one
+7. **Multi-turn continuity.** Should consecutive answers be spoken as one
    continuous stream (sentence-level streaming) rather than one file per
    turn? This is the `mode: streaming` route and it needs a different audio
    path (a persistent player fed by a pipe).
+8. **Should other components be able to announce themselves?** (e.g. the HITL
+   handler speaking "the agent is asking you a question".) The `announce()`
+   API exists for it, but nothing calls it in v1.
+9. **Should the component also *receive* speech?** (the ASR question) — this
+   is the question the operator asked. The answer is **partly yes**: the
+   push-to-talk case is proposed in
+   [`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md); continuous
+   listening and full duplex remain out of scope.
 
 ---
 
-*Next step: operator review of this proposal, then Phase 0 in the
-`self-development` clone on a `feature/voice-toolkit` branch.*
+*Next step: the reworked [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md),
+then Phase 0 in the `self-development` clone on a `feature/voice-toolkit`
+branch. The input half, if approved, is specified in
+[`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md).*

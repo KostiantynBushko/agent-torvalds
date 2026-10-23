@@ -3,7 +3,40 @@
 **Subject:** Can `agent-torvalds` be given a unified interface that lets it produce voice instead of only text, using the local `audio.cpp` stack?
 **Date:** 2026-10-22
 **Investigated by:** Torvalds (self-development session)
-**Status:** Investigation complete — proposal follows in `PROPOSAL_voice_output.md`
+**Status:** Investigation complete — the proposal followed in `PROPOSAL_voice_output.md`
+
+> ## Update — the packaging recommendation was superseded
+>
+> **The findings in this report stand.** Every measurement, every gap analysis
+> and every risk assessment below was verified on this host and is unaffected
+> by the later decision.
+>
+> **The recommendation in §1 was superseded.** It originally proposed building
+> the feature as a *toolkit* (`toolkits/audio-toolkit/` +
+> `agent_voice_toolkit.py`, with four tools exposed to the model). The
+> operator's decision is that the voice feature is a **component** —
+> `components/voice/` — with an **on/off switch** and **no LLM-facing tools**.
+>
+> See [PROPOSAL_voice_output.md](./PROPOSAL_voice_output.md) for the corrected
+> design and [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the
+> authoritative build plan.
+
+> ## Update — the input side was investigated later (§10)
+>
+> The operator asked whether the *listening* half (ASR) should be combined
+> with the *speaking* half in one module. The input side of the `audio.cpp`
+> stack was therefore inspected on 2026-10-22, and the findings are recorded
+> in **[§10](#10-the-input-side)**.
+>
+> **The headline:** the stack already supports the input direction
+> completely — sixteen ASR families, three transcription routes, two VAD
+> families (one of them a bundled framework asset, with no download), and
+> live raw-PCM streaming over HTTP. What is missing on this host is **ASR
+> weights** and **an actual round-trip measurement**.
+>
+> The design that followed is in
+> **[`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md)**, and it
+> reopens **Q9** of the implementation plan.
 
 ---
 
@@ -17,17 +50,18 @@
 6. [Integration Surface Options](#6-integration-surface-options)
 7. [Empirical Validation](#7-empirical-validation)
 8. [Risk Register](#8-risk-register)
-9. [Conclusion](#9-conclusion)
+10. [The Input Side](#10-the-input-side)
+11. [Conclusion](#11-conclusion)
 
 ---
 
 ## 1. Executive Summary
 
-**The request has a favourable answer, and the two halves already exist on this machine.**
+The request has a favourable answer, and the two halves already exist on this machine.
 
 `text-to-speach/audio.cpp` is a fully built, CUDA-enabled local audio inference
-framework (v0.8.0, 80+ model families) with a REST server, a CLI, a C ABI and an
-embedded WebUI. The TTS models are already downloaded to `models/TTS/`. The
+framework (v0.8.0, 80+ model families) with a REST server, a CLI, a C ABI and
+an embedded WebUI. The TTS models are already downloaded to `models/TTS/`. The
 `agent-torvalds` codebase is a LlamaIndex `FunctionAgent` orchestrator with two
 front ends (classic REPL and a multi-window TUI) and a strict, well-documented
 toolkit pattern.
@@ -35,7 +69,7 @@ toolkit pattern.
 **What is missing is only the seam between them.** The agent has *no* audio
 capability at all today — a grep for `tts|speech|audio|voice` across the
 repository returns exactly two hits, both of them incidental mentions inside a
-proposal document. There is no toolkit, no adapter, no config, no command, no
+proposal document. There is no component, no configuration, no command, no
 test.
 
 Three findings shape the proposal:
@@ -62,14 +96,20 @@ Three findings shape the proposal:
    text converter plus a sentence-aware chunker is a mandatory, non-obvious
    component of the feature, not an afterthought.
 
-**Recommendation:** build the voice subsystem as a standard toolkit
-(`toolkits/audio-toolkit/` + `agent_voice_toolkit.py`), add a
-`VoiceSessionManager` in `components/voice/`, and default the HTTP backend
-against `audiocpp_server`, which is already built and already keeps the model
-warm between requests. The C ABI is a genuine option but requires a rebuild
-with `-DAUDIOCPP_BUILD_C_API=ON` (off by default), so it belongs in a later
+**Recommendation (as reworked):** build the voice subsystem as an internal
+**component** (`components/voice/`) with an **on/off switch** — environment
+variable, CLI flag and a runtime `\voice` command — and **expose no tools to
+the model**. Default the HTTP backend against `audiocpp_server`, which is
+already built and already keeps the model warm between requests. The C ABI is
+a genuine option but requires a rebuild with
+`-DAUDIOCPP_BUILD_C_API=ON` (off by default), so it belongs in a later
 phase. The feature stays **opt-in** (`TORVALDS_VOICE_ENABLED=1`) and must
 never break the agent boot when audio.cpp is absent.
+
+> The original recommendation in this report was to package the feature as a
+> standard *toolkit*. That was **rejected**: voice is infrastructure, not a
+> model capability, and the repository's `components/` convention already
+> covers exactly this kind of feature.
 
 ---
 
@@ -106,7 +146,7 @@ approach to local audio models. It covers far more than TTS:
 | Task family | Examples | Relevant here |
 |---|---|---|
 | **TTS** | Kokoro 82M, MagpieTTS, OmniVoice, Qwen3-TTS, VoxCPM2, Supertonic, Chatterbox | **Yes — the core need** |
-| **Clone / Design** | zero-shot cloning, voice design, emotion control | Yes — the "Torvalds voice" |
+| **Clone / Design** | zero-shot cloning, voice design, emotion control | Yes — the "Torvalds voice" (out of scope for v1) |
 | **ASR** | Qwen3-ASR, Whisper-class, SenseVoice, Parakeet-TDT | Yes — the *input* direction |
 | **VC** | SeedVC, RVC, MeanVC2 | Maybe — voice conversion |
 | **VAD / Align / Diar** | Silero VAD, MMS aligner, Sortformer | Maybe — turn detection, subtitles |
@@ -125,8 +165,8 @@ chain, which is what makes it safe to pick any of them.
 | **`libaudiocpp` (C ABI)** | `extern "C"` facade, ABI 0.2.0, 69 symbols | **Requires a rebuild** (`-DAUDIOCPP_BUILD_C_API=ON`, off by default; only static `.a` archives exist today) | Lowest latency, in-process, no HTTP hop. But: a build-step prerequisite, a ctypes marshalling surface, and manual handle-lifetime rules. |
 | **Embedded WebUI** | SvelteKit/TypeScript compiled into the server | n/a | Browser-facing; not an agent integration surface |
 
-The C ABI is the technically most elegant option (it is explicitly designed for
-embedding: opaque handles, no exceptions crossing the boundary, borrowed
+The C ABI is the technically most elegant option (it is explicitly designed
+for embedding: opaque handles, no exceptions crossing the boundary, borrowed
 pointers), but it is gated behind a non-default build option. A proposal that
 requires a C++ rebuild of a third-party project to deliver a *voice* feature to
 a *Python* agent is a proposal with a worse cost/benefit ratio than one that
@@ -285,7 +325,7 @@ user input
    ├─► prompt_handler(cmd, agent, ...)                       agent-torvalds.py:772
    │      │
    │      ├─ builds CallbackManager (stats + human_loop_handler)
-   │      ├─ agent.run(cmd, memory=..., max_iterations=...)
+   │      ├─ agent.run(cmd, memory=..., max_iterations...)
    │      └─ event_consumer.consume_events(workflow_handler, cmd)
    │             └─ returns result["output"]  →  response_text
    │
@@ -304,7 +344,7 @@ In the TUI the same `prompt_handler` is awaited by `TuiApp._execute_agent_query`
 is *after* `prompt_handler` returns the final text and *before/alongside* the
 render. Both front ends converge on that one value, so one hook covers both.
 
-### 4.3 The toolkit pattern (the mandatory conformance target)
+### 4.3 The toolkit pattern — and why the voice feature does not use it
 
 The repository enforces a strict, well-documented pattern (established by the
 MikroTik RouterOS and Shodan toolkits, and specified in
@@ -336,6 +376,24 @@ The adapter rules, restated from `agent_mikrotik_toolkit.py` and
 6. **No re-implementation** — the adapter re-uses the core functions verbatim
    and only rewrites descriptions.
 
+**This pattern is the right one for a *capability the model invokes*.** Voice
+is not one: the model has no business deciding when to speak, and there is no
+tool-shaped request ("speak this string") that the agent runtime does not
+already cover more directly. The repository already has the convention for
+runtime infrastructure — `components/` — whose `README.md` states:
+
+> **Note:** This folder contains **helper components and utility modules**,
+> NOT the agent's callable tools.
+
+So the voice feature follows the **component** convention instead: it lives in
+`components/voice/`, it is switched on and off, and it contributes **no
+tools** to the retriever, the `--select` menu or `_collect_all_tools()`.
+
+The four rules that carry over unchanged are **3** (structured errors, never
+exceptions), **4** (guarded imports; a missing `audio.cpp` never breaks the
+boot), **5** (a single opt-in read by the component itself) and **6** (no
+re-implementation).
+
 ### 4.4 Configuration conventions
 
 | Mechanism | Pattern | Example |
@@ -358,8 +416,7 @@ usage, category, aliases, feature)`, with feature flags
 `FEATURE_MIKROTIK`, `FEATURE_TUI`) gating visibility. Both orchestrators render
 `\help` from it, so the help screen cannot drift from reality.
 
-Any new interactive command — `\voice`, `\voices`, `\speak` — **must** be
-registered here.
+Any new interactive command — `\voice` — **must** be registered here.
 
 ### 4.6 Gap summary
 
@@ -372,8 +429,8 @@ registered here.
 | Voice-related config, env vars, CLI flags | **Absent** |
 | Voice-related commands | **Absent** |
 | Voice-related tests | **Absent** |
-| Toolkit slot for it | `toolkits/` has 2 entries; `agent_voice_toolkit.py` does not exist |
-| Retriever / `--select` integration points | Not wired |
+| A component slot for it | `components/` has 14 modules; `components/voice/` does not exist |
+| Retriever / `--select` integration points | **Not needed** — the feature is not a tool |
 
 ---
 
@@ -385,13 +442,18 @@ capabilities. Treating them as one feature is the primary risk of this work.
 | # | Capability | Trigger | Direction | Complexity |
 |---|---|---|---|---|
 | **A** | **Speak the answer** — the agent's response is spoken | End of every turn | Out | **Low.** One hook after `prompt_handler`. |
-| **B** | **Speak mid-workflow** — the agent announces progress, warnings, confirmations | LLM decides to call a tool | Out | **Low.** One more `FunctionTool`. |
+| **B** | **Speak mid-workflow** — the agent announces progress, warnings, confirmations | The runtime hands over text | Out | **Low.** One more method on the manager. |
 | **C** | **Speak *to* the agent** — the user dictates, the agent answers aloud | Continuous | In + Out | **High.** Needs mic capture, VAD/turn detection, ASR, barge-in, and a different UI mode. |
 
 Capability **C** is a different product (a voice assistant), not a different
 implementation of the same one. It deserves its own proposal. This proposal
 delivers **A** and **B** behind one interface, and designs the interface so
 that **C** can be added later without a rewrite.
+
+> **Revisited in §10.** Capability **C** is not one product but **three**:
+> push-to-talk dictation, continuous open-mic listening, and full duplex.
+> The first of those turns out to be a small increment rather than a new
+> product, and the design below is what makes it fit.
 
 ### 5.1 The three axes of the interface
 
@@ -405,16 +467,16 @@ TRIGGER   ×   BACKEND   ×   OUTPUT
 | Axis | Values | Meaning |
 |---|---|---|
 | **Trigger** | `never` · `on_response` · `announce` | *When* speech is produced |
-| **Backend** | `none` · `http` · `cli` · `cabi` | *How* it is synthesized |
+| **Backend** | `none` · `http` · `cli` · `capi` | *How* it is synthesized |
 | **Output** | `none` · `speaker` · `file` | *Where* the audio goes |
 
 Capability A is `trigger=on_response`. Capability B is `trigger=announce` plus
-the `speak_text` tool. Capability C adds a fourth trigger (`on_speech_input`)
-and a new input axis, but changes nothing else.
+an `announce()` call from another component. Capability C adds a fourth trigger
+(`on_speech_input`) and a new input axis, but changes nothing else.
 
 This decomposition is what makes the feature *unified*: one config object, one
-manager, one tool surface, and every capability is a value of an enum rather
-than a separate subsystem.
+manager, and every capability is a value of an enum rather than a separate
+subsystem.
 
 ### 5.2 The three things that are genuinely hard
 
@@ -438,7 +500,7 @@ loader* still needs a sensible input length, and the HTTP route takes one
 `input` string. The interface therefore needs sentence-aware chunking
 (split on `.!?…` boundaries, pack chunks under a limit, never split a
 sentence) and a WAV concat step. The CLI backend gets this for free via
-`--batch-text-file`; the HTTP backend needs it in the toolkit.
+`--batch-text-file`; the HTTP backend needs it in the component.
 
 **(3) Voice must not block, and must be interruptible.**
 In the TUI, the agent workflow runs as a background asyncio task while the
@@ -453,7 +515,7 @@ fire-and-forget.
 
 ### 6.1 Backend comparison for the agent
 
-| Criterion | `http` (audiocpp_server) | `cli` (audiocpp_cli) | `cabi` (libaudiocpp) |
+| Criterion | `http` (audiocpp_server) | `cli` (audiocpp_cli) | `capi` (libaudiocpp) |
 |---|---|---|---|
 | Already available on this host | ✅ **yes** | ✅ **yes** | ❌ needs `-DAUDIOCPP_BUILD_C_API=ON` rebuild |
 | Model stays warm between turns | ✅ server keeps the session | ⚠️ only via `--request-sequence` / `--batch-text-file` | ✅ in-process |
@@ -475,10 +537,10 @@ fails without taking the agent down.
 and as the escape hatch when the HTTP route is unavailable. It also has the
 best long-text story (built-in batch mode).
 
-**`cabi` deferred to a later phase.** It is the right long-term answer for
+**`capi` deferred to a later phase.** It is the right long-term answer for
 latency and for avoiding a second process, but it carries a C++ rebuild
 prerequisite and a ctypes marshalling surface with manual handle-lifetime
-rules. It is worth a phase-3 spike, not a phase-1 dependency.
+rules. It is worth a later spike, not a first-phase dependency.
 
 ### 6.3 Output sink comparison
 
@@ -489,8 +551,8 @@ rules. It is worth a phase-3 spike, not a phase-1 dependency.
 | `none` | synthesize and discard | n/a | Diagnostics; measuring latency without noise |
 
 `ffplay` is preferred over `aplay` because it decodes any format and
-`-nodisp` guarantees it will not fight the TUI for the terminal. `aplay` is the
-fallback for a pure-ALSA host.
+`-nodisp` guarantees it will not fight the TUI for the terminal. `aplay` is
+the fallback for a pure-ALSA host.
 
 **Degradation rule:** if no playback device is available (SSH, container
 without `/dev/snd`), the sink must fall back to `file` and *say so* rather than
@@ -568,7 +630,7 @@ weight=weights:…/kokoro-82m-bf16.gguf
 Note `supports_speaker_reference=false` for Kokoro: it is a **preset-voice**
 model, not a cloning model. Cloning the "Torvalds" voice requires a different
 family (MagpieTTS, OmniVoice, IndexTTS2, VoxCPM2 …). This distinction must
-survive into the tool API, because "make the agent sound like X" is a
+survive into the catalogue, because "make the agent sound like X" is a
 different request from "make the agent sound like *this specific* voice".
 
 ### 7.4 HTTP server — end to end
@@ -616,7 +678,7 @@ either venv.
 
 **Interpretation.** The playback sink must be implemented on top of an
 **external binary** (`ffplay` first, `aplay` second), never on a Python audio
-library that is not installed. The toolkit must detect availability and
+library that is not installed. The component must detect availability and
 degrade to `file` output.
 
 ### 7.7 What was *not* validated
@@ -641,22 +703,156 @@ that names them:
 
 | # | Risk | Severity | Likelihood | Mitigation |
 |---|---|---|---|---|
-| R1 | The agent boot breaks when audio.cpp is absent | **High** | Medium | Guarded imports everywhere; the voice manager is constructed lazily and reports "unavailable"; never imported at module scope in the orchestrators |
+| R1 | The agent boot breaks when audio.cpp is absent | **High** | Medium | Guarded imports everywhere; the backend is built lazily; the manager reports "unavailable"; nothing optional is imported at module scope |
 | R2 | The TUI's terminal is corrupted by the player writing to stdout | Medium | High | `ffplay -nodisp`, stdout/stderr redirected to `DEVNULL`; the player never inherits the TUI's terminal |
 | R3 | The render loop blocks on synthesis | Medium | Medium | Synthesis + playback run in a worker thread; the event loop only ever awaits a future it can abandon |
-| R4 | Playback cannot be interrupted | Medium | Medium | Retain the `Popen` handle; `stop_speaking()` terminates the process group |
-| R5 | The agent reads secrets aloud (API keys inside tool output) | **High** | Medium | Redaction pass over the speakable text (token-like patterns) + a default that skips code blocks + explicit opt-in |
+| R4 | Playback cannot be interrupted | Medium | Medium | Retain the `Popen` handle; `stop()` terminates the process group |
+| R5 | The agent reads secrets aloud (API keys inside tool output) | **High** | Medium | Redaction pass over the speakable text (token-like patterns) + a default that skips code blocks + the component is off by default |
 | R6 | The user cannot read the text that is being spoken | Medium | Low | The text is *always* printed as well; voice is additive, never a replacement |
 | R7 | Server busy / OOM makes the turn hang | Medium | Low | `busy_timeout_ms` on both sides; the client aborts and reports a structured error rather than blocking |
 | R8 | VRAM exhaustion when a heavy TTS model is loaded | Medium | Low | `max_loaded_models: 1` + `min_free_memory_mb` in the recommended server config |
 | R9 | Long answers produce a long, unskippable audio file | Medium | Medium | Sentence-aware chunking; each chunk is a separate utterance; barge-in supported |
-| R10 | The feature diverges from the repo's toolkit conventions | High | Medium | The proposal is explicitly built on the MikroTik/Shodan pattern and lists every wiring point |
-| R11 | C ABI route needs a third-party C++ rebuild | Low | — | Deferred to phase 3; HTTP needs no build step |
-| R12 | A "speak everything" default becomes annoying | Medium | Medium | Opt-in by default (`TORVALDS_VOICE_ENABLED` defaults to off) |
+| R10 | ~~The feature diverges from the repo's toolkit conventions~~ | ~~High~~ | — | **Closed by the rework.** The feature is a *component*, which is the convention it should have followed from the start. |
+| R11 | C ABI route needs a third-party C++ rebuild | Low | — | Deferred to a later phase; HTTP needs no build step |
+| R12 | A "speak everything" default becomes annoying | Medium | Medium | The component is off by default (`TORVALDS_VOICE_ENABLED=false`) and is switchable at runtime |
+| R13 | The feature is mistaken for a tool and wired into the retriever | Medium | Low | The "not a tool" guard test (H12) asserts the tool inventory and the `--select` menu contain no voice entry |
 
 ---
 
-## 9. Conclusion
+## 10. The Input Side
+
+*Added 2026-10-22, after the operator asked whether the listening half should
+be combined with the speaking half. The findings below are the evidence base
+for [`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md).*
+
+### 10.1 What was inspected
+
+| Source | What it established |
+|---|---|
+| `audio.cpp/docs/asr.md` | The ASR families, their modes, the CLI and server shapes |
+| `audio.cpp/docs/speech_analysis.md` | The VAD, diarisation and alignment families |
+| `audio.cpp/src/*.json` (the model specs) | 16 ASR families, 2 VAD families, 2 diarisation families registered in the framework |
+| `audio.cpp/app/server/` | The transcription routes |
+| `models/` on this host | **No ASR weights are installed** |
+| `/usr/bin`, `/dev/snd` | The capture tools and the audio devices on this host |
+
+### 10.2 The engine already supports the input direction
+
+**Sixteen ASR families**, most with both an offline and a streaming mode:
+`fun_asr_nano`, `granite5asr`, `qwen3_asr`, `citrinet_asr`, `kroko_asr`,
+`higgs_audio_stt`, `hviske_asr`, `moonshine_asr`, `nemotron_asr`,
+`niagara_asr`, `parakeet_tdt`, `sense_asr`, `vibevoice_asr`,
+`vibevoice_asr_streaming`, `voxtral_realtime`, `audio8_asr`.
+
+**The server routes:**
+
+```
+POST /v1/audio/transcriptions          # JSON body or multipart upload; optional SSE
+POST /v1/audio/transcriptions/live     # raw PCM in a chunked body, SSE partials out
+POST /v1/audio/transcriptions/details  # + word timestamps / speaker turns / segments
+```
+
+**The multipart shape** (the one a push-to-talk capture needs):
+
+```bash
+curl -N http://127.0.0.1:8080/v1/audio/transcriptions \
+  -F model=voxtral-stream -F stream=true -F file=@sample.wav
+```
+
+**The live shape** (the continuous-listening path) — and note that the
+documented client idiom *is* the capture idiom:
+
+```bash
+ffmpeg -f alsa -i default -ar 16000 -ac 1 -f s16le - \
+  | curl -N -X POST -H 'Expect:' -T - \
+      'http://127.0.0.1:8080/v1/audio/transcriptions/live?model=voxtral-realtime'
+```
+
+> `-T -`, not `--data-binary @-` — the latter reads stdin to EOF before it
+> connects, so a live capture would be uploaded as a finished file and no
+> partial could arrive early.
+
+**The audio format** every one of the families wants is **mono, 16 kHz** —
+the same format the TTS side already produces, which means the two halves
+share a format convention and a device-detection policy.
+
+### 10.3 Voice activity detection
+
+| Family | Modes | Weights |
+|---|---|---|
+| `silero_vad` | offline, streaming | **`assets/framework/models/silero_vad` — a bundled framework asset, no download** |
+| `marblenet_vad` | offline | separate weights |
+
+Silero streaming wants **512-sample chunks at 16 kHz** and exposes
+`threshold`, `min_speech_duration_ms`, `min_silence_duration_ms` and
+`speech_pad_ms` as request options.
+
+**This is the finding that changes the cost picture:** a *neural* turn detector
+is available on this host without downloading anything, so the input half is
+never blocked on a model download for the VAD part.
+
+### 10.4 Capture on this host
+
+| Tool | State | Notes |
+|---|---|---|
+| `ffmpeg` | ✅ | ALSA, Pulse and PipeWire sources; resamples and downmixes in one step |
+| `arecord` | ✅ | ALSA capture |
+| `pw-record` | ✅ | PipeWire capture — the host runs PipeWire (`pipewire`, `pipewire-pulse`, `pw-cli` are all present) |
+| `/dev/snd` | ✅ | two cards, `pcmC*` devices present |
+| `paplay`, `sox`, `mpv`, `cvlc` | ❌ | absent, as recorded in §3.5 |
+
+The recommended capture command:
+
+```
+ffmpeg -hide_banner -loglevel error -f alsa -i <device> -ar 16000 -ac 1 -c:a pcm_s16le <out.wav>
+```
+
+`arecord` and `pw-record` are the fallbacks, and they exist precisely
+because ALSA's `default` device is not always present on a PipeWire host.
+
+### 10.5 The agent side is already shaped for it
+
+Verified by reading the code, not inferred:
+
+| Fact | Where |
+|---|---|
+| The classic REPL reads the prompt with `console.input(...).strip()` and passes the string to `prompt_handler(cmd, ...)`. | `agent-torvalds.py`, the `while True:` loop |
+| The TUI keeps the input in `TuiState.input_buffer` + `cursor_pos`, and `_handle_enter_pressed()` submits `input_buffer.strip()`. | `components/tui/tui_app.py`, `components/tui/state_bridge.py` |
+| The TUI's key handler edits the buffer as a **plain string** — a transcript can be written straight into it. | `TuiApp._handle_key()` |
+| The TUI shows transient messages through `state.show_notification(...)`. | `components/tui/state_bridge.py` |
+| The TUI can hand the screen over to an external full-screen tool with `pause_screen()`. | `TuiApp.pause_screen()` |
+
+**The consequence:** a transcript is a string, and both front ends already have
+a place to put one. The listening half does not need to touch the agent, the
+workflow, the event stream or the memory.
+
+### 10.6 The gaps — stated plainly
+
+| # | Gap | Impact |
+|---|---|---|
+| **G1** | **No ASR weights are installed.** `models/` holds `TTS/`, `embedding/`, `lapa-llm/` and one LLM GGUF — nothing for ASR. | The input half cannot be exercised until the operator installs one (`python3 tools/model_manager_v2.py install <package>`). |
+| **G2** | **No ASR round-trip has ever been run on this host** — §7.7 said so, and nothing has changed it. | Every latency and accuracy figure for the input half is an **estimate**. |
+| **G3** | **No capture has been exercised.** The tools are present, but nobody has recorded a word here. | The device name (`default` vs. `hw:0,0` vs. a PipeWire source) is unverified. |
+| **G4** | The venv is **Python 3.12**, where `audioop` is deprecated (and gone in 3.13). | The silence detector must use `wave` + `array` and compute the RMS by hand. |
+
+### 10.7 The conclusion of the input-side investigation
+
+The engine side of the input direction is **complete and already built**. The
+agent side of it is **already shaped for it** — the transcript is a string, and
+the input path is a string.
+
+The two halves also **share the same server**: `audiocpp_server` serves
+`/v1/audio/speech` and `/v1/audio/transcriptions` from one process and one
+model registry, with one `/health`, one busy guard and one memory guard. That
+is the technical reason to combine them in one component.
+
+What does **not** come for free is the turn boundary, the privacy model and
+the failure contract. Those are design questions, and they are answered in
+`PROPOSAL_voice_listening.md` §5–§7.
+
+---
+
+## 11. Conclusion
 
 The technical case is sound and empirically supported:
 
@@ -667,17 +863,28 @@ The technical case is sound and empirically supported:
   endpoint.
 - The agent side has **exactly one natural hook** (the value returned by
   `prompt_handler`) that both front ends share.
-- The repository's toolkit pattern gives a proven template for adding a new
-  capability cleanly, with an established error convention, an established
-  opt-in convention, and established integration points.
+- The repository's **component** convention gives a proven home for a runtime
+  facility like this, with an established error convention, an established
+  opt-in convention and established integration points.
 
 The real engineering content of this work is **not** the synthesis — it is
 (a) the interface decomposition, (b) the Markdown→speech text preparation,
 (c) the non-blocking, interruptible playback, and (d) the security posture
 around reading tool output aloud.
 
-The proposal that follows turns those four into a concrete, phased design.
+The plan that follows turns those four into a concrete, phased design — as a
+**component** with an on/off switch, speaking with a **stock preset voice**
+rather than a clone.
+
+**And, as §10 adds:** the same conclusion holds in the other direction. The
+engine already speaks the input protocol, the agent's input path is already a
+string, and the two halves share one server. What the input direction adds is
+a trust boundary — the microphone — and that is where the design effort
+belongs.
 
 ---
 
-*Next: [`PROPOSAL_voice_output.md`](./PROPOSAL_voice_output.md)*
+*Next: [`PROPOSAL_voice_output.md`](./PROPOSAL_voice_output.md) and the
+reworked [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md).
+For the input direction, see
+[`PROPOSAL_voice_listening.md`](./PROPOSAL_voice_listening.md).*

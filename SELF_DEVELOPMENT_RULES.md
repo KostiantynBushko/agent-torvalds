@@ -66,6 +66,85 @@ before any commit is created.
 
 | Item | Status |
 |---|---|
+| Branch | `feature/voice-toolkit` (off `master` @ `e21d97c`) |
+| Scope | The **voice component** — `components/voice/`, an internal component that lets the agent speak, with an on/off switch and no LLM-facing tools |
+| Status | **Design only.** The plan is written; **Phase 0 has not started**. Nothing is committed. |
+| Documents | `investigate/Voice-Output/IMPLEMENTATION_PLAN.md` (authoritative build plan) · `PROPOSAL_voice_output.md` · `INVESTIGATION_REPORT.md` |
+| Plan size | Phases 0–11, ~8.5 working days |
+
+### Latest change: the listening proposal (ASR)
+
+The operator asked whether the *listening* half of the voice feature should be
+combined with the *speaking* half in a single module. The answer is **yes, with a
+caveat**, and it is written up as a separate proposal.
+
+| Document | What it says |
+|---|---|
+| `investigate/Voice-Output/PROPOSAL_voice_listening.md` | **New.** The design for the input half: one component, two managers, one server, one command family, one error table. |
+| `investigate/Voice-Output/INVESTIGATION_REPORT.md` | §10 was added: the input-side evidence (the ASR families, the server routes, the VAD, the capture tools on this host, and the two honest gaps). |
+
+**The decision it records.** The two halves share the `audiocpp_server` process,
+the base URL, the health probe, the busy/memory semantics and the failure
+taxonomy — that is the technical reason to combine them. They do **not** share a
+manager: `VoiceSessionManager` and `ListeningSessionManager` have different
+lifecycles, different failure contracts and different privacy classes, and the
+microphone gets **its own switch, off by default**, independent of the speaker.
+
+**"Listening" is three different products**, and the proposal separates them:
+
+| Level | Shape | Verdict |
+|---|---|---|
+| **L1** | Push-to-talk dictation: one bounded recording, one transcript, handed to the existing prompt path | **Build it** — fits the existing plan's contracts exactly |
+| **L2** | Open mic: continuous capture, Silero VAD turn detection | A separate work item — it changes the UI model |
+| **L3** | Full duplex, barge-in at the recognition level | Out of scope — a research project |
+
+**What it reopens.** `IMPLEMENTATION_PLAN.md` Appendix C **Q9** currently
+records "Should the component be able to *receive* speech (ASR)? → **No.** It is
+a different product…". That answer is **correct for L2 and L3 and wrong for L1**,
+and it is now marked as reopened, pending the operator's answers to LQ1–LQ9 in
+the listening proposal. The plan itself is revised only once the operator
+approves the direction.
+
+**What it preserves.** The "no LLM-facing tools" decision. The input half
+contributes **no** tool to the retriever, the `--select` menu or
+`_collect_all_tools()`; the old `transcribe_audio` tool stays deleted, and the
+capability is reachable through `\voice transcribe <path>` instead.
+
+**The two honest gaps** (both are preconditions, not footnotes):
+
+- **No ASR weights are installed.** `models/` holds `TTS/`, `embedding/`,
+  `lapa-llm/` and one LLM GGUF — nothing for ASR. The operator installs one
+  with `python3 tools/model_manager_v2.py install <package>`.
+- **No ASR round-trip has ever been run on this host.** Every latency and
+  accuracy figure in the listening proposal is an **estimate**, not a
+  measurement, and is labelled as such.
+
+### Previous change: the voice component (the rework)
+
+The voice feature was reworked from a **toolkit** into a **component**.
+
+| Before | After |
+|---|---|
+| `toolkits/audio-toolkit/` + `agent_voice_toolkit.py` | `components/voice/` — an internal component |
+| Four LLM tools (`speak_text`, `list_voices`, `stop_speaking`, `transcribe_audio`) | **No tools at all** |
+| A `Category: Voice` entry in the `--select` menu | No menu entry; `agent_tool_retriever.py` and `agent_tool_selection.py` are untouched |
+| A `voice_ref` config field the backend would ignore | Removed — the field returns with a cloning-capable backend |
+| A cloned "Torvalds voice" | The stock `af_heart` Kokoro preset — Kokoro cannot clone (`supports_speaker_reference=false`) |
+
+**Why.** Voice is *infrastructure*, not a model capability. `components/README.md`
+says the folder holds "helper components and utility modules, **NOT** the agent's
+callable tools", and the model has no business deciding *when* to speak.
+
+**The defining property.** The component is **off by default** and switchable at
+three levels — `TORVALDS_VOICE_ENABLED`, `--voice` / `--no-voice`, and the
+runtime `\voice on` / `\voice off` / `\voice toggle`. "Off" means off: no backend
+is probed, no thread is started, and the response rendering is byte-identical to
+a build without the component.
+
+### Previous work: the Shodan toolkit
+
+| Item | Status |
+|---|---|
 | Branch | `feature/shodan-toolkit` — merged into `master` and pushed to `origin` |
 | Scope | Shodan internet-exposure toolkit — the project moved into `toolkits/shodan-toolkit/` and wired into the agent |
 | Status | Implemented, tests green, **committed**, pushed and merged into `master` (with `origin/master` as of PR #24) |
@@ -160,6 +239,8 @@ self-development/.venv/bin/python -m pytest self-development/toolkits/shodan-too
 
 ### Previous work: the HITL timeout is now "no timeout" by default
 
+| Item | Status |
+|---|---|
 | Branch | `feature/docs/ollama-local-setup` (off `master`, `b068337`) |
 | Scope | Document and enable the local Ollama setup: install Ollama, pull the models, run the agent |
 | Status | Implemented, verified against a live Ollama server, **committed** (`3398cdb`) and pushed to `origin/feature/docs/ollama-local-setup` |
@@ -170,7 +251,7 @@ The agent has no cloud fallback: it serves the chat model and the embedding
 model from a local Ollama instance, but the README only mentioned Ollama as
 "optional, for on-demand tool retrieval with embeddings". That was wrong —
 Ollama *is* the LLM backend — and there was no instruction anywhere for
-installing it, pulling the models or pointing the agent at them.
+installing it, pulling the models or pointing the agent at it.
 
 | Path | Change |
 |---|---|
