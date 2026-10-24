@@ -340,27 +340,32 @@ class TuiInputModule:
     Routes HITL prompts through the TUI footer command bar.
     """
 
+    #: The TUI command bar owns its own layout, so it shows the question
+    #: itself — the consumer prints into a silent console in TUI mode.
+    renders_question = True
+
     def __init__(self, state: TuiState):
         self.state = state
 
-    async def prompt(
+    async def prompt_with_status(
         self,
         message: str = "Please respond: ",
         default: str = "",
         timeout: Optional[int] = None,
-    ) -> str:
+    ) -> tuple[str, bool]:
         """
-        Prompt the user for input via the TUI command bar.
-        
+        Prompt the user for input and report whether the human answered.
+
         Args:
             message: The question or confirmation prompt.
             default: Fallback answer on timeout.
             timeout: Timeout in seconds (defaults to state.hitl_timeout).
                 ``-1`` means *no timeout*: wait for the human
                 indefinitely.
-            
+
         Returns:
-            The user's input string, or default on timeout.
+            ``(answer, was_timeout)`` tuple.  ``was_timeout`` is ``True``
+            when the human did not answer at all.
         """
         timeout_val = timeout if timeout is not None else self.state.hitl_timeout
         loop = asyncio.get_running_loop()
@@ -388,17 +393,65 @@ class TuiInputModule:
             else:
                 answer = await future
 
-            return answer.strip() if answer.strip() else default
+            text = answer.strip() if isinstance(answer, str) else ""
+            if not text:
+                return default, True
+            return text, False
 
         except asyncio.TimeoutError:
             logger.info("TUI HITL prompt timed out, using default: %s", default)
-            return default
+            return default, True
         finally:
             with self.state._lock:
                 self.state.hitl_active = False
                 self.state.hitl_future = None
                 self.state.input_buffer = ""
                 self.state.cursor_pos = 0
+
+    async def prompt(
+        self,
+        message: str = "Please respond: ",
+        default: str = "",
+        timeout: Optional[int] = None,
+    ) -> str:
+        """
+        Prompt the user for input via the TUI command bar.
+        
+        Args:
+            message: The question or confirmation prompt.
+            default: Fallback answer on timeout.
+            timeout: Timeout in seconds (defaults to state.hitl_timeout).
+                ``-1`` means *no timeout*: wait for the human
+                indefinitely.
+            
+        Returns:
+            The user's input string, or default on timeout.
+        """
+        response, _ = await self.prompt_with_status(
+            message=message, default=default, timeout=timeout
+        )
+        return response
+
+    async def confirm_with_status(
+        self,
+        message: str = "",
+        default_yes: bool = True,
+        timeout: Optional[int] = None,
+    ) -> tuple[bool, bool]:
+        """Prompt for confirmation and report whether the human answered.
+
+        Returns:
+            ``(confirmed, was_timeout)`` tuple.
+        """
+        default_str = "yes" if default_yes else "no"
+        response, was_timeout = await self.prompt_with_status(
+            message=message,
+            default=default_str,
+            timeout=timeout,
+        )
+        if was_timeout:
+            return default_yes, True
+        return response.strip().lower() in ("y", "yes", "true", "1"), False
 
     async def confirm(
         self,
@@ -407,13 +460,12 @@ class TuiInputModule:
         timeout: Optional[int] = None,
     ) -> bool:
         """Prompt for confirmation (yes/no)."""
-        default_str = "yes" if default_yes else "no"
-        answer = await self.prompt(
+        confirmed, _ = await self.confirm_with_status(
             message=f"{message} [y/n]",
-            default=default_str,
+            default_yes=default_yes,
             timeout=timeout,
         )
-        return answer.strip().lower() in ("y", "yes", "true", "1")
+        return confirmed
 
     async def password(
         self,

@@ -77,6 +77,14 @@ from components.hitl_timeout import (
     normalize_timeout,
 )
 from components.hitl_events import AgentAnswerEvent, AgentQuestionEvent
+from components.hitl_question import (
+    QUESTION_PATTERNS,
+    Question,
+    detect_input_type,
+    is_question,
+    normalise_question,
+    split_question,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,29 +92,11 @@ logger = logging.getLogger(__name__)
 # Question detection patterns (compiled regexes for performance)
 # ---------------------------------------------------------------------------
 
-_QUESTION_PATTERNS: List[re.Pattern] = [
-    # Explicit question mark at end of sentence
-    re.compile(r"\w+\s*\?$", re.MULTILINE),
-    # Direct requests for confirmation / approval
-    re.compile(r"\b(confirm|approve|proceed|continue|go ahead)\b", re.IGNORECASE),
-    # Destructive operations phrased as an implicit request.  The verb must
-    # start a sentence (optionally after a politeness word) so that ordinary
-    # prose which merely *mentions* the operation — "Understood, I will not
-    # delete it." — is not mistaken for a question.  Without that anchor the
-    # agent would keep asking the human the same thing forever.
-    re.compile(
-        r"(?:^|[.!?]\s*)\s*"
-        r"(?:please\s+|could you\s+|can you\s+|would you\s+|do you\s+)?"
-        r"\b(delete|drop|remove|overwrite|destroy|format|uninstall)\b",
-        re.IGNORECASE,
-    ),
-    # Yes/No prompts
-    re.compile(r"\b(yes|no|y|n)\b.*\b(yes|no|y|n)\b", re.IGNORECASE),
-    # "Do you want to ..." / "Would you like to ..."
-    re.compile(r"\b(do you|would you)\b.*\b(want|like|prefer)\b", re.IGNORECASE),
-    # Explicit HITL markers (agent can be instructed to emit these)
-    re.compile(r"\[HITL\]|\[QUESTION\]|\[NEEDS_INPUT\]", re.IGNORECASE),
-]
+# The shared question-detection patterns.  They live in
+# ``components.hitl_question`` so that the agent, the consumer and the
+# callback handler agree on what a question is — the copy that used to live
+# here and the one in ``human_loop_handler`` had already drifted apart.
+_QUESTION_PATTERNS: List[re.Pattern] = QUESTION_PATTERNS
 
 # Key used to persist the pending question across workflow step replays.
 _PENDING_QUESTION_KEY = "hitl_pending_question"
@@ -114,26 +104,6 @@ _PENDING_QUESTION_KEY = "hitl_pending_question"
 # Key used to remember which questions were already answered, so the agent
 # never asks the same question twice in one run.
 _ANSWERED_QUESTIONS_KEY = "hitl_answered_questions"
-
-
-def detect_input_type(message: str) -> str:
-    """Heuristically detect the best input type from the message text."""
-    msg_lower = message.lower()
-    if any(kw in msg_lower for kw in ("password", "secret", "credential")):
-        return "password"
-    if any(kw in msg_lower for kw in ("yes", "no", "confirm", "proceed", "continue")):
-        return "yesno"
-    return "text"
-
-
-def is_question(text: str) -> bool:
-    """Return ``True`` if *text* appears to contain a question."""
-    if not text:
-        return False
-    for pattern in _QUESTION_PATTERNS:
-        if pattern.search(text):
-            return True
-    return False
 
 
 def extract_text(obj: Any) -> str:
@@ -360,6 +330,19 @@ class HITLFunctionAgent(FunctionAgent):
         """Extract the assistant text from a response payload."""
         return extract_text(obj)
 
+    def _split_question(self, text: str) -> Optional[Question]:
+        """Split *text* into the question and the report around it.
+
+        When the operator configured their own detection patterns the whole
+        message is kept as the question: the custom patterns define what a
+        question is, and the splitter cannot know that.
+        """
+        if self.hitl_question_patterns is not None:
+            if not self._is_question(text):
+                return None
+            return Question(question=text.strip(), context="", options=())
+        return split_question(text)
+
     def _is_question(self, text: str) -> bool:
         """Return ``True`` if *text* appears to contain a question."""
         if not text:
@@ -404,36 +387,56 @@ class HITLFunctionAgent(FunctionAgent):
             return await super().parse_agent_output(ctx, ev)
 
         text = self._extract_text(ev.response)
-        if not self._is_question(text):
+
+        # The question is separated from the report around it: the whole
+        # message is *not* the question (investigation defect D1).  What
+        # surrounds the question travels in the event's ``context``.
+        split = self._split_question(text)
+        if split is None:
             return await super().parse_agent_output(ctx, ev)
+
+        question_text = split.question
 
         # Never ask the same question twice in one run: the answer may well
         # be "no", and re-asking would loop until the iteration budget runs
-        # out.
-        if await self._was_answered(ctx, text):
-            logger.debug("HITL question already answered — continuing: %r", text[:80])
+        # out.  The comparison uses the *normalised* question, so a
+        # rephrasing of the same question is recognised as well (D4).
+        if await self._was_answered(ctx, question_text):
+            logger.debug(
+                "HITL question already answered — continuing: %r",
+                question_text[:80],
+            )
             return await super().parse_agent_output(ctx, ev)
 
-        question_id, waiter_id = await self._resolve_question_identity(ctx, text)
+        question_id, waiter_id, is_new = await self._resolve_question_identity(
+            ctx, question_text
+        )
 
         timeout = self.hitl_default_timeout
         default_answer = self.hitl_default_answer
-        input_type = detect_input_type(text)
+        # The input type follows the *question*, never the answer (D2).
+        input_type = detect_input_type(question_text, split.options)
 
-        logger.info(
-            "HITL question detected (%s, type=%s, timeout=%s)",
-            question_id,
-            input_type,
-            describe_timeout(timeout),
-        )
+        if is_new:
+            # The workflow replays the step when the answer arrives, so this
+            # body runs twice for one question.  Log the detection once (D5).
+            logger.info(
+                "HITL question detected (%s, type=%s, timeout=%s)",
+                question_id,
+                input_type,
+                describe_timeout(timeout),
+            )
 
         question_event = AgentQuestionEvent(
             prefix="Agent asks: ",
-            question=text,
+            question=question_text,
             question_id=question_id,
             timeout=timeout,
             default_answer=default_answer,
             input_type=input_type,
+            options=list(split.options),
+            # The report around the question travels with it.
+            context=split.context or None,
         )
 
         # Wait for the human.  ``wait_for_event`` publishes the
@@ -479,7 +482,7 @@ class HITLFunctionAgent(FunctionAgent):
         # question gets a fresh one, and remember it so the agent does not
         # ask the very same thing again.
         await ctx.store.set(_PENDING_QUESTION_KEY, None)
-        await self._mark_answered(ctx, text)
+        await self._mark_answered(ctx, question_text)
 
         # Feed the human's answer back into the conversation so the agent
         # can act on it.  The assistant message is already in the
@@ -504,35 +507,51 @@ class HITLFunctionAgent(FunctionAgent):
     # ------------------------------------------------------------------
 
     async def _was_answered(self, ctx: Context, text: str) -> bool:
-        """Return ``True`` if *text* was already answered in this run."""
+        """Return ``True`` if *text* was already answered in this run.
+
+        The key is the *normalised* question, so "Shall I create the branch
+        X?" and "Should I create the branch X?" are recognised as the same
+        question — the agent must not ask again after the answer was "no".
+        """
+        key = normalise_question(text)
+        if not key:
+            return False
         answered = await ctx.store.get(_ANSWERED_QUESTIONS_KEY, default=None)
         if not isinstance(answered, list):
             return False
-        return text in answered
+        return key in answered
 
     async def _mark_answered(self, ctx: Context, text: str) -> None:
         """Remember that *text* has been answered in this run."""
+        key = normalise_question(text)
+        if not key:
+            return
         answered = await ctx.store.get(_ANSWERED_QUESTIONS_KEY, default=None)
         if not isinstance(answered, list):
             answered = []
-        if text not in answered:
-            answered.append(text)
+        if key not in answered:
+            answered.append(key)
         await ctx.store.set(_ANSWERED_QUESTIONS_KEY, answered)
 
     async def _resolve_question_identity(
         self, ctx: Context, text: str
-    ) -> tuple[str, str]:
-        """Return a stable ``(question_id, waiter_id)`` for the pending question.
+    ) -> tuple[str, str, bool]:
+        """Return ``(question_id, waiter_id, is_new)`` for the pending question.
 
         The workflow runtime replays a suspended step from the beginning when
         the awaited event arrives.  A fresh id on every replay would publish
         a new question each time and the run would never settle, so the
         identity is persisted in the workflow store and reused until the
         question is answered.
+
+        ``is_new`` tells the caller whether this is the *first* sighting of
+        the question.  On the replay the same identity comes back, so the
+        "HITL question detected" line is logged once and not once per
+        replay (investigation defect D5).
         """
         pending = await ctx.store.get(_PENDING_QUESTION_KEY, default=None)
         if isinstance(pending, dict) and pending.get("question") == text:
-            return str(pending["question_id"]), str(pending["waiter_id"])
+            return str(pending["question_id"]), str(pending["waiter_id"]), False
 
         question_id = f"hitl-{uuid.uuid4().hex[:8]}"
         waiter_id = f"hitl_waiter_{question_id}"
@@ -544,4 +563,4 @@ class HITLFunctionAgent(FunctionAgent):
                 "waiter_id": waiter_id,
             },
         )
-        return question_id, waiter_id
+        return question_id, waiter_id, True

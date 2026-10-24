@@ -1,5 +1,58 @@
 # Changelog
 
+## [Unreleased] - HITL question presentation
+
+### Fixed
+- **The question is a question, not the whole answer** — the Human-in-the-Loop
+  used the **entire assistant message** as the question. A 3 180-character
+  investigation report became a 3 180-character question, and the operator
+  was asked to answer a report. The question is now split out of the
+  message (`components/hitl_question.py`), and the report around it travels
+  in the `AgentQuestionEvent.context` field, which the consumer renders
+  above the question.
+- **The input type follows the question, not the answer** — the type was
+  guessed from the whole message with a substring match, so a report that
+  merely mentioned *"secret redaction"* turned the question into a masked
+  `Enter password: ` prompt and the operator never saw the question at all.
+  The type is now derived from the extracted question, on word boundaries:
+  a question that *asks for* a secret is a password question, a question
+  that *mentions* one is not.
+- **The question is rendered exactly once** — the consumer printed the
+  question and then handed the same text to the input module, which printed
+  it again. The consumer now owns the rendering and the input module only
+  ever receives a short prompt (`[Y/n]`, `Your response: `,
+  `Enter password: `, `Select option [1]: `).
+- **An empty answer is a timeout, not a "no"** — pressing Enter was recorded
+  as an explicit "no", so the operator could not tell the two apart. The
+  input modules gained `confirm_with_status()` / `prompt_with_status()`,
+  and the empty answer is now reported as `timeout=True`.
+- **A rephrased question is not asked twice** — the re-ask guard compared
+  the question text exactly, so "Shall I create the branch X?" followed by
+  "Should I create the branch X?" asked the same thing again. The guard now
+  compares the *normalised* question (case, Markdown, punctuation and the
+  interrogative frame are dropped).
+- **A question that ends with a code span is detected** — the question-mark
+  pattern could not match `Shall I create the branch `feature/sqitch`?`, so
+  the agent never asked it.
+- **A question is detected once, not once per workflow replay** — the
+  workflow replays the suspended step when the answer arrives, so the
+  "HITL question detected" line was logged twice for one question. The
+  question identity now reports whether the question is new.
+
+### Added
+- **`components/hitl_question.py`** — the single source of truth for what a
+  question is: `split_question()`, `detect_input_type()`,
+  `normalise_question()` and `is_question()`. Every function is pure, so
+  the whole thing is unit-testable without a workflow, an LLM or a console.
+  The two copies of the detection patterns (in `hitl_agent` and
+  `human_loop_handler`) and the two copies of the input-type heuristic have
+  been removed — they had already drifted apart.
+- **`tests/test_hitl_question_presentation.py`** — 34 tests: the splitting,
+  the input type, the normalisation, and the wiring (the question is
+  rendered once, the context is rendered, the input module never receives
+  the question, the empty answer is a timeout, the answer still reaches the
+  agent).
+
 ## [Unreleased] - Shodan Toolkit
 
 ### Added
