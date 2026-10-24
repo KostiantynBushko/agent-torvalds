@@ -49,6 +49,11 @@ class WhiptailInputModule:
         width: Dialog width in columns.
     """
 
+    #: A whiptail dialog owns its own layout, so it has to show the
+    #: question itself — the consumer would otherwise leave the operator
+    #: with a dialog that says nothing but "[y/N]".
+    renders_question = True
+
     def __init__(
         self,
         title: str = "Agent Question",
@@ -134,28 +139,31 @@ class WhiptailInputModule:
             logger.error(f"Whiptail prompt error: {e}")
             return default
 
-    async def confirm(
+    async def confirm_with_status(
         self,
-        message: str,
+        message: str = "",
         default_yes: bool = True,
         timeout: int = NO_TIMEOUT,
         title: Optional[str] = None,
-    ) -> bool:
-        """Ask for yes / no confirmation via whiptail dialog.
+    ) -> tuple[bool, bool]:
+        """Ask for yes / no confirmation and report whether the human answered.
+
+        A whiptail dialog has no "empty answer" — the operator picks a
+        button — so only a timeout counts as "no answer".
 
         Args:
-            message: Question to display.
+            message: The *complete* prompt to display in the dialog.
             default_yes: Default value on timeout / error.
-            timeout: Seconds to wait.  ``-1`` (the default) means *no
-                     timeout*: wait for the human indefinitely.
+            timeout: Seconds to wait for a response.  ``-1`` (the default)
+                     means *no timeout*: wait for the human indefinitely.
             title: Optional dialog title override.
 
         Returns:
-            ``True`` if confirmed, ``False`` otherwise.
+            ``(confirmed, was_timeout)`` tuple.
         """
         if not self.is_available():
             logger.debug("Whiptail not available, returning default")
-            return default_yes
+            return default_yes, True
 
         try:
             from whiptail import Whiptail
@@ -180,17 +188,45 @@ class WhiptailInputModule:
 
             loop = asyncio.get_event_loop()
             # ``None`` means "wait forever" for asyncio.
-            return await asyncio.wait_for(
+            confirmed = await asyncio.wait_for(
                 loop.run_in_executor(None, _ask),
                 timeout=normalize_timeout(timeout),
             )
+            return confirmed, False
 
         except asyncio.TimeoutError:
             logger.debug("Whiptail confirm timed out")
-            return default_yes
+            return default_yes, True
         except Exception as e:
             logger.error(f"Whiptail confirm error: {e}")
-            return default_yes
+            return default_yes, True
+
+    async def confirm(
+        self,
+        message: str,
+        default_yes: bool = True,
+        timeout: int = NO_TIMEOUT,
+        title: Optional[str] = None,
+    ) -> bool:
+        """Ask for yes / no confirmation via whiptail dialog.
+
+        Args:
+            message: Question to display.
+            default_yes: Default value on timeout / error.
+            timeout: Seconds to wait for a response.  ``-1`` (the default)
+                     means *no timeout*: wait for the human indefinitely.
+            title: Optional dialog title override.
+
+        Returns:
+            ``True`` if confirmed, ``False`` otherwise.
+        """
+        confirmed, _ = await self.confirm_with_status(
+            message=message,
+            default_yes=default_yes,
+            timeout=timeout,
+            title=title,
+        )
+        return confirmed
 
     async def menu(
         self,

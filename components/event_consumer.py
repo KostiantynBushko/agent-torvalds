@@ -36,6 +36,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from rich.console import Console
+from rich.markup import escape
 
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
@@ -149,6 +150,22 @@ VERBOSE_IGNORE_EVENTS: Set[str] = {
     "AgentInput",           # Internal input handling
     "AgentWorkflowStartEvent",  # Internal workflow start
 }
+
+
+def _normalise_yes_no(response: str) -> str:
+    """Normalise a yes/no answer, keeping anything that is not one.
+
+    "y" and "yes" become "yes", "n" and "no" become "no" — and every
+    other answer is passed through unchanged, so "yes, go ahead" reaches
+    the agent as the operator typed it.
+    """
+    text = response.strip()
+    lowered = text.lower()
+    if lowered in ("y", "yes"):
+        return "yes"
+    if lowered in ("n", "no"):
+        return "no"
+    return text
 
 
 class EventConsumer:
@@ -693,11 +710,10 @@ class EventConsumer:
         self.state.set("workflow_paused", True)
         logger.debug("EventConsumer._on_agent_question: spinner paused")
 
-        # Display question
-        context_str = f"\n   [dim]{event.context}[/dim]" if event.context else ""
-        self.console.print(
-            f"\n[magenta]🤖 Agent asks: {event.question}[/magenta]{context_str}"
-        )
+        # Display the question — exactly once.  The input module only ever
+        # gets a short prompt, so the question cannot reach the terminal a
+        # second time (investigation defect D3).
+        self._render_question(event)
 
         answer = ""
         was_timeout = False
@@ -745,10 +761,108 @@ class EventConsumer:
         self.spinner.resume()
         self.state.set("workflow_paused", False)
 
+    def _render_question(self, event: AgentQuestionEvent) -> None:
+        """Render the question and its context — once.
+
+        The report around the question is printed first and the question
+        last, so the operator reads the context and then the thing they
+        have to answer.  Nothing but whitespace separates the two: the
+        message reaches the terminal as the one block the agent wrote.
+        """
+        question = getattr(event, "question", "") or ""
+        context = getattr(event, "context", "") or ""
+
+        self.console.print("\n[magenta]🤖 Agent asks:[/magenta]")
+        if context:
+            self.console.print(f"[dim]{escape(context)}[/dim]")
+        if question:
+            self.console.print(f"[magenta]{escape(question)}[/magenta]")
+
+    def _renders_question(self) -> bool:
+        """Return ``True`` when the input module renders the question itself.
+
+        The console input module does not: the consumer already printed the
+        question, so the module only shows the short prompt.  A widget that
+        owns its own layout — the whiptail dialog, the TUI command bar —
+        asks for the question with ``renders_question = True``.
+        """
+        return bool(getattr(self.console_input, "renders_question", False))
+
+    def _prompt_text(self, event: AgentQuestionEvent, short: str) -> str:
+        """Return the prompt the input module should show."""
+        if self._renders_question():
+            question = (getattr(event, "question", "") or "").strip()
+            return f"{question} {short}".strip() if question else short
+        return short
+
+    async def _confirm(
+        self, message: str, default_yes: bool, timeout: int
+    ) -> tuple[str, bool]:
+        """Ask a yes/no question and return the answer.
+
+        The operator's own words are preserved: "yes, go ahead" reaches the
+        agent as it was typed, and only the canonical "y"/"n" are
+        normalised.  An empty answer is a timeout, not a "no"
+        (investigation defect D6).
+
+        The input module is asked for the raw answer when it can provide
+        one; a module that only offers a yes/no widget answers with a
+        boolean.
+
+        Returns:
+            ``(answer, was_timeout)`` tuple.
+        """
+        prompt_with_status = getattr(self.console_input, "prompt_with_status", None)
+        if prompt_with_status is not None:
+            response, was_timeout = await prompt_with_status(
+                message=message, default="", timeout=timeout
+            )
+        else:
+            confirm_with_status = getattr(
+                self.console_input, "confirm_with_status", None
+            )
+            if confirm_with_status is not None:
+                confirmed, was_timeout = await confirm_with_status(
+                    message=message, default_yes=default_yes, timeout=timeout
+                )
+                return ("yes" if confirmed else "no"), was_timeout
+            if hasattr(self.console_input, "prompt"):
+                response = await self.console_input.prompt(
+                    message=message, default="", timeout=timeout
+                )
+                was_timeout = not response.strip()
+            else:
+                confirmed = await self.console_input.confirm(
+                    message=message, default_yes=default_yes, timeout=timeout
+                )
+                return ("yes" if confirmed else "no"), False
+
+        if was_timeout or not response.strip():
+            return "", True
+        return _normalise_yes_no(response), False
+
+    async def _menu(
+        self, message: str, options: List[str], timeout: int
+    ) -> tuple[str, bool]:
+        """Show a menu and report whether the human answered."""
+        menu_with_status = getattr(self.console_input, "menu_with_status", None)
+        if menu_with_status is not None:
+            return await menu_with_status(
+                message=message, options=options, timeout=timeout
+            )
+        selected = await self.console_input.menu(
+            message=message, options=options, timeout=timeout
+        )
+        return selected, False
+
     async def _collect_answer(
         self, event: AgentQuestionEvent
     ) -> tuple[str, bool]:
         """Collect the human's answer for *event*.
+
+        The input module never receives the question text — it gets a short
+        prompt.  The question itself was rendered by
+        :meth:`_render_question`.
 
         Returns:
             ``(answer, was_timeout)`` tuple.
@@ -759,26 +873,32 @@ class EventConsumer:
 
         if input_type == "yesno":
             default_yes = default_answer.strip().lower() in ("yes", "y", "true", "1")
-            result = await self.console_input.confirm(
-                message=event.question,
+            answer, was_timeout = await self._confirm(
+                message=self._prompt_text(
+                    event, "[Y/n]" if default_yes else "[y/N]"
+                ),
                 default_yes=default_yes,
                 timeout=timeout,
             )
-            return ("yes" if result else "no", False)
+            if was_timeout:
+                return default_answer, True
+            return answer, False
 
         if input_type == "menu":
             options = list(getattr(event, "options", []) or [])
-            if options:
-                result = await self.console_input.menu(
-                    message=event.question,
+            if options and hasattr(self.console_input, "menu"):
+                selected, was_timeout = await self._menu(
+                    message=self._prompt_text(event, "Select option [1]: "),
                     options=options,
                     timeout=timeout,
                 )
-                return (result, result == options[0] and not default_answer)
+                if was_timeout:
+                    return default_answer, True
+                return (selected, False)
 
         if input_type == "password":
             result = await self.console_input.password(
-                message="Enter password: ",
+                message=self._prompt_text(event, "Enter password: "),
                 timeout=timeout,
             )
             return (result, not result)
@@ -790,7 +910,7 @@ class EventConsumer:
         prompt_with_status = getattr(self.console_input, "prompt_with_status", None)
         if prompt_with_status is not None:
             response, was_timeout = await prompt_with_status(
-                message="Your response: ",
+                message=self._prompt_text(event, "Your response: "),
                 default=default_answer,
                 timeout=timeout,
             )
@@ -799,7 +919,7 @@ class EventConsumer:
             return (response, was_timeout)
 
         response = await self.console_input.prompt(
-            message="Your response: ",
+            message=self._prompt_text(event, "Your response: "),
             default=default_answer,
             timeout=timeout,
         )
