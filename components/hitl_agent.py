@@ -227,6 +227,130 @@ class HITLFunctionAgent(FunctionAgent):
     hitl_default_answer: str = ""
     hitl_question_patterns: Optional[List[str]] = None
 
+    # Cached context-window information for the context guard.  Reading the
+    # LLM metadata costs a round-trip to the Ollama server, so it is done
+    # once per agent instance.
+    _context_window_cache: Optional[int] = None
+    _tokenizer_cache: Optional[Any] = None
+    _tool_schema_cache: Optional[int] = None
+
+    # ------------------------------------------------------------------
+    # Context guard
+    # ------------------------------------------------------------------
+
+    async def take_step(
+        self,
+        ctx: Context,
+        llm_input: List[ChatMessage],
+        tools: Any,
+        memory: Any,
+    ) -> Any:
+        """Trim the prompt to the model's context window before the call.
+
+        ``FunctionAgent`` never trims its scratchpad, so a long tool-using
+        run can grow the prompt past the model's context window.  The
+        Ollama server then truncates the prompt, keeping the most recent
+        tokens, which drops the user query at the front of the conversation
+        — and the model template refuses to render a conversation without a
+        user message ("No user query found in messages.").
+
+        The guard keeps the request the user made and the most recent turns
+        that still fit.  It also restores the request when the chat memory
+        trimmed it away.
+        """
+        from components.context_guard import select_context_window_split
+
+        scratchpad: List[ChatMessage] = await ctx.store.get(
+            self.scratchpad_key, default=[]
+        )
+
+        budget = self._context_budget()
+        if budget <= 0:
+            return await super().take_step(ctx, llm_input, tools, memory)
+
+        # The tool schemas are sent with every request and take up prompt
+        # space as well, so they have to be part of the budget.
+        budget -= self._tool_schema_tokens(tools)
+        if budget <= 0:
+            return await super().take_step(ctx, llm_input, tools, memory)
+
+        original_request = await ctx.store.get("user_msg_str")
+        combined = [*llm_input, *scratchpad]
+
+        head, tail = select_context_window_split(
+            combined,
+            split_at=len(llm_input),
+            budget_tokens=budget,
+            tokenizer=self._tokenizer(),
+            original_request=original_request or None,
+        )
+
+        if (head, tail) != (list(llm_input), list(scratchpad)):
+            # Keep the scratchpad in sync with what was actually sent, so the
+            # next iteration starts from the trimmed conversation instead of
+            # re-growing the prompt.
+            await ctx.store.set(self.scratchpad_key, tail)
+
+        return await super().take_step(ctx, head, tools, memory)
+
+    def _context_budget(self) -> int:
+        """Return the number of prompt tokens the agent may use.
+
+        The context window is read from the LLM metadata, which for Ollama
+        means a round-trip to the server.  The value is cached because
+        ``take_step`` runs on every iteration.
+        """
+        if self._context_window_cache is None:
+            try:
+                self._context_window_cache = int(
+                    self.llm.metadata.context_window
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Could not read the context window from the LLM (%s) — "
+                    "the context guard is disabled for this run.",
+                    exc,
+                )
+                self._context_window_cache = 0
+
+        if self._context_window_cache <= 0:
+            return 0
+
+        from components.context_guard import context_budget
+
+        return context_budget(self._context_window_cache)
+
+    def _tokenizer(self):
+        """Return the cached tokenizer used to size the prompt."""
+        if self._tokenizer_cache is None:
+            from components.context_guard import get_tokenizer
+
+            self._tokenizer_cache = get_tokenizer()
+        return self._tokenizer_cache
+
+    def _tool_schema_tokens(self, tools) -> int:
+        """Return the number of tokens the tool schemas take up.
+
+        The schemas are part of the prompt but not part of the message
+        list, so they have to be accounted for separately.
+        """
+        if not tools:
+            return 0
+        if self._tool_schema_cache is None:
+            import json
+
+            try:
+                specs = [
+                    tool.metadata.to_openai_tool(skip_length_check=True)
+                    for tool in tools
+                ]
+                blob = json.dumps(specs)
+            except Exception as exc:  # noqa: BLE001 - be forgiving here
+                logger.debug("Could not size the tool schemas: %s", exc)
+                blob = ""
+            self._tool_schema_cache = len(self._tokenizer()(blob))
+        return self._tool_schema_cache
+
     # ------------------------------------------------------------------
     # Question detection
     # ------------------------------------------------------------------
