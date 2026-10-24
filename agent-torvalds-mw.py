@@ -153,7 +153,7 @@ from components.stats_handler import (
 # ---------------------------------------------------------------------------
 # Core Components
 # ---------------------------------------------------------------------------
-from components.ollama_config import get_ollama_base_url
+from components.ollama_config import apply_context_window, get_ollama_base_url
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
 from components.event_consumer import EventConsumer
@@ -533,6 +533,14 @@ def create_agent(
         top_p=0.1,
         callback_manager=callback_manager,
     )
+
+    # The model's advertised context length is its maximum, not what the
+    # server actually uses.  A prompt that exceeds the real window is
+    # truncated from the front by the server, which drops the user request
+    # and makes the model template fail with "No user query found in
+    # messages.".  Tell the LLM the truth so the context guard can size
+    # the prompt correctly.
+    apply_context_window(llm)
 
     chat_memory = agent_chat_memory.get_chat_memory()
 
