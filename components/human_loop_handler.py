@@ -40,6 +40,11 @@ from llama_index.core.callbacks.base import BaseCallbackHandler
 from llama_index.core.callbacks.schema import CBEventType, EventPayload
 
 from components.hitl_events import AgentAnswerEvent, AgentQuestionEvent
+from components.hitl_question import (
+    QUESTION_PATTERNS,
+    detect_input_type,
+    split_question,
+)
 from components.hitl_timeout import (
     NO_TIMEOUT,
     describe_timeout,
@@ -56,28 +61,10 @@ logger = logging.getLogger(__name__)
 # Question detection patterns (compiled regexes for performance)
 # ---------------------------------------------------------------------------
 
-_QUESTION_PATTERNS: List[re.Pattern] = [
-    # Explicit question mark at end of sentence
-    re.compile(r"\w+\s*\?$", re.MULTILINE),
-    # Direct requests for confirmation / approval
-    re.compile(r"\b(confirm|approve|proceed|continue|go ahead)\b", re.IGNORECASE),
-    # Destructive operations phrased as an implicit request.  The verb must
-    # start a sentence (optionally after a politeness word) so that ordinary
-    # prose which merely *mentions* the operation — "Understood, I will not
-    # delete it." — is not mistaken for a question.
-    re.compile(
-        r"(?:^|[.!?]\s*)\s*"
-        r"(?:please\s+|could you\s+|can you\s+|would you\s+|do you\s+)?"
-        r"\b(delete|drop|remove|overwrite|destroy|format|uninstall)\b",
-        re.IGNORECASE,
-    ),
-    # Yes/No prompts
-    re.compile(r"\b(yes|no|y|n)\b.*\b(yes|no|y|n)\b", re.IGNORECASE),
-    # "Do you want to ..." / "Would you like to ..."
-    re.compile(r"\b(do you|would you)\b.*\b(want|like|prefer)\b", re.IGNORECASE),
-    # Explicit HITL markers (agent can be instructed to emit these)
-    re.compile(r"\[HITL\]|\[QUESTION\]|\[NEEDS_INPUT\]", re.IGNORECASE),
-]
+# The shared question-detection patterns.  They used to be copied here and
+# in ``components.hitl_agent``; the two copies had already drifted apart, so
+# they now live in ``components.hitl_question``.
+_QUESTION_PATTERNS: List[re.Pattern] = QUESTION_PATTERNS
 
 # ---------------------------------------------------------------------------
 # Input type helpers
@@ -86,14 +73,10 @@ _QUESTION_PATTERNS: List[re.Pattern] = [
 _INPUT_METHODS: frozenset = frozenset({"console", "whiptail"})
 
 
-def _detect_input_type(message: str) -> str:
-    """Heuristically detect the best input type from the message text."""
-    msg_lower = message.lower()
-    if any(kw in msg_lower for kw in ("password", "secret", "credential")):
-        return "password"
-    if any(kw in msg_lower for kw in ("yes", "no", "confirm", "proceed", "continue")):
-        return "yesno"
-    return "text"
+# The input type is detected in ``components.hitl_question`` — one
+# implementation, used by the agent, the consumer and this handler.  The
+# name is kept for backwards compatibility with the existing callers.
+_detect_input_type = detect_input_type
 
 
 # ---------------------------------------------------------------------------
@@ -371,13 +354,17 @@ class HumanLoopHandler(BaseCallbackHandler):
         if question_id in self._asked_question_ids:
             return
         self._asked_question_ids.add(question_id)
+        # The history records the *question*, not the whole message: a
+        # 3 000-character report is not a question.
+        split = split_question(text)
+        question = split.question if split is not None else text.strip()
         self._question_history.append(
             {
                 "question_id": question_id,
-                "question": text[:200],
+                "question": question[:200],
                 "answer": None,
                 "was_timeout": False,
-                "input_type": _detect_input_type(text),
+                "input_type": detect_input_type(question),
                 "timestamp": time.monotonic(),
             }
         )

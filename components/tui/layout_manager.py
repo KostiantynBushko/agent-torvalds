@@ -125,6 +125,7 @@ def render_footer(
     hitl_time_remaining: Optional[float] = None,
     hitl_default_answer: str = "",
     is_busy: bool = False,
+    hitl_input_type: str = "text",
 ) -> Panel:
     """
     Render the bottom interactive command bar / HITL prompt.
@@ -137,6 +138,8 @@ def render_footer(
         hitl_time_remaining: Remaining timeout seconds for HITL prompt
         hitl_default_answer: Default answer if HITL times out
         is_busy: True if agent is busy
+        hitl_input_type: The kind of answer the question wants — "text",
+                         "yesno", "menu" or "password"
         
     Returns:
         Rich Panel containing formatted input bar
@@ -155,9 +158,16 @@ def render_footer(
 
         cursor_rendered = f"{before_cur}[black on bright_yellow]{cur_char}[/black on bright_yellow]{after_cur}"
 
+        # The label tells the operator what kind of answer is expected.
+        answer_label = {
+            "yesno": "Yes/No: ",
+            "menu": "Option: ",
+            "password": "Password: ",
+        }.get(hitl_input_type, "Answer: ")
+
         left_content = Text.from_markup(
             f"[bold bright_yellow]🤖 AGENT QUESTION:[/bold bright_yellow] [white]{hitl_prompt}[/white]\n"
-            f"[bold bright_cyan]Answer: [/bold bright_cyan][white]{cursor_rendered}[/white]"
+            f"[bold bright_cyan]{answer_label}[/bold bright_cyan][white]{cursor_rendered}[/white]"
         )
 
         timeout_info = ""
