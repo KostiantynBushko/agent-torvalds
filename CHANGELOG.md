@@ -1,5 +1,42 @@
 # Changelog
 
+## [Unreleased] - Git toolkit against pygit2 1.20
+
+### Fixed
+- **The git toolkit works again with the installed pygit2.** Every one of
+  its 37 tests failed against pygit2 1.20, because the toolkit was written
+  against an older API. Ten API changes were adapted:
+  `Index.add()` takes one path per call (`Index.add_all()` stages
+  everything); `Config.has_key()` and `Config.get()` are gone (the mapping
+  interface — `key in config` and `config[key]` — replaces them);
+  `Config.set_multivar()` needs a regex, so a single value is set through
+  `config[key] = value`; `Repository.create_remote()` moved to
+  `repo.remotes.create()`; the diff moved from the index to the repository
+  (`repo.diff(target, cached=True)` compares the index with a target,
+  `repo.diff()` compares the working tree with the index);
+  `Diff.diffstring` is gone (the diff is iterable and yields one `Patch`
+  per file, each with its own `text`); `Oid.hex` is gone (`str(oid)`);
+  `Commit.short_id` is a string now, not an `Oid`; iterating the branch
+  collections yields the names, not objects; `Repository.graph_ahead_behind()`
+  is now `Repository.ahead_behind()`.
+- **The second commit in a repository was silently refused.** The guard
+  that checks whether there is anything to commit was inverted — it
+  reported "no staged changes" exactly when there were staged changes, so
+  `git_commit()` returned `False` for every commit after the first one in a
+  repository. The guard now asks the right question.
+- **`git_log_compare()` no longer reports the whole history.** The
+  ahead/behind lists were supposed to stop at the shared history, but the
+  filter was never applied — the exception that was meant to skip the
+  shared commits was swallowed, so both branches reported every commit they
+  had. The walk now stops at the first commit the other branch also
+  contains.
+- **`git_pull()` no longer reports success for a pull that never
+  happened.** A missing remote was skipped silently and the tool answered
+  "Fetch completed". It now fails with "Remote 'origin' does not exist".
+- **`git_branch_rename()` works again.** pygit2 1.20 removed
+  `Branches.rename()`; the reference itself is renamed now — the new one is
+  created, HEAD is pointed at it, and the old one is dropped.
+
 ## [Unreleased] - Continuous integration
 
 ### Added
