@@ -421,7 +421,10 @@ class TestConsoleInputWorkflow(unittest.TestCase):
             module = ConsoleInputModule()
 
             # Password
-            with patch("getpass.getpass", return_value="secret123"):
+            with patch(
+                "components.console_input_module.read_masked",
+                return_value="secret123",
+            ):
                 pwd = await module.password(timeout=5)
 
             # Confirm

@@ -46,6 +46,10 @@ from llama_index.core.tools import FunctionTool  # noqa: E402
 from pydantic import Field  # noqa: E402
 from rich.console import Console  # noqa: E402
 
+from components.console_markdown import (  # noqa: E402
+    render_options,
+    render_report,
+)
 from components.event_consumer import EventConsumer  # noqa: E402
 from components.hitl_agent import HITLFunctionAgent  # noqa: E402
 from components.hitl_events import AgentQuestionEvent  # noqa: E402
@@ -140,7 +144,9 @@ class TestSplitQuestion:
         split = split_question(STATUS_PAYLOAD)
         assert split is not None
         assert split.question.startswith("Also, would you like me to:")
-        assert "1. Set up sqitch" in split.question
+        # The choices are *not* repeated inside the question: the consumer
+        # renders them as the menu, so a repeated list would be shown twice.
+        assert "1. Set up sqitch" not in split.question
         # The earlier question stays visible in the context.
         assert "What would you like to name it?" in split.context
         assert split.options == (
@@ -279,6 +285,184 @@ class TestConsoleInputModule:
             )
         assert selected == "first"
         assert was_timeout is False
+
+
+class TestInputTypeDetection:
+    """The rules that decide what kind of answer the question wants.
+
+    The operator reported that *every* question was prompted with
+    ``[y/N]`` — even a question that asked for a name, and even a question
+    that offered three choices.  These tests pin the rules down.
+    """
+
+    def test_an_open_question_is_not_a_yes_no_question(self):
+        """A wh-question wants a value or a choice, not a "yes"."""
+        assert detect_input_type(
+            "What is the name of the branch you want me to create?"
+        ) == "text"
+        assert detect_input_type(
+            "Which of these should I investigate first?"
+        ) == "text"
+        assert detect_input_type("Which one should I use?") == "text"
+
+    def test_a_binary_offer_is_a_yes_no_question(self):
+        assert detect_input_type("Shall I run the cleanup?") == "yesno"
+        assert detect_input_type("Do you want me to continue?") == "yesno"
+        assert detect_input_type("Is it okay to delete the branch?") == "yesno"
+        assert detect_input_type(
+            "Please confirm that I should delete the local branch."
+        ) == "yesno"
+
+    def test_an_imperative_ask_is_a_question(self):
+        """"Please enter the API key ..." is a question, not a statement."""
+        split = split_question("Please enter the API key for the GitHub remote.")
+        assert split is not None
+        assert detect_input_type(split.question, split.options) == "password"
+
+    def test_the_marker_is_honoured_by_the_detection(self):
+        """The marker reaches the type detector *and* the question detector."""
+        for marker, expected in (
+            ("[HITL:text]", "text"),
+            ("[HITL:yesno]", "yesno"),
+            ("[HITL:password]", "password"),
+            ("[HITL:menu]", "menu"),
+        ):
+            split = split_question(f"{marker} Enter the hostname of the router.")
+            assert split is not None, marker
+            assert detect_input_type(split.question, split.options) == expected
+
+    def test_a_list_after_the_question_is_a_menu(self):
+        """The choices of a menu may follow the question in their own block."""
+        split = split_question(
+            "Which environment should I deploy to?\n\n1. staging\n2. production"
+        )
+        assert split is not None
+        assert split.options == ("staging", "production")
+        assert detect_input_type(split.question, split.options) == "menu"
+        # The choices are not repeated in the context.
+        assert "staging" not in split.context
+
+    def test_an_inline_choice_is_a_menu(self):
+        """The inline "(a) … (b) … (c) …" a model produces is a menu."""
+        split = split_question(
+            "I have not deleted anything. Options: "
+            "**(a)** proceed with the delete, **(b)** point me at the right "
+            "file, or **(c)** cancel."
+        )
+        assert split is not None
+        assert split.options == (
+            "proceed with the delete",
+            "point me at the right file",
+            "cancel",
+        )
+        assert detect_input_type(split.question, split.options) == "menu"
+
+    def test_the_bullet_character_is_a_list_marker(self):
+        """A report that uses "•" bullets is a list, not a paragraph."""
+        split = split_question(
+            "I can apply the fix in three ways. Which one should I use?\n\n"
+            "\u2022 Patch the config file\n"
+            "\u2022 Add an environment variable\n"
+            "\u2022 Regenerate the file"
+        )
+        assert split is not None
+        assert split.options == (
+            "Patch the config file",
+            "Add an environment variable",
+            "Regenerate the file",
+        )
+        assert detect_input_type(split.question, split.options) == "menu"
+
+    def test_a_yes_no_question_is_still_a_yes_no_question(self):
+        """The fix must not turn every question into free text."""
+        assert detect_input_type(
+            "Want me to start **Phase 0** on a `feature/voice-toolkit` branch?"
+        ) == "yesno"
+
+
+class TestDecoratedQuestion:
+    """The wrapping of a question does not change what it asks.
+
+    The operator reported that a question with three choices was prompted
+    with ``[y/N]`` (``/home/kbush/torvald-log/hitl_questions_issue/
+    wrong-user-input.txt``).  The agent had written the question quoted
+    and labelled — ``question: 'Which one should I use?'`` — and the
+    quotes kept the "which" out of the head of the question, so the
+    "should I" inside it turned the question into a confirmation.
+    """
+
+    def test_a_quoted_question_is_not_a_yes_no_question(self):
+        assert detect_input_type("'Which one should I use?'") == "text"
+        assert detect_input_type('"Which one should I use?"') == "text"
+
+    def test_an_emphasised_question_is_not_a_yes_no_question(self):
+        assert detect_input_type("**Which one should I use?**") == "text"
+
+    def test_a_labelled_question_is_not_a_yes_no_question(self):
+        assert detect_input_type("question: 'Which one should I use?'") == "text"
+        assert detect_input_type("Q: Which one should I use?") == "text"
+
+    def test_the_question_word_may_head_a_clause(self):
+        """The offer sits in a subordinate clause — the question is open."""
+        assert detect_input_type(
+            "I found three options, so which one should I use?"
+        ) == "text"
+        assert detect_input_type("I need to know which one should I use.") == "text"
+
+    def test_a_relative_clause_is_still_a_yes_no_question(self):
+        """The "which" of a relative clause is not a question word."""
+        assert detect_input_type(
+            "Should I use the tool which deletes the branch?"
+        ) == "yesno"
+        assert detect_input_type(
+            "Do you want me to check which branches are stale?"
+        ) == "yesno"
+
+    def test_the_operator_reads_the_question_without_its_wrapping(self):
+        split = split_question(
+            "The report around it.\n\nquestion: 'Which one should I use?'"
+        )
+        assert split is not None
+        assert split.question == "Which one should I use?"
+
+    def test_the_report_keeps_the_text_before_the_question(self):
+        split = split_question(
+            "The report around it.\n\nquestion: 'Which one should I use?'"
+        )
+        assert split is not None
+        assert "The report around it." in split.context
+        # The label is not part of the report either.
+        assert "question:" not in split.context
+
+    def test_the_operator_is_not_prompted_with_yes_no(self):
+        """The whole round trip: the prompt must not be ``[y/N]``."""
+        out = run(
+            [
+                "I found three options.\n\nquestion: 'Which one should I use?'",
+                "All done.",
+            ],
+            answers=["the first one"],
+        )
+        assert out["events"], "no AgentQuestionEvent was produced"
+        assert out["events"][0].input_type == "text"
+        assert out["prompts"] == ["Your response: "]
+        # And the answer reaches the agent as it was typed.
+        last_call = out["llm_calls"][-1]
+        joined = " ".join(content for _, content in last_call)
+        assert "the first one" in joined
+
+    def test_the_marker_is_not_eaten_by_the_wrapping(self):
+        """The marker is an instruction to the detector, not decoration."""
+        assert detect_input_type("[HITL:menu]") == "menu"
+        split = split_question("[HITL:menu]")
+        assert split is not None
+        assert split.question == "[HITL:menu]"
+
+    def test_a_yes_no_question_is_still_prompted_with_yes_no(self):
+        """The fix must not take the confirmation away."""
+        out = run(["Shall I delete the branch?", "All done."], answers=["no"])
+        assert out["events"][0].input_type == "yesno"
+        assert out["prompts"] == ["[y/N]"]
 
 
 class TestNormaliseQuestion:
@@ -484,13 +668,41 @@ class TestRendering:
 
     def test_question_rendered_once(self):
         out = run([STATUS_PAYLOAD, "All done."], answers=["no"])
-        rendered = _normalise(out["console"]).count(_normalise(STATUS_PAYLOAD))
-        assert rendered == 1
+        console = _normalise(out["console"])
+        # The question is shown once.
+        assert console.count(_normalise("Also, would you like me to:")) == 1
         # And the input module does not repeat it.
         assert not any(
-            _normalise(STATUS_PAYLOAD) in _normalise(prompt)
+            "would you like me to" in _normalise(prompt)
             for prompt in out["prompts"]
         )
+
+    def test_the_question_is_rendered_as_markdown(self):
+        """The Markdown the agent wrote is *rendered*, not shown as source.
+
+        The operator reads "Current status:", not "**Current status:**" —
+        the markup is noise the operator has to read past.
+        """
+        out = run([STATUS_PAYLOAD, "All done."], answers=["no"])
+        console = out["console"]
+        # The emphasis markers are gone; the text they wrapped is there.
+        assert "**Current status:**" not in console
+        assert "Current status:" in console
+        # The code span is rendered too.
+        assert "`origin/master`" not in console
+        assert "origin/master" in console
+        # The bullet list became a bullet list.
+        assert "- On branch" not in console
+        assert "On branch master" in console
+
+    def test_the_menu_is_rendered_with_its_numbers(self):
+        """The choices are shown as the numbered menu the prompt refers to."""
+        out = run([STATUS_PAYLOAD, "All done."], answers=["1"])
+        console = out["console"]
+        assert "1. Set up sqitch for database version control?" in console
+        assert "2. Start with documentation for the sqitch integration?" in console
+        # And the prompt asks for the number.
+        assert out["prompts"] == ["Select option [1]: "]
 
     def test_context_is_rendered(self):
         out = run([STATUS_PAYLOAD, "All done."], answers=["no"])
@@ -633,6 +845,53 @@ class TestMenu:
         assert received
         assert "timeout=True" in received[0]
         assert "Set up sqitch for database version control?" in received[0]
+
+
+class TestReportRendering:
+    """A report is read, not answered — it carries no numbers.
+
+    On the screen a number means *the choice you can type*.  A report with
+    its own "1." and "2." competes with the menu printed below it, and the
+    operator cannot tell which of the two lists his number belongs to.
+    """
+
+    @staticmethod
+    def _render(renderer, text, **kwargs) -> str:
+        buffer = io.StringIO()
+        console = Console(file=buffer, width=100, force_terminal=False, no_color=True)
+        renderer(console, text, **kwargs)
+        return buffer.getvalue()
+
+    def test_a_report_list_becomes_bullets(self):
+        out = self._render(render_report, "1. first finding\n2. second finding")
+        assert "•" in out
+        assert "first finding" in out
+        assert "second finding" in out
+        assert "1." not in out
+        assert "2." not in out
+
+    def test_the_menu_keeps_its_numbers(self):
+        out = self._render(render_options, ["Patch the config", "Use an env var"])
+        assert "1. Patch the config" in out
+        assert "2. Use an env var" in out
+
+    def test_a_code_block_is_left_alone(self):
+        """A "1." inside a code block is code, not a list."""
+        out = self._render(render_report, "```\n1. not a list\n```")
+        assert "1. not a list" in out
+
+    def test_a_decimal_number_is_not_a_list(self):
+        out = self._render(render_report, "The timeout is 1.5 seconds")
+        assert "1.5 seconds" in out
+
+    def test_the_report_of_a_menu_question_is_rendered_as_bullets(self):
+        """The whole round trip: the report is bullets, the menu is numbered."""
+        out = run([STATUS_PAYLOAD, "All done."], answers=["1"])
+        console = out["console"]
+        # The menu keeps its numbers.
+        assert "1. Set up sqitch for database version control?" in console
+        # The report keeps none.
+        assert "1. On branch" not in console
 
 
 if __name__ == "__main__":

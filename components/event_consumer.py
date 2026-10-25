@@ -36,11 +36,16 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from rich.console import Console
-from rich.markup import escape
 
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
 from components.console_input_module import ConsoleInputModule
+from components.console_markdown import (
+    render_markdown,
+    render_options,
+    render_report,
+)
+from components.hitl_question import strip_marker
 from components.hitl_timeout import NO_TIMEOUT, describe_timeout
 
 logger = logging.getLogger(__name__)
@@ -768,15 +773,31 @@ class EventConsumer:
         last, so the operator reads the context and then the thing they
         have to answer.  Nothing but whitespace separates the two: the
         message reaches the terminal as the one block the agent wrote.
+
+        Both parts are rendered as **Markdown**.  The agent writes
+        Markdown — bold, code spans, headings, lists — and printing its
+        source verbatim (``**Phase 0**``, ``- item``) makes the operator
+        read the markup instead of the message.  The explicit
+        ``[HITL:...]`` marker is an instruction to the detector, not
+        something the operator has to read, so it is stripped here.
         """
-        question = getattr(event, "question", "") or ""
+        question = strip_marker(getattr(event, "question", "") or "")
         context = getattr(event, "context", "") or ""
+        options = list(getattr(event, "options", []) or [])
 
         self.console.print("\n[magenta]🤖 Agent asks:[/magenta]")
         if context:
-            self.console.print(f"[dim]{escape(context)}[/dim]")
+            # The report is read, not answered: its lists are bullets,
+            # so the only numbers on the screen are the choices of the menu.
+            render_report(self.console, context, style="dim")
         if question:
-            self.console.print(f"[magenta]{escape(question)}[/magenta]")
+            if context:
+                # The report and the question are two blocks, not one.
+                self.console.print()
+            render_markdown(self.console, question, style="magenta")
+        if options:
+            # The choices are rendered as the menu the prompt refers to.
+            render_options(self.console, options, style="magenta")
 
     def _renders_question(self) -> bool:
         """Return ``True`` when the input module renders the question itself.

@@ -13,6 +13,7 @@ import asyncio
 import sys
 import os
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -210,13 +211,21 @@ class TestMenuMethod(unittest.TestCase):
 
 
 class TestPasswordMethod(unittest.TestCase):
-    """Test the password() method."""
+    """Test the password() method.
+
+    The secret is read by ``components.console_input_module.read_masked``,
+    which does **not** use ``getpass`` — ``getpass`` opens ``/dev/tty`` and
+    can leave the terminal mute when the process dies inside the prompt.
+    """
 
     def test_password_returns_input(self):
         """Should return entered password."""
         async def _run():
             module = ConsoleInputModule()
-            with patch("getpass.getpass", return_value="secret123"):
+            with patch(
+                "components.console_input_module.read_masked",
+                return_value="secret123",
+            ):
                 result = await module.password(timeout=5)
             return result
 
@@ -227,7 +236,10 @@ class TestPasswordMethod(unittest.TestCase):
         """Should return empty string on EOFError."""
         async def _run():
             module = ConsoleInputModule()
-            with patch("getpass.getpass", side_effect=EOFError):
+            with patch(
+                "components.console_input_module.read_masked",
+                side_effect=EOFError,
+            ):
                 result = await module.password(timeout=5)
             return result
 
@@ -238,7 +250,10 @@ class TestPasswordMethod(unittest.TestCase):
         """Should return empty string on KeyboardInterrupt."""
         async def _run():
             module = ConsoleInputModule()
-            with patch("getpass.getpass", side_effect=KeyboardInterrupt):
+            with patch(
+                "components.console_input_module.read_masked",
+                side_effect=KeyboardInterrupt,
+            ):
                 result = await module.password(timeout=5)
             return result
 
@@ -249,7 +264,10 @@ class TestPasswordMethod(unittest.TestCase):
         """Should return empty string on timeout."""
         async def _run():
             module = ConsoleInputModule()
-            with patch("getpass.getpass", side_effect=lambda msg: asyncio.sleep(10)):
+            with patch(
+                "components.console_input_module.read_masked",
+                side_effect=lambda *a, **k: asyncio.sleep(10),
+            ):
                 result = await module.password(timeout=1)
             return result
 
@@ -260,12 +278,46 @@ class TestPasswordMethod(unittest.TestCase):
         """Should use custom message."""
         async def _run():
             module = ConsoleInputModule()
-            with patch("getpass.getpass", return_value="pwd") as mock_getpass:
+            with patch(
+                "components.console_input_module.read_masked",
+                return_value="pwd",
+            ) as mock_masked:
                 await module.password(message="Custom prompt: ", timeout=5)
-                mock_getpass.assert_called_once_with("Custom prompt: ")
+                mock_masked.assert_called_once()
+                self.assertEqual(mock_masked.call_args[0][0], "Custom prompt: ")
             return True
 
         asyncio.run(_run())
+
+    def test_getpass_is_not_used(self):
+        """``getpass`` must not be imported by the input module.
+
+        ``getpass.getpass()`` opens ``/dev/tty``: it fails when the agent
+        runs without a controlling terminal, and it can leave the terminal
+        with the echo cleared when the process dies inside the prompt.
+        """
+        import components.console_input_module as module
+
+        source = Path(module.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("import getpass", source)
+        self.assertNotIn("getpass.getpass", source)
+
+    def test_the_secret_is_masked_with_asterisks(self):
+        """The operator sees one asterisk per character, never the secret."""
+        import inspect
+
+        import components.console_input_module as module
+
+        self.assertTrue(hasattr(module, "read_masked"))
+        # The masked reader is the only place a secret is read.
+        self.assertIn(
+            "read_masked",
+            inspect.getsource(module.ConsoleInputModule.password),
+        )
+        # And it never writes the secret — only a star per character.
+        reader = inspect.getsource(module._read_chars)
+        self.assertIn('sys.stdout.write("*")', reader)
+        self.assertNotIn("sys.stdout.write(char", reader)
 
 
 if __name__ == "__main__":
