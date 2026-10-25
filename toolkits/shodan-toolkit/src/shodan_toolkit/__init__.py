@@ -27,6 +27,17 @@ Command-line::
 
 from __future__ import annotations
 
+#: The canonical, import-safe alias for this package.
+#:
+#: The toolkit keeps its upstream ``src/`` layout inside a hyphenated
+#: directory, so it cannot be reached with a plain ``import`` statement.
+#: ``toolkits/__init__.py`` registers the alias ``toolkits.shodan_toolkit``
+#: for it.  This attribute is the **code-level** reference to that canonical
+#: name: a static reader - an IDE, an import resolver, a linter, a
+#: packaging tool - can find the import path here without having to
+#: execute the alias shim.
+__toolkit_alias__ = "shodan_toolkit"
+
 __version__ = "0.1.0"
 
 from .agent import (
