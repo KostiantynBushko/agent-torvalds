@@ -94,13 +94,27 @@ def _get_author_and_committer(repo: pygit2.Repository):
     """
     config = repo.config
     
-    name = config.get("user.name").value if config.has_key("user.name") else "Torvalds Agent"
-    email = config.get("user.email").value if config.has_key("user.email") else "agent@torvalds.local"
+    # pygit2 1.20 dropped ``Config.has_key`` and ``Config.get``: the mapping
+    # interface is the supported way to read a value, and ``in`` is the
+    # supported way to ask for one.
+    name = config["user.name"] if "user.name" in config else "Torvalds Agent"
+    email = config["user.email"] if "user.email" in config else "agent@torvalds.local"
     
     author = pygit2.Signature(name, email)
     committer = pygit2.Signature(name, email)
     
     return author, committer
+
+
+def _diff_text(diff) -> str:
+    """Return the unified diff text of *diff*.
+
+    pygit2 1.20 removed ``Diff.diffstring``: the diff is now iterable and
+    yields one ``Patch`` per file, each carrying its own text.
+    """
+    if diff is None:
+        return ""
+    return "".join(patch.text for patch in diff)
 
 
 def _has_staged_changes(repo: pygit2.Repository) -> bool:
@@ -113,10 +127,12 @@ def _has_staged_changes(repo: pygit2.Repository) -> bool:
     Returns:
         bool: True if there are staged changes, False otherwise
     """
-    # Check if index differs from HEAD
+    # Check if the index differs from HEAD.  pygit2 1.20 moved the diff
+    # onto the repository: ``repo.diff(target, cached=True)`` compares the
+    # index with *target*.
     try:
         head_commit = repo.head.peel(pygit2.Commit)
-        return not repo.index.diff(head_commit.id)
+        return bool(repo.diff(head_commit.id, cached=True))
     except (pygit2.GitError, ValueError):
         # No HEAD yet (first commit) — check if index has any entries
         return len(repo.index) > 0
@@ -209,7 +225,8 @@ def git_get_latest_commit(path: str) -> str:
     try:
         repo = _open_repo(path)
         commit = repo.head.peel(pygit2.Commit)
-        return commit.id.hex
+        # pygit2 1.20 removed ``Oid.hex``; str() gives the hexadecimal id.
+        return str(commit.id)
     except (pygit2.GitError, ValueError) as e:
         return f"Error: {str(e)}"
 
@@ -306,8 +323,13 @@ def git_add_files(path: str, files: list) -> dict:
         status_before = _parse_git_status_porcelain(repo.status())
         already_staged = set(status_before.get("staged", []))
         
-        # Add files to index
-        repo.index.add(files)
+        # Add files to index.  pygit2 takes one path per call, and
+        # ``Index.add_all()`` is the way to stage everything (".").
+        if "." in files:
+            repo.index.add_all()
+        else:
+            for file_path in files:
+                repo.index.add(file_path)
         repo.index.write()
         
         # Verify by checking status AFTER adding
@@ -562,7 +584,7 @@ def git_generate_changelog(path: str, output_file: str = "CHANGELOG.md") -> bool
         for commit in commits:
             # Format date as YYYY-MM-DD
             commit_date = date.fromtimestamp(commit.commit_time).strftime("%Y-%m-%d")
-            commit_hash = commit.short_id.hex
+            commit_hash = commit.short_id
             message = commit.message.strip().split("\n")[0]  # First line only
             
             # Add date header when date changes
@@ -623,7 +645,7 @@ def git_get_recent_changes(path: str, num_commits: int = 10) -> list:
                 continue
             
             commit_date = date.fromtimestamp(commit.commit_time).strftime("%Y-%m-%d")
-            commit_hash = commit.short_id.hex
+            commit_hash = commit.short_id
             message = commit.message.strip().split("\n")[0]
             author = commit.author.name
             
@@ -739,8 +761,8 @@ def git_get_email(path: str) -> str:
     try:
         repo = _open_repo(path)
         config = repo.config
-        if config.has_key("user.email"):
-            return config.get("user.email").value
+        if "user.email" in config:
+            return config["user.email"]
         return ""
     except (pygit2.GitError, ValueError):
         return ""
@@ -776,14 +798,15 @@ def git_init_and_commit(path: str, message: str) -> bool:
         repo = _open_repo(path)
         config = repo.config
         
-        # Configure user identity if needed
-        if not config.has_key("user.email"):
-            config.set_multivar("user.email", "agent@torvalds.local")
-        if not config.has_key("user.name"):
-            config.set_multivar("user.name", "Torvalds Agent")
+        # Configure user identity if needed.  ``Config.set_multivar`` needs a
+        # regex in pygit2 1.20; the mapping interface sets a single value.
+        if "user.email" not in config:
+            config["user.email"] = "agent@torvalds.local"
+        if "user.name" not in config:
+            config["user.name"] = "Torvalds Agent"
         
         # Stage all files
-        repo.index.add(["."])
+        repo.index.add_all()
         repo.index.write()
         
         # Get author/committer
@@ -935,7 +958,9 @@ def git_remote_add(path: str, name: str, url: str) -> bool:
     logger.info(f"git_remote_add called with path: {path}, name: {name}, url: {url}")
     try:
         repo = _open_repo(path)
-        repo.create_remote(name, url)
+        # pygit2 1.20 removed ``Repository.create_remote``; the remote
+        # collection owns that now.
+        repo.remotes.create(name, url)
         return True
     except (pygit2.GitError, ValueError):
         return False
@@ -1088,10 +1113,16 @@ def git_pull(path: str, remote: str = "origin", branch: str = None) -> dict:
     try:
         repo = _open_repo(path)
         
-        # Fetch first
-        if remote in repo.remotes:
-            remote_obj = repo.remotes[remote]
-            remote_obj.fetch(credentials=_get_credentials)
+        # Fetch first.  A missing remote is a failure — reporting success
+        # for a pull that never happened is worse than an error.
+        if remote not in repo.remotes:
+            return {
+                "success": False,
+                "output": "",
+                "error": f"Remote '{remote}' does not exist",
+            }
+        remote_obj = repo.remotes[remote]
+        remote_obj.fetch(credentials=_get_credentials)
         
         if branch:
             # Merge the specific branch
@@ -1219,9 +1250,10 @@ def git_branch_list(path: str, remote: bool = False) -> list[str]:
     try:
         repo = _open_repo(path)
         if remote:
-            return [b.name for b in repo.branches.remote]
+            # pygit2 1.20 iterates the branch collections as plain names.
+            return list(repo.branches.remote)
         else:
-            return [b.name for b in repo.branches.local]
+            return list(repo.branches.local)
     except (pygit2.GitError, ValueError):
         return []
 
@@ -1346,7 +1378,14 @@ def git_branch_rename(path: str, new_name: str) -> bool:
     try:
         repo = _open_repo(path)
         current_branch = repo.head.shorthand
-        repo.branches.local.rename(current_branch, new_name, force=True)
+        # pygit2 1.20 has no Branches.rename(): the reference itself is
+        # renamed — create the new one, point HEAD at it, then drop the old.
+        old_ref_name = f"refs/heads/{current_branch}"
+        new_ref_name = f"refs/heads/{new_name}"
+        old_ref = repo.lookup_reference(old_ref_name)
+        repo.references.create(new_ref_name, old_ref.target, force=True)
+        repo.set_head(new_ref_name)
+        repo.references.delete(old_ref_name)
         return True
     except (pygit2.GitError, KeyError, ValueError):
         return False
@@ -1391,12 +1430,12 @@ def git_diff(path: str, target: str = None) -> str:
             if isinstance(target_commit, pygit2.Commit):
                 diff = repo.diff(target_commit.id, repo.head.peel(pygit2.Commit).id)
             else:
-                diff = repo.index.diff(target)
+                diff = repo.diff(target, cached=True)
         else:
             # Diff working tree against index
-            diff = repo.index.diff_working_tree()
+            diff = repo.diff()
         
-        return diff.diffstring
+        return _diff_text(diff)
     except (pygit2.GitError, ValueError) as e:
         return f"Error: {str(e)}"
 
@@ -1425,8 +1464,8 @@ def git_diff_staged(path: str) -> str:
     try:
         repo = _open_repo(path)
         head_commit = repo.head.peel(pygit2.Commit)
-        diff = repo.index.diff(head_commit.id)
-        return diff.diffstring
+        diff = repo.diff(head_commit.id, cached=True)
+        return _diff_text(diff)
     except (pygit2.GitError, ValueError) as e:
         return f"Error: {str(e)}"
 
@@ -1625,19 +1664,21 @@ def git_log_compare(path: str, branch1: str, branch2: str) -> dict:
                 "error": "Invalid branch names",
             }
         
-        # Commits in branch1 but not in branch2
+        # Commits in branch1 but not in branch2.  The shared history
+        # starts at the first commit that branch2 also contains, so the
+        # walk stops there.
         ahead = []
         for commit in repo.walk(branch1_commit.id, pygit2.GIT_SORT_TIME):
             if len(commit.parents) > 1:  # Skip merges
                 continue
-            # Check if this commit is reachable from branch2
-            try:
-                repo.graph_ahead_behind(branch2_commit.id, commit.id)
-            except pygit2.GitError:
-                pass
-            # Simple approach: walk and collect, then filter
+            if commit.id == branch2_commit.id or repo.descendant_of(
+                branch2_commit.id, commit.id
+            ):
+                # branch2's tip descends from this commit (or is it) — the
+                # history is shared from here on.
+                break
             ahead.append({
-                "hash": commit.short_id.hex,
+                "hash": commit.short_id,
                 "message": commit.message.strip().split("\n")[0],
             })
         
@@ -1646,8 +1687,14 @@ def git_log_compare(path: str, branch1: str, branch2: str) -> dict:
         for commit in repo.walk(branch2_commit.id, pygit2.GIT_SORT_TIME):
             if len(commit.parents) > 1:  # Skip merges
                 continue
+            if commit.id == branch1_commit.id or repo.descendant_of(
+                branch1_commit.id, commit.id
+            ):
+                # branch1's tip descends from this commit (or is it) — the
+                # history is shared from here on.
+                break
             behind.append({
-                "hash": commit.short_id.hex,
+                "hash": commit.short_id,
                 "message": commit.message.strip().split("\n")[0],
             })
         
