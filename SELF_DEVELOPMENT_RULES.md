@@ -4,7 +4,7 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-22
+**Last updated:** 2026-10-22 (rule 7 added — the timeout policy)
 
 ---
 
@@ -60,6 +60,30 @@ irreversible action on the operator's data must be confirmed first.
 `git status` and `git diff` (or `git diff --staged`) are presented to the operator
 before any commit is created.
 
+## Rule 7 — Waiting for the operator follows the timeout
+
+When the agent asks the operator a question, the timeout decides what the
+agent is allowed to do:
+
+* **`timeout = -1`** (no timeout) — the agent **stops and waits**.  It must
+  not decide the question on its own; the answer arrives when the operator
+  answers, however long that takes.
+* **`timeout = N`** (a finite timeout) — the agent waits up to N seconds.
+  When the timeout expires, the agent **acts on its own judgement** — and it
+  says so in the report.
+
+The operator stated this on 2026-10-22.  It is the contract the HITL timeout
+machinery implements (`components/hitl_timeout.py`, `components/hitl_agent.py`),
+and it is verified end to end by
+`self-development/investigate/hitl-timeout-policy/verify_timeout_policy.py`.
+
+A timed-out question is never reported as if it had been answered: the
+operator must be able to tell "nobody answered, the agent decided" from "the
+operator said so".  Defect **D16** (the model was fed the fallback answer as
+if the human had said it) is fixed in `components/hitl_agent.py`; the model
+now reads *"No human response — the wait ended without an answer. The
+question was not answered; act on your own judgement."*
+
 ---
 
 ## Current self-development work
@@ -70,8 +94,21 @@ before any commit is created.
 | Scope | The HITL question prompt: the question is rendered as Markdown, the choices are a menu instead of a `[y/N]` prompt, the secret is masked with asterisks instead of `getpass`, and a decorated question is asked as the question it is |
 | Status | Implemented, the question bank is 23/23, the presentation invariants are 9/9, the HITL suites are green, **no new failure** in the full suite (the CI gate: 40 known failures, 0 new). Committed (`ab3fbb9`) and pushed to `origin/fix/hitl-question-detection`. |
 | Report | `self-development/investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` |
+| Policy | The operator's timeout rule (rule 7) is verified end to end — **11/11** checks pass. Defect **D16** (the model was not told that the human did not answer) is **fixed**; the CI gate reports 40 known failures, 0 new. |
+| Report (policy) | `self-development/investigate/hitl-timeout-policy/REPORT_timeout_policy.md` |
 
-### Latest change: a decorated question is asked as the question it is
+### Latest change: a timeout the model can see
+
+The operator stated the timeout policy: *"-1 means stop and wait; a finite
+timeout means wait, and when it expires act on your own judgement."*  The
+plumbing already honoured it — but the **model** was fed the fallback answer
+as if the human had said it, and with the shipped default (no fallback
+answer) it was fed an empty turn, which for a yes/no question reads as a
+"no".  The agent therefore acted on a fabricated answer instead of on its own
+judgement.  `HITLFunctionAgent._answer_message()` now tells the model that
+nobody answered.
+
+### Previous change: a decorated question is asked as the question it is
 
 The operator reported it a third time
 (`/home/kbush/torvald-log/hitl_questions_issue/wrong-user-input.txt`): a

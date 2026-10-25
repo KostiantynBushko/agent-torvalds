@@ -492,7 +492,10 @@ class HITLFunctionAgent(FunctionAgent):
             self.scratchpad_key, default=[]
         )
         scratchpad.append(
-            ChatMessage(role="user", content=f"[Human response] {answer}")
+            ChatMessage(
+                role="user",
+                content=self._answer_message(answer, was_timeout, timeout),
+            )
         )
         await ctx.store.set(self.scratchpad_key, scratchpad)
 
@@ -505,6 +508,29 @@ class HITLFunctionAgent(FunctionAgent):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _answer_message(answer: str, was_timeout: bool, timeout: int) -> str:
+        """Return the message the model receives as the human's answer.
+
+        A timeout is not an answer.  When the timeout expires the model
+        has to be told that nobody answered, otherwise it reads the
+        fallback answer as the human's own decision — and with the shipped
+        default (no fallback answer at all) it reads an empty turn, which
+        for a yes/no question is indistinguishable from a "no".
+
+        The operator's rule: the agent waits, and when the timeout expires
+        it acts on its own judgement.  For that to happen the model has to
+        know that the question went unanswered.
+        """
+        if not was_timeout:
+            return f"[Human response] {answer}"
+
+        limit = "unlimited" if is_no_timeout(timeout) else describe_timeout(timeout)
+        return (
+            f"[No human response — the {limit} wait ended without an answer. "
+            f"The question was not answered; act on your own judgement.]"
+        )
 
     async def _was_answered(self, ctx: Context, text: str) -> bool:
         """Return ``True`` if *text* was already answered in this run.
