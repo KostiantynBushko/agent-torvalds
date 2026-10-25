@@ -39,13 +39,26 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import getpass
+import atexit
+import os
+import select
 import sys
+import time
 from typing import List, Optional
 
 from rich.console import Console
 
 from components.hitl_timeout import NO_TIMEOUT, normalize_timeout
+
+try:  # POSIX
+    import termios
+except ImportError:  # pragma: no cover - not a POSIX system
+    termios = None  # type: ignore[assignment]
+
+try:  # Windows
+    import msvcrt
+except ImportError:  # pragma: no cover - not Windows
+    msvcrt = None  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
 # Readline initialization for cursor navigation and multiline editing
@@ -137,6 +150,168 @@ def init_readline() -> None:
 
 # Initialize readline at module import time
 init_readline()
+
+
+# ---------------------------------------------------------------------------
+# Masked input — a secret that is never shown
+# ---------------------------------------------------------------------------
+#
+# ``getpass`` is deliberately **not** used here.  It opens ``/dev/tty``,
+# which fails when the agent runs without a controlling terminal (a
+# service, a container, a test harness), and it can leave the terminal with
+# the echo flag cleared when the process dies inside the prompt — the
+# operator is then left with a mute terminal that has to be fixed with
+# ``stty sane``.
+#
+# The reader below switches the echo off with ``termios`` and switches it
+# on again in a ``finally`` block, so neither an exception, nor a Ctrl-C,
+# nor a timeout can leave the terminal mute.  An ``atexit`` hook covers a
+# clean shutdown (the agent's SIGINT/SIGTERM handler ends in
+# ``sys.exit()``).  The characters themselves are never shown: each one
+# is echoed as an asterisk, so the operator can see that *something* was
+# typed.
+
+#: The terminal attributes saved while the echo is switched off.  The
+#: ``atexit`` hook puts them back, so a shutdown inside the prompt cannot
+#: leave the operator with a mute terminal.
+_SAVED_TERMINAL_STATE: Optional[list] = None
+
+
+def _restore_terminal_state() -> None:
+    """Put the terminal back the way it was found.
+
+    Safe to call when nothing was saved, and safe to call twice.
+    """
+    global _SAVED_TERMINAL_STATE
+    state = _SAVED_TERMINAL_STATE
+    if state is None:
+        return
+    _SAVED_TERMINAL_STATE = None
+    try:
+        if termios is not None and sys.stdin is not None:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, state)
+    except Exception:
+        pass
+
+
+atexit.register(_restore_terminal_state)
+
+
+def _read_chars(fd: int, deadline: Optional[float]) -> str:
+    """Read the typed characters one at a time, until the operator hits Enter.
+
+    The read is *polled*, so a deadline can be honoured: when it passes
+    the function returns what was typed so far and the caller restores the
+    terminal.  A blocking read could not do that — it would keep the
+    terminal mute until the operator pressed a key.
+
+    Args:
+        fd: The file descriptor of the terminal.
+        deadline: The moment the read gives up, or ``None`` for "wait
+            forever".
+
+    Returns:
+        The characters that were typed.
+    """
+    chars: List[str] = []
+
+    while True:
+        if deadline is not None and time.monotonic() >= deadline:
+            break
+
+        wait = 0.1
+        if deadline is not None:
+            wait = max(0.0, min(wait, deadline - time.monotonic()))
+
+        try:
+            ready, _, _ = select.select([fd], [], [], wait)
+        except (OSError, ValueError):
+            break
+        if not ready:
+            continue
+
+        try:
+            data = os.read(fd, 1)
+        except OSError:
+            break
+        if not data:
+            break  # EOF
+
+        char = data.decode("utf-8", errors="ignore")
+
+        if char in ("\n", "\r"):
+            break
+        if char == "\x03":  # Ctrl-C
+            raise KeyboardInterrupt
+        if char == "\x04":  # Ctrl-D
+            break
+        if char in ("\x7f", "\x08"):  # Backspace
+            if chars:
+                chars.pop()
+                sys.stdout.write("\b \b")
+                sys.stdout.flush()
+            continue
+        if char < " ":  # any other control character
+            continue
+
+        chars.append(char)
+        # The character itself is never shown — only its length.
+        sys.stdout.write("*")
+        sys.stdout.flush()
+
+    return "".join(chars)
+
+
+def read_masked(prompt: str, deadline: Optional[float] = None) -> str:
+    """Read a secret from the terminal, hidden behind asterisks.
+
+    Args:
+        prompt: The prompt to show.
+        deadline: The moment the read gives up, or ``None`` for "wait
+            forever".
+
+    Returns:
+        What the operator typed.  An empty string on EOF, on Ctrl-D or
+        when the deadline passes.
+    """
+    global _SAVED_TERMINAL_STATE
+
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    stream = sys.stdin
+    try:
+        interactive = bool(stream) and stream.isatty()
+    except Exception:
+        interactive = False
+
+    if not interactive or termios is None:
+        # Not a terminal — a pipe, a service, a test harness.  There is
+        # nothing to hide the value from, and there is no echo to switch
+        # off.
+        try:
+            line = stream.readline() if stream else ""
+        except Exception:
+            return ""
+        return line.rstrip("\n") if isinstance(line, str) else ""
+
+    fd = stream.fileno()
+    saved = termios.tcgetattr(fd)
+    _SAVED_TERMINAL_STATE = saved
+    value = ""
+    try:
+        hidden = termios.tcgetattr(fd)
+        hidden[3] &= ~termios.ECHO
+        termios.tcsetattr(fd, termios.TCSADRAIN, hidden)
+        value = _read_chars(fd, deadline)
+    finally:
+        # The terminal is given back exactly as it was found — whatever
+        # happened above.
+        _restore_terminal_state()
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+    return value
 
 
 class ConsoleInputModule:
@@ -370,7 +545,11 @@ class ConsoleInputModule:
         message: str = "Enter password: ",
         timeout: int = NO_TIMEOUT,
     ) -> str:
-        """Prompt for password input (hidden) with timeout.
+        """Prompt for a secret, hidden behind asterisks.
+
+        The value is read by :func:`read_masked`, which does **not** use
+        ``getpass`` — see the note there.  The operator sees one asterisk
+        per character, never the secret itself.
 
         Args:
             message: Prompt text shown to the user.
@@ -378,14 +557,15 @@ class ConsoleInputModule:
                      timeout*: wait for the human indefinitely.
 
         Returns:
-            Entered password or ``""`` on timeout.
+            The entered secret or ``""`` on timeout, EOF or Ctrl-C.
         """
         loop = asyncio.get_event_loop()
+        seconds = normalize_timeout(timeout)
+        deadline = None if seconds is None else time.monotonic() + seconds
 
         def _ask() -> str:
             try:
-                result = getpass.getpass(message)
-                return result if isinstance(result, str) else ""
+                return read_masked(message, deadline)
             except (EOFError, KeyboardInterrupt):
                 return ""
 
@@ -393,7 +573,7 @@ class ConsoleInputModule:
             # ``None`` means "wait forever" for asyncio.
             response = await asyncio.wait_for(
                 loop.run_in_executor(None, _ask),
-                timeout=normalize_timeout(timeout),
+                timeout=seconds,
             )
             return response if isinstance(response, str) else ""
         except asyncio.TimeoutError:

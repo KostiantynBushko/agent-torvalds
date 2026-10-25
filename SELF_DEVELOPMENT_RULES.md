@@ -66,9 +66,10 @@ before any commit is created.
 
 | Item | Status |
 |---|---|
-| Branch | `feature/shodan-toolkit` — merged into `master` and pushed to `origin` |
-| Scope | Shodan internet-exposure toolkit — the project moved into `toolkits/shodan-toolkit/` and wired into the agent |
-| Status | Implemented, tests green, **committed**, pushed and merged into `master` (with `origin/master` as of PR #24) |
+| Branch | `fix/hitl-question-detection` — **in progress, not committed** |
+| Scope | The HITL question prompt: the question is rendered as Markdown, the choices are a menu instead of a `[y/N]` prompt, and the secret is masked with asterisks instead of `getpass` |
+| Status | Implemented, the question bank is 16/16, the presentation invariants are 8/8, the HITL suites are 209/209, **no new failure** in the full suite. Awaiting the operator's review before the commit (rule 4). |
+| Report | `self-development/investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` |
 
 ### Latest change: the Shodan toolkit
 
