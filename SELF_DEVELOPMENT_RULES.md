@@ -91,12 +91,40 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `feature/chat-manager-sqlite-fallback` — **implemented, verified**, stacked on `feature/chat-user-settings` (`d58b33d`) |
-| Scope | Phase B of the chat-manager investigation: the **local fallback of the metadata layer**. |
-| Status | Implemented: `CustomDBConnector.connect()` now tries the primary database and, when it cannot be reached, retries against a local SQLite file (`~/.torvalds/chat_manager.db` by default, overridable with `TORVALDS_STORAGE_FALLBACK_URI`, switchable off with `TORVALDS_STORAGE_FALLBACK=off`). The whole manager — user provisioning, the session lifecycle, the active session — comes up on the fallback; only the *sharing* is lost. The degradation is reported in six places: the log, `connector.is_degraded` / `active_uri` / `degradation_reason`, `manager.is_degraded` / `storage_mode`, a yellow startup notice in both orchestrators, and a `Storage:` line in `\chat-info`. The chat manager suite is green (198 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new). The implementation report is `investigate/chat-manager-sqlite-fallback/IMPLEMENTATION_REPORT_sqlite_fallback.md`. |
-| Policy | This phase closes defect **C8** and unblocks **C5**, **C6** and **C9** — but it does **not** perform the removal of the legacy implementation. That is **Phase C**, and it gets its own branch so the removal can be reviewed on its own. The legacy path (`agent_chat_memory.py`, `--no-chat-history`, the dead `TOKEN_LIMITS`) is untouched here. The **message bodies** still degrade to an in-memory store; only the metadata survives a restart during an outage, and the README says so rather than glossing over it. |
+| Branch | `feature/chat-manager-remove-legacy-memory` — **implemented, verified**, stacked on `feature/chat-manager-sqlite-fallback` (`f5b867c`) |
+| Scope | Phase C of the chat-manager investigation: the **removal of the legacy chat memory**. |
+| Status | Implemented: `agent_chat_memory.py` (273 lines) is deleted, and the three orchestrators call `chat_manager.startup.get_memory_buffer()` instead. The manager is now the only source of a memory buffer; `get_in_memory_buffer()` is the last resort, not a parallel implementation. The dead `TOKEN_LIMITS` constant is gone from both orchestrators. `--no-chat-history` is **kept** — a user-facing flag must not disappear — but it now means *persist nothing* (an in-memory store) and prints a deprecation notice. The chat manager suite is green (207 passed, 9 new), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new — the failure set is identical to the baseline). The implementation report is `investigate/chat-manager-remove-legacy-memory/IMPLEMENTATION_REPORT_remove_legacy.md`. |
+| Policy | This phase closes defect **C5**, and with it **C6** and **C9**. Two things are deliberately **not** removed: the `TORVALDS_CHAT_KEY` migration hook in the manager (keep it for one release — it points the General session at the old flat history, so pre-existing messages stay reachable) and the `--no-chat-history` flag (redefined, not deleted). The **message bodies** still degrade to an in-memory store; only the metadata survives a restart during an outage, and the README says so rather than glossing over it. |
 
-### Latest change: the chat history survives a database outage
+### Latest change: the legacy chat memory is gone
+
+| Path | Change |
+|------|--------|
+| `agent_chat_memory.py` | **Deleted.** The compatibility layer over `chat_manager` — `get_chat_store()`, `get_chat_memory()`, the `chat_memory` proxy, `get_all_tools()`. |
+| `chat_manager/startup.py` | `get_memory_buffer()` and `get_in_memory_buffer()`. The first returns the active session's buffer and falls back to the in-memory one; both are cached process-wide, so every caller sees the same conversation. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | The import and the six call sites; the dead `TOKEN_LIMITS`; the `--no-chat-history` help text and the deprecation notice. |
+| `agent-torvalds-cpp.py` | The import and the two call sites. |
+| `tests/test_logging_cli.py` | Imports `chat_manager.startup`'s logger instead of the deleted module's. |
+| `chat_manager/tests/test_startup_memory.py` | **New.** 9 tests. |
+| `investigate/chat-manager-remove-legacy-memory/IMPLEMENTATION_REPORT_remove_legacy.md` | **New.** What was implemented and why. |
+| `chat_manager/README.md`, `README.md`, `CHANGELOG.md` | The documentation. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/chat_manager/tests -q
+self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+```
+
+207 tests pass, and the CI gate reports **no new failure** (40 known failures, 0 new).
+
+**Why it matters.** The legacy module had one job left after Phase B — keeping the agent's
+memory alive when the database was down. The local fallback does that job properly now,
+with the sessions intact instead of as one flat key. Keeping both meant two
+implementations of the same idea, and the second one was the one the agent actually used
+during an outage.
+
+### Previous work: the chat history survives a database outage
 
 | Path | Change |
 |------|--------|
@@ -230,6 +258,28 @@ Committed as `6920d03` ("refactor: make the Shodan toolkit a flat package")
 on the branch `refactor/shodan-toolkit-flat-layout`, pushed to
 `origin/refactor/shodan-toolkit-flat-layout`, and merged into `master` as
 PR #33 (merge commit `e3d1511`).
+
+### Merge order for the chat-manager stack
+
+The chat-manager work is a **stacked PR** chain too, and the order is forced:
+
+| # | Branch | Base | Merge commit |
+|---|---|---|---|
+| #35 | `feature/chat-user-settings` | `master` | `29d794a` |
+| #36 | `feature/chat-manager-sqlite-fallback` | `feature/chat-user-settings` | `f5b867c` |
+| #37 | `feature/chat-manager-remove-legacy-memory` | `feature/chat-manager-sqlite-fallback` | *(this branch)* |
+
+**Bottom-up: 35, then 36, then 37.** The order is not a preference — it is what the
+work *is*. #36 adds the local fallback, and #37 removes the legacy path on the
+strength of it: without the fallback, a database outage would leave the agent with
+no memory at all, because the thing that used to catch the outage is the thing
+#37 deletes. Merging #37 first would land a removal whose safety net is not in
+`master` yet.
+
+Each PR's base is retargeted to `master` **after** the PR below it has been merged,
+then merged with a **merge commit** — never a squash, for the same reason as the
+toolkit stack: squashing drops the original SHAs from `master`'s history and the
+next PR's diff balloons to include every layer below it.
 
 ### Merge order for the toolkit refactor stack
 

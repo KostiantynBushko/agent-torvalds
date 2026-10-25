@@ -1,5 +1,52 @@
 # Changelog
 
+## [Unreleased] - The legacy chat memory is gone
+
+### Removed
+- **`agent_chat_memory.py` is deleted.**  The module was the compatibility layer over the
+  `chat_manager` package: it kept the historical `get_chat_store()` / `get_chat_memory()` /
+  `chat_memory` API alive and fell back to a legacy single-key buffer when the manager was
+  unavailable.  The manager is now the only source of a chat memory buffer, and the in-memory
+  buffer is the last resort rather than a parallel implementation.
+
+  The legacy path had exactly one job left — keeping the agent's memory alive when the
+  database was down — and the local SQLite fallback does that job properly now, with the
+  sessions intact instead of as one flat key.
+
+  | Path | Was | Now |
+  |------|-----|-----|
+  | `agent_chat_memory.py` | the whole module (273 lines) | deleted |
+  | `agent-torvalds.py`, `agent-torvalds-mw.py` | `import agent_chat_memory` · `agent_chat_memory.get_chat_memory()` | `from chat_manager.startup import get_memory_buffer` · `get_memory_buffer()` |
+  | `agent-torvalds-cpp.py` | `agent_chat_memory.chat_memory` | `get_memory_buffer()` |
+  | both orchestrators | `TOKEN_LIMITS` | deleted — it was defined and never read |
+
+### Added
+- **`chat_manager.startup.get_memory_buffer()`.**  Returns the memory buffer for the active
+  session, and falls back to an in-memory buffer when the manager is not up — so the
+  orchestrators can call it unguarded and always have a usable memory.
+
+  `chat_manager.startup.get_in_memory_buffer()` is the in-memory buffer on its own.  Both are
+  cached process-wide, so every caller sees the same conversation.
+
+- **A regression test for the outage path.**  `chat_manager/tests/test_startup_memory.py` pins
+  the behaviour the removal rests on: with the primary database unreachable the manager still
+  comes up completely — user, sessions, active session — and the buffer is bound to that
+  active session.
+
+### Changed
+- **`--no-chat-history` means something different now.**  It used to select the legacy
+  single-session memory.  It now means *persist nothing*: the chat history manager is not
+  started and the conversation runs in an in-memory store.  The flag stays — a user-facing flag
+  must not disappear — and it prints a deprecation warning.
+
+- **`TORVALDS_TOKEN_LIMIT` now sizes the in-memory buffer.**  It was the legacy buffer's
+  limit.  The manager still uses the user's own `chat_token_limit` setting; the variable is
+  the limit for the in-memory fallback, and its default is still `5000`.
+
+- **`TORVALDS_CHAT_KEY` still works, for one more release.**  The migration hook in the
+  manager is unchanged: when the variable is set, the General session points at the old flat
+  history so pre-existing messages stay reachable.
+
 ## [Unreleased] - The chat history survives a database outage
 
 ### Added
