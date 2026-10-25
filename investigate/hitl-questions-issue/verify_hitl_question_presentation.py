@@ -26,6 +26,8 @@ I5  A rephrased question is not asked twice.
 I6  An empty answer (Enter) is reported as a timeout, not as an explicit "no".
 I7  A question that ends with a code span is detected.
 I8  A question is *detected* once, not once per workflow replay.
+I9  A decorated question — quoted, emphasised or labelled — is asked as the
+    open question it is, not as a yes/no question.
 """
 
 from __future__ import annotations
@@ -339,6 +341,38 @@ def i8_detected_once() -> Tuple[bool, str]:
     )
 
 
+def i9_decorated_question_is_not_yes_no() -> Tuple[bool, str]:
+    """I9 — a decorated question is not prompted as a yes/no question.
+
+    The operator reported that a question with three choices was prompted
+    with ``[y/N]``: the agent had written the question quoted and labelled
+    (``question: 'Which one should I use?'``), and the wrapping hid the
+    question word from the rules.
+    """
+    message = (
+        "I found three options.\n"
+        "\n"
+        "question: 'Which one should I use?'"
+    )
+    out = run([message, "All done."], answers=["the first one"])
+    if not out["events"]:
+        return False, "no AgentQuestionEvent was produced"
+    event = out["events"][0]
+    if event.input_type == "yesno":
+        return False, (
+            "the question is typed 'yesno' — the operator is prompted with "
+            "[y/N] for a question that asks for a choice"
+        )
+    if event.question != "Which one should I use?":
+        return False, (
+            f"the operator reads {event.question!r} — the wrapping is still "
+            "part of the question"
+        )
+    if any("[y/N]" in prompt for prompt in out["prompts"]):
+        return False, f"the prompt was a yes/no prompt: {out['prompts']!r}"
+    return True, "the question is asked as the open question it is"
+
+
 INVARIANTS: List[Tuple[str, Callable[[], Tuple[bool, str]]]] = [
     ("I1  the question is rendered exactly once", i1_rendered_once),
     ("I2  the event carries the question, not the whole answer", i2_question_not_answer),
@@ -348,6 +382,7 @@ INVARIANTS: List[Tuple[str, Callable[[], Tuple[bool, str]]]] = [
     ("I6  an empty answer is reported as a timeout", i6_empty_answer_is_a_timeout),
     ("I7  a question ending with a code span is detected", i7_code_span_question_detected),
     ("I8  a question is detected once per question", i8_detected_once),
+    ("I9  a decorated question is not a yes/no question", i9_decorated_question_is_not_yes_no),
 ]
 
 

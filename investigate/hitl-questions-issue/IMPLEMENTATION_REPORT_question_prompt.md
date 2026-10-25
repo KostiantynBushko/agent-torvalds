@@ -4,10 +4,13 @@
 **Branch**: `fix/hitl-question-detection`
 **Scope**: `components/hitl_question.py`, `components/console_markdown.py` (new),
 `components/console_input_module.py`, `components/event_consumer.py`,
+`components/human_loop_handler.py`,
 `components/tui/state_bridge.py`, `components/tui/layout_manager.py`,
 `scripts/hitl_question_bank.py`, `scripts/hitl_interactive_test.py`,
 `tests/test_hitl_question_bank.py` (new), `tests/test_hitl_question_presentation.py`,
-`tests/test_console_input_module.py`
+`tests/test_console_input_module.py`,
+`investigate/hitl-questions-issue/diag_decorated_question.py` (new),
+`investigate/hitl-questions-issue/verify_hitl_question_presentation.py`
 **Companion to**: `INVESTIGATION_REPORT.md`, `PROPOSAL_hitl_question_presentation.md`
 **Nothing in the main repository was touched** (SELF_DEVELOPMENT_RULES.md, rule 1 and 2).
 
@@ -287,7 +290,7 @@ Two contracts changed, deliberately, and both are visible in the tests:
 ```bash
 cd self-development
 
-# The question bank — the acceptance criterion (17 cases).
+# The question bank — the acceptance criterion (23 cases).
 .venv/bin/python -m pytest tests/test_hitl_question_bank.py -v
 
 # The HITL suites.
@@ -295,8 +298,11 @@ cd self-development
     tests/test_hitl_question_presentation.py \
     tests/test_console_input_module.py -v
 
-# The eight presentation invariants.
+# The nine presentation invariants.
 .venv/bin/python investigate/hitl-questions-issue/verify_hitl_question_presentation.py
+
+# The diagnostic of the third round — the decorated question.
+.venv/bin/python investigate/hitl-questions-issue/diag_decorated_question.py
 
 # The interactive harness — the operator drives it:
 .venv/bin/python scripts/hitl_interactive_test.py
@@ -402,7 +408,102 @@ Each of the three defects has a test that fails without its fix:
 
 ---
 
-## 9. The defects this closes
+## 9. The third round — a decorated question is still a yes/no question
+
+The operator reported it again, in
+`/home/kbush/torvald-log/hitl_questions_issue/wrong-user-input.txt`:
+
+```
+🤖 Agent asks:
+That deletion is already in place — it was the D12 fix, committed in 87aaa6b ...
+
+question: 'Which one should I use?'
+[y/N]
+```
+
+The agent had answered a question about the D11/D12 fix with a long report, and the
+**last line of that report** was the question it asked — quoted and labelled.
+The console answered it with `[y/N]`.
+
+### 9.1 D13 — the wrapping hid the question word
+
+`_is_yes_no()` reads the *raw* question string:
+
+* the wh-question veto (`_WH_HEAD`) only fires when the question word is at the
+  **head** of the string.  A quote (`'…'`), a pair of Markdown emphasis markers
+  (`**…**`) or a label (`question:`) in front of it hides the question word;
+* the offer rules (`"should I"`, `"shall I"`, …) then match the *"should I"*
+  **inside** the question and turn it into a confirmation.
+
+So `"question: 'Which one should I use?'"` was a yes/no question — and the
+operator was asked to confirm a choice.
+
+The wrapping is not part of the question.  The question is now read through its
+**core** (`_question_core()`): the quotes, the emphasis and the label are peeled
+off, and what is left is what the operator has to answer.  The core is what the
+type is decided on — and what the operator reads.
+
+### 9.2 D14 — the offer was in a subordinate clause
+
+The same rule was wrong for a question the agent did *not* decorate:
+
+```
+I found three options, so which one should I use?
+```
+
+The *"should I"* is in a subordinate clause; the question asks for a choice.  A
+wh-word **in front of** the offer now means the offer is not what the question is
+about.
+
+The rule stays narrow on purpose: a wh-word that comes *after* the offer is a
+relative clause, not a question word.
+
+```
+Should I use the tool which deletes the branch?      -> yesno
+Do you want me to check which branches are stale?     -> yesno
+```
+
+### 9.3 What the operator sees now
+
+```
+🤖 Agent asks:
+That deletion is already in place — it was the D12 fix, committed in 87aaa6b ...
+
+Which one should I use?
+
+Your response:
+```
+
+### 9.4 The regression tests
+
+Every new test fails without its fix:
+
+| test | fails without |
+|---|---|
+| `text-05-quoted-question` in the bank | `_question_core()` |
+| `text-06-emphasised-question` in the bank | `_question_core()` |
+| `text-07-labelled-question` in the bank | `_question_core()` |
+| `text-08-question-in-a-clause` in the bank | the wh-word veto |
+| `llm-03-decorated-report` in the bank | `_question_core()` — the operator's own report |
+| `TestDecoratedQuestion::test_the_operator_is_not_prompted_with_yes_no` | the whole round trip |
+| `TestDecoratedQuestion::test_a_relative_clause_is_still_a_yes_no_question` | the trap — it must *not* fail |
+
+The bank grows from 17 to 23 cases: 5 catch the defect, 1 guards the fix against
+being too broad.  The diagnostic is
+`investigate/hitl-questions-issue/diag_decorated_question.py` (8
+mis-classifications before, 0 after), and the acceptance harness reports **9/9**
+invariants — I9 is the new one.
+
+### 9.5 The history was wrong too
+
+`HumanLoopHandler._record_observation()` called `detect_input_type(question)`
+**without the options**, so a menu question was recorded in the history as a
+yes/no question.  The history lied about what the operator was asked; the options
+travel with the question now.
+
+---
+
+## 10. The defects this closes
 
 | # | Defect | Closed by |
 |---|---|---|
@@ -418,3 +519,6 @@ Each of the three defects has a test that fails without its fix:
 | **D10** | the report's own "1." and "2." competed with the menu's "1." and "2." | `render_report()` — the report is bullets, the numbers belong to the menu |
 | **D11** | a list of choices that came **before** the question was not a menu | `_marked_list_items()` — the marked list is the menu, and it is cut out of the report |
 | **D12** | the cut left the report with a dangling *"Reply with one of:"* | the lead-in of a list is cut with the list |
+| **D13** | a question the agent **quoted, emphasised or labelled** was prompted as yes/no — the wrapping hid the question word | `_question_core()` — the question is read without its wrapping, and the operator reads it without it too |
+| **D14** | a question whose question word heads a **clause** was prompted as yes/no — the offer sat in a subordinate clause | the wh-word veto: a wh-word in front of the offer means the offer is not what the question asks |
+| **D15** | the HITL history recorded a **menu** question as a yes/no question | `HumanLoopHandler._record_observation()` passes the options to `detect_input_type()` |

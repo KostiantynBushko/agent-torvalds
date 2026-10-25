@@ -380,6 +380,91 @@ class TestInputTypeDetection:
         ) == "yesno"
 
 
+class TestDecoratedQuestion:
+    """The wrapping of a question does not change what it asks.
+
+    The operator reported that a question with three choices was prompted
+    with ``[y/N]`` (``/home/kbush/torvald-log/hitl_questions_issue/
+    wrong-user-input.txt``).  The agent had written the question quoted
+    and labelled — ``question: 'Which one should I use?'`` — and the
+    quotes kept the "which" out of the head of the question, so the
+    "should I" inside it turned the question into a confirmation.
+    """
+
+    def test_a_quoted_question_is_not_a_yes_no_question(self):
+        assert detect_input_type("'Which one should I use?'") == "text"
+        assert detect_input_type('"Which one should I use?"') == "text"
+
+    def test_an_emphasised_question_is_not_a_yes_no_question(self):
+        assert detect_input_type("**Which one should I use?**") == "text"
+
+    def test_a_labelled_question_is_not_a_yes_no_question(self):
+        assert detect_input_type("question: 'Which one should I use?'") == "text"
+        assert detect_input_type("Q: Which one should I use?") == "text"
+
+    def test_the_question_word_may_head_a_clause(self):
+        """The offer sits in a subordinate clause — the question is open."""
+        assert detect_input_type(
+            "I found three options, so which one should I use?"
+        ) == "text"
+        assert detect_input_type("I need to know which one should I use.") == "text"
+
+    def test_a_relative_clause_is_still_a_yes_no_question(self):
+        """The "which" of a relative clause is not a question word."""
+        assert detect_input_type(
+            "Should I use the tool which deletes the branch?"
+        ) == "yesno"
+        assert detect_input_type(
+            "Do you want me to check which branches are stale?"
+        ) == "yesno"
+
+    def test_the_operator_reads_the_question_without_its_wrapping(self):
+        split = split_question(
+            "The report around it.\n\nquestion: 'Which one should I use?'"
+        )
+        assert split is not None
+        assert split.question == "Which one should I use?"
+
+    def test_the_report_keeps_the_text_before_the_question(self):
+        split = split_question(
+            "The report around it.\n\nquestion: 'Which one should I use?'"
+        )
+        assert split is not None
+        assert "The report around it." in split.context
+        # The label is not part of the report either.
+        assert "question:" not in split.context
+
+    def test_the_operator_is_not_prompted_with_yes_no(self):
+        """The whole round trip: the prompt must not be ``[y/N]``."""
+        out = run(
+            [
+                "I found three options.\n\nquestion: 'Which one should I use?'",
+                "All done.",
+            ],
+            answers=["the first one"],
+        )
+        assert out["events"], "no AgentQuestionEvent was produced"
+        assert out["events"][0].input_type == "text"
+        assert out["prompts"] == ["Your response: "]
+        # And the answer reaches the agent as it was typed.
+        last_call = out["llm_calls"][-1]
+        joined = " ".join(content for _, content in last_call)
+        assert "the first one" in joined
+
+    def test_the_marker_is_not_eaten_by_the_wrapping(self):
+        """The marker is an instruction to the detector, not decoration."""
+        assert detect_input_type("[HITL:menu]") == "menu"
+        split = split_question("[HITL:menu]")
+        assert split is not None
+        assert split.question == "[HITL:menu]"
+
+    def test_a_yes_no_question_is_still_prompted_with_yes_no(self):
+        """The fix must not take the confirmation away."""
+        out = run(["Shall I delete the branch?", "All done."], answers=["no"])
+        assert out["events"][0].input_type == "yesno"
+        assert out["prompts"] == ["[y/N]"]
+
+
 class TestNormaliseQuestion:
     """The normalisation is the key of the re-ask guard."""
 
