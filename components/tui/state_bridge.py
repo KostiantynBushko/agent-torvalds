@@ -288,6 +288,14 @@ class TuiEventAdapter:
 
     def __init__(self, state: TuiState):
         self.state = state
+        # The type of the pending question ("text", "yesno", "menu",
+        # "password").  The consumer tells us through set_input_type().
+        self._input_type = "text"
+
+    def set_input_type(self, input_type: str) -> None:
+        """Tell the TUI what kind of answer the pending question wants."""
+        if input_type:
+            self._input_type = input_type
 
     def on_tool_call_start(self, tool_name: str, tool_kwargs: Dict[str, Any]) -> None:
         self.state.update_tool_start(tool_name, tool_kwargs)
@@ -340,8 +348,73 @@ class TuiInputModule:
     Routes HITL prompts through the TUI footer command bar.
     """
 
+    #: The TUI command bar owns its own layout, so it shows the question
+    #: itself — the consumer prints into a silent console in TUI mode.
+    renders_question = True
+
     def __init__(self, state: TuiState):
         self.state = state
+
+    async def prompt_with_status(
+        self,
+        message: str = "Please respond: ",
+        default: str = "",
+        timeout: Optional[int] = None,
+    ) -> tuple[str, bool]:
+        """
+        Prompt the user for input and report whether the human answered.
+
+        Args:
+            message: The question or confirmation prompt.
+            default: Fallback answer on timeout.
+            timeout: Timeout in seconds (defaults to state.hitl_timeout).
+                ``-1`` means *no timeout*: wait for the human
+                indefinitely.
+
+        Returns:
+            ``(answer, was_timeout)`` tuple.  ``was_timeout`` is ``True``
+            when the human did not answer at all.
+        """
+        timeout_val = timeout if timeout is not None else self.state.hitl_timeout
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+
+        # Activate HITL mode in TuiState
+        with self.state._lock:
+            self.state.hitl_active = True
+            self.state.hitl_prompt = message
+            self.state.hitl_input_type = self._input_type
+            self.state.hitl_timeout = timeout_val
+            self.state.hitl_start_time = time.time()
+            self.state.hitl_default_answer = default
+            self.state.hitl_future = future
+            # Reset input buffer for HITL answer
+            self.state.input_buffer = ""
+            self.state.cursor_pos = 0
+
+        try:
+            # ``None`` means "wait forever" — that is what the no-timeout
+            # convention (-1) translates to.
+            wait_timeout = normalize_timeout(timeout_val)
+            if wait_timeout is not None:
+                answer = await asyncio.wait_for(future, timeout=wait_timeout)
+            else:
+                answer = await future
+
+            text = answer.strip() if isinstance(answer, str) else ""
+            if not text:
+                return default, True
+            return text, False
+
+        except asyncio.TimeoutError:
+            logger.info("TUI HITL prompt timed out, using default: %s", default)
+            return default, True
+        finally:
+            with self.state._lock:
+                self.state.hitl_active = False
+                self.state.hitl_future = None
+                self.state.input_buffer = ""
+                self.state.cursor_pos = 0
 
     async def prompt(
         self,
@@ -362,43 +435,31 @@ class TuiInputModule:
         Returns:
             The user's input string, or default on timeout.
         """
-        timeout_val = timeout if timeout is not None else self.state.hitl_timeout
-        loop = asyncio.get_running_loop()
-        future = loop.create_future()
+        response, _ = await self.prompt_with_status(
+            message=message, default=default, timeout=timeout
+        )
+        return response
 
-        # Activate HITL mode in TuiState
-        with self.state._lock:
-            self.state.hitl_active = True
-            self.state.hitl_prompt = message
-            self.state.hitl_input_type = "text"
-            self.state.hitl_timeout = timeout_val
-            self.state.hitl_start_time = time.time()
-            self.state.hitl_default_answer = default
-            self.state.hitl_future = future
-            # Reset input buffer for HITL answer
-            self.state.input_buffer = ""
-            self.state.cursor_pos = 0
+    async def confirm_with_status(
+        self,
+        message: str = "",
+        default_yes: bool = True,
+        timeout: Optional[int] = None,
+    ) -> tuple[bool, bool]:
+        """Prompt for confirmation and report whether the human answered.
 
-        try:
-            # ``None`` means "wait forever" — that is what the no-timeout
-            # convention (-1) translates to.
-            wait_timeout = normalize_timeout(timeout_val)
-            if wait_timeout is not None:
-                answer = await asyncio.wait_for(future, timeout=wait_timeout)
-            else:
-                answer = await future
-
-            return answer.strip() if answer.strip() else default
-
-        except asyncio.TimeoutError:
-            logger.info("TUI HITL prompt timed out, using default: %s", default)
-            return default
-        finally:
-            with self.state._lock:
-                self.state.hitl_active = False
-                self.state.hitl_future = None
-                self.state.input_buffer = ""
-                self.state.cursor_pos = 0
+        Returns:
+            ``(confirmed, was_timeout)`` tuple.
+        """
+        default_str = "yes" if default_yes else "no"
+        response, was_timeout = await self.prompt_with_status(
+            message=message,
+            default=default_str,
+            timeout=timeout,
+        )
+        if was_timeout:
+            return default_yes, True
+        return response.strip().lower() in ("y", "yes", "true", "1"), False
 
     async def confirm(
         self,
@@ -407,13 +468,48 @@ class TuiInputModule:
         timeout: Optional[int] = None,
     ) -> bool:
         """Prompt for confirmation (yes/no)."""
-        default_str = "yes" if default_yes else "no"
-        answer = await self.prompt(
+        confirmed, _ = await self.confirm_with_status(
             message=f"{message} [y/n]",
-            default=default_str,
+            default_yes=default_yes,
             timeout=timeout,
         )
-        return answer.strip().lower() in ("y", "yes", "true", "1")
+        return confirmed
+
+    async def menu_with_status(
+        self,
+        message: str = "",
+        options: List[str] = None,
+        timeout: Optional[int] = None,
+    ) -> tuple[str, bool]:
+        """Ask the operator to pick one of *options* in the command bar.
+
+        The options themselves are already visible in the chat view — the
+        question carries them — so the footer only shows the question and
+        the number range.
+
+        Returns:
+            ``(selected_option, was_timeout)`` tuple.
+        """
+        choices = list(options or [])
+        if not choices:
+            return "", True
+
+        hint = f"[1-{len(choices)}]"
+        prompt = f"{message} {hint}".strip() if message else hint
+        response, was_timeout = await self.prompt_with_status(
+            message=prompt, default="", timeout=timeout
+        )
+        if was_timeout or not response.strip():
+            return choices[0], True
+
+        try:
+            index = int(response.strip()) - 1
+            if 0 <= index < len(choices):
+                return choices[index], False
+        except ValueError:
+            pass
+
+        return choices[0], False
 
     async def password(
         self,

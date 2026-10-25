@@ -149,6 +149,12 @@ class ConsoleInputModule:
         console: Rich Console instance used for coloured output.
     """
 
+    #: The consumer renders the question itself (see
+    #: ``EventConsumer._render_question``), so this module only shows the
+    #: short prompt.  A module that owns its own layout — a dialog, a
+    #: command bar — sets this to ``True`` and asks for the question.
+    renders_question = False
+
     def __init__(self, console: Optional[Console] = None) -> None:
         self.console = console or Console()
 
@@ -226,6 +232,34 @@ class ConsoleInputModule:
         except asyncio.TimeoutError:
             return default, True
 
+    async def confirm_with_status(
+        self,
+        message: str = "",
+        default_yes: bool = True,
+        timeout: int = NO_TIMEOUT,
+    ) -> tuple[bool, bool]:
+        """Ask for yes / no confirmation and report whether the human answered.
+
+        ``confirm()`` cannot tell "the operator pressed Enter" from "the
+        operator said no" — both give the default.  The HITL consumer needs
+        that distinction, so it records a timeout separately from a "no".
+
+        Args:
+            message: The *complete* prompt to display.
+            default_yes: Default when the human does not answer.
+            timeout: Seconds to wait.  ``-1`` (the default) means *no
+                     timeout*: wait for the human indefinitely.
+
+        Returns:
+            ``(confirmed, was_timeout)`` tuple.
+        """
+        response = await self.prompt(message, default="", timeout=timeout)
+        if not response.strip():
+            # No answer at all — the operator pressed Enter, or the prompt
+            # timed out.  Either way it is not a "no".
+            return default_yes, True
+        return response.strip().lower() in ("y", "yes"), False
+
     async def confirm(
         self,
         message: str,
@@ -245,13 +279,12 @@ class ConsoleInputModule:
             ``True`` for yes, ``False`` otherwise.
         """
         suffix = " [Y/n]" if default_yes else " [y/N]"
-        full_message = f"{message}{suffix}"
-        response = await self.__class__.prompt(full_message, timeout=timeout)
-
-        if not response:
-            return default_yes
-
-        return response.lower() in ("y", "yes")
+        confirmed, _ = await self.confirm_with_status(
+            message=f"{message}{suffix}",
+            default_yes=default_yes,
+            timeout=timeout,
+        )
+        return confirmed
 
     async def menu(
         self,
@@ -287,6 +320,50 @@ class ConsoleInputModule:
             pass
 
         return options[0]
+
+    async def menu_with_status(
+        self,
+        message: str = "Select option [1]: ",
+        options: List[str] = None,
+        timeout: int = NO_TIMEOUT,
+    ) -> tuple[str, bool]:
+        """Show a numbered menu and report whether the human answered.
+
+        Unlike :meth:`menu`, this method does **not** print the menu: the
+        caller renders the question and its options, so they cannot appear
+        twice.
+
+        Args:
+            message: The prompt to display.  The options are *not* printed
+                     here — the caller has already shown them.
+            options: List of choice strings.
+            timeout: Seconds to wait.  ``-1`` (the default) means *no
+                     timeout*: wait for the human indefinitely.
+
+        Returns:
+            ``(selected_option, was_timeout)`` tuple.  An empty answer
+            selects the first option and counts as "no answer".
+        """
+        choices = list(options or [])
+        if not choices:
+            return "", True
+
+        response, was_timeout = await ConsoleInputModule.prompt_with_status(
+            message=message, default="", timeout=timeout
+        )
+        if was_timeout or not response.strip():
+            # The operator pressed Enter — the first option is the default.
+            return choices[0], True
+
+        try:
+            index = int(response.strip()) - 1
+            if 0 <= index < len(choices):
+                return choices[index], False
+        except ValueError:
+            pass
+
+        # Not a number, or out of range: the first option, as before.
+        return choices[0], False
 
     async def password(
         self,
