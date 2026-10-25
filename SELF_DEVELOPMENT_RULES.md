@@ -90,14 +90,17 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `fix/hitl-question-detection` — **committed and pushed** (`ab3fbb9`) |
-| Scope | The HITL question prompt: the question is rendered as Markdown, the choices are a menu instead of a `[y/N]` prompt, the secret is masked with asterisks instead of `getpass`, and a decorated question is asked as the question it is |
-| Status | Implemented, the question bank is 23/23, the presentation invariants are 9/9, the HITL suites are green, **no new failure** in the full suite (the CI gate: 40 known failures, 0 new). Committed (`ab3fbb9`) and pushed to `origin/fix/hitl-question-detection`. |
+| Branch | `fix/hitl-question-detection` — **committed and pushed** (`2acce6d`) |
+| Scope | The HITL question prompt: the question is rendered as Markdown, the choices are a menu instead of a `[y/N]` prompt, the secret is masked with asterisks instead of `getpass`, a decorated question is asked as the question it is, and a timeout is reported to the model as a timeout |
+| Status | Implemented, the question bank is 23/23, the presentation invariants are 9/9, the timeout policy is 11/11, the HITL suites are green, **no new failure** in the full suite (the CI gate: 40 known failures, 0 new). Committed (`2acce6d`) and pushed to `origin/fix/hitl-question-detection`. |
 | Report | `self-development/investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` |
-| Policy | The operator's timeout rule (rule 7) is verified end to end — **11/11** checks pass. Defect **D16** (the model was not told that the human did not answer) is **fixed**; the CI gate reports 40 known failures, 0 new. |
+| Policy | The operator's timeout rule (rule 7) is verified end to end — **11/11** checks pass. Defect **D16** (the model was not told that the human did not answer) is **fixed**; the CI gate reports 40 known failures, 0 new. Committed (`2acce6d`) and pushed. |
 | Report (policy) | `self-development/investigate/hitl-timeout-policy/REPORT_timeout_policy.md` |
 
 ### Latest change: a timeout the model can see
+
+Committed as `2acce6d` ("fix: a timeout the model can see") and pushed to
+`origin/fix/hitl-question-detection`.
 
 The operator stated the timeout policy: *"-1 means stop and wait; a finite
 timeout means wait, and when it expires act on your own judgement."*  The
