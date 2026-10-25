@@ -28,6 +28,13 @@ Each module has its own README with the full reference:
 | MikroTik RouterOS Toolkit | [toolkits/MikroTik-RouterOS/README.md](toolkits/MikroTik-RouterOS/README.md) |
 | Shodan Toolkit | [toolkits/shodan-toolkit/README.md](toolkits/shodan-toolkit/README.md) |
 
+The project documentation:
+
+| Topic | Document |
+|---|---|
+| Continuous integration — the CI test gate and the known-failure baseline | [docs/ci.md](docs/ci.md) |
+| Local LLM setup — install Ollama, pull the models, run the agent | [docs/ollama-setup.md](docs/ollama-setup.md) |
+
 ### 1. Math Toolkit (`agent_math_toolkit.py`)
 - Provides mathematical operations: addition, multiplication, division
 - Enables precise numerical calculations
@@ -819,6 +826,7 @@ agent-torvalds/
 | db_toolkit_config.yaml         # Database configuration
 | mikrotik_targets.yaml.example  # MikroTik router target configuration (example)
 | requirements.txt               # Project dependencies
+| requirements-ci.lock           # The pinned environment the CI baseline was recorded with
 | LICENSE                        # MIT License
 | CHANGELOG.md                   # Version history
 | README.md                      # This file
@@ -831,6 +839,7 @@ agent-torvalds/
 | +-- proposals/                # Design proposals
 | +-- agent_cache_system.md
 | +-- ollama-setup.md           # Local LLM setup: install Ollama, pull models, run the agent
+| +-- ci.md                     # Continuous integration: the CI test gate and the known-failure baseline
 | +-- extended_logging_statistics.md
 | +-- on_demand_tool_loading.md
 | components/                   # Helper modules and utilities

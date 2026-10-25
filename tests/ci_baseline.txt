@@ -1,0 +1,87 @@
+# The known test failures — the CI gate (scripts/ci_test_gate.py)
+# fails the build when a failure appears that is NOT listed here.
+#
+# Regenerate with:
+#     python scripts/ci_test_gate.py --write-baseline
+#
+# One node id per line.  Remove the lines whose tests have been
+# fixed — the gate reports them as "fixed" and the baseline can be
+# tightened.
+
+tests/test_apt_toolkit.py::TestGetAllTools::test_returns_list_of_tools
+tests/test_apt_toolkit.py::TestGetAllTools::test_tool_names
+tests/test_apt_toolkit.py::TestInteractiveInstallMissingCommand::test_full_workflow_success
+tests/test_apt_toolkit.py::test_sudo_password
+tests/test_event_consumer_hitl.py::TestSendEvent::test_send_event_with_handler
+tests/test_events_manual.py::test_add_remove_interactive_tools
+tests/test_events_manual.py::test_agent_stream_event
+tests/test_events_manual.py::test_basic_event_routing
+tests/test_events_manual.py::test_cancel_workflow
+tests/test_events_manual.py::test_custom_callback_registration
+tests/test_events_manual.py::test_error_handling
+tests/test_events_manual.py::test_interactive_tool_spinner_pause
+tests/test_events_manual.py::test_non_interactive_tool_no_pause
+tests/test_events_manual.py::test_state_tracking
+tests/test_events_manual.py::test_stop_event
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_checkout
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_checkout_changes_current_branch
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_create
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_create_adds_to_list
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_create_with_custom_start_point
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_delete
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_delete_force
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_delete_removes_from_list
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_lifecycle_create_checkout_delete
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_list_after_commit
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_rename
+tests/test_git_toolkit.py::TestBranchManagement::test_branch_rename_changes_current_branch
+tests/test_git_toolkit.py::TestDiffTools::test_diff_empty_on_clean_repo
+tests/test_git_toolkit.py::TestDiffTools::test_diff_invalid_target_returns_error
+tests/test_git_toolkit.py::TestDiffTools::test_diff_returns_string
+tests/test_git_toolkit.py::TestDiffTools::test_diff_shows_unstaged_changes
+tests/test_git_toolkit.py::TestDiffTools::test_diff_staged_empty_on_no_staged_changes
+tests/test_git_toolkit.py::TestDiffTools::test_diff_staged_returns_string
+tests/test_git_toolkit.py::TestDiffTools::test_diff_staged_shows_staged_changes
+tests/test_git_toolkit.py::TestDiffTools::test_diff_with_target
+tests/test_git_toolkit.py::TestGitAddAndCommit::test_add_files
+tests/test_git_toolkit.py::TestGitAddAndCommit::test_commit
+tests/test_git_toolkit.py::TestGitChangelog::test_generate_changelog
+tests/test_git_toolkit.py::TestGitCommitInfo::test_get_latest_commit
+tests/test_git_toolkit.py::TestGitCommitInfo::test_get_recent_changes
+tests/test_git_toolkit.py::TestGitEmail::test_get_email
+tests/test_git_toolkit.py::TestGitInitAndCommit::test_init_and_commit
+tests/test_git_toolkit.py::TestGitRemote::test_remote_add
+tests/test_git_toolkit.py::TestGitRemote::test_remote_get
+tests/test_git_toolkit.py::TestSyncTools::test_log_compare_both_directions
+tests/test_git_toolkit.py::TestSyncTools::test_log_compare_returns_dict
+tests/test_git_toolkit.py::TestSyncTools::test_log_compare_shows_divergence
+tests/test_git_toolkit.py::TestSyncTools::test_merge_returns_dict
+tests/test_git_toolkit.py::TestSyncTools::test_merge_with_strategy
+tests/test_git_toolkit.py::TestSyncTools::test_pull_without_remote_fails
+tests/test_git_toolkit.py::TestSyncTools::test_rebase_returns_dict
+tests/test_git_toolkit.py::TestSyncTools::test_rebase_with_strategy
+tests/test_hitl_runtime_toggle.py::TestCommandParsing::test_command_case_insensitive
+tests/test_hitl_runtime_toggle.py::TestCommandParsing::test_help_command
+tests/test_hitl_runtime_toggle.py::TestCommandParsing::test_hitl_commands_constant
+tests/test_hitl_runtime_toggle.py::TestCommandParsing::test_is_hitl_command
+tests/test_hitl_runtime_toggle.py::TestCommandParsing::test_off_command
+tests/test_hitl_runtime_toggle.py::TestCommandParsing::test_on_command
+tests/test_hitl_runtime_toggle.py::TestCommandParsing::test_status_command
+tests/test_hitl_runtime_toggle.py::TestCommandParsing::test_toggle_command
+tests/test_math_toolkit.py::TestAdvancedOperations::test_sqrt_negative
+tests/test_math_toolkit.py::TestBasicArithmetic::test_divide_by_zero
+tests/test_math_toolkit.py::TestLogarithmicFunctions::test_log_negative
+tests/test_math_toolkit.py::TestLogarithmicFunctions::test_log_zero
+tests/test_math_toolkit.py::TestRPNEvaluator::test_rpn_invalid_token
+tests/test_math_toolkit.py::TestRPNEvaluator::test_rpn_leftover_operands
+tests/test_math_toolkit.py::TestRPNEvaluator::test_rpn_not_enough_operands
+tests/test_project_manager.py::TestProjectManager::test_discover_and_register
+tests/test_project_manager.py::TestProjectManager::test_scan_and_detect
+tests/test_project_manager.py::TestProjectScanner::test_detect_project_type
+tests/test_project_manager.py::TestProjectScanner::test_scan_nodejs_project
+tests/test_project_manager.py::TestProjectScanner::test_scan_python_project
+tests/test_project_manager.py::TestProjectScanner::test_scan_rust_project
+tests/test_stats.py::test_stats_handler
+tests/test_whiptail_password.py::TestIsAvailable::test_python_package_missing
+tests/test_whiptail_workflow_integration.py::TestErrorRecoveryWorkflow::test_exception_recovery_with_retry
+tests/test_whiptail_workflow_integration.py::TestRuntimeToggleWorkflow::test_command_based_toggle
