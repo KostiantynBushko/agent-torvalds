@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from shodan_toolkit.client import ShodanClient
-from shodan_toolkit.runner import ShodanCLIError, ShodanError
+from ..client import ShodanClient
+from ..runner import ShodanCLIError, ShodanError
 
 from .conftest import FakeRunner, make_result
 
@@ -182,7 +182,7 @@ class TestRunner:
     """Tests for the subprocess runner itself."""
 
     def test_duration_is_recorded(self, fake_runner) -> None:
-        from shodan_toolkit.runner import CommandResult
+        from ..runner import CommandResult
 
         fake_runner.responses["version"] = make_result("1.31.0\n")
         result = fake_runner.run(["version"])
@@ -191,7 +191,7 @@ class TestRunner:
 
     def test_real_runner_executes_shodan(self) -> None:
         """The real runner must be able to execute the installed CLI."""
-        from shodan_toolkit.runner import ShodanRunner
+        from ..runner import ShodanRunner
 
         runner = ShodanRunner(timeout=30)
         if not runner.is_available():
@@ -202,7 +202,7 @@ class TestRunner:
         assert "search" in result.stdout
 
     def test_real_runner_reports_missing_executable(self) -> None:
-        from shodan_toolkit.runner import ShodanNotInstalledError, ShodanRunner
+        from ..runner import ShodanNotInstalledError, ShodanRunner
 
         runner = ShodanRunner(executable="definitely-not-a-real-binary-xyz")
         assert runner.is_available() is False
@@ -210,7 +210,7 @@ class TestRunner:
             runner.run(["--help"])
 
     def test_command_result_helpers(self) -> None:
-        from shodan_toolkit.runner import CommandResult
+        from ..runner import CommandResult
 
         result = CommandResult(
             command=["shodan", "info"],

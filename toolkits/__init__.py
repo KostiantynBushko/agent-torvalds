@@ -7,7 +7,7 @@ This package contains self-contained Python modules that can be used both:
 
 Each toolkit package carries its own agent adapter **inside the package** -
 ``toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py`` and
-``toolkits/shodan-toolkit/src/shodan_toolkit/agent_shodan_toolkit.py``.  The
+``toolkits/shodan-toolkit/agent_shodan_toolkit.py``.  The
 adapter is the only module of a toolkit that depends on LlamaIndex; the
 reusable library half around it does not.
 
@@ -39,10 +39,11 @@ The aliases are registered only if the package is actually present and
 importable, so ``import toolkits`` never fails when an optional toolkit is
 absent.
 
-The Shodan toolkit keeps its upstream ``src/`` layout, so its alias points one
-level deeper::
+Both toolkits have the same shape: the hyphenated directory **is** the
+package, and the alias points straight at it::
 
-    toolkits/shodan-toolkit/src/shodan_toolkit/   ->  toolkits.shodan_toolkit
+    toolkits/MikroTik-RouterOS/   ->  toolkits.mikrotik_routeros
+    toolkits/shodan-toolkit/      ->  toolkits.shodan_toolkit
 
 The agent adapters are submodules of their toolkit package, so they are
 reached through the same alias::
@@ -134,10 +135,8 @@ _MIKROTIK_PACKAGE = "toolkits.MikroTik-RouterOS"
 _MIKROTIK_ALIAS = "toolkits.mikrotik_routeros"
 
 
-#: Dotted path of the Shodan toolkit's real package. The toolkit keeps its
-#: upstream ``src/`` layout, so the package sits one directory deeper than
-#: the other toolkits.
-_SHODAN_PACKAGE = "toolkits.shodan-toolkit.src.shodan_toolkit"
+#: Dotted path of the real (hyphenated) package directory.
+_SHODAN_PACKAGE = "toolkits.shodan-toolkit"
 
 #: Dotted path of the valid-identifier alias registered in ``sys.modules``.
 _SHODAN_ALIAS = "toolkits.shodan_toolkit"

@@ -6,7 +6,7 @@ statement, so ``toolkits/__init__.py`` registers a valid-identifier alias for
 each of them::
 
     toolkits.MikroTik-RouterOS   ->  toolkits.mikrotik_routeros
-    toolkits.shodan-toolkit/...  ->  toolkits.shodan_toolkit
+    toolkits.shodan-toolkit      ->  toolkits.shodan_toolkit
 
 This module pins down the two properties that alias has to have.
 
@@ -49,13 +49,13 @@ MIKROTIK_ALIAS = "mikrotik_routeros"
 MIKROTIK_REAL = "toolkits.MikroTik-RouterOS"
 
 SHODAN_ALIAS = "shodan_toolkit"
-SHODAN_REAL = "toolkits.shodan-toolkit.src.shodan_toolkit"
+SHODAN_REAL = "toolkits.shodan-toolkit"
 
 #: The alias of each toolkit and the ``__init__.py`` that must carry a
 #: code-level reference to it.
 TOOLKITS = (
     (MIKROTIK_ALIAS, MIKROTIK_REAL, REPO_ROOT / "toolkits" / "MikroTik-RouterOS" / "__init__.py"),
-    (SHODAN_ALIAS, SHODAN_REAL, REPO_ROOT / "toolkits" / "shodan-toolkit" / "src" / "shodan_toolkit" / "__init__.py"),
+    (SHODAN_ALIAS, SHODAN_REAL, REPO_ROOT / "toolkits" / "shodan-toolkit" / "__init__.py"),
 )
 
 #: The agent adapter of each toolkit: the alias of its package, the module
@@ -73,12 +73,7 @@ ADAPTERS = (
     (
         SHODAN_ALIAS,
         "agent_shodan_toolkit",
-        REPO_ROOT
-        / "toolkits"
-        / "shodan-toolkit"
-        / "src"
-        / "shodan_toolkit"
-        / "agent_shodan_toolkit.py",
+        REPO_ROOT / "toolkits" / "shodan-toolkit" / "agent_shodan_toolkit.py",
     ),
 )
 

@@ -4,7 +4,8 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-22 (rule 7 added — the timeout policy)
+**Last updated:** 2026-10-25 (the current-work section refreshed — the
+flat-layout commit `6920d03`)
 
 ---
 
@@ -90,12 +91,26 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `fix/hitl-question-detection` — **committed and pushed** (`2acce6d`) |
-| Scope | The HITL question prompt: the question is rendered as Markdown, the choices are a menu instead of a `[y/N]` prompt, the secret is masked with asterisks instead of `getpass`, a decorated question is asked as the question it is, and a timeout is reported to the model as a timeout |
-| Status | Implemented, the question bank is 23/23, the presentation invariants are 9/9, the timeout policy is 11/11, the HITL suites are green, **no new failure** in the full suite (the CI gate: 40 known failures, 0 new). Committed (`2acce6d`) and pushed to `origin/fix/hitl-question-detection`. |
-| Report | `self-development/investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` |
-| Policy | The operator's timeout rule (rule 7) is verified end to end — **11/11** checks pass. Defect **D16** (the model was not told that the human did not answer) is **fixed**; the CI gate reports 40 known failures, 0 new. Committed (`2acce6d`) and pushed. |
-| Report (policy) | `self-development/investigate/hitl-timeout-policy/REPORT_timeout_policy.md` |
+| Branch | `refactor/shodan-toolkit-flat-layout` — **implemented, committed** (`6920d03`) |
+| Scope | The Shodan toolkit's layout: the toolkit directory **is** the package. The `src/` level and the nested `shodan_toolkit/` directory are gone — every source file sits directly in `toolkits/shodan-toolkit/`, next to `tests/` and `examples/`, the same shape as the MikroTik toolkit. The import name is unchanged (`toolkits.shodan_toolkit` through the alias, `shodan_toolkit` in a standalone install). |
+| Status | Implemented: the modules moved, the tests use relative imports, the alias shim points at the new path, the distribution maps the package explicitly, and a new layout contract test (`toolkits/shodan-toolkit/tests/test_package_layout.py`, 11 checks) guards the rule. The toolkit suite is green (162 passed, 2 skipped), the alias contract is green (23/23), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new). Committed as `6920d03` ("refactor: make the Shodan toolkit a flat package") and pushed to `origin/refactor/shodan-toolkit-flat-layout` — the operator approved both the commit and the push (rule 4). |
+| Policy | The `toolkits` package must be imported **before** pytest imports a module from inside a hyphenated toolkit package, or pytest's "importlib" mode loads the package twice and the import alias goes stale. `consider_namespace_packages = true` in `pytest.ini` and in the toolkit's `pyproject.toml` makes pytest resolve the name through the normal import machinery, so there is exactly one copy of the package. |
+
+### Latest change: the Shodan toolkit is a flat package
+
+On the branch `refactor/shodan-toolkit-flat-layout`, committed as
+`6920d03` ("refactor: make the Shodan toolkit a flat package") and pushed
+to `origin/refactor/shodan-toolkit-flat-layout`.
+
+The toolkit used to be a project folder that held the package one level
+down (`src/shodan_toolkit/`, then `shodan_toolkit/`). It is now the
+package itself: `toolkits/shodan-toolkit/` holds `__init__.py`,
+`__main__.py`, `agent.py`, `agent_shodan_toolkit.py`, `cli.py`,
+`client.py`, `config.py`, `parsers.py`, `runner.py` and `tools.py`, next to
+`tests/` and `examples/`. The import name did not change, and neither did
+the wheel: `pip install ./toolkits/shodan-toolkit` still produces the
+`shodan_toolkit` package with the same ten modules, the same console
+script and the same `python -m shodan_toolkit` entry point.
 
 ### Latest change: a timeout the model can see
 
@@ -181,13 +196,13 @@ the MikroTik toolkit:
 |---|---|
 | `toolkits/shodan-toolkit/` | The upstream project, verbatim. |
 | `toolkits/__init__.py` | Registers the alias `toolkits.shodan_toolkit` next to `toolkits.mikrotik_routeros`. |
-| `toolkits/shodan-toolkit/src/shodan_toolkit/agent_shodan_toolkit.py` | The LlamaIndex adapter, a submodule of the toolkit package. Re-uses the upstream tool functions verbatim; only the descriptions are rewritten so they carry `Category: Security`. |
+| `toolkits/shodan-toolkit/agent_shodan_toolkit.py` | The LlamaIndex adapter, a submodule of the toolkit package. Re-uses the upstream tool functions verbatim; only the descriptions are rewritten so they carry `Category: Security`. |
 | `agent_tool_retriever.py` | New `include_shodan_tools` flag (on by default). |
 | `agent_tool_selection.py` | The tools are discovered for the startup menu, and dedicated action patterns were added. |
 | `agent-torvalds.py`, `agent-torvalds-mw.py` | The tools are loaded in the full-inventory mode. |
 | `docs/shodan-toolkit.md` | The end-user reference. |
 | `toolkits/shodan-toolkit/tests/test_agent_adapter.py` | 19 tests for the adapter. |
-| `pytest.ini` | `toolkits/shodan-toolkit/src` on the path; the upstream suite added to `testpaths`. |
+| `pytest.ini` | `toolkits/shodan-toolkit` on the path; the upstream suite added to `testpaths`. |
 | `README.md`, `CHANGELOG.md` | The toolkit is documented. |
 
 **Read-only by default.** The four tools that change account state or

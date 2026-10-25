@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from shodan_toolkit.client import ShodanClient
+from ..client import ShodanClient
 
 from .conftest import FakeRunner, make_result
 

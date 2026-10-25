@@ -2,7 +2,7 @@
 Integration tests for the Shodan agent adapter (``agent_shodan_toolkit.py``).
 
 The adapter is the LlamaIndex half of the Shodan feature; the reusable
-library half lives in ``toolkits/shodan-toolkit/src/shodan_toolkit/`` and is
+library half lives in ``toolkits/shodan-toolkit/`` and is
 tested by the suite that sits next to this file. What is covered here is the
 *integration*:
 
@@ -24,8 +24,9 @@ When the toolkit is installed as a standalone library - with no agent
 repository around - the whole module is skipped.
 
 The adapter itself is a **submodule of the toolkit package**
-(``src/shodan_toolkit/agent_shodan_toolkit.py``); inside this repository it
-is reached through the alias registered by ``toolkits/__init__.py``::
+(``toolkits/shodan-toolkit/agent_shodan_toolkit.py``); inside this
+repository it is reached through the alias registered by
+``toolkits/__init__.py``::
 
     from toolkits.shodan_toolkit import agent_shodan_toolkit
 
@@ -52,8 +53,6 @@ _ADAPTER_PATH = (
     REPO_ROOT
     / "toolkits"
     / "shodan-toolkit"
-    / "src"
-    / "shodan_toolkit"
     / "agent_shodan_toolkit.py"
 )
 

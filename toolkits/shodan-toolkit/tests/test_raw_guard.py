@@ -17,7 +17,7 @@ import json
 
 import pytest
 
-from shodan_toolkit.tools import (
+from ..tools import (
     MUTATING_SHODAN_SUBCOMMANDS,
     _is_mutating_command,
     _normalise_subcommand,
@@ -102,7 +102,7 @@ class TestRawToolBehaviour:
                 calls.append(list(args))
                 raise AssertionError("the CLI must not be invoked")
 
-        from shodan_toolkit import tools
+        from .. import tools
 
         monkeypatch.setattr(tools, "get_client", lambda: Recorder())
 
@@ -115,13 +115,13 @@ class TestRawToolBehaviour:
     def test_read_only_command_runs(self, monkeypatch) -> None:
         class Recorder:
             def run_raw(self, args, check=True):
-                from shodan_toolkit.runner import CommandResult
+                from ..runner import CommandResult
 
                 return CommandResult(
                     command=["shodan", *args], returncode=0, stdout="ok", stderr=""
                 )
 
-        from shodan_toolkit import tools
+        from .. import tools
 
         monkeypatch.setattr(tools, "get_client", lambda: Recorder())
 

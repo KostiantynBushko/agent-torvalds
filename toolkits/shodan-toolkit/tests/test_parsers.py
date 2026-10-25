@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shodan_toolkit.parsers import (
+from ..parsers import (
     parse_alert_list,
     parse_domain_info,
     parse_honeyscore,
