@@ -28,12 +28,12 @@ logger = logging.getLogger(__name__)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users (
-    user_id       TEXT PRIMARY KEY,
-    username      TEXT NOT NULL UNIQUE,
-    backend_type  TEXT NOT NULL DEFAULT 'postgres',
-    token_limit   INTEGER NOT NULL DEFAULT 5000,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    user_id          TEXT PRIMARY KEY,
+    username         TEXT NOT NULL UNIQUE,
+    backend_type     TEXT NOT NULL DEFAULT 'postgres',
+    chat_token_limit INTEGER NOT NULL DEFAULT 5000,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS chat_sessions (
@@ -54,6 +54,12 @@ CREATE INDEX IF NOT EXISTS idx_sessions_type ON chat_sessions(session_type);
 CREATE INDEX IF NOT EXISTS idx_sessions_active ON chat_sessions(user_id, is_active);
 """
 
+#: The column the chat-token limit lived in before the rename.
+LEGACY_TOKEN_LIMIT_COLUMN = "token_limit"
+
+#: The canonical column name of the chat-token limit.
+CHAT_TOKEN_LIMIT_COLUMN = "chat_token_limit"
+
 
 # ---------------------------------------------------------------------------
 # Conversion helpers
@@ -65,7 +71,7 @@ def _orm_user_to_dataclass(orm_user: ORMUser) -> User:
         user_id=orm_user.user_id,
         username=orm_user.username,
         backend_type=orm_user.backend_type,
-        token_limit=orm_user.token_limit,
+        chat_token_limit=orm_user.chat_token_limit,
         created_at=orm_user.created_at,
         updated_at=orm_user.updated_at,
     )
@@ -77,7 +83,7 @@ def _dataclass_to_orm_user(user: User) -> ORMUser:
         user_id=user.user_id,
         username=user.username,
         backend_type=user.backend_type,
-        token_limit=user.token_limit,
+        chat_token_limit=user.chat_token_limit,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -185,11 +191,57 @@ class CustomDBConnector:
             self._session_factory = sessionmaker(bind=self._engine)
             # Create tables if they don't exist
             Base.metadata.create_all(self._engine)
+            # Bring an older schema up to date (renamed column).
+            self._migrate_schema()
             self._connected = True
             logger.info(f"CustomDBConnector connected to {self._uri}")
         except Exception as e:
             logger.warning(f"CustomDBConnector failed to connect: {e}")
             self._connected = False
+
+    def _migrate_schema(self) -> None:
+        """Rename the legacy ``token_limit`` column to ``chat_token_limit``.
+
+        The setting was renamed so that it says whose tokens it limits.  An
+        existing database still has the old column name, so it is renamed in
+        place — the values are kept, no manual migration step is needed.
+
+        The migration is idempotent and never fatal: a failure is logged as a
+        warning, because a chat history that cannot be migrated is a smaller
+        problem than a chat history that cannot be reached.
+        """
+        if self._engine is None:
+            return
+
+        try:
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(self._engine)
+            if "users" not in inspector.get_table_names():
+                return
+
+            columns = {col["name"] for col in inspector.get_columns("users")}
+            if CHAT_TOKEN_LIMIT_COLUMN in columns:
+                return
+            if LEGACY_TOKEN_LIMIT_COLUMN not in columns:
+                return
+
+            with self._engine.begin() as connection:
+                connection.execute(
+                    text(
+                        f"ALTER TABLE users RENAME COLUMN "
+                        f"{LEGACY_TOKEN_LIMIT_COLUMN} TO {CHAT_TOKEN_LIMIT_COLUMN}"
+                    )
+                )
+            logger.info(
+                f"Migrated users.{LEGACY_TOKEN_LIMIT_COLUMN} -> "
+                f"users.{CHAT_TOKEN_LIMIT_COLUMN}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Could not migrate users.{LEGACY_TOKEN_LIMIT_COLUMN} to "
+                f"users.{CHAT_TOKEN_LIMIT_COLUMN}: {e}"
+            )
 
     def close(self) -> None:
         """Close the connection and release resources."""
@@ -286,7 +338,7 @@ class CustomDBConnector:
             existing = session.query(ORMUser).filter(ORMUser.user_id == user.user_id).first()
             if existing:
                 existing.backend_type = user.backend_type
-                existing.token_limit = user.token_limit
+                existing.chat_token_limit = user.chat_token_limit
                 existing.updated_at = user.updated_at
                 session.commit()
                 session.refresh(existing)
