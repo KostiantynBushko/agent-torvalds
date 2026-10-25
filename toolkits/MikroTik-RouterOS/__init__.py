@@ -4,10 +4,13 @@ MikroTik RouterOS Toolkit - core package.
 Home directory for the MikroTik RouterOS toolkit. This package is the
 **reusable library** half of the feature:
 
-* It contains **no LlamaIndex imports** so it stays independently testable and
-  can be used as a plain library by any Python application.
-* The LlamaIndex adapter lives at the project root as
-  ``agent_mikrotik_toolkit.py`` and imports this package.
+* The library half contains **no LlamaIndex imports** so it stays
+  independently testable and can be used as a plain library by any Python
+  application.
+* The LlamaIndex adapter is a **submodule of this package** -
+  ``agent_mikrotik_toolkit.py`` - and imports this package.  It is the one
+  module of the feature that knows about LlamaIndex, and it is imported on
+  demand, so importing the library never pulls LlamaIndex in.
 
 Importing this package
 ----------------------
@@ -60,6 +63,8 @@ Layout contract
         |-- parser.py               # print / detail / identity parsing
         |-- session.py              # RouterOSSession (exec + session transports)
         |-- safety.py               # risk classifier + confirmation policy
+        |-- agent_mikrotik_toolkit.py  # the LlamaIndex adapter - the only
+        |                             # LlamaIndex-dependent module in here
         |-- py.typed                # PEP 561 marker
         `-- tests/                  # module-local tests (no __init__.py!)
 
@@ -70,7 +75,14 @@ Import rules
     * ``asyncssh`` and ``pydantic`` are imported **lazily** or behind a
       ``try/except ImportError`` guard, so that importing this package never
       breaks the agent boot.
-    * Nothing in this package may import LlamaIndex.
+    * Nothing in the **library half** of this package may import LlamaIndex.
+      The agent adapter is the single, named exception - it is the only
+      module that knows about LlamaIndex, and it is imported on demand
+      through the alias::
+
+          from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import (
+              get_all_tools,
+          )
 
 Test placement
     * The module-local ``tests/`` directory must **not** contain

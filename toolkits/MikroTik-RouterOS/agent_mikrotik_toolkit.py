@@ -3,8 +3,21 @@ MikroTik RouterOS Toolkit - SSH-based router configuration and monitoring.
 
 This module is the **LlamaIndex adapter** for the MikroTik RouterOS toolkit.
 It is the only place in the feature that knows about LlamaIndex; the reusable
-library half lives in ``toolkits/MikroTik-RouterOS/`` and imports no
-LlamaIndex code at all.
+library half lives in the same folder and imports no LlamaIndex code at all.
+
+Where it lives
+--------------
+
+The adapter is a **submodule of the toolkit package**, not a file at the
+project root any more.  The package directory contains a hyphen, so the
+adapter is reached through the alias registered by ``toolkits/__init__.py``::
+
+    from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import get_all_tools
+
+That is the one canonical import path for the adapter.  The core package is
+pulled in with a **relative** import (``from . import ...``), so the adapter
+always works with the very same module objects the package exports - no
+matter which spelling of the package was used to reach it.
 
 The adapter exposes eight tools:
 
@@ -44,10 +57,9 @@ natively supports: it detects a coroutine function and awaits it in
 ``call()`` path works too, because LlamaIndex bridges it onto a worker
 thread.
 
-**Nothing raises at import time.** The core package is imported through its
-alias inside a ``try/except``. A missing optional dependency (``asyncssh``)
-degrades to a tool that reports the problem, rather than breaking the agent
-boot.
+**Nothing raises at import time.** The core package is imported inside a
+``try/except``. A missing optional dependency (``asyncssh``) degrades to a
+tool that reports the problem, rather than breaking the agent boot.
 
 Category: Network
 Retriever Keywords: mikrotik, routeros, router, ssh, network, firewall, interface, ip, vlan, dhcp
@@ -69,7 +81,7 @@ logger = logging.getLogger(__name__)
 # breaks the agent boot (MODULE_SPECIFICATION.md R3/R5).
 # ---------------------------------------------------------------------------
 try:
-    from toolkits.mikrotik_routeros import (
+    from . import (
         CommandCategory,
         CommandResult,
         MikroTikError,
@@ -1172,7 +1184,7 @@ def _parse_identity(text: str) -> dict:
         return {}
 
     try:
-        from toolkits.mikrotik_routeros.parser import parse_identity
+        from .parser import parse_identity
 
         return parse_identity(text).to_dict()
     except Exception as exc:  # noqa: BLE001 - a parse failure is not fatal
@@ -1186,7 +1198,7 @@ def _parse_rows(text: str, detail: bool = False) -> list[dict]:
         return []
 
     try:
-        from toolkits.mikrotik_routeros.parser import parse_detail, parse_print_table
+        from .parser import parse_detail, parse_print_table
 
         return parse_detail(text) if detail else parse_print_table(text)
     except Exception as exc:  # noqa: BLE001 - a parse failure is not fatal

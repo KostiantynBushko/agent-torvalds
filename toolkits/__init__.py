@@ -5,8 +5,11 @@ This package contains self-contained Python modules that can be used both:
 1. As standalone libraries by other application modules
 2. Through optional LlamaIndex FunctionAgent adapters
 
-Each toolkit package should have its own agent adapter at the project root
-(e.g., agent_mikrotik_toolkit.py) that depends on LlamaIndex.
+Each toolkit package carries its own agent adapter **inside the package** -
+``toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py`` and
+``toolkits/shodan-toolkit/src/shodan_toolkit/agent_shodan_toolkit.py``.  The
+adapter is the only module of a toolkit that depends on LlamaIndex; the
+reusable library half around it does not.
 
 --------------------------------------------------------------------------------
 Import aliases for the hyphenated toolkit directories
@@ -41,6 +44,15 @@ level deeper::
 
     toolkits/shodan-toolkit/src/shodan_toolkit/   ->  toolkits.shodan_toolkit
 
+The agent adapters are submodules of their toolkit package, so they are
+reached through the same alias::
+
+    from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import get_all_tools
+    from toolkits.shodan_toolkit.agent_shodan_toolkit import get_all_tools
+
+Those two lines are the canonical import paths of the adapters.  The
+adapters themselves are **not** published eagerly - see the note below.
+
 --------------------------------------------------------------------------------
 Two properties the alias must have
 --------------------------------------------------------------------------------
@@ -72,6 +84,17 @@ ends up carrying two sets of classes for the same file.  Every submodule is
 therefore imported under its real name and the *same* module object is
 published under the alias name, so both spellings resolve to one object.
 
+**3. The agent adapter is never published eagerly.**
+
+Publishing a submodule means *importing* it.  The agent adapter imports
+LlamaIndex, and the reusable library half of a toolkit must stay usable
+without it - so the adapter is skipped by the eager publication below and
+is imported on demand, through the alias, by whoever actually needs it.
+
+``import toolkits`` therefore never pulls LlamaIndex into the process, while
+``from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import
+get_all_tools`` still resolves to exactly one module object.
+
 .. note::
    When the ``feature/ssh-toolkit`` branch is merged, it also contributes a
    ``toolkits/__init__.py``. The two versions of this file must be combined
@@ -90,6 +113,19 @@ import sys
 #: can find them; the complete dotted paths live in the ``_..._ALIAS``
 #: constants below.
 _ALIAS_NAMES = ("mikrotik_routeros", "shodan_toolkit")
+
+#: The agent adapters of the toolkits, by module name.
+#:
+#: An adapter is the only module of a toolkit that imports LlamaIndex, so it
+#: is **not** published eagerly: publishing a submodule means importing it,
+#: and ``import toolkits`` must never pull LlamaIndex into the process.
+#:
+#: The adapters are still reachable, and still resolve to exactly one
+#: module object, through the alias of their own package::
+#:
+#:     from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import get_all_tools
+#:     from toolkits.shodan_toolkit.agent_shodan_toolkit import get_all_tools
+_ADAPTER_MODULES = ("agent_mikrotik_toolkit", "agent_shodan_toolkit")
 
 #: Dotted path of the real (hyphenated) package directory.
 _MIKROTIK_PACKAGE = "toolkits.MikroTik-RouterOS"
@@ -119,6 +155,10 @@ def _publish_submodules(real_dotted: str, alias_dotted: str, package) -> None:
     dependency is missing - is skipped: the toolkit is designed to degrade
     gracefully, so this must stay silent.
 
+    The agent adapters are skipped as well.  They import LlamaIndex, and the
+    library half of a toolkit has to stay usable without it; they are
+    imported on demand through the alias instead.
+
     Args:
         real_dotted: The dotted path of the real (hyphenated) package.
         alias_dotted: The dotted path of the valid-identifier alias.
@@ -129,6 +169,9 @@ def _publish_submodules(real_dotted: str, alias_dotted: str, package) -> None:
         return
 
     for info in pkgutil.iter_modules(package_path):
+        if info.name in _ADAPTER_MODULES:
+            # Imported on demand, never eagerly - see _ADAPTER_MODULES.
+            continue
         try:
             module = importlib.import_module(f"{real_dotted}.{info.name}")
         except Exception:  # noqa: BLE001 - an optional dependency may be missing

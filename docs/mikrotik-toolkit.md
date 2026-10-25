@@ -29,13 +29,21 @@ human.
 The feature has two halves:
 
 ```
-toolkits/MikroTik-RouterOS/    the reusable library - no LlamaIndex imports
+toolkits/MikroTik-RouterOS/               the toolkit folder
+├── config.py, models.py, exceptions.py   the reusable library - no LlamaIndex imports
+├── parser.py, session.py, safety.py
+└── agent_mikrotik_toolkit.py             the LlamaIndex adapter - the eight tools
         │
         ▼
-agent_mikrotik_toolkit.py      the LlamaIndex adapter - the eight tools
-        │
-        ▼
-agent-torvalds.py / -mw.py     the orchestrators
+agent-torvalds.py / -mw.py               the orchestrators
+```
+
+The adapter is a submodule of the toolkit package, so it is reached through
+the alias registered by `toolkits/__init__.py` (the package directory name
+contains a hyphen):
+
+```python
+from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import get_all_tools
 ```
 
 The core package can be used as a plain library by any Python application:
@@ -399,7 +407,8 @@ agent-torvalds.py
     ▼
 agent_tool_retriever.py          (include_mikrotik_tools flag)
     ▼
-agent_mikrotik_toolkit.py        (LlamaIndex adapter - the eight tools)
+toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py
+                                   (LlamaIndex adapter - the eight tools)
     ▼
 toolkits/MikroTik-RouterOS/      (core package - no LlamaIndex imports)
     ├── config.py                (MikroTikTarget, TargetRegistry, load_targets)
