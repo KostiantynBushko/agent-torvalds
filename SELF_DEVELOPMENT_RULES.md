@@ -4,7 +4,7 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-22
+**Last updated:** 2026-10-22 (rule 7 added — the timeout policy)
 
 ---
 
@@ -60,17 +60,99 @@ irreversible action on the operator's data must be confirmed first.
 `git status` and `git diff` (or `git diff --staged`) are presented to the operator
 before any commit is created.
 
+## Rule 7 — Waiting for the operator follows the timeout
+
+When the agent asks the operator a question, the timeout decides what the
+agent is allowed to do:
+
+* **`timeout = -1`** (no timeout) — the agent **stops and waits**.  It must
+  not decide the question on its own; the answer arrives when the operator
+  answers, however long that takes.
+* **`timeout = N`** (a finite timeout) — the agent waits up to N seconds.
+  When the timeout expires, the agent **acts on its own judgement** — and it
+  says so in the report.
+
+The operator stated this on 2026-10-22.  It is the contract the HITL timeout
+machinery implements (`components/hitl_timeout.py`, `components/hitl_agent.py`),
+and it is verified end to end by
+`self-development/investigate/hitl-timeout-policy/verify_timeout_policy.py`.
+
+A timed-out question is never reported as if it had been answered: the
+operator must be able to tell "nobody answered, the agent decided" from "the
+operator said so".  Defect **D16** (the model was fed the fallback answer as
+if the human had said it) is fixed in `components/hitl_agent.py`; the model
+now reads *"No human response — the wait ended without an answer. The
+question was not answered; act on your own judgement."*
+
 ---
 
 ## Current self-development work
 
 | Item | Status |
 |---|---|
-| Branch | `feature/shodan-toolkit` — merged into `master` and pushed to `origin` |
-| Scope | Shodan internet-exposure toolkit — the project moved into `toolkits/shodan-toolkit/` and wired into the agent |
-| Status | Implemented, tests green, **committed**, pushed and merged into `master` (with `origin/master` as of PR #24) |
+| Branch | `fix/hitl-question-detection` — **committed and pushed** (`2acce6d`) |
+| Scope | The HITL question prompt: the question is rendered as Markdown, the choices are a menu instead of a `[y/N]` prompt, the secret is masked with asterisks instead of `getpass`, a decorated question is asked as the question it is, and a timeout is reported to the model as a timeout |
+| Status | Implemented, the question bank is 23/23, the presentation invariants are 9/9, the timeout policy is 11/11, the HITL suites are green, **no new failure** in the full suite (the CI gate: 40 known failures, 0 new). Committed (`2acce6d`) and pushed to `origin/fix/hitl-question-detection`. |
+| Report | `self-development/investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` |
+| Policy | The operator's timeout rule (rule 7) is verified end to end — **11/11** checks pass. Defect **D16** (the model was not told that the human did not answer) is **fixed**; the CI gate reports 40 known failures, 0 new. Committed (`2acce6d`) and pushed. |
+| Report (policy) | `self-development/investigate/hitl-timeout-policy/REPORT_timeout_policy.md` |
 
-### Latest change: the Shodan toolkit
+### Latest change: a timeout the model can see
+
+Committed as `2acce6d` ("fix: a timeout the model can see") and pushed to
+`origin/fix/hitl-question-detection`.
+
+The operator stated the timeout policy: *"-1 means stop and wait; a finite
+timeout means wait, and when it expires act on your own judgement."*  The
+plumbing already honoured it — but the **model** was fed the fallback answer
+as if the human had said it, and with the shipped default (no fallback
+answer) it was fed an empty turn, which for a yes/no question reads as a
+"no".  The agent therefore acted on a fabricated answer instead of on its own
+judgement.  `HITLFunctionAgent._answer_message()` now tells the model that
+nobody answered.
+
+### Previous change: a decorated question is asked as the question it is
+
+The operator reported it a third time
+(`/home/kbush/torvald-log/hitl_questions_issue/wrong-user-input.txt`): a
+question with three choices was prompted with `[y/N]`. The agent had written
+the question as `question: 'Which one should I use?'` — the quotes and the
+label kept the "which" out of the head of the question, so the "should I"
+*inside* it turned the question into a confirmation.
+
+| Path | Change |
+|---|---|
+| `components/hitl_question.py` | `_question_core()` — the question is read (and shown) without the quotes, the Markdown emphasis and the label that wrap it. The wh-word veto also fires when the question word heads a *clause* ("so which one should I use?"). |
+| `components/human_loop_handler.py` | The history records the type the operator was asked for: the options travel with the question. |
+| `scripts/hitl_question_bank.py` | Six new cases: five catch the defect, one guards the fix against being too broad (a relative clause stays a yes/no question). 17 → 23. |
+| `tests/test_hitl_question_presentation.py` | New `TestDecoratedQuestion` — 9 tests, 6 of which fail without the fix. |
+| `investigate/hitl-questions-issue/diag_decorated_question.py` | **New.** The diagnostic: 8 mis-classifications before the fix, 0 after. |
+| `investigate/hitl-questions-issue/verify_hitl_question_presentation.py` | The new invariant I9 — a decorated question is not a yes/no question. 8 → 9 invariants. |
+| `investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` | Section 9 — the third round. |
+| `CHANGELOG.md` | The entry. |
+
+Committed as `ab3fbb9` ("fix: a decorated question is asked as the question it
+is") and pushed to `origin/fix/hitl-question-detection`.
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/tests/test_hitl_question_bank.py -q
+self-development/.venv/bin/python investigate/hitl-questions-issue/diag_decorated_question.py
+self-development/.venv/bin/python investigate/hitl-questions-issue/verify_hitl_question_presentation.py
+```
+
+23 bank cases, 9 invariants, 0 mis-classifications. The CI gate reports
+**no new failure** (40 known failures, unchanged).
+
+### Previous change: what the operator actually sees
+
+The question, the report and the menu — the first round was judged on the
+rules, the second on the screen. The three defects the screen showed (the
+question printed twice, two numbered lists with one meaning, the choices
+coming before the question) are closed; the report is section 8.
+
+### Earlier change: the Shodan toolkit
 
 The `shodan-toolkit` project, which lived in its own repository, was moved
 into this one and turned into a first-class toolkit.

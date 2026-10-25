@@ -483,9 +483,9 @@ class TuiInputModule:
     ) -> tuple[str, bool]:
         """Ask the operator to pick one of *options* in the command bar.
 
-        The options themselves are already visible in the chat view — the
-        question carries them — so the footer only shows the question and
-        the number range.
+        The choices travel beside the question, not inside it, so the
+        footer has to show both: the operator has to see what the numbers
+        stand for before typing one.
 
         Returns:
             ``(selected_option, was_timeout)`` tuple.
@@ -495,7 +495,13 @@ class TuiInputModule:
             return "", True
 
         hint = f"[1-{len(choices)}]"
-        prompt = f"{message} {hint}".strip() if message else hint
+        numbered = "\n".join(
+            f"{index}. {choice}" for index, choice in enumerate(choices, 1)
+        )
+        if message:
+            prompt = f"{message}\n{numbered} {hint}"
+        else:
+            prompt = f"{numbered} {hint}"
         response, was_timeout = await self.prompt_with_status(
             message=prompt, default="", timeout=timeout
         )

@@ -165,8 +165,11 @@ def render_footer(
             "password": "Password: ",
         }.get(hitl_input_type, "Answer: ")
 
+        # The question is agent text: it may contain square brackets, which
+        # Rich would read as markup.
+        safe_prompt = escape(hitl_prompt)
         left_content = Text.from_markup(
-            f"[bold bright_yellow]🤖 AGENT QUESTION:[/bold bright_yellow] [white]{hitl_prompt}[/white]\n"
+            f"[bold bright_yellow]🤖 AGENT QUESTION:[/bold bright_yellow] [white]{safe_prompt}[/white]\n"
             f"[bold bright_cyan]{answer_label}[/bold bright_cyan][white]{cursor_rendered}[/white]"
         )
 
