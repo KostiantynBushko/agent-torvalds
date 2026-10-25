@@ -126,23 +126,29 @@ def main() -> int:
         if split is not None:
             print(f"question ({len(split.question)} chars): {split.question[:90]!r}")
 
-        if detected != question_type:
+        if detected == "password" and question_type != "password":
+            # The defect the operator reported: the report talked the agent
+            # into a password prompt although the question asks nothing of
+            # the sort.
             print(
-                f"  => VERDICT: the type follows the ANSWER ({detected!r}), not "
-                f"the question ({question_type!r}) — the report mentioning "
-                f"{pw_hits or yn_hits!r} decides the prompt."
+                "  => VERDICT: DEFECT — the answer is typed 'password' but "
+                "the question is not: the report decides the prompt."
             )
             failures += 1
-        elif detected == "password":
+        elif detected != question_type:
+            # A question that carries options is a menu, while the same
+            # text without the extracted options is a yes/no question.  That
+            # difference comes from the question, not from the report.
             print(
-                "  => VERDICT: the question really does ask for a secret — "
-                "'password' is correct here."
+                f"  => VERDICT: no defect — the difference ({detected!r} vs "
+                f"{question_type!r}) comes from the options of the question "
+                "itself, not from the report."
             )
         else:
             print(
-                "  => VERDICT: the type follows the question — the report "
-                "mentioning "
-                f"{pw_hits!r} does not decide the prompt."
+                "  => VERDICT: no defect — the type follows the question, "
+                f"and the report mentioning {pw_hits!r} does not decide the "
+                "prompt."
             )
 
     # The operator's exact observation.
@@ -167,7 +173,10 @@ def main() -> int:
         if failures:
             print("        The defect is CONFIRMED.")
         else:
-            print("        The defect is NOT reproduced — the type follows the question.")
+            print(
+                "        The defect is NOT reproduced — the type follows the "
+                "question."
+            )
     else:
         print("RESULT: no mis-classification detected.")
     print("=" * 78)

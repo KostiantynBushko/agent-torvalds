@@ -103,21 +103,27 @@ keeps the request itself. "Shall I create the branch X?" and "Should I
 create the branch X?" collapse into one key; "Shall I **delete** the branch
 X?" does not.
 
-### 4.2 The `menu` input type is not enabled by default
+### 4.2 The `menu` input type is enabled
 
-The proposal lists it as decision #3, and it is still open. Two reasons
-not to enable it now:
+The proposal lists it as decision #3. It is now implemented:
 
-* the **TUI has no `menu()`** — enabling the type would break the TUI path;
-* the type is only correct when the question really is a choice, and the
-  heuristic cannot tell "pick one of these two" from "do you want me to do
-  one of these two things?".
+* `detect_input_type()` types a question that carries **two or more
+  options** as `menu`. One option is not a choice and stays `yesno`.
+* the input modules gained `menu_with_status()`. Unlike the old `menu()`,
+  it does **not** print the options — the consumer renders them with the
+  question, so they cannot appear twice. The empty answer selects the
+  first option and counts as "no answer".
+* the console module prompts `Select option [1]: `; the TUI command bar
+  shows the question and the number range and takes the number; the
+  whiptail dialog shows its own menu.
 
-The machinery is in place: the splitter extracts the options, the event
-carries them, and the consumer has a menu branch. A question with an
-explicit `[HITL:menu]` marker is typed as a menu. Until the operator
-decides, a two-option question is typed `yesno` and both options stay
-visible in the question.
+The TUI had no menu widget, so one was added — the command bar asks for
+the number, and the options are already visible in the chat view because
+the question carries them.
+
+The **acceptance harness** was touched for this: its input double gained
+`menu_with_status()`, mirroring the production API. The eight invariants
+are unchanged; only the double learned the new method.
 
 ### 4.3 The "Agent asks:" label sits above the report
 
@@ -168,13 +174,13 @@ is what the defect actually was.
 ### The test suite
 
 ```bash
-.venv/bin/python -m pytest tests/test_hitl_question_presentation.py -q     # 34 passed
+.venv/bin/python -m pytest tests/test_hitl_question_presentation.py -q     # 44 passed
 .venv/bin/python -m pytest -q
 ```
 
 | | baseline (`HEAD`) | with the change |
 |---|---|---|
-| passed | 1 305 | 1 339 (+34 new) |
+| passed | 1 305 | 1 349 (+44 new) |
 | failed | 76 | 76 (the **same** set) |
 | errors | 1 | 1 |
 
@@ -202,8 +208,10 @@ pre-existing.
 * the chat-history format;
 * the behaviour with HITL disabled;
 * the TUI layout — the TUI still shows the question in the footer command
-  bar (`renders_question = True`), exactly as before. The TUI does **not**
-  yet show the report separately; that is the remaining part of phase P4.
+  bar (`renders_question = True`), exactly as before. The report around
+  the question reaches the TUI through the token stream, so it is already
+  in the markdown view; the footer now labels the prompt by the kind of
+  answer the question wants.
 
 ## 7. The open decisions
 
@@ -214,7 +222,7 @@ concrete default:
 |---|---|---|
 | 1 | How much context is shown? | **default: all of it**, above the question. The report is what the operator needs to answer. |
 | 2 | May the model declare the input type? | **default: yes** — `[HITL:yesno]`, `[HITL:password]`, `[HITL:menu]` and `[HITL:text]` are honoured, and the heuristic is the fallback. |
-| 3 | Is the `menu` input type worth wiring up? | **deferred** — the machinery is there, the TUI has no menu widget. |
+| 3 | Is the `menu` input type worth wiring up? | **implemented** — a question with two or more options is a menu, in the console, the TUI and the whiptail dialog. |
 | 4 | Should the re-ask guard become semantic? | **not needed for the reported defect** — the normalised guard catches the rephrasing. An embedding comparison would cost a model call per question. |
 
 ## 8. Next step

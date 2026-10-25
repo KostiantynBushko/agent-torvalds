@@ -47,11 +47,22 @@
   The two copies of the detection patterns (in `hitl_agent` and
   `human_loop_handler`) and the two copies of the input-type heuristic have
   been removed — they had already drifted apart.
-- **`tests/test_hitl_question_presentation.py`** — 34 tests: the splitting,
-  the input type, the normalisation, and the wiring (the question is
-  rendered once, the context is rendered, the input module never receives
-  the question, the empty answer is a timeout, the answer still reaches the
-  agent).
+- **A question written as a list of choices is a menu** — "Would you like
+  me to: 1. Set up sqitch? 2. Write the docs?" cannot be answered with a
+  yes or a no, so the question is now typed `menu` and the operator picks
+  one of the options. The input modules gained `menu_with_status()`, which
+  does **not** print the options — the consumer renders them with the
+  question, so they cannot appear twice. The TUI command bar shows the
+  number range and takes the number; the whiptail dialog shows its own
+  menu.
+- **The TUI footer follows the question** — the command bar now labels the
+  prompt by the kind of answer the question wants ("Answer", "Yes/No",
+  "Option", "Password") instead of always saying "Answer".
+- **`tests/test_hitl_question_presentation.py`** — 44 tests: the splitting,
+  the input type, the normalisation, the menu, the status-aware input API
+  and the wiring (the question is rendered once, the context is rendered,
+  the input module never receives the question, the empty answer is a
+  timeout, the answer still reaches the agent).
 
 ## [Unreleased] - Shodan Toolkit
 

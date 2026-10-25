@@ -681,5 +681,6 @@ class TuiApp:
             hitl_time_remaining=remaining,
             hitl_default_answer=self.state.hitl_default_answer,
             is_busy=self.state.is_busy,
+            hitl_input_type=self.state.hitl_input_type,
         )
         self.layout["footer"].update(footer_panel)

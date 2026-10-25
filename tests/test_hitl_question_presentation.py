@@ -31,6 +31,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any, List, Sequence, Tuple
+from unittest.mock import patch
 
 import pytest
 
@@ -200,6 +201,16 @@ class TestDetectInputType:
         assert detect_input_type("Any notification preferences?") == "text"
         assert detect_input_type("Any documentation to update?") == "text"
 
+    def test_menu_when_options_present(self):
+        assert detect_input_type(
+            "Also, would you like me to:",
+            options=["Set up sqitch?", "Write the docs?"],
+        ) == "menu"
+        # One option is not a choice.
+        assert detect_input_type(
+            "Also, would you like me to:", options=["Set up sqitch?"]
+        ) == "yesno"
+
     def test_explicit_marker_wins(self):
         assert detect_input_type("[HITL:password] the token") == "password"
         assert detect_input_type("[HITL:yesno] go on") == "yesno"
@@ -209,6 +220,65 @@ class TestDetectInputType:
         split = split_question(REPORT_PAYLOAD)
         assert split is not None
         assert detect_input_type(split.question, split.options) != "password"
+
+
+class TestConsoleInputModule:
+    """The status-aware API of the console input module."""
+
+    def _module(self):
+        from components.console_input_module import ConsoleInputModule
+        return ConsoleInputModule()
+
+    def test_confirm_with_status_reports_an_empty_answer(self):
+        module = self._module()
+        with patch("components.console_input_module.input", return_value=""):
+            confirmed, was_timeout = asyncio.run(
+                module.confirm_with_status("[y/N]", default_yes=False, timeout=5)
+            )
+        assert confirmed is False
+        assert was_timeout is True
+
+    def test_confirm_with_status_reports_an_answer(self):
+        module = self._module()
+        with patch("components.console_input_module.input", return_value="y"):
+            confirmed, was_timeout = asyncio.run(
+                module.confirm_with_status("[y/N]", default_yes=False, timeout=5)
+            )
+        assert confirmed is True
+        assert was_timeout is False
+
+    def test_menu_with_status_selects_an_option(self):
+        module = self._module()
+        with patch("components.console_input_module.input", return_value="2"):
+            selected, was_timeout = asyncio.run(
+                module.menu_with_status(
+                    "Select option [1]: ", ["first", "second"], timeout=5
+                )
+            )
+        assert selected == "second"
+        assert was_timeout is False
+
+    def test_menu_with_status_defaults_to_the_first_option(self):
+        module = self._module()
+        with patch("components.console_input_module.input", return_value=""):
+            selected, was_timeout = asyncio.run(
+                module.menu_with_status(
+                    "Select option [1]: ", ["first", "second"], timeout=5
+                )
+            )
+        assert selected == "first"
+        assert was_timeout is True
+
+    def test_menu_with_status_ignores_an_invalid_number(self):
+        module = self._module()
+        with patch("components.console_input_module.input", return_value="99"):
+            selected, was_timeout = asyncio.run(
+                module.menu_with_status(
+                    "Select option [1]: ", ["first", "second"], timeout=5
+                )
+            )
+        assert selected == "first"
+        assert was_timeout is False
 
 
 class TestNormaliseQuestion:
@@ -314,6 +384,25 @@ class RecordingInput:
     async def menu(self, message: str = "", options=None, timeout: int = -1) -> str:
         self.prompts.append(message)
         return self._next() or (options or [""])[0]
+
+    async def menu_with_status(
+        self, message: str = "", options=None, timeout: int = -1
+    ) -> Tuple[str, bool]:
+        """Mirrors ``ConsoleInputModule.menu_with_status``."""
+        self.prompts.append(message)
+        answer = self._next()
+        choices = list(options or [])
+        if not choices:
+            return "", True
+        if not answer.strip():
+            return choices[0], True
+        try:
+            index = int(answer.strip()) - 1
+            if 0 <= index < len(choices):
+                return choices[index], False
+        except ValueError:
+            pass
+        return choices[0], False
 
     async def password(self, message: str = "", timeout: int = -1) -> str:
         self.prompts.append(message)
@@ -501,10 +590,49 @@ class TestRoundTrip:
         assert "no" in joined
 
     def test_a_free_form_answer_is_forwarded_verbatim(self):
-        out = run([STATUS_PAYLOAD, "All done."], answers=["yes, go ahead"])
+        out = run(
+            ["Shall I create the branch feature/x?", "All done."],
+            answers=["yes, go ahead"],
+        )
         last_call = out["llm_calls"][-1]
         joined = " ".join(content for _, content in last_call)
         assert "yes, go ahead" in joined
+
+
+class TestMenu:
+    """A question written as a list of choices wants a choice."""
+
+    def test_a_list_question_is_typed_as_a_menu(self):
+        out = run([STATUS_PAYLOAD, "All done."], answers=["1"])
+        event = out["events"][0]
+        assert event.input_type == "menu"
+        assert event.options == [
+            "Set up sqitch for database version control?",
+            "Start with documentation for the sqitch integration?",
+        ]
+
+    def test_the_options_are_shown_once(self):
+        out = run([STATUS_PAYLOAD, "All done."], answers=["1"])
+        # The options travel with the question, which the consumer prints.
+        assert "1. Set up sqitch for database version control?" in out["console"]
+        # The input module only gets the short prompt.
+        for prompt in out["prompts"]:
+            assert "Set up sqitch" not in prompt
+        assert out["prompts"]
+        assert all(len(prompt) < 40 for prompt in out["prompts"])
+
+    def test_the_choice_reaches_the_agent(self):
+        out = run([STATUS_PAYLOAD, "All done."], answers=["2"])
+        last_call = out["llm_calls"][-1]
+        joined = " ".join(content for _, content in last_call)
+        assert "Start with documentation for the sqitch integration?" in joined
+
+    def test_an_empty_answer_selects_the_first_option(self):
+        out = run([STATUS_PAYLOAD, "All done."], answers=[""])
+        received = [m for m in out["logs"] if "HITL answer received" in m]
+        assert received
+        assert "timeout=True" in received[0]
+        assert "Set up sqitch for database version control?" in received[0]
 
 
 if __name__ == "__main__":

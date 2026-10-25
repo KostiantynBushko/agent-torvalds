@@ -77,8 +77,10 @@ The eight invariants a correct HITL question presentation must satisfy:
 | I8 | a question is detected once per question |
 
 **Current result: 8 of 8 hold.** The harness was written before the fix
-and reported 1/8 against the unfixed tree; it was not modified when the
-fix landed.
+and reported 1/8 against the unfixed tree. It was not modified when the
+fix landed; when the `menu` input type was enabled afterwards, its input
+double gained `menu_with_status()` so that it mirrors the production API
+— the eight invariants themselves are unchanged.
 
 ---
 
