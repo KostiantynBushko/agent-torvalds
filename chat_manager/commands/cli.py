@@ -8,6 +8,12 @@ Provides interactive commands for session management:
 - \\chat-rename <id> <new name>: Rename a session
 - \\chat-info: Show details of the active session
 - \\chat-clear: Clear the active session's message history
+
+and for the user's own configuration:
+- \\chat-user: Show the current user's settings
+- \\chat-user get <key>: Show one setting
+- \\chat-user set <key> <value>: Change one setting
+- \\chat-user help: List the settings and their accepted values
 """
 
 from __future__ import annotations
@@ -16,6 +22,12 @@ import logging
 from typing import TYPE_CHECKING
 
 from chat_manager.session import SessionType
+from chat_manager.settings import (
+    SETTINGS_BY_KEY,
+    SettingError,
+    UserSettings,
+    normalize_setting_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -203,3 +215,160 @@ def cmd_chat_clear(manager: ChatHistoryManager) -> str:
         return f"Could not clear messages: {e}"
 
     return f"Cleared message history for session '{session.session_name}'."
+
+
+# ---------------------------------------------------------------------------
+# User settings commands
+# ---------------------------------------------------------------------------
+
+def _settings_rows(settings: UserSettings) -> list[str]:
+    """Render the settings as aligned text rows.
+
+    Args:
+        settings: The settings snapshot to render.
+
+    Returns:
+        A list of formatted lines.
+    """
+    rows = settings.as_rows()
+    if not rows:
+        return ["No settings available."]
+
+    width = max(len(key) for key, _, _ in rows)
+    lines = []
+    for key, spec, value in rows:
+        suffix = f" {spec.unit}" if spec.unit else ""
+        lines.append(f"  {key.ljust(width)}  {value}{suffix}")
+    return lines
+
+
+def cmd_chat_user(manager: ChatHistoryManager) -> str:
+    """Show the current user's settings.
+
+    Args:
+        manager: The ChatHistoryManager instance.
+
+    Returns:
+        Formatted settings overview.
+    """
+    if not manager.is_initialized:
+        return "ChatHistoryManager not initialized."
+
+    try:
+        settings = manager.get_user_settings()
+    except RuntimeError as e:
+        return f"Could not read the user settings: {e}"
+
+    user = manager.current_user.username if manager.current_user else "unknown"
+
+    lines = [f"Settings for user '{user}':"]
+    lines.extend(_settings_rows(settings))
+    lines.append("")
+    lines.append("Change a setting with: \\chat-user set <key> <value>")
+    lines.append("Show one setting with: \\chat-user get <key>")
+
+    return "\n".join(lines)
+
+
+def cmd_chat_user_get(manager: ChatHistoryManager, key: str) -> str:
+    """Show one of the current user's settings.
+
+    Args:
+        manager: The ChatHistoryManager instance.
+        key: The name of the setting.
+
+    Returns:
+        The current value of the setting, or an error message.
+    """
+    if not manager.is_initialized:
+        return "ChatHistoryManager not initialized."
+
+    try:
+        canonical = normalize_setting_key(key)
+    except SettingError as e:
+        return str(e)
+
+    try:
+        settings = manager.get_user_settings()
+    except RuntimeError as e:
+        return f"Could not read the user settings: {e}"
+
+    spec = SETTINGS_BY_KEY[canonical]
+    value = settings.get(canonical)
+    suffix = f" {spec.unit}" if spec.unit else ""
+
+    return f"{canonical} = {value}{suffix}"
+
+
+def cmd_chat_user_set(manager: ChatHistoryManager, key: str, value: str) -> str:
+    """Change one of the current user's settings.
+
+    Args:
+        manager: The ChatHistoryManager instance.
+        key: The name of the setting.
+        value: The new value.
+
+    Returns:
+        A status message.
+    """
+    if not manager.is_initialized:
+        return "ChatHistoryManager not initialized."
+
+    try:
+        canonical = normalize_setting_key(key)
+    except SettingError as e:
+        return str(e)
+
+    try:
+        settings = manager.update_user_settings(**{canonical: value})
+    except SettingError as e:
+        return str(e)
+    except RuntimeError as e:
+        return f"Could not update the user settings: {e}"
+
+    spec = SETTINGS_BY_KEY[canonical]
+    suffix = f" {spec.unit}" if spec.unit else ""
+
+    message = f"Set {canonical} = {settings.get(canonical)}{suffix}."
+
+    if canonical == "chat_token_limit":
+        message += (
+            " The memory buffer was rebuilt, so the new limit applies from "
+            "the next message on."
+        )
+
+    return message
+
+
+def cmd_chat_user_help(manager: ChatHistoryManager) -> str:
+    """List the user settings and their accepted values.
+
+    Args:
+        manager: The ChatHistoryManager instance.
+
+    Returns:
+        A formatted description of every setting.
+    """
+    if not manager.is_initialized:
+        return "ChatHistoryManager not initialized."
+
+    lines = ["User settings:", ""]
+    for key, spec in SETTINGS_BY_KEY.items():
+        writable = "read-write" if spec.writable else "read-only"
+        lines.append(f"  {key}  ({writable})")
+        lines.append(f"      {spec.description}")
+        if spec.choices:
+            lines.append(f"      Allowed: {', '.join(spec.choices)}")
+        elif spec.writable:
+            lines.append(f"      Accepted range: {spec.range_text}")
+        else:
+            lines.append(f"      Default: {spec.default}")
+        lines.append("")
+
+    lines.append("Usage:")
+    lines.append("  \\chat-user                     show every setting")
+    lines.append("  \\chat-user get <key>            show one setting")
+    lines.append("  \\chat-user set <key> <value>    change one setting")
+    lines.append("  \\chat-user help                 show this text")
+
+    return "\n".join(lines)

@@ -19,7 +19,9 @@ from sqlalchemy import (
     String,
     Text,
 )
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base, relationship, synonym
+
+from chat_manager.settings import DEFAULT_CHAT_TOKEN_LIMIT
 
 Base = declarative_base()
 
@@ -32,9 +34,14 @@ class User(Base):
     user_id = Column(Text, primary_key=True, default=lambda: str(uuid.uuid4()))
     username = Column(Text, nullable=False, unique=True)
     backend_type = Column(Text, nullable=False, default="postgres")
-    token_limit = Column(Integer, nullable=False, default=5000)
+    chat_token_limit = Column(Integer, nullable=False, default=DEFAULT_CHAT_TOKEN_LIMIT)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    # Deprecated alias of ``chat_token_limit`` — the column was renamed after
+    # the setting was given a scope.  The synonym keeps queries written
+    # against the old name working.
+    token_limit = synonym("chat_token_limit")
 
     # Relationship to sessions
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")

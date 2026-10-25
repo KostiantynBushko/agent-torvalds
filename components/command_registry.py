@@ -314,6 +314,16 @@ COMMAND_SPECS: Tuple[CommandSpec, ...] = (
         category="Chat",
         feature=FEATURE_CHAT_HISTORY,
     ),
+    CommandSpec(
+        name="\\chat-user",
+        description=(
+            "Show or change the current user's own settings "
+            "(e.g. the chat token limit)."
+        ),
+        usage="\\chat-user [get <key> | set <key> <value> | help]",
+        category="Chat",
+        feature=FEATURE_CHAT_HISTORY,
+    ),
 )
 
 

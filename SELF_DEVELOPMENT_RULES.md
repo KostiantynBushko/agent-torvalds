@@ -91,10 +91,106 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
+| Branch | `feature/chat-user-settings` — **implemented, verified, not yet committed** |
+| Scope | Phase A of the chat-manager investigation: the **user-settings API** and the **`\chat-user` command**, plus the rename of `token_limit` → **`chat_token_limit`**. |
+| Status | Implemented: the new `chat_manager/settings.py` module, `ChatHistoryManager.get_user_settings()` / `update_user_settings()` / `set_chat_token_limit()`, the `\chat-user` command (show / get / set / help) wired into the registry, the dispatcher, the TUI and both orchestrators, the idempotent `ALTER TABLE users RENAME COLUMN token_limit TO chat_token_limit` migration, and the three compatibility seams (the deprecated `User.token_limit` property, the `User(token_limit=…)` constructor keyword, and the `token_limit` command alias). The `chat_manager` suite is green (175 passed), the new integration suite is green (16 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new). The proposal is `investigate/chat-manager-user-settings/PROPOSAL_chat_token_limit.md`; the implementation report is `investigate/chat-manager-user-settings/IMPLEMENTATION_REPORT_user_settings.md`. |
+| Policy | The **legacy** implementation is untouched on purpose. `agent_chat_memory.py`, `--no-chat-history` and the dead `TOKEN_LIMITS` constants are Phase C, and Phase C waits for Phase B (the SQLite fallback in `CustomDBConnector`) — without it, a metadata-database outage costs the agent its chat history entirely. `TORVALDS_TOKEN_LIMIT` therefore keeps its name: it configures the legacy buffer, not the manager's setting. |
+
+### Latest change: the user can finally change their own settings
+
+| Path | Change |
+|------|--------|
+| `chat_manager/settings.py` | **New.** The settings, their ranges, their validation, the `UserSettings` snapshot. `UserSettings`, `SettingSpec`, `SettingError` and the `DEFAULT_/MIN_/MAX_CHAT_TOKEN_LIMIT` constants are exported from the package root. |
+| `chat_manager/manager.py` | `get_user_settings()`, `update_user_settings()`, `set_chat_token_limit()`. The update drops the cached memory buffer, so a changed limit is live on the next turn (defect **C2**), and `get_memory_buffer()` now rebuilds the buffer when the effective limit differs (defect **C3**). |
+| `chat_manager/user.py` | `token_limit` → `chat_token_limit`. The old name survives as a deprecated property, as a constructor keyword, and in `to_dict()`. |
+| `chat_manager/storage/models.py`, `chat_manager/storage/connector.py` | The column was renamed; a SQLAlchemy `synonym` keeps the old attribute working, and `connect()` renames the column in place on an existing database. |
+| `chat_manager/commands/cli.py`, `handler.py`, `__init__.py` | The `\chat-user` command: `cmd_chat_user`, `cmd_chat_user_get`, `cmd_chat_user_set`, `cmd_chat_user_help`, plus the registry entry and the dispatch branch. |
+| `components/command_registry.py` | The `CommandSpec` — `\help` lists the command in both orchestrators. |
+| `components/tui/chat_history_view.py` | `render_chat_user_markdown()` — the settings as a Markdown table. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | The startup hints and the command list. |
+| `chat_manager/tests/test_settings.py` | **New.** 20 tests. |
+| `chat_manager/tests/test_user_settings.py` | **New.** 38 tests. |
+| `chat_manager/tests/test_migration.py` | **New.** 10 tests. |
+| `tests/test_user_settings_command.py` | **New.** 16 tests — the integration. |
+| `investigate/chat-manager-user-settings/PROPOSAL_chat_token_limit.md` | **New.** The naming proposal. |
+| `investigate/chat-manager-user-settings/IMPLEMENTATION_REPORT_user_settings.md` | **New.** What was implemented and why. |
+| `chat_manager/README.md`, `README.md`, `CHANGELOG.md` | The documentation. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/chat_manager/tests -q
+self-development/.venv/bin/python -m pytest self-development/tests/test_user_settings_command.py -q
+self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+```
+
+175 + 16 tests pass, and the CI gate reports **no new failure** (40 known failures, 0 new).
+
+**The naming.** `token_limit` said the unit but not the scope, and the scope is the interesting
+part — the codebase uses that word for at least three other things (the model's
+`context_window`, the legacy `TORVALDS_TOKEN_LIMIT`, the dead `TOKEN_LIMITS` constant). The
+canonical name is now **`chat_token_limit`**. The rename breaks nothing: the column is migrated
+in place, `User.token_limit` survives as a deprecated property, and `\chat-user set token_limit
+12000` still works.
+
+### Previous work: the Shodan toolkit is a flat package
+
+| Item | Status |
+|---|---|
 | Branch | `refactor/shodan-toolkit-flat-layout` — **implemented, committed** (`6920d03`) and **merged into `master`** as PR #33 |
 | Scope | The Shodan toolkit's layout: the toolkit directory **is** the package. The `src/` level and the nested `shodan_toolkit/` directory are gone — every source file sits directly in `toolkits/shodan-toolkit/`, next to `tests/` and `examples/`, the same shape as the MikroTik toolkit. The import name is unchanged (`toolkits.shodan_toolkit` through the alias, `shodan_toolkit` in a standalone install). |
 | Status | Implemented: the modules moved, the tests use relative imports, the alias shim points at the new path, the distribution maps the package explicitly, and a new layout contract test (`toolkits/shodan-toolkit/tests/test_package_layout.py`, 11 checks) guards the rule. The toolkit suite is green (162 passed, 2 skipped), the alias contract is green (23/23), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new). Committed as `6920d03` ("refactor: make the Shodan toolkit a flat package") and pushed to `origin/refactor/shodan-toolkit-flat-layout` — the operator approved both the commit and the push (rule 4). Merged into `master` as PR #33 (merge commit `e3d1511`), after PR #31 (`6986111`) and PR #32 (`1fef7d3`) were merged first: the stack had to go bottom-up. |
 | Policy | The `toolkits` package must be imported **before** pytest imports a module from inside a hyphenated toolkit package, or pytest's "importlib" mode loads the package twice and the import alias goes stale. `consider_namespace_packages = true` in `pytest.ini` and in the toolkit's `pyproject.toml` makes pytest resolve the name through the normal import machinery, so there is exactly one copy of the package. |
+
+### Investigation: the chat manager's user settings and the legacy implementation
+
+The operator asked three questions about `chat_manager`: how `user.token_limit` is changed,
+whether a command to manage user settings is needed, and whether the old chat-history
+implementation is still there.  The investigation is in
+`investigate/chat-manager-user-settings/` — the report, an executable probe, and a
+verifier that checks every `file:line` reference in the report.
+
+**No source file of the agent was modified.**  Only the investigation folder was added.
+
+| Question | Answer |
+|----------|--------|
+| How is `user.token_limit` changed? | **It cannot be.**  `ChatHistoryManager` has no user-update API; the only write path is the private `manager._db.update_user()`, and even that does not reach the live buffer, because the buffer caches the limit and is only invalidated by `switch_session()` / `clear_messages()`.  The `token_limit` argument of `get_memory_buffer()` is ignored on every call after the first. |
+| Is a user-settings command needed? | **Yes.**  The design documents call `users` the home of the user's *preferences*, but no command reads or writes them, and the current limit is not even displayed.  The `\chat-*` layer is the right shape for it: dispatched before the LLM, so it costs no tokens. |
+| Is the old implementation still there? | **Yes, in four layers** — `agent_chat_memory.py` (273 lines, with the raw-`PostgresChatStore` path), the `--no-chat-history` flag in both orchestrators, the `TORVALDS_CHAT_KEY` migration hook in the manager, and the dead `TOKEN_LIMITS` constant in both orchestrators (four competing defaults: 400 / 10000 / 5000 / 5000). |
+
+**The legacy implementation cannot be deleted yet.**  The message layer degrades on its own
+(`SimpleChatStoreBackend`), but the **metadata** layer does not: when PostgreSQL is
+unreachable, `initialize()` raises `RuntimeError: CustomDBConnector is not connected` and the
+orchestrators fall back to the legacy single-session memory.  The removal therefore waits for
+a SQLite fallback in `CustomDBConnector` — the manager already runs on SQLite, because the
+whole test suite does.
+
+| Phase | Scope | State |
+|-------|-------|-------|
+| **A** | The user-settings API and the `\chat-user` command | **implemented** — on `feature/chat-user-settings` |
+| **B** | The SQLite fallback in `CustomDBConnector` | **not started** |
+| **C** | The removal of the legacy implementation | **not started** — blocked on B |
+
+**Phase A closed four of the nine defects:** C1 (no public API), C2 (the changed limit never
+reached the live buffer), C3 (the `get_memory_buffer()` override was silently dropped) and C4
+(no command read or wrote the settings). C7 is closed *partly* — the manager's limit is now
+`users.chat_token_limit`, and the name says which of the four competing defaults it is; the
+dead `TOKEN_LIMITS` constants and the legacy `TORVALDS_TOKEN_LIMIT` are Phase C. C5, C6, C8 and
+C9 are untouched — they belong to the legacy implementation, which is still load-bearing.
+
+Nine defects were catalogued (C1–C9) with their locations, the risks and the full removal
+checklist are in `investigate/chat-manager-user-settings/INVESTIGATION_REPORT.md`.
+
+**Verifying the investigation**
+
+```bash
+self-development/.venv/bin/python investigate/chat-manager-user-settings/probe_user_settings.py
+self-development/.venv/bin/python investigate/chat-manager-user-settings/verify_report_references.py
+```
+
+The probe needs no database server.  The reference check reports **PASS** — 28 distinct
+`file:line` references, each resolving to the claimed construct.  The `chat_manager` suite
+is green (104 passed) and is the regression baseline for the work that follows.
 
 ### Latest change: the Shodan toolkit is a flat package
 

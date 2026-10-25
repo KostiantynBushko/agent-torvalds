@@ -1,5 +1,82 @@
 # Changelog
 
+## [Unreleased] - The user can finally change their own settings
+
+### Added
+- **A user-settings API in the `chat_manager` module.**
+  `ChatHistoryManager.get_user_settings()` returns an immutable
+  `UserSettings` snapshot of the current user's preferences, and
+  `ChatHistoryManager.update_user_settings(**changes)` validates,
+  persists and applies a change.  The values are validated **before**
+  anything is written, so a bad value never leaves the settings
+  half-updated.  A convenience wrapper,
+  `ChatHistoryManager.set_chat_token_limit(limit)`, covers the one
+  setting that changes most often.  The new `chat_manager/settings.py`
+  module is the single source of truth for the settings, their ranges
+  and their validation; `UserSettings`, `SettingSpec`, `SettingError`
+  and the `DEFAULT_/MIN_/MAX_CHAT_TOKEN_LIMIT` constants are exported
+  from the package root.
+- **A `\chat-user` command over the user's own configuration.** It is
+  dispatched by the same `\chat-*` layer as every other chat command —
+  before the LLM is invoked, so it costs no tokens and the model cannot
+  trigger it — and it is declared in `components/command_registry.py`,
+  so `\help` lists it in both orchestrators.
+
+  | Command | Description |
+  |---------|-------------|
+  | `\chat-user` | Show every setting and its value. |
+  | `\chat-user get <key>` | Show one setting. |
+  | `\chat-user set <key> <value>` | Change one setting. |
+  | `\chat-user help` | List the settings, their ranges and their usage. |
+
+  The multi-window agent renders the settings as a Markdown table
+  (`components/tui/chat_history_view.py`), so the TUI and the classic
+  REPL show the same thing.
+
+### Changed
+- **`token_limit` is now `chat_token_limit` — the setting says whose
+  tokens it limits.**  The name said the unit but not the scope, and
+  the scope is the interesting part: the codebase used `token_limit`
+  for at least three other things (the model's `context_window`, the
+  legacy `TORVALDS_TOKEN_LIMIT`, and the dead `TOKEN_LIMITS` constant
+  in both orchestrators).  The setting governs the number of
+  *chat-history* tokens the agent keeps in the memory buffer of the
+  active session, and it now says so.  The rename is backwards
+  compatible in three places:
+
+  - **The database.**  `CustomDBConnector.connect()` renames the column
+    in place (`ALTER TABLE users RENAME COLUMN token_limit TO
+    chat_token_limit`), so an existing database keeps its values and
+    needs no manual migration step.  The migration is idempotent and
+    never fatal — a failure is logged as a warning, because a chat
+    history that cannot be migrated is a smaller problem than a chat
+    history that cannot be reached.
+  - **The Python API.**  `User.token_limit` survives as a deprecated
+    property (getter *and* setter), `User(token_limit=…)` still works as
+    a constructor keyword, `User.to_dict()` carries both keys, and
+    `User.from_dict()` accepts either.
+  - **The command.**  `\chat-user set token_limit 12000` still works;
+    `token_limit` is a registered alias of the canonical key, and the
+    reply always names the canonical key.
+
+  The proposal, with the alternatives that were considered and why
+  they were rejected, is in
+  `investigate/chat-manager-user-settings/PROPOSAL_chat_token_limit.md`.
+  `TORVALDS_TOKEN_LIMIT` was **not** renamed: it configures the legacy
+  compatibility buffer, whose removal is a separate phase.
+
+### Fixed
+- **A changed chat-token limit now reaches the live memory buffer.**
+  The buffer caches the limit it was built with, and the cache was
+  dropped only by `switch_session()` and `clear_messages()` — so a
+  changed limit was inert until the operator switched sessions.  The
+  settings API drops the cache itself, and a new limit is live on the
+  next turn.
+- **`get_memory_buffer()` no longer silently drops its override.**  The
+  early return happened *before* the argument was read, so every call
+  after the first one was ignored.  The buffer is now rebuilt when the
+  effective limit differs from the one it was built with.
+
 ## [Unreleased] - The toolkits own their adapters
 
 ### Changed

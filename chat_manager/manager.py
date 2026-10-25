@@ -13,6 +13,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from chat_manager.session import Session, SessionType
+from chat_manager.settings import (
+    DEFAULT_CHAT_TOKEN_LIMIT,
+    SettingError,
+    UserSettings,
+    normalize_setting_key,
+    validate_setting_value,
+)
 from chat_manager.user import User
 from chat_manager.storage import CustomDBConnector
 from chat_manager.backend import (
@@ -66,6 +73,9 @@ class ChatHistoryManager:
 
         # LlamaIndex memory buffer (lazy)
         self._memory_buffer: Any | None = None
+
+        # The chat-token limit the cached memory buffer was built with
+        self._memory_buffer_limit: int | None = None
 
     # ------------------------------------------------------------------
     # URI Resolution
@@ -124,6 +134,7 @@ class ChatHistoryManager:
         self._db = None
         self._backend = None
         self._memory_buffer = None
+        self._memory_buffer_limit = None
         self._active_session = None
         self._current_user = None
         logger.info("ChatHistoryManager shut down")
@@ -183,7 +194,7 @@ class ChatHistoryManager:
                 user_id=str(uuid.uuid4()),
                 username=os_username,
                 backend_type="postgres",
-                token_limit=5000,
+                chat_token_limit=DEFAULT_CHAT_TOKEN_LIMIT,
             )
             user = self._db.create_user(user)
             logger.info(f"Auto-provisioned new user: {os_username}")
@@ -421,7 +432,7 @@ class ChatHistoryManager:
             )
             return None
 
-        self._memory_buffer = None  # Invalidate memory buffer
+        self._invalidate_memory_buffer()
         self._active_session = self._db.activate_session(
             session_id, self._current_user.user_id
         )
@@ -458,31 +469,159 @@ class ChatHistoryManager:
         )
 
     # ------------------------------------------------------------------
+    # Public API: User Settings
+    # ------------------------------------------------------------------
+
+    def get_user_settings(self) -> UserSettings:
+        """Get the current user's settings.
+
+        The settings are the user's *preferences* — the values that live in
+        the ``users`` table and describe how the agent should behave for
+        this operator.  The most important one is ``chat_token_limit``: the
+        number of chat-history tokens kept in the memory buffer of the
+        active session.
+
+        Returns:
+            An immutable :class:`~chat_manager.settings.UserSettings`
+            snapshot of the current values.
+
+        Raises:
+            RuntimeError: If the manager is not initialized.
+        """
+        if self._db is None or self._current_user is None:
+            raise RuntimeError("Manager not initialized")
+
+        return UserSettings.from_user(self._current_user)
+
+    def update_user_settings(self, **changes: Any) -> UserSettings:
+        """Update one or more of the current user's settings.
+
+        The new values are validated against the bounds in
+        :mod:`chat_manager.settings` before anything is written, the change
+        is persisted, and the cached memory buffer is dropped — so a changed
+        chat-token limit takes effect on the next turn instead of after the
+        next session switch.
+
+        Args:
+            **changes: The settings to change, keyed by their canonical
+                name (e.g. ``chat_token_limit=12000``).  The deprecated
+                ``token_limit`` is accepted as an alias.
+
+        Returns:
+            The updated :class:`~chat_manager.settings.UserSettings`
+            snapshot.
+
+        Raises:
+            RuntimeError: If the manager is not initialized.
+            SettingError: If a key is unknown, read-only, or a value is out
+                of range.
+        """
+        if self._db is None or self._current_user is None:
+            raise RuntimeError("Manager not initialized")
+
+        if not changes:
+            return self.get_user_settings()
+
+        # Resolve and validate every change before writing anything, so a
+        # bad value never leaves the settings half-updated.
+        resolved: dict[str, Any] = {}
+        for raw_key, raw_value in changes.items():
+            key = normalize_setting_key(raw_key)
+            if key in resolved:
+                raise SettingError(
+                    f"Setting '{key}' was given twice (once under its "
+                    f"deprecated alias)."
+                )
+            resolved[key] = validate_setting_value(key, raw_value)
+
+        user = self._current_user
+        for key, value in resolved.items():
+            setattr(user, key, value)
+        user.update_timestamp()
+
+        updated = self._db.update_user(user)
+        self._current_user = updated
+
+        # The buffer caches the limit it was built with — drop it so the new
+        # value is live right away.
+        self._invalidate_memory_buffer()
+
+        logger.info(
+            f"Updated user settings for '{updated.username}': "
+            + ", ".join(f"{k}={v}" for k, v in resolved.items())
+        )
+
+        return UserSettings.from_user(updated)
+
+    def set_chat_token_limit(self, chat_token_limit: int) -> UserSettings:
+        """Set the chat-token limit of the current user.
+
+        A convenience wrapper around :meth:`update_user_settings` for the
+        one setting that is changed most often.
+
+        Args:
+            chat_token_limit: The new chat-token limit.
+
+        Returns:
+            The updated settings snapshot.
+        """
+        return self.update_user_settings(chat_token_limit=chat_token_limit)
+
+    # ------------------------------------------------------------------
     # Public API: Message Buffer
     # ------------------------------------------------------------------
 
-    def get_memory_buffer(self, token_limit: int | None = None) -> Any:
+    def _invalidate_memory_buffer(self) -> None:
+        """Drop the cached memory buffer so it is rebuilt on next use.
+
+        The buffer caches the chat-token limit it was built with, so any
+        change to the limit — or to the active session — has to drop the
+        cache for the new value to take effect.
+        """
+        self._memory_buffer = None
+        self._memory_buffer_limit = None
+
+    def get_memory_buffer(
+        self,
+        chat_token_limit: int | None = None,
+        *,
+        token_limit: int | None = None,
+    ) -> Any:
         """Get the LlamaIndex ChatMemoryBuffer for the active session.
 
         Lazily creates and caches the buffer. The buffer is bound to the
         active session's ``chat_key`` so that each session keeps its own,
         isolated message history.
 
+        The effective limit is the caller's override when one is given, and
+        the user's ``chat_token_limit`` preference otherwise.  The buffer is
+        rebuilt when the effective limit differs from the one it was built
+        with, so a changed limit takes effect immediately.
+
         Args:
-            token_limit: Override token limit (defaults to user preference).
+            chat_token_limit: Override for the chat-token limit (defaults to
+                the user's preference).
+            token_limit: Deprecated alias of ``chat_token_limit``, kept so
+                that existing callers keep working.
 
         Returns:
             ChatMemoryBuffer instance bound to the active session.
         """
-        if self._memory_buffer is not None:
+        if token_limit is not None:
+            if chat_token_limit is not None:
+                raise TypeError(
+                    "get_memory_buffer() got both 'chat_token_limit' and the "
+                    "deprecated 'token_limit' — pass only 'chat_token_limit'."
+                )
+            chat_token_limit = token_limit
+
+        limit = self._resolve_chat_token_limit(chat_token_limit)
+
+        if self._memory_buffer is not None and self._memory_buffer_limit == limit:
             return self._memory_buffer
 
         if self._active_session is None or self._backend is None:
             raise RuntimeError("No active session or backend available")
-
-        limit = token_limit or (
-            self._current_user.token_limit if self._current_user else 5000
-        )
 
         from llama_index.core.memory import ChatMemoryBuffer
 
@@ -491,12 +630,28 @@ class ChatHistoryManager:
             chat_store=self._backend,
             chat_store_key=self._active_session.chat_key,
         )
+        self._memory_buffer_limit = limit
         logger.info(
             f"Created memory buffer for session '{self._active_session.session_name}' "
             f"(key={self._active_session.chat_key}, limit={limit})"
         )
 
         return self._memory_buffer
+
+    def _resolve_chat_token_limit(self, override: int | None = None) -> int:
+        """Resolve the effective chat-token limit.
+
+        Args:
+            override: An explicit limit, or None to use the user's setting.
+
+        Returns:
+            The effective chat-token limit.
+        """
+        if override is not None:
+            return int(override)
+        if self._current_user is not None:
+            return int(self._current_user.chat_token_limit)
+        return DEFAULT_CHAT_TOKEN_LIMIT
 
     def add_message(self, content: str, role: str = "user") -> None:
         """Add a message to the current session's memory buffer.
@@ -548,7 +703,7 @@ class ChatHistoryManager:
             self._backend.delete_messages(self._active_session.chat_key)
 
         # Invalidate the cached buffer so it is rebuilt empty.
-        self._memory_buffer = None
+        self._invalidate_memory_buffer()
         logger.info(f"Cleared messages for session '{self._active_session.session_name}'")
 
     def close(self) -> None:

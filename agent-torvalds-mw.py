@@ -38,6 +38,7 @@ TUI slash commands:
     \\chat-sessions      List chat sessions
     \\chat-select <id>   Switch the active chat session
     \\chat-info          Show the active chat session
+    \\chat-user          Show or change your own settings
 
 Environment Variables:
     TORVALDS_TUI_ENABLED        Enable/disable multi-window TUI (default: true)
@@ -994,6 +995,7 @@ async def run_classic_repl(
         console.print("[dim]Type '\\chat-sessions' to list chat sessions.[/dim]")
         console.print("[dim]Type '\\chat-select <id>' to switch sessions.[/dim]")
         console.print("[dim]Type '\\chat-info' to show the active session.[/dim]")
+        console.print("[dim]Type '\\chat-user' to show or change your own settings.[/dim]")
     if runtime_toggle_enabled:
         console.print("[dim]Type '\\hitl-status' to check HITL status.[/dim]")
         console.print("[dim]Type '\\toggle-hitl' to enable/disable HITL at runtime.[/dim]")
