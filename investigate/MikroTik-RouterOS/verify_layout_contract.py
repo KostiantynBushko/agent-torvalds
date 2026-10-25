@@ -23,6 +23,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 
+#: The agent adapter.  It lives inside the package - it is a submodule of
+#: it - and it is the one module of the feature that knows about
+#: LlamaIndex.  The LlamaIndex-free rule therefore applies to the library
+#: half of the package.
+ADAPTER_FILE = "agent_mikrotik_toolkit.py"
+
 PASS = "PASS"
 FAIL = "FAIL"
 
@@ -307,8 +313,15 @@ def main() -> int:
     # ------------------------------------------------------------------
     llama_hits: list[str] = []
     abs_import_hits: list[str] = []
+    adapter_hits: list[str] = []
     if pkg_dir.is_dir():
         for py in pkg_dir.rglob("*.py"):
+            # The agent adapter is the one module of the package that knows
+            # about LlamaIndex.  It lives inside the package now, so the
+            # LlamaIndex-free rule is scoped to the library half - and the
+            # exception is narrow: a LlamaIndex import in any other module
+            # still fails.
+            is_adapter = py.name == ADAPTER_FILE
             src = py.read_text()
             # AST-based: matches real import statements only, and ignores the
             # prose in docstrings that mentions the import path. A plain
@@ -322,10 +335,14 @@ def main() -> int:
                 if isinstance(node, ast.Import):
                     for a in node.names:
                         if a.name.split(".")[0] == "llama_index":
-                            llama_hits.append(f"{py}:{node.lineno} -> {a.name}")
+                            (adapter_hits if is_adapter else llama_hits).append(
+                                f"{py}:{node.lineno} -> {a.name}"
+                            )
                 elif isinstance(node, ast.ImportFrom):
                     if node.module and node.module.split(".")[0] == "llama_index":
-                        llama_hits.append(f"{py}:{node.lineno} -> {node.module}")
+                        (adapter_hits if is_adapter else llama_hits).append(
+                            f"{py}:{node.lineno} -> {node.module}"
+                        )
             # The alias "toolkits.mikrotik_routeros" is the sanctioned way
             # in, so it is not an absolute-import violation. The hyphenated
             # form cannot appear in valid source at all.
@@ -338,8 +355,43 @@ def main() -> int:
                     for a in node.names:
                         if a.name.split(".")[0] == "toolkits" and a.name != alias_module:
                             abs_import_hits.append(f"{py}:{node.lineno} -> {a.name}")
-    record("R1", "no LlamaIndex import under the package", not llama_hits, ", ".join(llama_hits))
+    record("R1", "no LlamaIndex import under the library half of the package", not llama_hits, ", ".join(llama_hits))
     record("R2", "no absolute `toolkits` import statement inside the package", not abs_import_hits, ", ".join(abs_import_hits))
+    record(
+        "R1b",
+        "the agent adapter is the only LlamaIndex-dependent module",
+        (pkg_dir / ADAPTER_FILE).is_file() and bool(adapter_hits),
+        ", ".join(adapter_hits),
+    )
+
+    rc, out, err = run_python(
+        """
+        import sys
+        import toolkits
+        print("CLEAN" if "llama_index" not in sys.modules else "LEAK")
+        """,
+        REPO,
+    )
+    record(
+        "R1c",
+        "`import toolkits` does not pull in LlamaIndex",
+        rc == 0 and "CLEAN" in out,
+        out or err,
+    )
+
+    rc, out, err = run_python(
+        """
+        from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import get_all_tools
+        print("OK" if callable(get_all_tools) else "BROKEN")
+        """,
+        REPO,
+    )
+    record(
+        "R4",
+        "the agent adapter is reachable through the alias",
+        rc == 0 and "OK" in out,
+        out or err,
+    )
 
     rc, out, err = run_python(
         """

@@ -75,8 +75,31 @@ from agent_linux_toolkit import get_all_tools as get_linux_tools
 from agent_windows_toolkit import get_all_tools as get_windows_tools
 from agent_github_toolkit import get_all_tools as get_github_tools
 from agent_apt_toolkit import get_all_tools as get_apt_tools
-from agent_mikrotik_toolkit import get_all_tools as get_mikrotik_tools
-from agent_shodan_toolkit import get_all_tools as get_shodan_tools
+# The MikroTik and Shodan toolkits live in ``toolkits/`` and are
+# optional.  A missing or broken toolkit has to degrade to "no tools",
+# never to a failed boot, so the adapters are imported behind a guard.
+try:
+    from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import (
+        get_all_tools as get_mikrotik_tools,
+    )
+except ImportError:  # pragma: no cover - the toolkit is optional
+
+    def get_mikrotik_tools() -> list:
+        """The MikroTik toolkit is unavailable - expose no tools."""
+        return []
+
+
+try:
+    from toolkits.shodan_toolkit.agent_shodan_toolkit import (
+        get_all_tools as get_shodan_tools,
+    )
+except ImportError:  # pragma: no cover - the toolkit is optional
+
+    def get_shodan_tools() -> list:
+        """The Shodan toolkit is unavailable - expose no tools."""
+        return []
+
+
 from agent_cache_system import (
     get_all_tools as get_cache_tools,
     start_session,

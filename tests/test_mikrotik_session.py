@@ -20,7 +20,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import agent_mikrotik_toolkit as mikrotik
+from toolkits.mikrotik_routeros import agent_mikrotik_toolkit as mikrotik
 
 from toolkits.mikrotik_routeros import (
     AuthError,

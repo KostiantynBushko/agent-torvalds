@@ -68,7 +68,9 @@ def _discover_tools() -> List[FunctionTool]:
     # optional 'asyncssh' dependency is missing, so a broken or absent
     # toolkit must never break the selection menu.
     try:
-        from agent_mikrotik_toolkit import get_all_tools as _get_mikrotik
+        from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import (
+            get_all_tools as _get_mikrotik,
+        )
         tools.extend(_get_mikrotik())
     except ImportError:
         # The MikroTik toolkit is optional - skip it when it is not installed.
@@ -78,7 +80,9 @@ def _discover_tools() -> List[FunctionTool]:
     # 'shodan' CLI is missing, so a broken or absent toolkit must never
     # break the selection menu.
     try:
-        from agent_shodan_toolkit import get_all_tools as _get_shodan
+        from toolkits.shodan_toolkit.agent_shodan_toolkit import (
+            get_all_tools as _get_shodan,
+        )
         tools.extend(_get_shodan())
     except ImportError:
         # The Shodan toolkit is optional - skip it when it is not installed.

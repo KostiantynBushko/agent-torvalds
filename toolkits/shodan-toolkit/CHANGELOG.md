@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **The agent adapter moved into the package.** `agent_shodan_toolkit.py` used
+  to live at the repository root; it is now a submodule of the toolkit
+  package, at `src/shodan_toolkit/agent_shodan_toolkit.py`, so the whole
+  feature is one folder. Inside this repository it is reached through the
+  alias that `toolkits/__init__.py` registers:
+
+  ```python
+  from toolkits.shodan_toolkit.agent_shodan_toolkit import get_all_tools
+  ```
+
+  The adapter pulls the core package in with a **relative** import
+  (`from . import ...`), so it also works when the toolkit is installed as a
+  standalone distribution, where no `toolkits` package exists at all.
+
 ### Fixed
 
 - **`--no-color` was passed to subcommands that reject it.** `shodan stats`,

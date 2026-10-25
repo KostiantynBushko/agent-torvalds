@@ -3,7 +3,8 @@
 **Date:** 2026-10-21
 **Status:** Investigation complete — core technical risks validated empirically.
 **Phase 1 (core package) complete** — 180 package-local tests green.
-**Target:** A `agent_mikrotik_toolkit.py` adapter plus the core package
+**Target:** A `toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py` adapter plus
+the core package
 `toolkits/MikroTik-RouterOS/` that connects to MikroTik routers over SSH, runs
 RouterOS CLI commands, and returns structured, safely-gated results.
 
@@ -65,8 +66,9 @@ agent-torvalds/
 │       ├── safety.py               # risk classifier + confirmation policy
 │       ├── _compat.py              # optional-dependency compatibility layer
 │       ├── py.typed                # PEP 561 marker
+│       ├── agent_mikrotik_toolkit.py  # LlamaIndex adapter (the only
+│       │                          # LlamaIndex-dependent module here)
 │       └── tests/                  # module-local tests (NO __init__.py - §3.4)
-├── agent_mikrotik_toolkit.py       # LlamaIndex adapter (project root, flat pattern)
 └── tests/                          # project-level integration tests
 ```
 
