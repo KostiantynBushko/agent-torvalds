@@ -84,6 +84,16 @@ Test placement
 Authoritative spec: ``investigate/MikroTik-RouterOS/MODULE_SPECIFICATION.md``
 """
 
+#: The canonical, import-safe alias for this package.
+#:
+#: The directory name contains a hyphen, so the package cannot be reached
+#: with a plain ``import`` statement.  ``toolkits/__init__.py`` registers
+#: the alias ``toolkits.mikrotik_routeros`` for it.  This attribute is the
+#: **code-level** reference to that canonical name: a static reader - an
+#: IDE, an import resolver, a linter, a packaging tool - can find the
+#: import path here without having to execute the alias shim.
+__toolkit_alias__ = "mikrotik_routeros"
+
 # The submodules are imported with *relative* imports. That is the only
 # form that works when the package is loaded through
 # ``importlib.import_module("toolkits.MikroTik-RouterOS")`` - an absolute
