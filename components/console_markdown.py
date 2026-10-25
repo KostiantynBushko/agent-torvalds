@@ -14,9 +14,14 @@ type the number of the choice and the list does not show one.  ``rich``
 offers no knob for it, so the list item is subclassed here.
 
 Usage:
-    from components.console_markdown import render_markdown, render_options
+    from components.console_markdown import (
+        render_markdown,
+        render_options,
+        render_report,
+    )
 
     render_markdown(console, "**Phase 0** — shall I start?", style="magenta")
+    render_report(console, "1. first finding\n2. second finding")
     render_options(console, ["Patch the config", "Use an env var"])
 
 Category: HITL / Presentation
@@ -25,6 +30,7 @@ Retriever Keywords: hitl, markdown, render, console, menu, options
 
 from __future__ import annotations
 
+import re
 from typing import List, Sequence
 
 from rich._loop import loop_first
@@ -75,6 +81,56 @@ def render_markdown(console: Console, text: str, style: str = "") -> None:
     if not text or not text.strip():
         return
     console.print(AgentMarkdown(text, justify="left", style=style or "none"))
+
+
+#: A fenced code block — its content is never a list.
+_FENCE = re.compile(r"^\s*(?:```|~~~)")
+
+#: An ordered list item: "1. text", "2) text".
+_ORDERED_ITEM = re.compile(r"^(?P<indent>\s*)(?P<number>\d+)[.)](?P<space>\s+)(?P<body>.*)$")
+
+
+def _demote_ordered_lists(text: str) -> str:
+    """Turn the ordered lists of a report into bullets.
+
+    In the console a number means *the choice you can type*.  A report that
+    carries its own "1." and "2." competes with the menu printed below it,
+    and the operator cannot tell which of the two lists the number he types
+    belongs to.  The report therefore keeps bullets and the numbers are
+    left to the menu.
+    """
+    lines: List[str] = []
+    in_fence = False
+    for line in text.split("\n"):
+        if _FENCE.match(line):
+            in_fence = not in_fence
+            lines.append(line)
+            continue
+        if in_fence:
+            lines.append(line)
+            continue
+        match = _ORDERED_ITEM.match(line)
+        if match:
+            lines.append(f"{match.group('indent')}- {match.group('body')}")
+        else:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def render_report(console: Console, text: str, style: str = "") -> None:
+    """Render the *report* around a question as Markdown.
+
+    The report is read, not answered.  Its lists are rendered as bullets so
+    that the only numbers on the screen are the choices of the menu.
+
+    Args:
+        console: The console to print on.
+        text: The Markdown source of the report.
+        style: The style of the whole block.
+    """
+    if not text or not text.strip():
+        return
+    render_markdown(console, _demote_ordered_lists(text), style=style)
 
 
 def render_options(

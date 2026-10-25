@@ -46,6 +46,10 @@ from llama_index.core.tools import FunctionTool  # noqa: E402
 from pydantic import Field  # noqa: E402
 from rich.console import Console  # noqa: E402
 
+from components.console_markdown import (  # noqa: E402
+    render_options,
+    render_report,
+)
 from components.event_consumer import EventConsumer  # noqa: E402
 from components.hitl_agent import HITLFunctionAgent  # noqa: E402
 from components.hitl_events import AgentQuestionEvent  # noqa: E402
@@ -756,6 +760,53 @@ class TestMenu:
         assert received
         assert "timeout=True" in received[0]
         assert "Set up sqitch for database version control?" in received[0]
+
+
+class TestReportRendering:
+    """A report is read, not answered — it carries no numbers.
+
+    On the screen a number means *the choice you can type*.  A report with
+    its own "1." and "2." competes with the menu printed below it, and the
+    operator cannot tell which of the two lists his number belongs to.
+    """
+
+    @staticmethod
+    def _render(renderer, text, **kwargs) -> str:
+        buffer = io.StringIO()
+        console = Console(file=buffer, width=100, force_terminal=False, no_color=True)
+        renderer(console, text, **kwargs)
+        return buffer.getvalue()
+
+    def test_a_report_list_becomes_bullets(self):
+        out = self._render(render_report, "1. first finding\n2. second finding")
+        assert "•" in out
+        assert "first finding" in out
+        assert "second finding" in out
+        assert "1." not in out
+        assert "2." not in out
+
+    def test_the_menu_keeps_its_numbers(self):
+        out = self._render(render_options, ["Patch the config", "Use an env var"])
+        assert "1. Patch the config" in out
+        assert "2. Use an env var" in out
+
+    def test_a_code_block_is_left_alone(self):
+        """A "1." inside a code block is code, not a list."""
+        out = self._render(render_report, "```\n1. not a list\n```")
+        assert "1. not a list" in out
+
+    def test_a_decimal_number_is_not_a_list(self):
+        out = self._render(render_report, "The timeout is 1.5 seconds")
+        assert "1.5 seconds" in out
+
+    def test_the_report_of_a_menu_question_is_rendered_as_bullets(self):
+        """The whole round trip: the report is bullets, the menu is numbered."""
+        out = run([STATUS_PAYLOAD, "All done."], answers=["1"])
+        console = out["console"]
+        # The menu keeps its numbers.
+        assert "1. Set up sqitch for database version control?" in console
+        # The report keeps none.
+        assert "1. On branch" not in console
 
 
 if __name__ == "__main__":

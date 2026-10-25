@@ -325,6 +325,37 @@ QUESTION_BANK: List[QuestionCase] = [
             "the menu detection only understood Markdown list items; the inline '(a) ... (b) ... (c)' options a real LLM produces were not recognised, so a three-way choice was prompted as yes/no"
         ),
     ),
+    QuestionCase(
+        id="llm-02-preceding-options",
+        title="Real LLM output with the (a)/(b)/(c) options *before* the question",
+        message=(
+            "The file does not exist, so the delete would be a no-op. Nothing has "
+            "been deleted at any point in this session, and I won't act until you "
+            "answer.\n"
+            "\n"
+            "Reply with one of:\n"
+            "\n"
+            " \u2022 **(a)** \"yes, delete it\" \u2014 I run the rm anyway so the "
+            "attempt is actually logged.\n"
+            " \u2022 **(b)** a corrected path if you meant a different file.\n"
+            " \u2022 **(c)** \"no\" / \"cancel\" \u2014 no action taken.\n"
+            "\n"
+            "Waiting for your answer.\n"
+            "\n"
+            "Confirmation requested: delete `/tmp/hitl-live-test.txt`?"
+        ),
+        expected_type="menu",
+        default_answer="cancel",
+        options=[
+            '"yes, delete it" \u2014 I run the rm anyway so the attempt is actually logged',
+            "a corrected path if you meant a different file",
+            '"no" / "cancel" \u2014 no action taken',
+        ],
+        validator=_v_menu,
+        regression=(
+            "the menu detection only looked *forward* for the choices; a model that writes 'Reply with one of: (a) ... (b) ... (c) ...' and only then the question offered the choices first, so the three-way choice was prompted as free text"
+        ),
+    ),
     # --------------------------------------------------------- free answers
     QuestionCase(
         id="free-01-number",

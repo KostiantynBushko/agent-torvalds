@@ -46,8 +46,8 @@ patterns.  Three of them were far too loose:
 The consequence was that `detect_input_type()` returned `"yesno"` for **every**
 question, and the consumer — correctly — rendered `[y/N]`.
 
-Measured on the question bank (`scripts/hitl_question_bank.py`, 16 real assistant
-messages), **9 of the 16 cases were mis-routed**:
+Measured on the question bank (`scripts/hitl_question_bank.py`, 17 real assistant
+messages), **10 of the 17 cases were mis-routed**:
 
 | case | expected | was |
 |---|---|---|
@@ -60,6 +60,7 @@ messages), **9 of the 16 cases were mis-routed**:
 | `password-01-api-key` — *"Please enter the API key…"* | `password` | *not a question at all* |
 | `password-02-passphrase` — *"[HITL:password] Enter the passphrase…"* | `password` | *not a question at all* |
 | `llm-01-inline-options` — *"(a) … (b) … (c) …"* | `menu` | `yesno` |
+| `llm-02-preceding-options` — the choices *before* the question | `menu` | `text` |
 
 Three separate causes:
 
@@ -68,8 +69,9 @@ Three separate causes:
   or the typed markers (`[HITL:text]`) — so a password question was not a question at
   all and never reached the operator (§2.2);
 * **C.** the *menu detection* only understood a Markdown list that carried its own
-  lead-in — not a list in its own block, and not the inline `(a) … (b) … (c)` a model
-  really produces (§2.3).
+  lead-in — not a list in its own block, not the inline `(a) … (b) … (c)` a model
+  really produces, and not a list of choices that comes *before* the question
+  (§2.3).
 
 ---
 
@@ -185,13 +187,13 @@ brackets, which `rich` would read as markup.
 
 ### 4.1 The question bank — the acceptance criterion
 
-`scripts/hitl_question_bank.py` is 16 real assistant messages with the input type
+`scripts/hitl_question_bank.py` is 17 real assistant messages with the input type
 each of them must produce.  It is now the criterion of the whole feature, and
 `tests/test_hitl_question_bank.py` runs every case through the rules:
 
 | | before | after |
 |---|---|---|
-| cases with the expected type | **7 / 16** | **16 / 16** |
+| cases with the expected type | **7 / 17** | **17 / 17** |
 
 The `known_issue` field of the bank — "the current rules are known to mis-route this
 case" — became `regression`: "what defect this case caught".  The cases stay in the
@@ -222,8 +224,8 @@ of the **question** and checks that the report above it is still shown.
 
 | | before | after |
 |---|---|---|
-| full suite | 41 failed, 1384 passed | 39 failed, 1432 passed |
-| HITL suites | — | 209 passed |
+| full suite | 41 failed, 1384 passed | 39 failed, 1457 passed |
+| HITL suites | — | 280 passed |
 
 The remaining failures are **pre-existing** and unrelated (the apt toolkit, the
 manual event scripts, the HITL runtime toggle, the whiptail workflow, and a flaky
@@ -285,7 +287,7 @@ Two contracts changed, deliberately, and both are visible in the tests:
 ```bash
 cd self-development
 
-# The question bank — the acceptance criterion (16 cases).
+# The question bank — the acceptance criterion (17 cases).
 .venv/bin/python -m pytest tests/test_hitl_question_bank.py -v
 
 # The HITL suites.
@@ -305,7 +307,102 @@ masks the secret with asterisks — the same three changes the operator asked fo
 
 ---
 
-## 8. The defects this closes
+## 8. The second round — what the operator's own questions found
+
+The first round was judged on the *rules*: does the detection produce the right
+input type?  The second round was judged on the **screen**: what does the
+operator actually see when the agent asks?
+
+Two harnesses drove it:
+
+```
+$ python3 scripts/hitl_interactive_test.py            # the whole bank, typed at the prompt
+$ python3 scripts/hitl_live_llm_test.py               # a real model, a real round trip
+```
+
+The live round trip (Ollama, `qwen3.6-27b-abliterated`) asked for a confirmation
+before deleting a file.  The agent asked, the operator answered `n`, and the agent
+respected the answer: *"No received — no action taken."*
+
+### 8.1 The three defects the screen showed
+
+**D9 — the question was printed twice, and the report was lost.**
+`menu-02-lead-in-colon` produced:
+
+```
+🤖 Agent asks:
+Also, would you like me to:
+Also, would you like me to:          <-- the same line again
+1. squash the commits into one
+```
+
+The plan of the question did not cover the sentence it actually was: the span
+started at the beginning of the line, so the text before the question
+(*"The commit touches 4 files."*) was cut off and the lead-in itself was left in
+the report.  The span now covers the sentence.
+
+**D10 — two numbered lists, one meaning.**
+`llm-01-inline-options` produced a report with "1." and "2." and, right below it,
+a menu with "1.", "2." and "3.".  The operator could not tell which list his
+number belonged to.  In the console a number now means *the choice you can type*:
+`render_report()` renders the report's lists as bullets, the menu keeps the
+numbers.
+
+**D11 — the choices could come first.**
+The live model wrote:
+
+```
+Reply with one of:
+
+ • (a) "yes, delete it" — …
+ • (b) a corrected path if you meant a different file.
+ • (c) "no" / "cancel" — no action taken.
+
+Waiting for your answer.
+
+Confirmation requested: delete `/tmp/hitl-live-test.txt`?
+```
+
+The menu detection only looked *forward*, so the three choices were part of the
+report and the operator got a free-text prompt for a three-way choice.  A marked
+list — items that open with "(a)", "(b)", "(c)" — is now the menu wherever it
+stands, and it is cut out of the report so the operator does not read it twice.
+
+**D12 — the cut left a seam.**  Removing the list left its lead-in behind
+(*"Reply with one of:"* with nothing after it).  The lead-in belongs to the list,
+so it is cut with it.
+
+### 8.2 What the operator sees now
+
+```
+🤖 Agent asks:
+The file does not exist, so the delete would be a no-op. Nothing has been deleted
+at any point in this session, and I won't act until you answer.
+
+Waiting for your answer.
+
+Confirmation requested: delete /tmp/hitl-live-test.txt?
+
+1. "yes, delete it" — I run the rm anyway so the attempt is actually logged
+2. a corrected path if you meant a different file
+3. "no" / "cancel" — no action taken
+Select option [1]:
+```
+
+### 8.3 The regression tests
+
+Each of the three defects has a test that fails without its fix:
+
+| test | fails without |
+|---|---|
+| `test_the_question_is_not_repeated_in_the_context` | the span fix (D9) |
+| `test_the_report_before_the_question_survives` | the span fix (D9) |
+| `TestReportRendering::test_a_report_list_becomes_bullets` | `render_report()` (D10) |
+| `llm-02-preceding-options` in the bank | `_marked_list_items()` (D11, D12) |
+
+---
+
+## 9. The defects this closes
 
 | # | Defect | Closed by |
 |---|---|---|
@@ -317,3 +414,7 @@ masks the secret with asterisks — the same three changes the operator asked fo
 | **D6** | the menu was rendered without a number — `rich` drops the dot | `AgentMarkdown._NumberedListItem` |
 | **D7** | `getpass` could leave the terminal mute | `read_masked()`: `termios` + `finally` + `atexit` + a polled read |
 | **D8** | the secret was never masked with asterisks | `read_masked()` echoes one `*` per character |
+| **D9** | a lead-in that ended with a colon was **both** the question and the last line of the report — the operator read it twice, and the report before it was lost | the span of the question now covers the sentence it actually is (`_question_in_block`) |
+| **D10** | the report's own "1." and "2." competed with the menu's "1." and "2." | `render_report()` — the report is bullets, the numbers belong to the menu |
+| **D11** | a list of choices that came **before** the question was not a menu | `_marked_list_items()` — the marked list is the menu, and it is cut out of the report |
+| **D12** | the cut left the report with a dangling *"Reply with one of:"* | the lead-in of a list is cut with the list |

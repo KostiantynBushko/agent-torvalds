@@ -58,7 +58,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rich.console import Console
 
 from components.console_input_module import ConsoleInputModule
-from components.console_markdown import render_markdown, render_options
+from components.console_markdown import (
+    render_markdown,
+    render_options,
+    render_report,
+)
 from components.hitl_question import detect_input_type, split_question, strip_marker
 from components.hitl_runtime_toggle import HITLRuntimeToggle
 from components.human_loop_handler import HumanLoopHandler
@@ -161,7 +165,9 @@ class InteractiveHITLTest:
         question = strip_marker(question)
         self.console.print("\n[magenta]🤖 Agent asks:[/magenta]")
         if context:
-            render_markdown(self.console, context, style="dim")
+            # The report is read, not answered: its lists are bullets,
+            # so the only numbers on the screen are the choices of the menu.
+            render_report(self.console, context, style="dim")
         if question:
             if context:
                 self.console.print()
