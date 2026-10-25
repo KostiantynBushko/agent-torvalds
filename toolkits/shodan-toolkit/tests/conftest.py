@@ -8,9 +8,9 @@ from typing import Any, Dict, List
 
 import pytest
 
-from shodan_toolkit.client import ShodanClient
-from shodan_toolkit.config import ShodanConfig
-from shodan_toolkit.runner import CommandResult, ShodanRunner
+from ..client import ShodanClient
+from ..config import ShodanConfig
+from ..runner import CommandResult, ShodanRunner
 
 
 class FakeRunner(ShodanRunner):
@@ -55,7 +55,7 @@ class FakeRunner(ShodanRunner):
             result = response
 
         if check and result.returncode != 0:
-            from shodan_toolkit.runner import ShodanCLIError
+            from ..runner import ShodanCLIError
 
             raise ShodanCLIError(
                 f"Shodan command failed: {result.stderr or result.stdout}",

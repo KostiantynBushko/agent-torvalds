@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from shodan_toolkit import tools as tools_module
-from shodan_toolkit.client import ShodanClient
-from shodan_toolkit.tools import (
+from .. import tools as tools_module
+from ..client import ShodanClient
+from ..tools import (
     TOOL_REGISTRY,
     get_all_tools,
     get_mutating_tools,
