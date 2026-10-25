@@ -140,7 +140,9 @@ class TestSplitQuestion:
         split = split_question(STATUS_PAYLOAD)
         assert split is not None
         assert split.question.startswith("Also, would you like me to:")
-        assert "1. Set up sqitch" in split.question
+        # The choices are *not* repeated inside the question: the consumer
+        # renders them as the menu, so a repeated list would be shown twice.
+        assert "1. Set up sqitch" not in split.question
         # The earlier question stays visible in the context.
         assert "What would you like to name it?" in split.context
         assert split.options == (
@@ -279,6 +281,99 @@ class TestConsoleInputModule:
             )
         assert selected == "first"
         assert was_timeout is False
+
+
+class TestInputTypeDetection:
+    """The rules that decide what kind of answer the question wants.
+
+    The operator reported that *every* question was prompted with
+    ``[y/N]`` — even a question that asked for a name, and even a question
+    that offered three choices.  These tests pin the rules down.
+    """
+
+    def test_an_open_question_is_not_a_yes_no_question(self):
+        """A wh-question wants a value or a choice, not a "yes"."""
+        assert detect_input_type(
+            "What is the name of the branch you want me to create?"
+        ) == "text"
+        assert detect_input_type(
+            "Which of these should I investigate first?"
+        ) == "text"
+        assert detect_input_type("Which one should I use?") == "text"
+
+    def test_a_binary_offer_is_a_yes_no_question(self):
+        assert detect_input_type("Shall I run the cleanup?") == "yesno"
+        assert detect_input_type("Do you want me to continue?") == "yesno"
+        assert detect_input_type("Is it okay to delete the branch?") == "yesno"
+        assert detect_input_type(
+            "Please confirm that I should delete the local branch."
+        ) == "yesno"
+
+    def test_an_imperative_ask_is_a_question(self):
+        """"Please enter the API key ..." is a question, not a statement."""
+        split = split_question("Please enter the API key for the GitHub remote.")
+        assert split is not None
+        assert detect_input_type(split.question, split.options) == "password"
+
+    def test_the_marker_is_honoured_by_the_detection(self):
+        """The marker reaches the type detector *and* the question detector."""
+        for marker, expected in (
+            ("[HITL:text]", "text"),
+            ("[HITL:yesno]", "yesno"),
+            ("[HITL:password]", "password"),
+            ("[HITL:menu]", "menu"),
+        ):
+            split = split_question(f"{marker} Enter the hostname of the router.")
+            assert split is not None, marker
+            assert detect_input_type(split.question, split.options) == expected
+
+    def test_a_list_after_the_question_is_a_menu(self):
+        """The choices of a menu may follow the question in their own block."""
+        split = split_question(
+            "Which environment should I deploy to?\n\n1. staging\n2. production"
+        )
+        assert split is not None
+        assert split.options == ("staging", "production")
+        assert detect_input_type(split.question, split.options) == "menu"
+        # The choices are not repeated in the context.
+        assert "staging" not in split.context
+
+    def test_an_inline_choice_is_a_menu(self):
+        """The inline "(a) … (b) … (c) …" a model produces is a menu."""
+        split = split_question(
+            "I have not deleted anything. Options: "
+            "**(a)** proceed with the delete, **(b)** point me at the right "
+            "file, or **(c)** cancel."
+        )
+        assert split is not None
+        assert split.options == (
+            "proceed with the delete",
+            "point me at the right file",
+            "cancel",
+        )
+        assert detect_input_type(split.question, split.options) == "menu"
+
+    def test_the_bullet_character_is_a_list_marker(self):
+        """A report that uses "•" bullets is a list, not a paragraph."""
+        split = split_question(
+            "I can apply the fix in three ways. Which one should I use?\n\n"
+            "\u2022 Patch the config file\n"
+            "\u2022 Add an environment variable\n"
+            "\u2022 Regenerate the file"
+        )
+        assert split is not None
+        assert split.options == (
+            "Patch the config file",
+            "Add an environment variable",
+            "Regenerate the file",
+        )
+        assert detect_input_type(split.question, split.options) == "menu"
+
+    def test_a_yes_no_question_is_still_a_yes_no_question(self):
+        """The fix must not turn every question into free text."""
+        assert detect_input_type(
+            "Want me to start **Phase 0** on a `feature/voice-toolkit` branch?"
+        ) == "yesno"
 
 
 class TestNormaliseQuestion:
@@ -484,13 +579,41 @@ class TestRendering:
 
     def test_question_rendered_once(self):
         out = run([STATUS_PAYLOAD, "All done."], answers=["no"])
-        rendered = _normalise(out["console"]).count(_normalise(STATUS_PAYLOAD))
-        assert rendered == 1
+        console = _normalise(out["console"])
+        # The question is shown once.
+        assert console.count(_normalise("Also, would you like me to:")) == 1
         # And the input module does not repeat it.
         assert not any(
-            _normalise(STATUS_PAYLOAD) in _normalise(prompt)
+            "would you like me to" in _normalise(prompt)
             for prompt in out["prompts"]
         )
+
+    def test_the_question_is_rendered_as_markdown(self):
+        """The Markdown the agent wrote is *rendered*, not shown as source.
+
+        The operator reads "Current status:", not "**Current status:**" —
+        the markup is noise the operator has to read past.
+        """
+        out = run([STATUS_PAYLOAD, "All done."], answers=["no"])
+        console = out["console"]
+        # The emphasis markers are gone; the text they wrapped is there.
+        assert "**Current status:**" not in console
+        assert "Current status:" in console
+        # The code span is rendered too.
+        assert "`origin/master`" not in console
+        assert "origin/master" in console
+        # The bullet list became a bullet list.
+        assert "- On branch" not in console
+        assert "On branch master" in console
+
+    def test_the_menu_is_rendered_with_its_numbers(self):
+        """The choices are shown as the numbered menu the prompt refers to."""
+        out = run([STATUS_PAYLOAD, "All done."], answers=["1"])
+        console = out["console"]
+        assert "1. Set up sqitch for database version control?" in console
+        assert "2. Start with documentation for the sqitch integration?" in console
+        # And the prompt asks for the number.
+        assert out["prompts"] == ["Select option [1]: "]
 
     def test_context_is_rendered(self):
         out = run([STATUS_PAYLOAD, "All done."], answers=["no"])

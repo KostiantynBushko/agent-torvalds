@@ -237,10 +237,27 @@ def renderings(out: dict, text: str) -> int:
 # ---------------------------------------------------------------------------
 
 def i1_rendered_once() -> Tuple[bool, str]:
-    """I1 — a question is rendered exactly once."""
+    """I1 — a question is rendered exactly once.
+
+    The operator saw the whole message twice.  The question and the report
+    around it are now rendered separately — the report as the context, the
+    question as the question — and the choices of a menu are rendered as
+    the menu, so the *payload* is no longer one contiguous block.  What
+    matters is that the question reaches the operator exactly once, that
+    the report above it is still visible, and that the input module never
+    repeats either of them.
+    """
     out = run([ISSUE_PAYLOADS["duplicate-question"], "All done."], answers=["no"])
-    times = renderings(out, ISSUE_PAYLOADS["duplicate-question"])
-    return times == 1, f"the payload was rendered {times} time(s), expected 1"
+    question = "Also, would you like me to:"
+    times = renderings(out, question)
+    if times != 1:
+        return False, f"the question was rendered {times} time(s), expected 1"
+    if not renderings(out, "Current status:"):
+        return False, "the report around the question was not shown"
+    for prompt in out["prompts"]:
+        if question.lower() in prompt.lower():
+            return False, "the input module repeated the question"
+    return True, "the question is rendered once, the report above it"
 
 
 def i2_question_not_answer() -> Tuple[bool, str]:
