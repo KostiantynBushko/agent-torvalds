@@ -3,7 +3,7 @@
 The repository has a GitHub Actions workflow that runs the test suite on
 every push to `master` and on every pull request.
 
-The suite does **not** pass yet. It carries a set of known failures — 77 of
+The suite does **not** pass yet. It carries a set of known failures — 40 of
 them at the time of writing — so a plain `pytest` run is always red. A CI
 workflow that is red before anyone writes a line of code is not a safety
 net; it is noise, and everyone learns to ignore it.
@@ -74,11 +74,10 @@ baseline can be tightened as the underlying bugs are repaired.
 `tests/ci_baseline.txt` lists the node id of every test that is known to
 fail — one per line, with a header explaining how to regenerate it.
 
-The failures are concentrated in ten files:
+The failures are concentrated in nine files:
 
 | File | Failures | What is wrong |
 |---|---:|---|
-| `tests/test_git_toolkit.py` | 37 | the toolkit calls the pygit2 diff/merge/rebase API with arguments the installed pygit2 rejects |
 | `tests/test_events_manual.py` | 10 | the manual event scripts assert on a flow that no longer matches the consumer |
 | `tests/test_hitl_runtime_toggle.py` | 8 | the command parser does not recognise the `hitl-*` commands |
 | `tests/test_math_toolkit.py` | 7 | the toolkit does not raise on a division by zero, a negative root or a bad RPN expression |
@@ -158,7 +157,7 @@ and commit the result. The diff is the proof that the baseline shrank.
 * **The MikroTik toolkit's real-router validation** needs a physical
   router or a CHR image. The tests are marked `integration` and are not
   part of the gate.
-* **The tests in the ten files above** are covered only by the baseline.
+* **The tests in the nine files above** are covered only by the baseline.
   A *new* failure in one of them is caught, but a *changed* failure in one
   of them is not distinguished from the known one — the gate compares node
   ids, not assertions.
