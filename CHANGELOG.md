@@ -3,10 +3,20 @@
 ## [Unreleased] - The toolkits own their adapters
 
 ### Changed
+- **The Shodan toolkit dropped its `src/` level — and its nested package
+  directory.** The importable package moved from
+  `toolkits/shodan-toolkit/src/shodan_toolkit/` to
+  `toolkits/shodan-toolkit/`: the toolkit directory *is* the package now,
+  so the toolkit folder has the same shape as the MikroTik one — the
+  package, the tests and the examples side by side instead of the package
+  being buried one or two levels down. The import name is unchanged —
+  `shodan_toolkit` for a standalone install, `toolkits.shodan_toolkit`
+  through the alias — and the toolkit's own `pyproject.toml` now maps the
+  package explicitly, because the directory name contains a hyphen.
 - **The agent adapters now live inside their toolkit.** `agent_mikrotik_toolkit.py`
   moved from the project root to `toolkits/MikroTik-RouterOS/`, and
   `agent_shodan_toolkit.py` to
-  `toolkits/shodan-toolkit/src/shodan_toolkit/`. A toolkit is now one
+  `toolkits/shodan-toolkit/`. A toolkit is now one
   folder: the library half, the adapter that exposes it to the agent, and
   the tests — with nothing about the feature left behind at the project
   root, which carried 22 loose `agent_*.py` modules.

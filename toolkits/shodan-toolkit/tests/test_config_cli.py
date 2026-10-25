@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from shodan_toolkit.cli import main
-from shodan_toolkit.config import ShodanConfig, load_config
+from ..cli import main
+from ..config import ShodanConfig, load_config
 
 
 class TestConfig:

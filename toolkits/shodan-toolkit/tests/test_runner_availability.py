@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from shodan_toolkit.runner import ShodanRunner
+from ..runner import ShodanRunner
 
 from .conftest import make_result
 

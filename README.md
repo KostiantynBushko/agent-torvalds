@@ -218,7 +218,7 @@ The project documentation:
   menu (`--select`, and `\tools` / `\tool-select` in the TUI), so they can
   be loaded on their own
 - Optional dependency (`shodan` CLI) - the agent still boots without it
-- 133 upstream tests plus an integration suite for the adapter
+- 145 upstream tests plus the 19 adapter tests
 - See the [Shodan Toolkit README](toolkits/shodan-toolkit/README.md) for the
   module reference
 - See [Shodan Toolkit docs](docs/shodan-toolkit.md) for details
