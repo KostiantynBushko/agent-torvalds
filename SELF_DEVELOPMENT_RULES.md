@@ -181,7 +181,7 @@ the MikroTik toolkit:
 |---|---|
 | `toolkits/shodan-toolkit/` | The upstream project, verbatim. |
 | `toolkits/__init__.py` | Registers the alias `toolkits.shodan_toolkit` next to `toolkits.mikrotik_routeros`. |
-| `agent_shodan_toolkit.py` | The LlamaIndex adapter. Re-uses the upstream tool functions verbatim; only the descriptions are rewritten so they carry `Category: Security`. |
+| `toolkits/shodan-toolkit/src/shodan_toolkit/agent_shodan_toolkit.py` | The LlamaIndex adapter, a submodule of the toolkit package. Re-uses the upstream tool functions verbatim; only the descriptions are rewritten so they carry `Category: Security`. |
 | `agent_tool_retriever.py` | New `include_shodan_tools` flag (on by default). |
 | `agent_tool_selection.py` | The tools are discovered for the startup menu, and dedicated action patterns were added. |
 | `agent-torvalds.py`, `agent-torvalds-mw.py` | The tools are loaded in the full-inventory mode. |
@@ -318,7 +318,7 @@ places, each of which turned "wait forever" into a short wait:
 | `components/event_consumer.py` | Default `-1`. |
 | `components/tui/state_bridge.py`, `components/tui/tui_app.py` | Default `-1`; no countdown; the status shows `none`. |
 | `agent-torvalds.py`, `agent-torvalds-mw.py` | `TORVALDS_HITL_TIMEOUT` defaults to `-1`; `--hitl-timeout` defaults to `-1`; the banner shows `none`. |
-| `agent_mikrotik_toolkit.py`, `project_manager/agent_project_manager_toolkit.py` | The two remaining places that read `TORVALDS_HITL_TIMEOUT` directly. |
+| `toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py`, `project_manager/agent_project_manager_toolkit.py` | The two remaining places that read `TORVALDS_HITL_TIMEOUT` directly. |
 | `tests/test_hitl_no_timeout.py` | **New.** 28 tests. |
 | `README.md`, `CHANGELOG.md` | The convention is documented. |
 
@@ -369,7 +369,7 @@ the data-analysis `filter` pattern) and locked down by
 | Path | Role |
 |---|---|
 | `toolkits/MikroTik-RouterOS/` | The core package. No LlamaIndex imports; importable as `toolkits.mikrotik_routeros`. |
-| `agent_mikrotik_toolkit.py` | The LlamaIndex adapter - the eight tools. |
+| `toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py` | The LlamaIndex adapter - the eight tools. A submodule of the toolkit package. |
 | `components/mikrotik_commands.py` | The `\routers` / `\router-*` interactive commands. |
 | `docs/mikrotik-toolkit.md` | The operator documentation. |
 | `mikrotik_targets.yaml.example` | The annotated target file. The real one is git-ignored. |

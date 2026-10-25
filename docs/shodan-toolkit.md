@@ -32,13 +32,20 @@ preserved when it was moved - see
 The feature has two halves:
 
 ```
-toolkits/shodan-toolkit/       the reusable library - the Shodan CLI wrapper
+toolkits/shodan-toolkit/                    the toolkit folder
+└── src/shodan_toolkit/                     the reusable library - the Shodan CLI wrapper
+    └── agent_shodan_toolkit.py             the LlamaIndex adapter - the sixteen tools
         │
         ▼
-agent_shodan_toolkit.py        the LlamaIndex adapter - the sixteen tools
-        │
-        ▼
-agent-torvalds.py / -mw.py     the orchestrators
+agent-torvalds.py / -mw.py                 the orchestrators
+```
+
+The adapter is a submodule of the toolkit package, so it is reached through
+the alias registered by `toolkits/__init__.py` (the package directory name
+contains a hyphen):
+
+```python
+from toolkits.shodan_toolkit.agent_shodan_toolkit import get_all_tools
 ```
 
 The core package can be used as a plain library by any Python application:
@@ -98,7 +105,7 @@ installation, because the adapter loads it through the
 ### Verifying the installation
 
 ```bash
-python -c "from agent_shodan_toolkit import get_toolkit_status; print(get_toolkit_status())"
+python -c "from toolkits.shodan_toolkit.agent_shodan_toolkit import get_toolkit_status; print(get_toolkit_status())"
 ```
 
 ```python
@@ -255,7 +262,10 @@ export TORVALDS_SHODAN_ALLOW_MUTATING=1
 The value may also be forced per call site:
 
 ```python
-from agent_shodan_toolkit import get_all_tools, get_mutating_tools
+from toolkits.shodan_toolkit.agent_shodan_toolkit import (
+    get_all_tools,
+    get_mutating_tools,
+)
 
 get_all_tools(include_mutating=True)   # read + write
 get_mutating_tools()                   # write only
@@ -329,7 +339,7 @@ The guard is covered by the toolkit's own test suite
 | `toolkits/shodan-toolkit/` | The core package. The upstream project, verbatim. |
 | `toolkits/shodan-toolkit/src/shodan_toolkit/` | The importable package (`runner`, `parsers`, `client`, `tools`, `agent`, `config`, `cli`). |
 | `toolkits/shodan-toolkit/tests/` | The whole test suite: 133 upstream tests plus the 19 adapter tests. |
-| `agent_shodan_toolkit.py` | The LlamaIndex adapter - the sixteen tools. |
+| `toolkits/shodan-toolkit/src/shodan_toolkit/agent_shodan_toolkit.py` | The LlamaIndex adapter - the sixteen tools. |
 | `docs/shodan-toolkit.md` | This page. |
 
 ### How the move was done
@@ -388,6 +398,6 @@ pytest is started from.
 | `tests/test_agent_adapter.py` | the adapter | the tool registration, the degradation contract, the error-payload convention, the load-path parity |
 
 `tests/test_agent_adapter.py` is the only file there that reaches outside
-the toolkit: it exercises `agent_shodan_toolkit.py` and the agent's load
-paths, which live in the repository root. When the toolkit is installed as
+the toolkit: it exercises the adapter and the agent's load paths, which live
+in the repository root. When the toolkit is installed as
 a standalone library those modules do not exist, so the file skips itself.

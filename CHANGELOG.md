@@ -1,5 +1,48 @@
 # Changelog
 
+## [Unreleased] - The toolkits own their adapters
+
+### Changed
+- **The agent adapters now live inside their toolkit.** `agent_mikrotik_toolkit.py`
+  moved from the project root to `toolkits/MikroTik-RouterOS/`, and
+  `agent_shodan_toolkit.py` to
+  `toolkits/shodan-toolkit/src/shodan_toolkit/`. A toolkit is now one
+  folder: the library half, the adapter that exposes it to the agent, and
+  the tests — with nothing about the feature left behind at the project
+  root, which carried 22 loose `agent_*.py` modules.
+- **The adapters are submodules of their toolkit package**, so they are
+  reached through the alias the toolkit already had:
+  `from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import get_all_tools`
+  and `from toolkits.shodan_toolkit.agent_shodan_toolkit import get_all_tools`.
+  The package directory names contain a hyphen, so this is the only spelling
+  a plain `import` statement can use.
+- **The adapters pull the core package in with a relative import**
+  (`from . import ...`). The adapter is now part of the package it adapts,
+  so it always works with the very same module objects the package exports —
+  and the Shodan adapter keeps working when the toolkit is installed as a
+  standalone distribution, where no `toolkits` package exists at all.
+- **`import toolkits` still does not import LlamaIndex.** The adapters are
+  the only LlamaIndex-dependent modules of a toolkit, so the alias shim no
+  longer publishes them eagerly; they are imported on demand, by whoever
+  needs them. The rule "the library half has no LlamaIndex dependency" is
+  unchanged — it is now checked behaviourally as well as statically.
+
+### Fixed
+- **A broken toolkit can no longer break the agent boot.** The adapters
+  moved behind the toolkit package, so a package that fails to import
+  takes the adapter with it. The two orchestrators now import them behind
+  a guard and degrade to "no tools", the way the retriever and the
+  `--select` menu already did.
+
+### Added
+- **Seven new contract tests** — the adapter is reachable through the alias
+  and resolves to one module object; `import toolkits` does not drag
+  LlamaIndex into the process; the library half of the package keeps its
+  LlamaIndex-free rule, with the adapter as the single named exception.
+- **Three new rows in `verify_layout_contract.py`** (R1b, R1c, R4) and
+  **four new tests** in the package-local layout suite.
+- **New report**: `investigate/toolkit-adapter-location/REPORT_toolkit_adapter_location.md`.
+
 ## [Unreleased] - A timeout the model can see
 
 ### Fixed

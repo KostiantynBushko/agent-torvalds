@@ -58,6 +58,33 @@ TOOLKITS = (
     (SHODAN_ALIAS, SHODAN_REAL, REPO_ROOT / "toolkits" / "shodan-toolkit" / "src" / "shodan_toolkit" / "__init__.py"),
 )
 
+#: The agent adapter of each toolkit: the alias of its package, the module
+#: name it carries inside that package, and the file it lives in.
+#:
+#: The adapter is a **submodule** of the toolkit package.  It is the one
+#: module of a toolkit that imports LlamaIndex, so it is never published
+#: eagerly - it is imported on demand through the alias.
+ADAPTERS = (
+    (
+        MIKROTIK_ALIAS,
+        "agent_mikrotik_toolkit",
+        REPO_ROOT / "toolkits" / "MikroTik-RouterOS" / "agent_mikrotik_toolkit.py",
+    ),
+    (
+        SHODAN_ALIAS,
+        "agent_shodan_toolkit",
+        REPO_ROOT
+        / "toolkits"
+        / "shodan-toolkit"
+        / "src"
+        / "shodan_toolkit"
+        / "agent_shodan_toolkit.py",
+    ),
+)
+
+#: The adapter module names, for the checks that have to skip them.
+ADAPTER_MODULES = tuple(name for _, name, _ in ADAPTERS)
+
 
 def _module_level_strings(path: Path) -> list[str]:
     """Return the string literals assigned at module level in *path*.
@@ -178,6 +205,10 @@ class TestSingleInstance:
 
         checked = 0
         for info in pkgutil.iter_modules(package_path):
+            if info.name in ADAPTER_MODULES:
+                # The adapters are imported on demand, never eagerly - they
+                # pull in LlamaIndex.  They get their own test below.
+                continue
             real_module = importlib.import_module(f"{real}.{info.name}")
             alias_module = sys.modules.get(f"toolkits.{alias}.{info.name}")
             assert alias_module is not None, (
@@ -195,6 +226,39 @@ class TestSingleInstance:
 
         real_parser = importlib.import_module(f"{MIKROTIK_REAL}.parser")
         assert parse_identity is real_parser.parse_identity
+
+    @pytest.mark.parametrize("alias,adapter,path", ADAPTERS)
+    def test_the_adapter_is_reachable_through_the_alias(self, alias, adapter, path):
+        """The adapter resolves to one object through its package alias."""
+        assert path.is_file(), f"{path} does not exist"
+
+        module = importlib.import_module(f"toolkits.{alias}.{adapter}")
+        assert sys.modules[f"toolkits.{alias}.{adapter}"] is module
+
+        # And the *other* spelling must not produce a second copy.
+        assert importlib.import_module(module.__name__) is module
+
+    def test_importing_toolkits_does_not_import_llamaindex(self):
+        """``import toolkits`` must not drag LlamaIndex into the process.
+
+        The adapters are the only LlamaIndex-dependent modules of a
+        toolkit, and they are published on demand rather than eagerly.
+        """
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys, toolkits; "
+                "print('LEAK' if 'llama_index' in sys.modules else 'CLEAN')",
+            ],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "CLEAN" in result.stdout, result.stdout
 
     def test_the_alias_does_not_add_a_second_set_of_classes(self):
         """One file, one class - not two classes with the same name."""

@@ -221,7 +221,7 @@ async def handle_mikrotik_command(cmd: str) -> Optional[str]:
         return None
 
     try:
-        import agent_mikrotik_toolkit as mikrotik
+        from toolkits.mikrotik_routeros import agent_mikrotik_toolkit as mikrotik
     except ImportError as exc:
         logger.warning("The MikroTik toolkit is not available: %s", exc)
         return _unavailable()

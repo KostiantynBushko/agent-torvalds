@@ -85,6 +85,9 @@ agent-torvalds/                        # repository root
 │       ├── session.py                 #    RouterOSSession (exec + session transports)
 │       ├── safety.py                  #    risk classifier + confirmation policy
 │       ├── py.typed                   #    PEP 561 marker
+│       ├── agent_mikrotik_toolkit.py  #    LlamaIndex adapter — a submodule
+│       │                              #    of this package, and the only
+│       │                              #    module here that knows about it
 │       └── tests/                     #    module-local tests (optional)
 │           │                          # NOTE: deliberately NO __init__.py (§3.4)
 │           ├── test_config.py
@@ -93,8 +96,6 @@ agent-torvalds/                        # repository root
 │           ├── test_session.py
 │           ├── test_safety.py
 │           └── test_package_layout.py
-│
-├── agent_mikrotik_toolkit.py          # LlamaIndex adapter (project root, flat pattern)
 │
 ├── tests/                             # project-level integration tests
 │   ├── test_mikrotik_toolkit.py       #    tool-level tests with a mocked transport
@@ -117,7 +118,7 @@ agent-torvalds/                        # repository root
 | Toolkit home directory | `toolkits/MikroTik-RouterOS/` | Fixed by requirement. **Exact case.** |
 | Package root | `toolkits/` | Fixed by requirement. |
 | Python module files | `snake_case.py` | PEP 8. |
-| Adapter | `agent_mikrotik_toolkit.py` | Matches the existing `agent_*_toolkit.py` convention. |
+| Adapter | `toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py` | Lives **inside** the toolkit package, next to the code it adapts. The package directory name contains a hyphen, so the adapter is reached through the alias (§3). |
 | Import alias | `toolkits.mikrotik_routeros` | Valid identifier for the hyphenated package (§3). |
 | Config file | `mikrotik_targets.yaml` | Root-level, next to `db_toolkit_config.yaml`. |
 
@@ -329,7 +330,8 @@ agent-torvalds.py
     ▼
 agent_tool_retriever.py            (include_mikrotik_tools flag)
     ▼
-agent_mikrotik_toolkit.py          (LlamaIndex adapter — project root, flat pattern)
+toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py
+                                   (LlamaIndex adapter — the eight tools)
     ▼
 toolkits/MikroTik-RouterOS/         (core package — no LlamaIndex imports)
 ```
@@ -338,7 +340,7 @@ toolkits/MikroTik-RouterOS/         (core package — no LlamaIndex imports)
 
 | # | Rule | Verification |
 |---|---|---|
-| R1 | **No LlamaIndex import** anywhere under `toolkits/MikroTik-RouterOS/`. | `grep -r "llama_index" toolkits/MikroTik-RouterOS/` → no hits |
+| R1 | **No LlamaIndex import** under the **library half** of `toolkits/MikroTik-RouterOS/`. The agent adapter (`agent_mikrotik_toolkit.py`) is the single, named exception: it is the only module of the feature that knows about LlamaIndex, and it is imported **on demand**, so `import toolkits` never pulls LlamaIndex into the process. | AST scan of every `*.py` under the package → no `llama_index` import outside the adapter, plus `python -c "import sys, toolkits; assert 'llama_index' not in sys.modules"` |
 | R2 | Only **relative imports** inside the package (`from .x import y`). | AST scan of every `*.py` under the package → no `ImportFrom`/`Import` node with a `toolkits` root at `level == 0` (a plain `grep` false-positives on the prose in docstrings) |
 | R3 | `asyncssh` / `pydantic` / `routeros_api` imported **lazily** or behind `try/except ImportError`. | agent boots with the deps absent |
 | R4 | The package must import cleanly with **zero** optional dependencies installed. | `pip uninstall asyncssh && python -c "import toolkits"` → OK |
@@ -474,7 +476,16 @@ from toolkits.mikrotik_routeros import (
 
 ## 6. Agent Adapter
 
-**Location:** `agent_mikrotik_toolkit.py` (project root — flat pattern)
+**Location:** `toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py` — a
+**submodule of the toolkit package**, reached through the alias:
+
+```python
+from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import get_all_tools
+```
+
+The adapter is the only module of the package that imports LlamaIndex, and
+it is imported **on demand**: `import toolkits` and
+`import toolkits.mikrotik_routeros` never pull LlamaIndex into the process.
 
 - [ ] Module docstring with the retrieval metadata block:
   ```python
@@ -539,13 +550,17 @@ from toolkits.mikrotik_routeros import (
     ```python
     if include_mikrotik_tools:
         try:
-            from agent_mikrotik_toolkit import get_all_tools as _get_mikrotik
+            from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import (
+                get_all_tools as _get_mikrotik,
+            )
             all_tools.extend(_get_mikrotik())
         except ImportError:
             pass
     ```
 - [ ] `agent-torvalds.py`:
-  - [ ] `from agent_mikrotik_toolkit import get_all_tools as get_mikrotik_tools`
+  - [ ] `from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import (
+        get_all_tools as get_mikrotik_tools,
+    )` — behind a guard, so a broken toolkit degrades to no tools
   - [ ] aggregate into the agent's tool list
 - [ ] `components/command_registry.py` — register the new commands so `\help` lists them.
 - [ ] Optional: a `/router` style alias so the operator can invoke a command directly.
@@ -554,7 +569,8 @@ from toolkits.mikrotik_routeros import (
   # ---------------------------------------------------------------------------
   # MikroTik RouterOS Toolkit Dependencies
   # ---------------------------------------------------------------------------
-  # Async SSH transport for the MikroTik RouterOS toolkit (agent_mikrotik_toolkit.py).
+  # Async SSH transport for the MikroTik RouterOS toolkit
+  # (toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py).
   # NOTE: optional - the toolkit degrades gracefully if it is not installed.
   asyncssh>=2.24.1
 
@@ -617,8 +633,9 @@ from toolkits.mikrotik_routeros import (
 - [ ] A test asserts that a multi-line command is rejected with `MULTILINE_UNSUPPORTED`.
 - [ ] A test asserts that a `HIGH`/`CRITICAL` command without `confirm=True` is refused.
 - [ ] A test asserts the layout contract: the alias resolves, the package imports
-      with no optional dependencies present, and no LlamaIndex import exists
-      under the package.
+      with no optional dependencies present, no LlamaIndex import exists under
+      the library half of the package, and importing the package or the alias
+      shim does not pull LlamaIndex into the process.
 - [ ] A test asserts the **package-local test contract** of §3.4: the test
       directory contains no `__init__.py`, and `pytest.ini` sets
       `--import-mode=importlib` in `addopts` and includes the
@@ -657,7 +674,7 @@ markers =
 | D10 | The agent still boots when `asyncssh` is not installed |
 | D11 | `pytest` is green; the prompt-regex corpus test is permanently green |
 | D12 | The existing `\help` output lists the new commands |
-| D13 | No LlamaIndex import exists under `toolkits/MikroTik-RouterOS/` |
+| D13 | No LlamaIndex import exists under the library half of `toolkits/MikroTik-RouterOS/`; the agent adapter is the only exception, and it is never imported eagerly |
 | D14 | All work is confined to the `self-development` clone on its own branch |
 | D15 | The package-local test directory contains **no** `__init__.py` (§3.4) |
 | D16 | `pytest.ini` sets `--import-mode=importlib` in `addopts` **and** lists the package-local test directory in `testpaths` |

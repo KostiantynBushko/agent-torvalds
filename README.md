@@ -168,7 +168,7 @@ The project documentation:
 - 104 hermetic unit tests
 - See [Chat History Manager README](chat_manager/README.md) for details
 
-### 18. MikroTik RouterOS Toolkit (`agent_mikrotik_toolkit.py`)
+### 18. MikroTik RouterOS Toolkit (`toolkits/MikroTik-RouterOS/`)
 - SSH-based configuration and monitoring of MikroTik routers
 - Eight tools: list targets, test connection, run a command, read a config
   section, export the configuration, read the identity, list the interfaces,
@@ -194,7 +194,7 @@ The project documentation:
   for the module reference
 - See [MikroTik RouterOS Toolkit docs](docs/mikrotik-toolkit.md) for details
 
-### 19. Shodan Toolkit (`agent_shodan_toolkit.py`)
+### 19. Shodan Toolkit (`toolkits/shodan-toolkit/`)
 - Internet-exposure intelligence from the Shodan database: which hosts are
   reachable, what software they run, which ports are open, which are
   honeypots
@@ -814,7 +814,6 @@ agent-torvalds/
 | agent_git_toolkit.py           # Git repository management toolkit
 | agent_github_toolkit.py        # GitHub API and PR management toolkit
 | agent_apt_toolkit.py           # APT package management toolkit
-| agent_mikrotik_toolkit.py      # MikroTik RouterOS toolkit (LlamaIndex adapter)
 | agent_db_toolkit.py            # Database query toolkit (PostgreSQL and MySQL)
 | agent_chat_memory.py           # Chat memory module with LlamaIndex
 | agent_cache_system.py          # Persistent cache for operational context

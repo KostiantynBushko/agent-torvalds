@@ -3,8 +3,22 @@ Shodan Toolkit - internet-exposure intelligence for the Torvalds Agent.
 
 This module is the **LlamaIndex adapter** for the Shodan toolkit. It is the
 only place in the feature that knows about LlamaIndex; the reusable library
-half lives in ``toolkits/shodan-toolkit/`` and imports no LlamaIndex code at
-import time.
+half lives in the same package and imports no LlamaIndex code at import time.
+
+Where it lives
+--------------
+
+The adapter is a **submodule of the toolkit package**, not a file at the
+project root any more.  Inside this repository the package is reached
+through the alias registered by ``toolkits/__init__.py``::
+
+    from toolkits.shodan_toolkit.agent_shodan_toolkit import get_all_tools
+
+That is the one canonical import path for the adapter here.  The core
+package is pulled in with a **relative** import (``from . import ...``), so
+the adapter always works with the very same module objects the package
+exports - and it keeps working when the toolkit is installed as a
+standalone distribution, where no ``toolkits`` package exists at all.
 
 The adapter exposes the toolkit's tools under the ``Security`` category:
 
@@ -49,11 +63,10 @@ startup selection menu needs. The behaviour - including the error payload
 convention and the raw-command guard - stays exactly as the toolkit defines
 it, and stays testable on its own.
 
-**Nothing raises at import time.** The core package is imported through the
-alias registered by ``toolkits/__init__.py`` inside a ``try/except``. A
-missing optional dependency, a missing ``shodan`` CLI or an unconfigured API
-key degrades to a toolkit that reports the problem, rather than breaking the
-agent boot.
+**Nothing raises at import time.** The core package is imported inside a
+``try/except``. A missing optional dependency, a missing ``shodan`` CLI or an
+unconfigured API key degrades to a toolkit that reports the problem, rather
+than breaking the agent boot.
 
 **The CLI is optional.** The toolkit drives the ``shodan`` command line
 binary. When the binary is not on ``PATH`` the tools return a structured
@@ -88,8 +101,8 @@ _TRUTHY = frozenset({"1", "true", "yes", "on"})
 # Core package import - guarded, so a missing toolkit never breaks the boot.
 # ---------------------------------------------------------------------------
 try:
-    from toolkits.shodan_toolkit import TOOL_REGISTRY
-    from toolkits.shodan_toolkit import tools as _shodan_tools
+    from . import TOOL_REGISTRY
+    from . import tools as _shodan_tools
 except Exception as exc:  # noqa: BLE001 - the toolkit is optional
     # The package is absent, or one of its dependencies is missing.
     # The toolkit is designed to degrade gracefully, so this must stay silent.
