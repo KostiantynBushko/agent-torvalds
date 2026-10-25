@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased] - A timeout the model can see
+
+### Fixed
+- **A timeout is no longer reported to the model as if the human had
+  answered.** The operator's rule: *"-1 means stop and wait; a finite
+  timeout means wait, and when it expires act on your own judgement."* The
+  machinery already honoured it — the step waits forever with `-1` and
+  continues when a finite timeout expires — but the model was fed the
+  fallback answer as if the human had said it. With the shipped default (no
+  fallback answer) it was fed an **empty turn**, which for a yes/no question
+  is indistinguishable from a "no": the agent refused to act, the exact
+  opposite of the rule. The model now reads *"No human response — the 1s wait
+  ended without an answer. The question was not answered; act on your own
+  judgement."* The fallback answer stays in the timeout log, for the audit
+  trail.
+
+### Added
+- **New regression tests**: `tests/test_hitl_timeout_policy.py` — six tests
+  against the real agent, the real consumer and the real input module; only
+  the human is a double. Two of them fail without the fix.
+- **New harness**: `investigate/hitl-timeout-policy/verify_timeout_policy.py`
+  — 11 checks of the operator's rule; 9/11 before the fix, 11/11 after.
+- **New report**: `investigate/hitl-timeout-policy/REPORT_timeout_policy.md`.
+- **Rule 7** in `SELF_DEVELOPMENT_RULES.md`: how the agent waits for the
+  operator, and what it may do when the wait ends.
+
 ## [Unreleased] - The HITL question is asked as the question it is
 
 ### Fixed
