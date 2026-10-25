@@ -228,6 +228,65 @@ class WhiptailInputModule:
         )
         return confirmed
 
+    async def menu_with_status(
+        self,
+        message: str = "",
+        options: List[str] = None,
+        timeout: int = NO_TIMEOUT,
+        title: Optional[str] = None,
+    ) -> tuple[str, bool]:
+        """Show a numbered menu and report whether the human answered.
+
+        The dialog shows the options itself, so the message is the question
+        the operator has to answer.
+
+        Returns:
+            ``(selected_option, was_timeout)`` tuple.
+        """
+        choices = list(options or [])
+        if not choices:
+            return "", True
+
+        if not self.is_available():
+            logger.debug("Whiptail not available, returning first option")
+            return choices[0], True
+
+        try:
+            from whiptail import Whiptail
+
+            wt = Whiptail(
+                title=title or self.title,
+                backtitle=self.backtitle,
+                height=15,
+                width=self.width,
+                auto_exit=False,
+            )
+
+            items = [(str(i), opt) for i, opt in enumerate(choices, 1)]
+
+            def _ask() -> str:
+                return wt.menu(msg=message, items=items)
+
+            loop = asyncio.get_event_loop()
+            tag = await asyncio.wait_for(
+                loop.run_in_executor(None, _ask),
+                timeout=normalize_timeout(timeout),
+            )
+            try:
+                index = int(tag) - 1
+                if 0 <= index < len(choices):
+                    return choices[index], False
+            except (TypeError, ValueError):
+                pass
+            return choices[0], False
+
+        except asyncio.TimeoutError:
+            logger.debug("Whiptail menu timed out")
+            return choices[0], True
+        except Exception as e:
+            logger.error(f"Whiptail menu error: {e}")
+            return choices[0], True
+
     async def menu(
         self,
         message: str,

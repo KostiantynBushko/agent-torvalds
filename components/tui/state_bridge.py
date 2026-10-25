@@ -288,6 +288,14 @@ class TuiEventAdapter:
 
     def __init__(self, state: TuiState):
         self.state = state
+        # The type of the pending question ("text", "yesno", "menu",
+        # "password").  The consumer tells us through set_input_type().
+        self._input_type = "text"
+
+    def set_input_type(self, input_type: str) -> None:
+        """Tell the TUI what kind of answer the pending question wants."""
+        if input_type:
+            self._input_type = input_type
 
     def on_tool_call_start(self, tool_name: str, tool_kwargs: Dict[str, Any]) -> None:
         self.state.update_tool_start(tool_name, tool_kwargs)
@@ -375,7 +383,7 @@ class TuiInputModule:
         with self.state._lock:
             self.state.hitl_active = True
             self.state.hitl_prompt = message
-            self.state.hitl_input_type = "text"
+            self.state.hitl_input_type = self._input_type
             self.state.hitl_timeout = timeout_val
             self.state.hitl_start_time = time.time()
             self.state.hitl_default_answer = default
@@ -466,6 +474,42 @@ class TuiInputModule:
             timeout=timeout,
         )
         return confirmed
+
+    async def menu_with_status(
+        self,
+        message: str = "",
+        options: List[str] = None,
+        timeout: Optional[int] = None,
+    ) -> tuple[str, bool]:
+        """Ask the operator to pick one of *options* in the command bar.
+
+        The options themselves are already visible in the chat view — the
+        question carries them — so the footer only shows the question and
+        the number range.
+
+        Returns:
+            ``(selected_option, was_timeout)`` tuple.
+        """
+        choices = list(options or [])
+        if not choices:
+            return "", True
+
+        hint = f"[1-{len(choices)}]"
+        prompt = f"{message} {hint}".strip() if message else hint
+        response, was_timeout = await self.prompt_with_status(
+            message=prompt, default="", timeout=timeout
+        )
+        if was_timeout or not response.strip():
+            return choices[0], True
+
+        try:
+            index = int(response.strip()) - 1
+            if 0 <= index < len(choices):
+                return choices[index], False
+        except ValueError:
+            pass
+
+        return choices[0], False
 
     async def password(
         self,

@@ -122,6 +122,25 @@ class RecordingInput:
         self.prompts.append(message)
         return self._next() or (options or [""])[0]
 
+    async def menu_with_status(
+        self, message: str = "", options=None, timeout: int = -1
+    ) -> Tuple[str, bool]:
+        """Mirrors ``ConsoleInputModule.menu_with_status``."""
+        self.prompts.append(message)
+        answer = self._next()
+        choices = list(options or [])
+        if not choices:
+            return "", True
+        if not answer.strip():
+            return choices[0], True
+        try:
+            index = int(answer.strip()) - 1
+            if 0 <= index < len(choices):
+                return choices[index], False
+        except ValueError:
+            pass
+        return choices[0], False
+
     async def password(self, message: str = "", timeout: int = -1) -> str:
         self.prompts.append(message)
         return self._next()

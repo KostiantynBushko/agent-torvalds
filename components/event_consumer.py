@@ -841,6 +841,18 @@ class EventConsumer:
             return "", True
         return _normalise_yes_no(response), False
 
+    def _menu_prompt(self, event: AgentQuestionEvent) -> str:
+        """Return the prompt for a menu question.
+
+        A widget that renders the question itself — the whiptail dialog, the
+        TUI command bar — shows the options too, so it only needs the
+        question.  The console module gets the short prompt, because the
+        consumer has already printed the options with the question.
+        """
+        if self._renders_question():
+            return (getattr(event, "question", "") or "").strip()
+        return "Select option [1]: "
+
     async def _menu(
         self, message: str, options: List[str], timeout: int
     ) -> tuple[str, bool]:
@@ -871,6 +883,12 @@ class EventConsumer:
         default_answer = getattr(event, "default_answer", "")
         timeout = getattr(event, "timeout", self.hitl_timeout)
 
+        # A widget with its own layout (the TUI command bar) labels the
+        # prompt by the kind of answer the question wants.
+        set_input_type = getattr(self.console_input, "set_input_type", None)
+        if set_input_type is not None:
+            set_input_type(input_type)
+
         if input_type == "yesno":
             default_yes = default_answer.strip().lower() in ("yes", "y", "true", "1")
             answer, was_timeout = await self._confirm(
@@ -888,12 +906,13 @@ class EventConsumer:
             options = list(getattr(event, "options", []) or [])
             if options and hasattr(self.console_input, "menu"):
                 selected, was_timeout = await self._menu(
-                    message=self._prompt_text(event, "Select option [1]: "),
+                    message=self._menu_prompt(event),
                     options=options,
                     timeout=timeout,
                 )
                 if was_timeout:
-                    return default_answer, True
+                    # The default of a menu is its first option.
+                    return options[0], True
                 return (selected, False)
 
         if input_type == "password":

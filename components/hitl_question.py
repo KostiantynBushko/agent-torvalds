@@ -411,7 +411,7 @@ def detect_input_type(question: str, options: Sequence[str] = ()) -> str:
         the question asks for a secret: it names one **and** asks for it.
         Mentioning a secret is not enough.
     ``menu``
-        the question carries an explicit ``[HITL:menu]`` marker.
+        the question offers a list of choices — two or more options.
     ``yesno``
         the question offers a binary choice.
     ``text``
@@ -430,6 +430,12 @@ def detect_input_type(question: str, options: Sequence[str] = ()) -> str:
 
     if _SECRET_NOUN.search(question) and _ASK.search(question):
         return "password"
+
+    # A question written as a list of choices wants a choice, not a yes or
+    # a no.  "Would you like me to: 1. ... 2. ..." cannot be answered with
+    # "yes" — the operator has to pick one.
+    if len(options) >= 2:
+        return "menu"
 
     for pattern in _YESNO:
         if pattern.search(question):
