@@ -41,6 +41,37 @@ level deeper::
 
     toolkits/shodan-toolkit/src/shodan_toolkit/   ->  toolkits.shodan_toolkit
 
+--------------------------------------------------------------------------------
+Two properties the alias must have
+--------------------------------------------------------------------------------
+
+**1. The canonical path has to be a literal.**
+
+The alias paths below are written out in full, as plain string constants.
+They used to be computed - ``__name__ + ".mikrotik_routeros"`` - which is
+equivalent at run time but *invisible* to every static reader.  An IDE, an
+import resolver, a linter or a packaging tool cannot evaluate ``__name__``;
+it can only look for a name it can read.  A computed alias therefore looks
+exactly like a package that has no import path at all, and such a tool
+reports it as a missing reference.  Spelling the path out keeps the
+canonical name greppable and statically resolvable.
+
+**2. The alias has to cover the submodules as well.**
+
+Registering only the root module is not enough.  Without the submodule
+handling below, this::
+
+    from toolkits.mikrotik_routeros.parser import parse_identity
+
+loads ``parser.py`` a *second* time - once as
+``toolkits.MikroTik-RouterOS.parser`` and once as
+``toolkits.mikrotik_routeros.parser`` - and the two copies define
+*different* ``RouterIdentity`` and ``CommandResult`` classes.  An
+``isinstance`` check across that boundary silently fails, and the process
+ends up carrying two sets of classes for the same file.  Every submodule is
+therefore imported under its real name and the *same* module object is
+published under the alias name, so both spellings resolve to one object.
+
 .. note::
    When the ``feature/ssh-toolkit`` branch is merged, it also contributes a
    ``toolkits/__init__.py``. The two versions of this file must be combined
@@ -50,25 +81,21 @@ Authoritative spec: ``investigate/MikroTik-RouterOS/MODULE_SPECIFICATION.md``
 """
 
 import importlib
+import pkgutil
 import sys
 
-__all__ = ["mikrotik_routeros", "shodan_toolkit"]
+#: The canonical, import-safe names of the hyphenated toolkits.
+#:
+#: The bare module names are listed here as literals so that a static reader
+#: can find them; the complete dotted paths live in the ``_..._ALIAS``
+#: constants below.
+_ALIAS_NAMES = ("mikrotik_routeros", "shodan_toolkit")
 
 #: Dotted path of the real (hyphenated) package directory.
 _MIKROTIK_PACKAGE = "toolkits.MikroTik-RouterOS"
 
 #: Dotted path of the valid-identifier alias registered in ``sys.modules``.
-_MIKROTIK_ALIAS = __name__ + ".mikrotik_routeros"
-
-try:
-    _mikrotik = importlib.import_module(_MIKROTIK_PACKAGE)
-except Exception:  # noqa: BLE001 - the toolkit is optional; never break `import toolkits`
-    # The package is absent, or one of its optional dependencies is missing.
-    # The toolkit is designed to degrade gracefully, so this must stay silent.
-    _mikrotik = None
-else:
-    sys.modules[_MIKROTIK_ALIAS] = _mikrotik
-    mikrotik_routeros = _mikrotik
+_MIKROTIK_ALIAS = "toolkits.mikrotik_routeros"
 
 
 #: Dotted path of the Shodan toolkit's real package. The toolkit keeps its
@@ -77,14 +104,71 @@ else:
 _SHODAN_PACKAGE = "toolkits.shodan-toolkit.src.shodan_toolkit"
 
 #: Dotted path of the valid-identifier alias registered in ``sys.modules``.
-_SHODAN_ALIAS = __name__ + ".shodan_toolkit"
+_SHODAN_ALIAS = "toolkits.shodan_toolkit"
 
-try:
-    _shodan = importlib.import_module(_SHODAN_PACKAGE)
-except Exception:  # noqa: BLE001 - the toolkit is optional; never break `import toolkits`
-    # The package is absent, or one of its optional dependencies is missing.
-    # The toolkit is designed to degrade gracefully, so this must stay silent.
-    _shodan = None
-else:
-    sys.modules[_SHODAN_ALIAS] = _shodan
+
+def _publish_submodules(real_dotted: str, alias_dotted: str, package) -> None:
+    """Publish every submodule of *package* under the alias namespace.
+
+    Each submodule is imported under its **real** name and the very same
+    module object is then published under the alias name.  Both spellings
+    therefore resolve to one object, and the classes a submodule defines
+    stay identical no matter which spelling imported them.
+
+    A submodule that cannot be imported - typically because an optional
+    dependency is missing - is skipped: the toolkit is designed to degrade
+    gracefully, so this must stay silent.
+
+    Args:
+        real_dotted: The dotted path of the real (hyphenated) package.
+        alias_dotted: The dotted path of the valid-identifier alias.
+        package: The already imported real package.
+    """
+    package_path = getattr(package, "__path__", None)
+    if not package_path:
+        return
+
+    for info in pkgutil.iter_modules(package_path):
+        try:
+            module = importlib.import_module(f"{real_dotted}.{info.name}")
+        except Exception:  # noqa: BLE001 - an optional dependency may be missing
+            continue
+        sys.modules[f"{alias_dotted}.{info.name}"] = module
+
+
+def _register_alias(real_dotted: str, alias_dotted: str):
+    """Import *real_dotted* and publish it under *alias_dotted*.
+
+    Args:
+        real_dotted: The dotted path of the real (hyphenated) package.
+        alias_dotted: The dotted path of the valid-identifier alias.
+
+    Returns:
+        The imported package, or ``None`` when it is absent or broken.
+    """
+    try:
+        package = importlib.import_module(real_dotted)
+    except Exception:  # noqa: BLE001 - the toolkit is optional; never break `import toolkits`
+        # The package is absent, or one of its optional dependencies is missing.
+        # The toolkit is designed to degrade gracefully, so this must stay silent.
+        return None
+
+    sys.modules[alias_dotted] = package
+    _publish_submodules(real_dotted, alias_dotted, package)
+    return package
+
+
+_mikrotik = _register_alias(_MIKROTIK_PACKAGE, _MIKROTIK_ALIAS)
+if _mikrotik is not None:
+    mikrotik_routeros = _mikrotik
+
+
+_shodan = _register_alias(_SHODAN_PACKAGE, _SHODAN_ALIAS)
+if _shodan is not None:
     shodan_toolkit = _shodan
+
+
+#: The aliases that are actually available.  ``from toolkits import *`` must
+#: not fail when an optional toolkit is missing, so the exported names are
+#: the ones that were really registered.
+__all__ = [name for name in _ALIAS_NAMES if name in globals()]
