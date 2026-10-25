@@ -23,6 +23,12 @@ toolkit: it needs the agent-side modules, which live in the repository root.
 When the toolkit is installed as a standalone library - with no agent
 repository around - the whole module is skipped.
 
+The adapter itself is a **submodule of the toolkit package**
+(``src/shodan_toolkit/agent_shodan_toolkit.py``); inside this repository it
+is reached through the alias registered by ``toolkits/__init__.py``::
+
+    from toolkits.shodan_toolkit import agent_shodan_toolkit
+
 Run with:
     pytest toolkits/shodan-toolkit/tests/test_agent_adapter.py -v
 """
@@ -40,8 +46,16 @@ import pytest
 #: The repository root: ``<root>/toolkits/shodan-toolkit/tests/<this file>``.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-#: The agent-side adapter this module exercises.
-_ADAPTER_PATH = REPO_ROOT / "agent_shodan_toolkit.py"
+#: The agent-side adapter this module exercises.  It is a submodule of the
+#: toolkit package, so it sits next to the code it adapts.
+_ADAPTER_PATH = (
+    REPO_ROOT
+    / "toolkits"
+    / "shodan-toolkit"
+    / "src"
+    / "shodan_toolkit"
+    / "agent_shodan_toolkit.py"
+)
 
 if not _ADAPTER_PATH.is_file():
     # The toolkit is used as a standalone library: there is no agent
@@ -55,7 +69,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 try:
-    import agent_shodan_toolkit as shodan
+    from toolkits.shodan_toolkit import agent_shodan_toolkit as shodan
 except Exception as exc:  # pragma: no cover - depends on the environment
     pytest.skip(
         f"the agent adapter could not be imported: {exc}",

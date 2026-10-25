@@ -142,20 +142,108 @@ def _is_absolute_toolkits_import(module: str) -> bool:
     return module != ALIAS_MODULE
 
 
-def test_r1_no_llamaindex_import_under_the_package():
-    """R1: no LlamaIndex import anywhere under the package.
+#: The agent adapter - the one module of the package that knows about
+#: LlamaIndex.  It lives inside the package now, next to the code it
+#: adapts, so the LlamaIndex-free rule is scoped to the library half.
+ADAPTER_FILE = "agent_mikrotik_toolkit.py"
 
-    The check is AST-based, so prose in a docstring that merely mentions
-    the module name does not trip it - only a real import statement does.
-    """
-    offenders = [
+
+def _llamaindex_imports_under_the_package() -> list[str]:
+    """Return every LlamaIndex import under the package, adapter included."""
+    return [
         f"{path}:{line} -> {module}"
         for path in sorted(PKG_DIR.rglob("*.py"))
         for line, module in _module_imports(path)
         if module.split(".")[0] == "llama_index"
     ]
 
+
+def test_r1_no_llamaindex_import_under_the_package():
+    """R1: the library half of the package must not import LlamaIndex.
+
+    The agent adapter is the single, named exception: it is the only
+    module of the feature that knows about LlamaIndex, and it lives inside
+    the package now.  The exception is narrow - a LlamaIndex import in
+    *any other* module still fails this test.
+
+    The check is AST-based, so prose in a docstring that merely mentions
+    the module name does not trip it - only a real import statement does.
+    """
+    adapter_prefix = str(PKG_DIR / ADAPTER_FILE)
+    offenders = [
+        entry
+        for entry in _llamaindex_imports_under_the_package()
+        if not entry.startswith(adapter_prefix)
+    ]
+
     assert offenders == [], f"LlamaIndex imports found: {offenders}"
+
+
+def test_r1b_the_adapter_is_the_only_llamaindex_dependent_module():
+    """The adapter must exist, and it must be the one that imports it."""
+    assert (PKG_DIR / ADAPTER_FILE).is_file(), (
+        f"the agent adapter must live in the package: {PKG_DIR / ADAPTER_FILE}"
+    )
+
+    adapter_prefix = str(PKG_DIR / ADAPTER_FILE)
+    adapter_imports = [
+        entry
+        for entry in _llamaindex_imports_under_the_package()
+        if entry.startswith(adapter_prefix)
+    ]
+
+    assert adapter_imports, "the adapter does not import LlamaIndex any more"
+
+
+def test_r1c_importing_the_library_does_not_import_llamaindex():
+    """The behavioural guarantee behind R1.
+
+    Importing the toolkit package - or the alias shim - must not pull
+    LlamaIndex into the process.  The adapter is imported on demand, by
+    whoever actually needs it.
+    """
+    statements = (
+        "import toolkits",
+        "import importlib, toolkits; "
+        "importlib.import_module('toolkits.MikroTik-RouterOS')",
+    )
+
+    for statement in statements:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                f"import sys; {statement}; "
+                "print('LEAK' if 'llama_index' in sys.modules else 'CLEAN')",
+            ],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "CLEAN" in result.stdout, f"{statement} pulled in LlamaIndex"
+
+
+def test_the_adapter_is_reachable_through_the_alias():
+    """The adapter is a submodule of the package, reached through the alias."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from toolkits.mikrotik_routeros.agent_mikrotik_toolkit "
+            "import get_all_tools; "
+            "print('OK' if callable(get_all_tools) else 'BROKEN')",
+        ],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "OK" in result.stdout
 
 
 def test_r2_only_relative_imports_inside_the_package():

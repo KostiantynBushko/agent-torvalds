@@ -128,7 +128,9 @@ def build_tool_retriever(
     # instead of breaking the agent boot.
     if include_mikrotik_tools:
         try:
-            from agent_mikrotik_toolkit import get_all_tools as _get_mikrotik
+            from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import (
+                get_all_tools as _get_mikrotik,
+            )
             all_tools.extend(_get_mikrotik())
         except ImportError:
             # MikroTik toolkit not available — skip gracefully
@@ -143,7 +145,9 @@ def build_tool_retriever(
     # TORVALDS_SHODAN_ALLOW_MUTATING is set.
     if include_shodan_tools:
         try:
-            from agent_shodan_toolkit import get_all_tools as _get_shodan
+            from toolkits.shodan_toolkit.agent_shodan_toolkit import (
+                get_all_tools as _get_shodan,
+            )
             all_tools.extend(_get_shodan())
         except ImportError:
             # Shodan toolkit not available - skip gracefully

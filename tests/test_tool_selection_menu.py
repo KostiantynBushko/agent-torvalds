@@ -268,7 +268,9 @@ class TestCategoryDescription(unittest.TestCase):
     """The Network summary must describe real capabilities."""
 
     def test_network_summary_is_meaningful(self):
-        from agent_mikrotik_toolkit import get_all_tools
+        from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import (
+            get_all_tools,
+        )
         from agent_tool_selection import _build_category_description
 
         summary = _build_category_description(get_all_tools())
@@ -281,7 +283,9 @@ class TestCategoryDescription(unittest.TestCase):
 
     def test_network_summary_ignores_routeros_paths(self):
         """'/ip/firewall/filter' must not be read as a data-analysis verb."""
-        from agent_mikrotik_toolkit import get_all_tools
+        from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import (
+            get_all_tools,
+        )
         from agent_tool_selection import _build_category_description
 
         summary = _build_category_description(get_all_tools())
@@ -523,7 +527,9 @@ class TestSecurityCategoryDescription(unittest.TestCase):
     """The Security summary must describe real capabilities."""
 
     def test_security_summary_is_meaningful(self):
-        from agent_shodan_toolkit import get_all_tools
+        from toolkits.shodan_toolkit.agent_shodan_toolkit import (
+            get_all_tools,
+        )
         from agent_tool_selection import _build_category_description
 
         with _shodan_opt_in():
@@ -537,7 +543,9 @@ class TestSecurityCategoryDescription(unittest.TestCase):
 
     def test_no_verb_fallback_leaks_into_the_summary(self):
         """Every tool must map to a canonical action, not a raw verb."""
-        from agent_shodan_toolkit import get_all_tools
+        from toolkits.shodan_toolkit.agent_shodan_toolkit import (
+            get_all_tools,
+        )
         from agent_tool_selection import _build_category_description
 
         with _shodan_opt_in():

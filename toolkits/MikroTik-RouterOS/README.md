@@ -8,20 +8,28 @@ RouterOS feature. It speaks the RouterOS CLI over SSH, parses the output into
 structured data, and applies a rule-based risk classifier to every command
 before it is allowed to run.
 
-The package contains **no LlamaIndex imports**. That is deliberate: it stays
-independently testable, and any Python application can use it as a plain
+The library half contains **no LlamaIndex imports**. That is deliberate: it
+stays independently testable, and any Python application can use it as a plain
 library. The LlamaIndex adapter — the part that exposes the tools to the agent
-— lives at the project root as `agent_mikrotik_toolkit.py` and imports this
-package.
+— is a **submodule of this package**, `agent_mikrotik_toolkit.py`. It is the
+one module of the feature that knows about LlamaIndex, and it is imported on
+demand, so importing the library never pulls LlamaIndex in.
 
 ```
-toolkits/MikroTik-RouterOS/    the reusable library — no LlamaIndex imports
+toolkits/MikroTik-RouterOS/               the toolkit folder
+├── config.py, models.py, exceptions.py   the reusable library — no LlamaIndex imports
+├── parser.py, session.py, safety.py
+└── agent_mikrotik_toolkit.py             the LlamaIndex adapter — the eight tools
         │
         ▼
-agent_mikrotik_toolkit.py      the LlamaIndex adapter — the eight tools
-        │
-        ▼
-agent-torvalds.py / -mw.py     the orchestrators
+agent-torvalds.py / -mw.py               the orchestrators
+```
+
+The adapter is reached through the alias registered by `toolkits/__init__.py`,
+because the package directory name contains a hyphen:
+
+```python
+from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import get_all_tools
 ```
 
 ---
@@ -525,8 +533,8 @@ reports that it is unavailable.
 
 ## The agent tools
 
-The adapter `agent_mikrotik_toolkit.py` exposes the package to the agent as
-eight tools. Each is a coroutine function, so LlamaIndex's `FunctionTool`
+The adapter `agent_mikrotik_toolkit.py` — a submodule of this package —
+exposes the package to the agent as eight tools. Each is a coroutine function, so LlamaIndex's `FunctionTool`
 detects and awaits it in `acall()`.
 
 | Tool | Purpose |
@@ -544,7 +552,7 @@ detects and awaits it in `acall()`.
 
 | File | What was added |
 |---|---|
-| `agent_mikrotik_toolkit.py` | The adapter itself, at the project root (the flat pattern) |
+| `toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py` | The adapter itself, a submodule of the toolkit package |
 | `agent_tool_retriever.py` | An `include_mikrotik_tools` flag and a guarded import block |
 | `agent-torvalds.py` | The tools aggregated into the tool collection |
 | `agent-torvalds-mw.py` | The same, for the multi-window orchestrator — the two stay in parity |
