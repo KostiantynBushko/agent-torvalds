@@ -12,7 +12,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def clear_env():
     """Clear chat-related env vars for each test."""
     saved = {}
-    for key in ("TORVALDS_STORAGE_URI", "TORVALDS_LLAMA_URI", "TORVALDS_CHAT_KEY"):
+    for key in (
+        "TORVALDS_STORAGE_URI",
+        "TORVALDS_LLAMA_URI",
+        "TORVALDS_CHAT_KEY",
+        "TORVALDS_STORAGE_FALLBACK_URI",
+        "TORVALDS_STORAGE_FALLBACK",
+    ):
         if key in os.environ:
             saved[key] = os.environ[key]
             del os.environ[key]

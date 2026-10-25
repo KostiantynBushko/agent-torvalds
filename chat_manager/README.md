@@ -21,6 +21,7 @@ touching agent logic.
 - [Architecture](#architecture)
 - [Component Reference](#component-reference)
 - [Database Schema](#database-schema)
+- [The local fallback](#the-local-fallback)
 - [Configuration](#configuration)
 - [Installation](#installation)
 - [Usage Examples](#usage-examples)
@@ -137,10 +138,11 @@ chat_manager/
 │   ├── __init__.py
 │   ├── handler.py                 # Dispatch: is_chat_command() / handle_chat_command()
 │   └── cli.py                     # Per-command implementations
-└── tests/                         # 175 unit tests
+└── tests/                         # 198 unit tests
     ├── conftest.py
     ├── test_backend.py
     ├── test_commands.py
+    ├── test_fallback.py
     ├── test_manager.py
     ├── test_migration.py
     ├── test_models.py
@@ -226,7 +228,12 @@ message backend.
 | `clear_messages()` | Delete all messages of the active session (session itself survives). |
 | `close()` | Alias of `shutdown`. |
 
-**Properties:** `current_user` → `User | None`; `is_initialized` → `bool`.
+**Properties:** `current_user` → `User | None`; `is_initialized` → `bool`;
+`is_degraded` → `bool`; `storage_mode` → `str` (`primary` / `fallback` / `unavailable`).
+
+**Constructor:** `ChatHistoryManager(storage_uri=None, llama_uri=None, fallback_uri=None)`.
+`fallback_uri` is the local database used when the primary one cannot be reached — `None`
+resolves it from the environment, an empty string switches the fallback off.
 
 ### 2. `ChatStoreBackend` (`backend/base.py`)
 
@@ -252,10 +259,16 @@ when PostgreSQL is unavailable, and handy in tests.
 
 ### 5. `CustomDBConnector` (`storage/connector.py`)
 
+The metadata connector. Besides the CRUD, it owns the **local fallback**: when the primary
+database cannot be reached, it retries against a local SQLite file and records the
+degradation. See [The local fallback](#the-local-fallback).
+
 A SQLAlchemy-backed connector for user and session metadata, isolated from the LlamaIndex message
 store.
 
-**Lifecycle:** `connect()` (creates the schema on demand) · `close()` · `is_connected` property.
+**Lifecycle:** `connect()` (creates the schema on demand, falls back to a local database) ·
+`close()` · `is_connected` property · `is_degraded` property · `active_uri` property ·
+`degradation_reason` property.
 
 **User operations:** `get_user_by_username()` · `get_user_by_id()` · `create_user()` ·
 `update_user()`.
@@ -389,6 +402,71 @@ manual step is needed.
 
 ---
 
+## The local fallback
+
+The metadata layer must not be the reason the agent loses its chat history. When the primary
+database cannot be reached, `CustomDBConnector` retries against a **local SQLite file** and
+records the degradation — the same shape of degradation the message backend already has
+(`SimpleChatStoreBackend`, in-memory).
+
+```
+   connect()
+       │
+       ├── primary URI reachable?  ── yes ──▶  storage_mode = "primary"
+       │                                        (everything is shared)
+       └── no
+            │
+            ├── local fallback reachable? ── yes ──▶  storage_mode = "fallback"
+            │                                        (everything works, nothing is shared)
+            └── no ──▶  not connected
+                        (the agent falls back to the legacy chat memory)
+```
+
+### What the fallback keeps working
+
+Everything the manager does: user identification and provisioning, the session lifecycle, the
+active session, and the user's settings. The only thing it loses is **sharing** — the history
+lives in one local file instead of in the shared database, so another machine (or another user
+of the same database) does not see it.
+
+The message bodies are a separate layer, and they already degrade on their own: the message
+backend falls back to an in-memory store, so the messages themselves are not persisted across a
+restart while the database is down. The metadata survives; the message bodies do not.
+
+### Where the local database lives
+
+| | |
+|---|---|
+| Default | `~/.torvalds/chat_manager.db` |
+| Override | `TORVALDS_STORAGE_FALLBACK_URI=sqlite:////path/to/chat.db` |
+| Switch off | `TORVALDS_STORAGE_FALLBACK=off` (or `none`, `no`, `0`, `false`, `disabled`) |
+
+The directory is created automatically. The fallback URI can also be passed to the connector
+(`CustomDBConnector(connection_uri=…, fallback_uri=…)`) or to the manager
+(`ChatHistoryManager(…, fallback_uri=…)`); an empty string switches it off.
+
+### How the degradation is reported
+
+| Where | What |
+|-------|------|
+| The log | `CustomDBConnector could not reach <uri>; falling back to the local database at <uri>.` |
+| `connector.is_degraded` | `True` when the local database is in use. |
+| `connector.active_uri` | The URI actually in use. |
+| `connector.degradation_reason` | A sentence explaining the degradation. |
+| `manager.is_degraded` / `manager.storage_mode` | The same, one level up: `primary` / `fallback` / `unavailable`. |
+| The startup banner | A yellow notice in both orchestrators. |
+| `\chat-info` | A `Storage:` line — `local fallback (the primary database is unreachable)`. |
+
+### A note on a database that comes back
+
+The fallback file is a real database, not a scratch space: the data written while the primary
+was down is still there when the primary comes back — in the *file*. The agent then switches
+back to the primary on the next start, and the local file keeps the records that were written
+during the outage. Nothing is lost, but nothing is merged either: the outage-era sessions stay
+local unless they are copied over.
+
+---
+
 ## Configuration
 
 All configuration is environment-driven; nothing is hard-coded in the agent.
@@ -396,6 +474,8 @@ All configuration is environment-driven; nothing is hard-coded in the agent.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TORVALDS_STORAGE_URI` | derived from `TORVALDS_PG_*` | SQLAlchemy URI for the `users` / `chat_sessions` tables (e.g. `postgresql://user:pass@host:5432/llama_index_db`) |
+| `TORVALDS_STORAGE_FALLBACK_URI` | `sqlite:///~/.torvalds/chat_manager.db` | The local database used when the primary one cannot be reached. |
+| `TORVALDS_STORAGE_FALLBACK` | *(enabled)* | Set to `off` / `none` / `no` / `0` / `false` to switch the local fallback off. |
 | `TORVALDS_LLAMA_URI` | `postgres+asyncpg://…/llama_index_db` | LlamaIndex chat-store URI for message bodies |
 | `TORVALDS_PG_HOST` | `127.0.0.1` | PostgreSQL host |
 | `TORVALDS_PG_PORT` | `5432` | PostgreSQL port |
@@ -981,18 +1061,19 @@ from chat_manager.session_selector import (
 
 ## Testing
 
-The package ships **175 unit tests** across ten modules, all hermetic — no live database is
+The package ships **198 unit tests** across twelve modules, all hermetic — no live database is
 required.
 
 | Test module | Tests | Covers |
 |-------------|-------|---------|
-| `test_user_settings.py` | 38 | The settings API, the `\chat-user` command, the renamed field and its compatibility seams |
+| `test_user_settings.py` | 40 | The settings API, the `\chat-user` command, the renamed field and its compatibility seams |
 | `test_manager.py` | 28 | Initialisation, session CRUD, message buffer, plan-mandated API surface |
 | `test_commands.py` | 22 | Every `\chat-*` command and the dispatcher |
-| `test_settings.py` | 20 | The settings module — validation, aliases, the `UserSettings` snapshot |
+| `test_settings.py` | 22 | The settings module — validation, aliases, the `UserSettings` snapshot |
+| `test_fallback.py` | 23 | The local fallback — resolution, degradation, the whole API on the fallback |
 | `test_backend.py` | 14 | Backend contract and error handling |
 | `test_storage.py` | 12 | Connector lifecycle, user and session CRUD |
-| `test_migration.py` | 10 | The `token_limit` → `chat_token_limit` column migration |
+| `test_migration.py` | 9 | The `token_limit` → `chat_token_limit` column migration |
 | `test_models.py` | 11 | `User` / `Session` dataclasses, `SessionType` |
 | `test_session_selector.py` | 10 | Menu formatting and the interactive selection loop |
 | `test_startup.py` | 7 | Singleton lifecycle and startup hooks |
@@ -1033,7 +1114,8 @@ The module was developed against a written design. The source documents live in
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `ChatHistoryManager not initialized.` | A `\chat-*` command was issued before startup, or `--no-chat-history` was passed. | Remove the flag; ensure `initialize_chat_manager()` runs at startup. |
-| `Chat history manager unavailable: …` at startup | The metadata database is unreachable. | Check `TORVALDS_STORAGE_URI` / `TORVALDS_PG_*` and that the database exists. |
+| `Chat history manager unavailable: …` at startup | The metadata database is unreachable **and** the local fallback is switched off or also unreachable. | Check `TORVALDS_STORAGE_URI` / `TORVALDS_PG_*` and that the database exists, or remove the `TORVALDS_STORAGE_FALLBACK=off` setting. |
+| `The chat database is unreachable - running in local fallback mode` at startup | The primary database could not be reached; the local SQLite database is in use. | Nothing is broken — but the history is not shared with other machines. Fix the primary database, then restart. |
 | `Using in-memory message backend (fallback)` in the log | PostgreSQL chat store is unavailable. | Check `TORVALDS_LLAMA_URI` and the `llama_index_db` database. Sessions still work; only message persistence is lost. |
 | `ModuleNotFoundError: No module named 'chat_manager'` | The agent is not running from the repository root. | `cd` to the root, or add it to `PYTHONPATH`. |
 | `ModuleNotFoundError: No module named 'sqlalchemy'` | `SQLAlchemy` is not installed and is not yet in `requirements.txt`. | `pip install "SQLAlchemy>=2.0"` and add it to `requirements.txt`. |

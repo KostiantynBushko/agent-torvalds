@@ -190,6 +190,15 @@ def cmd_chat_info(manager: ChatHistoryManager) -> str:
         f"  Created:  {created}",
         f"  Updated:  {updated}",
     ]
+
+    # Where the metadata lives — a local fallback means the history is not
+    # shared with the other machines, and the operator should know that.
+    storage_mode = getattr(manager, "storage_mode", "primary")
+    if storage_mode == "fallback":
+        lines.append("  Storage:  local fallback (the primary database is unreachable)")
+    else:
+        lines.append(f"  Storage:  {storage_mode}")
+
     return "\n".join(lines)
 
 

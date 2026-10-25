@@ -1,5 +1,45 @@
 # Changelog
 
+## [Unreleased] - The chat history survives a database outage
+
+### Added
+- **The metadata layer now has a local fallback.**  When the primary
+  database cannot be reached, `CustomDBConnector` retries against a local
+  SQLite file (`~/.torvalds/chat_manager.db` by default) and records the
+  degradation.  This is the same shape of degradation the message backend
+  already had, and it removes the last reason the legacy single-key chat
+  memory had to stay in the code: the manager now covers both "PostgreSQL
+  up" (full features) and "PostgreSQL down" (degraded but complete).
+
+  Everything the manager does keeps working on the fallback — user
+  identification and provisioning, the session lifecycle, the active
+  session and the user's settings.  The only thing it loses is *sharing*:
+  the history lives in one local file instead of the shared database.
+
+  | Variable | Default | Description |
+  |----------|---------|-------------|
+  | `TORVALDS_STORAGE_FALLBACK_URI` | `sqlite:///~/.torvalds/chat_manager.db` | The local database used when the primary one cannot be reached. |
+  | `TORVALDS_STORAGE_FALLBACK` | *(enabled)* | Set to `off` / `none` / `no` / `0` / `false` to switch the fallback off. |
+
+  The directory is created automatically.  The URI can also be passed
+  directly: `CustomDBConnector(connection_uri=…, fallback_uri=…)` and
+  `ChatHistoryManager(…, fallback_uri=…)` — an empty string switches the
+  fallback off.
+
+- **The degradation is reported, not hidden.**  `connector.is_degraded`,
+  `connector.active_uri` and `connector.degradation_reason` describe what
+  is going on; `manager.is_degraded` and `manager.storage_mode`
+  (`primary` / `fallback` / `unavailable`) do the same one level up.  Both
+  orchestrators print a yellow notice at startup, and `\chat-info` shows
+  a `Storage:` line.
+
+### Changed
+- **The message bodies are still the weaker half of the degradation.**  The
+  message backend falls back to an *in-memory* store, so the metadata
+  survives a restart while the database is down but the messages
+  themselves do not.  That is unchanged — the metadata layer was the
+  half that had no fallback at all, and it is the half that had to be
+  fixed before the legacy path could be removed.
 ## [Unreleased] - The user can finally change their own settings
 
 ### Added

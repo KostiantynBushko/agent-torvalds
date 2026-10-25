@@ -13,6 +13,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from chat_manager.storage.models import Base, User as ORMUser, Session as ORMSession
@@ -59,6 +60,60 @@ LEGACY_TOKEN_LIMIT_COLUMN = "token_limit"
 
 #: The canonical column name of the chat-token limit.
 CHAT_TOKEN_LIMIT_COLUMN = "chat_token_limit"
+
+# ---------------------------------------------------------------------------
+# Local fallback
+# ---------------------------------------------------------------------------
+
+#: Environment variable that overrides the fallback URI.
+FALLBACK_URI_ENV = "TORVALDS_STORAGE_FALLBACK_URI"
+
+#: Environment variable that switches the fallback off.
+FALLBACK_DISABLE_ENV = "TORVALDS_STORAGE_FALLBACK"
+
+#: The values of FALLBACK_DISABLE_ENV that mean "no fallback".
+FALLBACK_DISABLED_VALUES = ("off", "none", "no", "0", "false", "disabled")
+
+#: Where the local fallback database lives when nothing else is configured.
+DEFAULT_FALLBACK_PATH = Path.home() / ".torvalds" / "chat_manager.db"
+
+
+def _prepare_sqlite_uri(uri: str) -> str:
+    """Make sure the directory of a file-based SQLite URI exists.
+
+    SQLite cannot create a file in a directory that does not exist, and the
+    default fallback lives in ``~/.torvalds/`` — which usually does not
+    exist yet.
+
+    Args:
+        uri: The URI to prepare.
+
+    Returns:
+        The URI, unchanged when it is not a file-based SQLite URI.
+    """
+    if not uri.startswith("sqlite:"):
+        return uri
+
+    remainder = uri[len("sqlite:"):]
+    if remainder.startswith("///"):
+        path_part = remainder[3:]
+    elif remainder.startswith("//"):
+        path_part = remainder[2:]
+    else:
+        return uri
+
+    # ``:memory:`` and the empty path are not files on disk.
+    if not path_part or path_part == ":memory:":
+        return uri
+
+    path = Path(path_part).expanduser()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.warning(f"Could not create the directory for {path}: {e}")
+        return uri
+
+    return f"sqlite:///{path}"
 
 
 # ---------------------------------------------------------------------------
@@ -157,11 +212,29 @@ class CustomDBConnector:
     the LlamaIndex message storage connector.
     """
 
-    def __init__(self, connection_uri: str | None = None) -> None:
+    def __init__(
+        self,
+        connection_uri: str | None = None,
+        fallback_uri: str | None = None,
+    ) -> None:
+        """Create a connector.
+
+        Args:
+            connection_uri: The primary database URI.
+            fallback_uri: The local database used when the primary one cannot
+                be reached.  ``None`` resolves it from the environment; an
+                empty string switches the fallback off.
+        """
         self._uri = connection_uri or self._resolve_uri()
+        if fallback_uri is None:
+            self._fallback_uri = self._resolve_fallback_uri()
+        else:
+            self._fallback_uri = _prepare_sqlite_uri(fallback_uri) if fallback_uri else ""
         self._engine: Any = None
         self._session_factory: Any = None
         self._connected = False
+        self._degraded = False
+        self._degradation_reason: str | None = None
 
     @staticmethod
     def _resolve_uri() -> str:
@@ -177,27 +250,111 @@ class CustomDBConnector:
         database = os.environ.get("TORVALDS_PG_DATABASE", "llama_index_db")
         return f"postgresql://{user}:{password}@{host}:{port}/{database}"
 
+    @staticmethod
+    def _resolve_fallback_uri() -> str | None:
+        """Resolve the local fallback URI, or None when it is switched off.
+
+        The metadata layer must not be the reason the agent loses its chat
+        history.  When the primary database cannot be reached, the connector
+        retries against a local SQLite file — the same shape of degradation
+        the message backend already has.
+
+        The fallback is *local*: the chat history keeps working, but it is
+        not shared with the other machines that use the primary database.
+
+        Returns:
+            The fallback URI, or None when the fallback is disabled.
+        """
+        disabled = os.environ.get(FALLBACK_DISABLE_ENV, "").strip().lower()
+        if disabled in FALLBACK_DISABLED_VALUES:
+            return None
+
+        explicit = os.environ.get(FALLBACK_URI_ENV, "").strip()
+        if explicit:
+            return _prepare_sqlite_uri(explicit)
+
+        return _prepare_sqlite_uri(f"sqlite:///{DEFAULT_FALLBACK_PATH}")
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
-    def connect(self) -> None:
-        """Establish connection and create schema if needed."""
+    def _connect_to(self, uri: str) -> bool:
+        """Try to connect to a URI and create the schema.
+
+        Args:
+            uri: The URI to connect to.
+
+        Returns:
+            True when the connection was established.
+        """
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
 
         try:
-            self._engine = create_engine(self._uri, echo=False)
-            self._session_factory = sessionmaker(bind=self._engine)
+            engine = create_engine(uri, echo=False)
+            session_factory = sessionmaker(bind=engine)
             # Create tables if they don't exist
-            Base.metadata.create_all(self._engine)
-            # Bring an older schema up to date (renamed column).
-            self._migrate_schema()
-            self._connected = True
-            logger.info(f"CustomDBConnector connected to {self._uri}")
+            Base.metadata.create_all(engine)
         except Exception as e:
-            logger.warning(f"CustomDBConnector failed to connect: {e}")
+            logger.warning(f"CustomDBConnector could not connect to {uri}: {e}")
+            return False
+
+        self._engine = engine
+        self._session_factory = session_factory
+
+        # Bring an older schema up to date (renamed column).  This runs
+        # after the engine is assigned, because it works on self._engine.
+        self._migrate_schema()
+
+        return True
+
+    def connect(self) -> None:
+        """Establish the connection, falling back to a local database.
+
+        The primary database is tried first.  When it cannot be reached, the
+        connector retries against the local SQLite fallback and records the
+        degradation, so the manager — and with it the whole chat history
+        feature — keeps working instead of collapsing into the legacy
+        single-key path.
+        """
+        if self._connect_to(self._uri):
+            self._connected = True
+            self._degraded = False
+            self._degradation_reason = None
+            logger.info(f"CustomDBConnector connected to {self._uri}")
+            return
+
+        if not self._fallback_uri:
             self._connected = False
+            logger.warning(
+                "CustomDBConnector failed to connect and no local fallback "
+                "is configured"
+            )
+            return
+
+        logger.warning(
+            f"CustomDBConnector could not reach {self._uri}; falling back to "
+            f"the local database at {self._fallback_uri}. The chat history "
+            "is not shared with other machines."
+        )
+
+        if self._connect_to(self._fallback_uri):
+            self._connected = True
+            self._degraded = True
+            self._degradation_reason = (
+                f"The primary database {self._uri} is unreachable; the local "
+                f"database {self._fallback_uri} is used instead."
+            )
+            logger.info(
+                f"CustomDBConnector connected to the local fallback "
+                f"{self._fallback_uri}"
+            )
+        else:
+            self._connected = False
+            logger.warning(
+                "CustomDBConnector failed to connect to the local fallback as well"
+            )
 
     def _migrate_schema(self) -> None:
         """Rename the legacy ``token_limit`` column to ``chat_token_limit``.
@@ -249,12 +406,36 @@ class CustomDBConnector:
             self._engine.dispose()
             self._engine = None
             self._connected = False
+            self._degraded = False
+            self._degradation_reason = None
             logger.info("CustomDBConnector closed")
 
     @property
     def is_connected(self) -> bool:
         """Whether the connector is active."""
         return self._connected
+
+    @property
+    def is_degraded(self) -> bool:
+        """Whether the connector is running on the local fallback.
+
+        True means the primary database could not be reached and the local
+        SQLite database is used instead — the chat history works, but it is
+        not shared with the other machines.
+        """
+        return self._degraded
+
+    @property
+    def active_uri(self) -> str | None:
+        """The URI the connector is actually using."""
+        if not self._connected:
+            return None
+        return self._fallback_uri if self._degraded else self._uri
+
+    @property
+    def degradation_reason(self) -> str | None:
+        """Why the connector is degraded, or None when it is not."""
+        return self._degradation_reason
 
     def _ensure_connected(self) -> None:
         """Raise if not connected."""

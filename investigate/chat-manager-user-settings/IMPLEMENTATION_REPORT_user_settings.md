@@ -190,9 +190,9 @@ chat memory whenever the metadata database is down.
 | `components/command_registry.py` | The `CommandSpec` — the `\help` entry. |
 | `components/tui/chat_history_view.py` | `render_chat_user_markdown()`. |
 | `agent-torvalds.py`, `agent-torvalds-mw.py` | The startup hints and the command list. |
-| `chat_manager/tests/test_settings.py` | **New.** 20 tests. |
-| `chat_manager/tests/test_user_settings.py` | **New.** 38 tests. |
-| `chat_manager/tests/test_migration.py` | **New.** 10 tests. |
+| `chat_manager/tests/test_settings.py` | **New.** 22 tests. |
+| `chat_manager/tests/test_user_settings.py` | **New.** 40 tests. |
+| `chat_manager/tests/test_migration.py` | **New.** 9 tests. |
 | `tests/test_user_settings_command.py` | **New.** 16 tests — the integration. |
 | `chat_manager/README.md`, `README.md`, `CHANGELOG.md` | The documentation. |
 

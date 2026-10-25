@@ -168,7 +168,9 @@ The project documentation:
 - Interactive startup session picker plus eight `\chat-*` runtime commands
 - Dual-connector architecture: SQLAlchemy for metadata, LlamaIndex for message bodies
 - Graceful fallback to an in-memory message store when PostgreSQL is unavailable
-- 175 hermetic unit tests
+- Graceful fallback to a local SQLite database when the metadata database is unreachable —
+  the chat history keeps working, it is just not shared with other machines
+- 198 hermetic unit tests
 - See [Chat History Manager README](chat_manager/README.md) for details
 
 ### 18. MikroTik RouterOS Toolkit (`toolkits/MikroTik-RouterOS/`)
@@ -550,6 +552,8 @@ Configure per-request statistics via environment variables:
 | Variable | Default | Description |
 |---|---|---|
 | `TORVALDS_STORAGE_URI` | derived from `TORVALDS_PG_*` | SQLAlchemy URI for the `users` / `chat_sessions` tables |
+| `TORVALDS_STORAGE_FALLBACK_URI` | `sqlite:///~/.torvalds/chat_manager.db` | Local database used when the primary one cannot be reached |
+| `TORVALDS_STORAGE_FALLBACK` | *(enabled)* | Set to `off` to switch the local fallback off |
 | `TORVALDS_LLAMA_URI` | `postgres+asyncpg://…/llama_index_db` | LlamaIndex chat-store URI for message bodies |
 | `TORVALDS_PG_HOST` | `127.0.0.1` | PostgreSQL host |
 | `TORVALDS_PG_PORT` | `5432` | PostgreSQL port |
