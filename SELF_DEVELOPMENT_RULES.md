@@ -66,9 +66,9 @@ before any commit is created.
 
 | Item | Status |
 |---|---|
-| Branch | `fix/hitl-question-detection` — **in progress, not committed** |
-| Scope | The HITL question prompt: the question is rendered as Markdown, the choices are a menu instead of a `[y/N]` prompt, and the secret is masked with asterisks instead of `getpass` |
-| Status | Implemented, the question bank is 23/23, the presentation invariants are 9/9, the HITL suites are green, **no new failure** in the full suite (the CI gate: 40 known failures, 0 new). Awaiting the operator's review before the commit (rule 4). |
+| Branch | `fix/hitl-question-detection` — **committed and pushed** (`ab3fbb9`) |
+| Scope | The HITL question prompt: the question is rendered as Markdown, the choices are a menu instead of a `[y/N]` prompt, the secret is masked with asterisks instead of `getpass`, and a decorated question is asked as the question it is |
+| Status | Implemented, the question bank is 23/23, the presentation invariants are 9/9, the HITL suites are green, **no new failure** in the full suite (the CI gate: 40 known failures, 0 new). Committed (`ab3fbb9`) and pushed to `origin/fix/hitl-question-detection`. |
 | Report | `self-development/investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` |
 
 ### Latest change: a decorated question is asked as the question it is
@@ -90,6 +90,9 @@ label kept the "which" out of the head of the question, so the "should I"
 | `investigate/hitl-questions-issue/verify_hitl_question_presentation.py` | The new invariant I9 — a decorated question is not a yes/no question. 8 → 9 invariants. |
 | `investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` | Section 9 — the third round. |
 | `CHANGELOG.md` | The entry. |
+
+Committed as `ab3fbb9` ("fix: a decorated question is asked as the question it
+is") and pushed to `origin/fix/hitl-question-detection`.
 
 **Verifying the change**
 
