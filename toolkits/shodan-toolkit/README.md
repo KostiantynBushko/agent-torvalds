@@ -344,7 +344,7 @@ prevents a broken CLI from another virtualenv being picked up by mistake.
 ## Testing
 
 ```bash
-pytest                               # 153 tests
+pytest                               # 164 tests
 python examples/verify_parsers.py    # 51 checks against real CLI output
 python examples/verify_argv.py       # 17 argument vectors vs. the real binary
 python examples/smoke_test.py        # end-to-end against the real binary
@@ -387,24 +387,29 @@ network or an installed CLI.
 ## Project layout
 
 ```
-shodan-toolkit/
+shodan-toolkit/             the package - the directory itself
 ├── pyproject.toml
 ├── README.md
 ├── LICENSE
-├── src/shodan_toolkit/
-│   ├── __init__.py       public API
-│   ├── __main__.py       `python -m shodan_toolkit` entry point
-│   ├── agent.py          FunctionAgent factory
-│   ├── cli.py            command-line interface
-│   ├── client.py         typed Python API
-│   ├── config.py         configuration resolution
-│   ├── parsers.py        text → structured records
-│   ├── runner.py         subprocess execution
-│   └── tools.py          LlamaIndex FunctionTool wrappers
-├── tests/                153 tests
-├── conftest.py           makes `src/` importable for the test run
+├── __init__.py            public API
+├── __main__.py            `python -m shodan_toolkit` entry point
+├── agent.py               FunctionAgent factory
+├── agent_shodan_toolkit.py  LlamaIndex adapter - the agent tools
+├── cli.py                 command-line interface
+├── client.py              typed Python API
+├── config.py              configuration resolution
+├── parsers.py             text → structured records
+├── runner.py              subprocess execution
+├── tools.py               LlamaIndex FunctionTool wrappers
+├── tests/                164 tests
 └── examples/             verification and demo scripts
 ```
+
+There is no `src/` level and no nested package directory: the directory
+*is* the package, and the tests sit next to the code they test.  The
+modules import each other with **relative** imports (`from .client
+import ...`), which is the only form that works when the package is
+loaded through a hyphenated directory.
 
 ---
 

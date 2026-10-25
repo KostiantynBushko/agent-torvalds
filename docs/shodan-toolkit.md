@@ -32,11 +32,11 @@ preserved when it was moved - see
 The feature has two halves:
 
 ```
-toolkits/shodan-toolkit/                    the toolkit folder
-└── src/shodan_toolkit/                     the reusable library - the Shodan CLI wrapper
-    └── agent_shodan_toolkit.py             the LlamaIndex adapter - the sixteen tools
-        │
-        ▼
+toolkits/shodan-toolkit/                    the toolkit folder - and the package
+├── agent_shodan_toolkit.py                 the LlamaIndex adapter - the sixteen tools
+├── client.py, config.py, …                 the reusable library - the Shodan CLI wrapper
+│
+    ▼
 agent-torvalds.py / -mw.py                 the orchestrators
 ```
 
@@ -336,10 +336,10 @@ The guard is covered by the toolkit's own test suite
 
 | Path | Role |
 |---|---|
-| `toolkits/shodan-toolkit/` | The core package. The upstream project, verbatim. |
-| `toolkits/shodan-toolkit/src/shodan_toolkit/` | The importable package (`runner`, `parsers`, `client`, `tools`, `agent`, `config`, `cli`). |
-| `toolkits/shodan-toolkit/tests/` | The whole test suite: 133 upstream tests plus the 19 adapter tests. |
-| `toolkits/shodan-toolkit/src/shodan_toolkit/agent_shodan_toolkit.py` | The LlamaIndex adapter - the sixteen tools. |
+| `toolkits/shodan-toolkit/` | The package **and** the toolkit folder - there is no nested package directory and no `src/` level. The upstream project, verbatim. |
+| `toolkits/shodan-toolkit/*.py` | The importable package (`runner`, `parsers`, `client`, `tools`, `agent`, `config`, `cli`). |
+| `toolkits/shodan-toolkit/tests/` | The whole test suite: 145 upstream tests plus the 19 adapter tests. |
+| `toolkits/shodan-toolkit/agent_shodan_toolkit.py` | The LlamaIndex adapter - the sixteen tools. |
 | `docs/shodan-toolkit.md` | This page. |
 
 ### How the move was done
@@ -358,9 +358,17 @@ history** of the `feature/shodan-toolkit` branch, grafted under the
 * b068337 fix: make the HITL timeout default to "no timeout" (wait for the user) (#23)
 ```
 
-The content is byte-identical to the upstream project - every file has the
+The content was byte-identical to the upstream project - every file had the
 same blob hash. The upstream repository therefore stays the source of
 truth, and `git subtree pull` can bring in later upstream work.
+
+Since then the layout has been adjusted three times, in this repository
+only: the agent adapter moved into the package (see
+`toolkits/shodan-toolkit/CHANGELOG.md`), and the package itself moved out
+of `src/` and then out of the nested `shodan_toolkit/` directory, so
+`toolkits/shodan-toolkit/` now holds the package, the tests and the
+examples side by side - the same shape as the MikroTik toolkit. None of
+the changes touches the import name.
 
 ### The import alias
 
@@ -384,11 +392,15 @@ integration with the agent.
 self-development/.venv/bin/python -m pytest toolkits/shodan-toolkit/tests -q
 ```
 
-`pytest.ini` puts `toolkits/shodan-toolkit/src` on the path, so the suite
-tests the in-repository copy - the same code the agent adapter loads. The
-toolkit also ships its own `conftest.py`, which puts that directory on
-`sys.path` in its own right, so the suite runs no matter which directory
-pytest is started from.
+`pytest.ini` puts the repository root on the path, so the suite tests the
+in-repository copy - the same code the agent adapter loads. The test
+modules reach the library through **relative** imports (`from ..client
+import ...`), because the package directory name contains a hyphen and
+cannot be spelled in an absolute import.
+
+The suite runs no matter which directory pytest is started from: the
+toolkit's own `pyproject.toml` carries the same pytest settings as the
+repository's `pytest.ini`.
 
 | File | Tests | Covers |
 |---|---|---|
@@ -396,6 +408,7 @@ pytest is started from.
 | `tests/test_cli_contract.py`, `tests/test_runner_availability.py` | the library | the CLI contract, the availability check |
 | `tests/test_raw_guard.py`, `tests/test_tools.py` | the library | the read-only guard, the tool registry |
 | `tests/test_agent_adapter.py` | the adapter | the tool registration, the degradation contract, the error-payload convention, the load-path parity |
+| `tests/test_package_layout.py` | the layout | the flat layout, the relative imports, the import alias |
 
 `tests/test_agent_adapter.py` is the only file there that reaches outside
 the toolkit: it exercises the adapter and the agent's load paths, which live
