@@ -68,10 +68,48 @@ before any commit is created.
 |---|---|
 | Branch | `fix/hitl-question-detection` — **in progress, not committed** |
 | Scope | The HITL question prompt: the question is rendered as Markdown, the choices are a menu instead of a `[y/N]` prompt, and the secret is masked with asterisks instead of `getpass` |
-| Status | Implemented, the question bank is 16/16, the presentation invariants are 8/8, the HITL suites are 209/209, **no new failure** in the full suite. Awaiting the operator's review before the commit (rule 4). |
+| Status | Implemented, the question bank is 23/23, the presentation invariants are 9/9, the HITL suites are green, **no new failure** in the full suite (the CI gate: 40 known failures, 0 new). Awaiting the operator's review before the commit (rule 4). |
 | Report | `self-development/investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` |
 
-### Latest change: the Shodan toolkit
+### Latest change: a decorated question is asked as the question it is
+
+The operator reported it a third time
+(`/home/kbush/torvald-log/hitl_questions_issue/wrong-user-input.txt`): a
+question with three choices was prompted with `[y/N]`. The agent had written
+the question as `question: 'Which one should I use?'` — the quotes and the
+label kept the "which" out of the head of the question, so the "should I"
+*inside* it turned the question into a confirmation.
+
+| Path | Change |
+|---|---|
+| `components/hitl_question.py` | `_question_core()` — the question is read (and shown) without the quotes, the Markdown emphasis and the label that wrap it. The wh-word veto also fires when the question word heads a *clause* ("so which one should I use?"). |
+| `components/human_loop_handler.py` | The history records the type the operator was asked for: the options travel with the question. |
+| `scripts/hitl_question_bank.py` | Six new cases: five catch the defect, one guards the fix against being too broad (a relative clause stays a yes/no question). 17 → 23. |
+| `tests/test_hitl_question_presentation.py` | New `TestDecoratedQuestion` — 9 tests, 6 of which fail without the fix. |
+| `investigate/hitl-questions-issue/diag_decorated_question.py` | **New.** The diagnostic: 8 mis-classifications before the fix, 0 after. |
+| `investigate/hitl-questions-issue/verify_hitl_question_presentation.py` | The new invariant I9 — a decorated question is not a yes/no question. 8 → 9 invariants. |
+| `investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` | Section 9 — the third round. |
+| `CHANGELOG.md` | The entry. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/tests/test_hitl_question_bank.py -q
+self-development/.venv/bin/python investigate/hitl-questions-issue/diag_decorated_question.py
+self-development/.venv/bin/python investigate/hitl-questions-issue/verify_hitl_question_presentation.py
+```
+
+23 bank cases, 9 invariants, 0 mis-classifications. The CI gate reports
+**no new failure** (40 known failures, unchanged).
+
+### Previous change: what the operator actually sees
+
+The question, the report and the menu — the first round was judged on the
+rules, the second on the screen. The three defects the screen showed (the
+question printed twice, two numbered lists with one meaning, the choices
+coming before the question) are closed; the report is section 8.
+
+### Earlier change: the Shodan toolkit
 
 The `shodan-toolkit` project, which lived in its own repository, was moved
 into this one and turned into a first-class toolkit.

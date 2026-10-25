@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased] - The HITL question is asked as the question it is
+
+### Fixed
+- **A quoted, emphasised or labelled question is no longer prompted as a
+  yes/no question.** The operator reported that a question with three choices
+  was answered with `[y/N]`: the agent had written the question as
+  `question: 'Which one should I use?'`, and the quotes and the label kept
+  the "which" out of the head of the question — so the "should I" *inside* it
+  turned the question into a confirmation. The question is now read through
+  its **core** — without the quotes, the Markdown emphasis and the label —
+  and the operator reads it without them too.
+- **A question whose question word heads a clause is not a yes/no question.**
+  "I found three options, so which one should I use?" asks for a choice: the
+  "should I" sits in a subordinate clause. A wh-word in front of the offer
+  now means the offer is not what the question asks. The rule stays narrow:
+  a wh-word *after* the offer is a relative clause, not a question word, so
+  "Should I use the tool which deletes the branch?" is still a confirmation.
+- **The HITL history records the type the operator was asked for.** A menu
+  question was recorded as a yes/no question, because the options were not
+  passed to the type detection.
+
+### Changed
+- **The question bank grows from 17 to 23 cases** — five of them catch the
+  defect above, one of them guards the fix against being too broad (a
+  relative clause must stay a yes/no question).
+- **The presentation harness reports 9 invariants** instead of 8; the new
+  one checks that a decorated question is asked as the open question it is.
+- **New diagnostic**: `investigate/hitl-questions-issue/diag_decorated_question.py`
+  — 8 mis-classifications before the fix, 0 after.
+
 ## [Unreleased] - Git toolkit against pygit2 1.20
 
 ### Fixed

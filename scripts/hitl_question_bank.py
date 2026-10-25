@@ -365,6 +365,101 @@ QUESTION_BANK: List[QuestionCase] = [
         default_answer="30",
         validator=_v_number,
     ),
+    # ------------------------------------------------- decorated questions
+    QuestionCase(
+        id="text-05-quoted-question",
+        title="A question the agent quotes",
+        message="'Which one should I use?'",
+        expected_type="text",
+        default_answer="the first one",
+        validator=_v_non_empty,
+        regression=(
+            "the quotes kept the 'which' out of the head of the question, so the "
+            "'should I' inside it made it a yes/no question and the operator was "
+            "prompted with [y/N] for a question that cannot be answered with a "
+            "yes or a no"
+        ),
+    ),
+    QuestionCase(
+        id="text-06-emphasised-question",
+        title="A question the agent emphasises",
+        message="**Which one should I use?**",
+        expected_type="text",
+        default_answer="the first one",
+        validator=_v_non_empty,
+        regression=(
+            "the Markdown emphasis around the question hid the question word, and "
+            "the question was prompted as a yes/no question"
+        ),
+    ),
+    QuestionCase(
+        id="text-07-labelled-question",
+        title="A question the agent labels",
+        message="question: 'Which one should I use?'",
+        expected_type="text",
+        default_answer="the first one",
+        validator=_v_non_empty,
+        regression=(
+            "the label kept the 'which' out of the head of the question, so the "
+            "operator was prompted with [y/N] — this is the shape the operator "
+            "reported in /home/kbush/torvald-log/hitl_questions_issue/"
+            "wrong-user-input.txt"
+        ),
+    ),
+    QuestionCase(
+        id="text-08-question-in-a-clause",
+        title="A question whose question word heads a clause",
+        message="I found three options, so which one should I use?",
+        expected_type="text",
+        default_answer="the first one",
+        validator=_v_non_empty,
+        regression=(
+            "the 'should I' was taken for the offer of the question, although it "
+            "sits in a subordinate clause — the question asks for a choice"
+        ),
+    ),
+    QuestionCase(
+        id="yesno-05-relative-clause",
+        title="A yes/no question with a relative clause (must stay yes/no)",
+        message="Should I use the tool which deletes the branch?",
+        expected_type="yesno",
+        default_answer="no",
+        validator=_v_yes_no,
+        regression=(
+            "the 'which' of a relative clause is not a question word: the fix for "
+            "the open question must not turn every 'which' into one"
+        ),
+    ),
+    QuestionCase(
+        id="llm-03-decorated-report",
+        title="The operator's real report: a labelled question at the end",
+        message=(
+            "That deletion is already in place \u2014 it was the D12 fix, "
+            "committed and pushed.\n"
+            "\n"
+            "What gets deleted, and what doesn't\n"
+            "\n"
+            "Case A concretely:\n"
+            "\n"
+            "  message:  \"I inspected the repo and found the following.\"\n"
+            "  context:  'I inspected the repo and found the following.'\n"
+            "  options:  ('patch the config file', 'add an env var', "
+            "'regenerate the file')\n"
+            "\n"
+            "The rule is deliberately narrow: only the block immediately before a "
+            "marked list is cut out of the report.\n"
+            "\n"
+            "question: 'Which one should I use?'"
+        ),
+        expected_type="text",
+        default_answer="patch the config file",
+        validator=_v_non_empty,
+        regression=(
+            "the operator was prompted with [y/N] for the last line of the "
+            "report: the label and the quotes hid the question word, and the "
+            "'should I' inside the question then made it a confirmation"
+        ),
+    ),
 ]
 
 

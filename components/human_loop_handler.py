@@ -358,13 +358,17 @@ class HumanLoopHandler(BaseCallbackHandler):
         # 3 000-character report is not a question.
         split = split_question(text)
         question = split.question if split is not None else text.strip()
+        # The choices belong to the question: without them a menu question
+        # is recorded as a yes/no question, and the history lies about what
+        # the operator was asked.
+        options = split.options if split is not None else ()
         self._question_history.append(
             {
                 "question_id": question_id,
                 "question": question[:200],
                 "answer": None,
                 "was_timeout": False,
-                "input_type": detect_input_type(question),
+                "input_type": detect_input_type(question, options),
                 "timestamp": time.monotonic(),
             }
         )

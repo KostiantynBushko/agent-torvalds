@@ -119,6 +119,12 @@ _REQUESTS: Tuple[re.Pattern, ...] = (
     ),
 )
 
+#: An explicit marker wins over every heuristic.
+_MARKER = re.compile(r"\[HITL:(text|yesno|menu|password)\]", re.IGNORECASE)
+
+#: Any explicit marker, with or without a type.
+_MARKER_ANY = re.compile(r"\[HITL(?::[a-z]+)?\]", re.IGNORECASE)
+
 #: The loose "yes/no" pattern.  Kept for backwards compatibility with the
 #: original detection, but *not* used to decide whether a paragraph is the
 #: question — it is far too loose for that ("no" appears in "notification").
@@ -172,6 +178,93 @@ def _carries_interrogative(text: str) -> bool:
     if _QUESTION_MARK.search(text):
         return True
     return any(pattern.search(text) for pattern in _REQUESTS)
+
+
+# ---------------------------------------------------------------------------
+# The core of the question
+# ---------------------------------------------------------------------------
+#
+# A model does not always ask a question plainly.  It quotes it
+# ("'Which one should I use?'"), emphasises it ("**Which one should I
+# use?**") or labels it ("question: Which one should I use?").  The
+# wrapping is *not* part of the question — and it must not hide the
+# question word from the rules that decide what kind of answer the
+# question wants.  The operator reported exactly that: a question with
+# three choices was prompted with ``[y/N]`` because the quotes kept the
+# "which" out of the head of the question, and the "should I" inside it
+# then made it look like a confirmation.
+#
+# See ``investigate/hitl-questions-issue/`` (defect D13).
+
+#: The decoration that can wrap a question.  The pairs are tried from the
+#: most specific to the least, so "**bold**" is not mistaken for "*".
+_WRAPPERS: Tuple[Tuple[str, str], ...] = (
+    ("**", "**"),
+    ("__", "__"),
+    ("`", "`"),
+    ("*", "*"),
+    ("_", "_"),
+    ("\u201c", "\u201d"),
+    ("\u2018", "\u2019"),
+    ("\u00ab", "\u00bb"),
+    ("(", ")"),
+    ("[", "]"),
+    ("{", "}"),
+    ("'", "'"),
+    ('"', '"'),
+)
+
+#: A label that introduces the question: "question:", "Q:", "ask:",
+#: "final question:".  The label is not part of the question either.
+_LABEL = re.compile(
+    r"^(?:[A-Za-z][\w]*(?:[ \t]+[A-Za-z][\w]*)?)[ \t]*:[ \t]*"
+)
+
+
+def _strip_wrapping(text: str) -> str:
+    """Return *text* without the decoration that wraps it.
+
+    Only a *matching* pair is removed, so a question that merely starts
+    with a code span keeps its backtick instead of losing half of it.
+    """
+    stripped = text.strip()
+    for opening, closing in _WRAPPERS:
+        if (
+            len(stripped) > len(opening) + len(closing)
+            and stripped.startswith(opening)
+            and stripped.endswith(closing)
+        ):
+            return stripped[len(opening):-len(closing)].strip()
+    return stripped
+
+
+def _question_core(question: str) -> str:
+    """Return the question without the decoration and the label around it.
+
+    The core is what the operator is actually asked, and what the rules
+    have to look at:
+
+    * ``'Which one should I use?'``  -> ``Which one should I use?``
+    * ``**Which one should I use?**`` -> ``Which one should I use?``
+    * ``question: 'Which one should I use?'`` -> ``Which one should I use?``
+
+    A question that is nothing but decoration ("Options:") is returned
+    unchanged — there is no core to take.
+    """
+    text = question.strip()
+    if _MARKER_ANY.search(text):
+        # The marker is an instruction to the detector, not part of the
+        # question — it must not be eaten by the wrapping.
+        return text
+    for _ in range(3):
+        if not text:
+            break
+        unwrapped = _strip_wrapping(text)
+        match = _LABEL.match(unwrapped)
+        if match is None:
+            return unwrapped
+        text = unwrapped[match.end():]
+    return text or question.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -663,7 +756,7 @@ def split_question(text: str) -> Optional[Question]:
 
     context = "\n\n".join(part for part in (prefix, suffix) if part)
     return Question(
-        question=_cap(plan.text.strip()),
+        question=_cap(_question_core(plan.text)),
         context=context,
         options=options,
     )
@@ -688,6 +781,10 @@ _ASK = re.compile(
     re.IGNORECASE,
 )
 
+#: The wh-words.  A question that heads with one of them asks for a
+#: *value* or a *choice* — it cannot be answered with "yes" or "no".
+_WH_WORDS = "which|what|who|whom|whose|where|when|why|how"
+
 #: An open (wh-) question at the head of the question.  "Which of these
 #: should I investigate first?" and "What is the name of the branch you
 #: want me to create?" ask for a *value* or a *choice* — they cannot be
@@ -696,9 +793,15 @@ _ASK = re.compile(
 _WH_HEAD = re.compile(
     r"^[\s,.;:]*(?:(?:and|also|so|now|then|ok|okay|alright|well)\b[\s,]*|"
     r"(?:in|on|at|for|by|from|with|about)\s+)*"
-    r"(which|what|who|whom|whose|where|when|why|how)\b",
+    rf"(?:{_WH_WORDS})\b",
     re.IGNORECASE,
 )
+
+#: A wh-word *anywhere* in the question.  It tells whether the offer
+#: ("shall I …?") is what the question is about, or whether the offer sits
+#: in a subordinate clause: "I need to know which one should I use?" asks
+#: to know, not to confirm.
+_WH_ANY = re.compile(rf"\b(?:{_WH_WORDS})\b", re.IGNORECASE)
 
 #: "the branch *you* want me to create" — a relative clause inside a noun
 #: phrase.  The operator is asked for a value, not for a confirmation.
@@ -731,13 +834,6 @@ _YESNO: Tuple[re.Pattern, ...] = (
     re.compile(r"\b(confirm|proceed|go\s+ahead|continue)\b", re.IGNORECASE),
 )
 
-#: An explicit marker wins over every heuristic.
-_MARKER = re.compile(r"\[HITL:(text|yesno|menu|password)\]", re.IGNORECASE)
-
-#: Any explicit marker, with or without a type.
-_MARKER_ANY = re.compile(r"\[HITL(?::[a-z]+)?\]", re.IGNORECASE)
-
-
 def strip_marker(question: str) -> str:
     """Return *question* without its explicit ``[HITL:...]`` marker.
 
@@ -752,7 +848,7 @@ def strip_marker(question: str) -> str:
 def _is_yes_no(question: str) -> bool:
     """Return ``True`` when *question* offers a binary choice.
 
-    Two rules, in order:
+    Three rules, in order:
 
     1. an **open** question — a wh-question at its head — is never a
        binary offer.  "Which of these should I investigate first?" wants a
@@ -760,17 +856,34 @@ def _is_yes_no(question: str) -> bool:
     2. otherwise the question has to *offer* something: "shall I …?",
        "do you want …?", "is it ok …?", "confirm …".  A request that
        merely mentions the offer — "the branch you want me to create" — is
-       not an offer.
+       not an offer;
+    3. a wh-word *in front of* the offer means the offer is not what the
+       question asks.  In "Which one should I use?" the "should I" sits in
+       a subordinate clause — the question wants a choice, not a "yes".
+
+    The question is read through its **core** (see
+    :func:`_question_core`): the quotes, the Markdown emphasis and the
+    label that may wrap it are not part of the question and must not hide
+    the question word from the rules.
     """
-    if _WH_HEAD.search(question):
+    core = _question_core(question)
+    if not core:
         return False
 
-    relative = _RELATIVE_OFFER.search(question)
+    if _WH_HEAD.search(core):
+        return False
+
+    relative = _RELATIVE_OFFER.search(core)
     for pattern in _YESNO:
-        if not pattern.search(question):
+        match = pattern.search(core)
+        if match is None:
             continue
         if relative is not None and pattern is _WANT_ME_TO:
             continue
+        if _WH_ANY.search(core, 0, match.start()) is not None:
+            # The offer is in a subordinate clause: the question asks for a
+            # value or a choice.
+            return False
         return True
     return False
 
@@ -797,11 +910,15 @@ def detect_input_type(question: str, options: Sequence[str] = ()) -> str:
     if not question or not question.strip():
         return "text"
 
-    marker = _MARKER.search(question)
+    core = _question_core(question)
+    if not core:
+        return "text"
+
+    marker = _MARKER.search(core)
     if marker:
         return marker.group(1).lower()
 
-    if _SECRET_NOUN.search(question) and _ASK.search(question):
+    if _SECRET_NOUN.search(core) and _ASK.search(core):
         return "password"
 
     # A question written as a list of choices wants a choice, not a yes or
@@ -846,7 +963,7 @@ def normalise_question(question: str) -> str:
     """
     if not question:
         return ""
-    text = question.strip().lower()
+    text = _question_core(question).lower()
     text = re.sub(r"[`*_~]", "", text)
     text = _LEADING_FRAME.sub("", text)
     text = re.sub(r"[^\w\s]", " ", text)
