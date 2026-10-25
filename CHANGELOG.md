@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased] - Continuous integration
+
+### Added
+- **A CI workflow that runs the test suite** — `.github/workflows/tests.yml`
+  runs on every push to `master` and on every pull request, on
+  `ubuntu-latest` with Python 3.12. The failure list is uploaded as the
+  artifact `pytest-failures` when the build is red.
+- **`scripts/ci_test_gate.py` — the CI test gate.** The suite carries 77
+  known failures, so a plain `pytest` run is always red and a workflow
+  built on it would be noise. The gate compares the failures with a
+  committed baseline and fails the build **only when a failure appears
+  that is not in it**: a new regression breaks the build, the known
+  failures do not. It also reports the failures that have been fixed, so
+  the baseline can be tightened.
+- **`tests/ci_baseline.txt` — the known-failure baseline.** One node id
+  per line, regenerated with
+  `python scripts/ci_test_gate.py --write-baseline`.
+- **`requirements-ci.lock` — the pinned environment for CI.**
+  `requirements.txt` states the minimum versions the agent supports; the
+  lock pins the versions the baseline was recorded with, so the baseline
+  means the same thing on every runner. `llama-index-llms-llama-cpp` is
+  deliberately absent — it pulls `llama-cpp-python`, which has no
+  prebuilt wheel, and the test suite does not need it.
+- **`docs/ci.md`** — how the gate works, what the known failures are, and
+  how to tighten the baseline.
+
 ## [Unreleased] - HITL question presentation
 
 ### Fixed
