@@ -56,6 +56,46 @@ def test_the_bank_case_is_a_question(case) -> None:
     assert split_question(case.message) is not None, case.id
 
 
+@pytest.mark.parametrize("case", QUESTION_BANK, ids=_ids())
+def test_the_question_is_not_repeated_in_the_context(case) -> None:
+    """The question is the question — the report does not repeat it.
+
+    A lead-in that ends with a colon was both the question *and* the last
+    line of the report, so the operator read it twice and the report
+    itself was lost.
+    """
+    split = split_question(case.message)
+
+    assert split is not None, case.id
+    if not split.context.strip():
+        return
+    assert split.question not in split.context, (
+        f"{case.id}: the question is repeated in the context "
+        f"(question={split.question!r}, context={split.context!r})"
+    )
+
+
+def test_the_report_before_the_question_survives() -> None:
+    """The text before the question is the report — it must not be lost.
+
+    "The commit touches 4 files. Also, would you like me to:" is one line
+    with two sentences.  The question is the second one; the first one is
+    the report and belongs in the context.
+    """
+    message = (
+        "The commit touches 4 files. Also, would you like me to:\n"
+        "\n"
+        "- squash the commits into one\n"
+        "- keep the history as it is\n"
+    )
+    split = split_question(message)
+
+    assert split is not None
+    assert split.question == "Also, would you like me to:"
+    assert split.context == "The commit touches 4 files."
+    assert split.options == ("squash the commits into one", "keep the history as it is")
+
+
 def test_the_bank_covers_every_input_type() -> None:
     """The bank is only a criterion when it covers the whole vocabulary."""
     types = {case.expected_type for case in QUESTION_BANK}

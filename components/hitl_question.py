@@ -309,6 +309,18 @@ def _list_lead_in(
     return lead_in, tuple(_item_text(lines, kinds, i) for i in item_indexes)
 
 
+def _tidy(text: str) -> str:
+    """Collapse the ragged whitespace a cut leaves behind.
+
+    Removing a block from the middle of a report leaves the blank lines
+    that separated it from its neighbours, and the space that indented
+    its first line.  The report is read by a human — it must not carry
+    the seams of the cut.
+    """
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
 def _plain_list_items(text: str) -> Tuple[str, ...]:
     """Return the items of a block that is *nothing but* a list of choices.
 
@@ -371,6 +383,58 @@ def _inline_choice(text: str) -> Optional[Tuple[Tuple[str, ...], str]]:
     question = text[: matches[0].start()].strip()
     question = question.strip("*_`").strip()
     return tuple(options), question
+
+
+#: The longest line that may be a lead-in for a list of choices.  A long
+#: line is a sentence, not an introduction.
+_LEAD_IN_MAX_CHARS = 80
+
+#: A list item that *starts* with an inline marker: "- (a) text",
+#: "• (b) text".  A marker in the middle of a sentence is prose; a marker
+#: that opens a list item is a choice.
+_MARKED_ITEM = re.compile(
+    r"^\s*(?:[-*+\u2022\u2023]|\d+[.)])\s*"
+    r"(?:\*\*|__|[*_`])?\s*\(\s*([a-z])\s*\)\s*(?:\*\*|__|[*_`])?\s*"
+    r"(?P<body>.*)$",
+    re.IGNORECASE,
+)
+
+
+def _marked_list_items(
+    text: str,
+) -> Optional[Tuple[Tuple[str, ...], Optional[Tuple[int, int]]]]:
+    """Return the choices of a list whose items carry the inline markers.
+
+    "• (a) delete it / • (b) cancel" is a menu that the model put *before*
+    the question.  The markers have to be consecutive letters starting at
+    "a" — a stray "(a)" in a sentence is not a choice — and every item of
+    the list has to carry one.
+
+    Returns ``None`` when the text is not such a list.
+    """
+    options: List[str] = []
+    letters: List[str] = []
+
+    for line in text.split("\n"):
+        if not line.strip():
+            continue
+        match = _MARKED_ITEM.match(line)
+        if match is None:
+            return None
+        letters.append(match.group(1).lower())
+        option = match.group("body").strip().strip("*_`").strip()
+        option = re.sub(r"\s*,?\s*\bor\b\s*$", "", option, flags=re.IGNORECASE)
+        option = option.strip(_OPTION_TRIM).strip().rstrip(".").strip()
+        if not option:
+            return None
+        options.append(option)
+
+    if len(options) < 2:
+        return None
+    if letters != list(string.ascii_lowercase[: len(letters)]):
+        return None
+
+    return tuple(options), None
 
 
 #: The plan for one block: where the question is, what it says and what
@@ -439,15 +503,17 @@ def _question_in_block(
             # colon keeps its last sentence only: "The commit touches 4
             # files. Also, would you like me to:" becomes "Also, would you
             # like me to:".
-            stripped = line.rstrip()
-            if stripped.endswith(":"):
-                offset = 0
+            offset = 0
+            if line.rstrip().endswith(":"):
                 for match in _SENTENCE_BOUNDARY.finditer(line):
                     offset = match.end()
-                question = line[offset:].strip()
-            else:
-                question = line.strip()
-            lead = len(line) - len(line.lstrip())
+            raw = line[offset:]
+            question = raw.strip()
+            # The span has to point at the question itself.  The offset of the
+            # sentence matters: without it the span starts at the beginning of
+            # the line, the text before the question is cut off, and the question
+            # is repeated in the context.
+            lead = offset + (len(raw) - len(raw.lstrip()))
             question_start = start + offsets[index] + lead
             question_end = question_start + len(question)
         else:
@@ -550,14 +616,50 @@ def split_question(text: str) -> Optional[Question]:
             options = items
             option_span = (nxt_start, nxt_end)
 
+    # A list of choices that *precedes* the question is the menu too.  A
+    # model that writes "Reply with one of: (a) … (b) … (c) …" and only
+    # then the question puts the choices first.
+    if not options and q_index > 0:
+        for index in range(q_index - 1, max(q_index - 4, -1), -1):
+            prev_start, prev_end, _ = blocks[index]
+            marked = _marked_list_items(source[prev_start:prev_end])
+            if marked is None:
+                continue
+            options = marked[0]
+            option_span = (prev_start, prev_end)
+            # The line that introduces the list belongs to the list: it is
+            # cut with it, so the report does not keep a dangling "Reply
+            # with one of:" whose list became the menu.
+            if index > 0:
+                lead_start, _lead_end, lead_block = blocks[index - 1]
+                stripped = lead_block.strip()
+                if (
+                    stripped.endswith(":")
+                    and "\n" not in stripped
+                    and len(stripped) <= _LEAD_IN_MAX_CHARS
+                ):
+                    option_span = (lead_start, prev_end)
+            break
+
     prefix = source[: plan.start].strip()
     suffix = source[plan.end:].strip()
     if option_span is not None:
         # The choices are rendered as the menu, not as context.
         option_start, option_end = option_span
-        head = source[plan.end : option_start].strip() if option_start >= plan.end else ""
-        tail = source[option_end:].strip()
-        suffix = "\n\n".join(part for part in (head, tail) if part)
+        if option_end <= plan.start:
+            # The choices came *before* the question — they are cut out of
+            # the report, and the menu takes their place.
+            prefix = _tidy(
+                source[:option_start] + "\n\n" + source[option_end : plan.start]
+            )
+        else:
+            head = (
+                source[plan.end : option_start].strip()
+                if option_start >= plan.end
+                else ""
+            )
+            tail = source[option_end:].strip()
+            suffix = "\n\n".join(part for part in (head, tail) if part)
 
     context = "\n\n".join(part for part in (prefix, suffix) if part)
     return Question(

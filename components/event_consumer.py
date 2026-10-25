@@ -40,7 +40,11 @@ from rich.console import Console
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
 from components.console_input_module import ConsoleInputModule
-from components.console_markdown import render_markdown, render_options
+from components.console_markdown import (
+    render_markdown,
+    render_options,
+    render_report,
+)
 from components.hitl_question import strip_marker
 from components.hitl_timeout import NO_TIMEOUT, describe_timeout
 
@@ -783,7 +787,9 @@ class EventConsumer:
 
         self.console.print("\n[magenta]🤖 Agent asks:[/magenta]")
         if context:
-            render_markdown(self.console, context, style="dim")
+            # The report is read, not answered: its lists are bullets,
+            # so the only numbers on the screen are the choices of the menu.
+            render_report(self.console, context, style="dim")
         if question:
             if context:
                 # The report and the question are two blocks, not one.
