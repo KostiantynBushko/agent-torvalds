@@ -31,7 +31,7 @@ from agent_os_toolkit import logger as os_logger
 from agent_math_toolkit import logger as math_logger
 from agent_db_toolkit import logger as db_logger
 from agent_apt_toolkit import logger as apt_logger
-from agent_chat_memory import logger as chat_memory_logger
+from chat_manager.startup import logger as chat_manager_logger
 from agent_github_toolkit import logger as github_logger
 
 
@@ -225,7 +225,7 @@ class TestNoDuplicateBasicConfig(unittest.TestCase):
         "agent_math_toolkit",
         "agent_db_toolkit",
         "agent_apt_toolkit",
-        "agent_chat_memory",
+        "chat_manager.startup",
         "agent_github_toolkit",
     ]
 
@@ -290,7 +290,7 @@ class TestAllLoggersRespectRootLevel(unittest.TestCase):
         ("math_logger", math_logger),
         ("db_logger", db_logger),
         ("apt_logger", apt_logger),
-        ("chat_memory_logger", chat_memory_logger),
+        ("chat_manager_logger", chat_manager_logger),
         ("github_logger", github_logger),
     ]
 

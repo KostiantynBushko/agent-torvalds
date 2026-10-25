@@ -93,9 +93,11 @@ The project documentation:
 - Return query results as structured dictionaries
 - Configurable connection parameters via `db_toolkit_config.yaml`
 
-### 9. Chat Memory Module (`agent_chat_memory.py`)
-- Persistent chat memory backed by PostgreSQL
-- Token-limited memory buffers for conversation context
+### 9. Chat Memory (`chat_manager/`)
+- The chat memory is provided by the **Chat History Manager** — see § 17
+- The legacy `agent_chat_memory.py` module has been removed; the manager is the only
+  source of a memory buffer, and an in-memory buffer is the last resort
+- Token-limited memory buffers for conversation context, one per session
 - Integration with LlamaIndex for AI-powered memory management
 
 ### 10. Persistent Cache System (`agent_cache_system.py`)
@@ -827,7 +829,6 @@ agent-torvalds/
 | agent_github_toolkit.py        # GitHub API and PR management toolkit
 | agent_apt_toolkit.py           # APT package management toolkit
 | agent_db_toolkit.py            # Database query toolkit (PostgreSQL and MySQL)
-| agent_chat_memory.py           # Chat memory module with LlamaIndex
 | agent_cache_system.py          # Persistent cache for operational context
 | agent_stats_handler.py         # Per-request statistics collection and rendering
 | agent_tool_retriever.py        # On-demand semantic tool loading
