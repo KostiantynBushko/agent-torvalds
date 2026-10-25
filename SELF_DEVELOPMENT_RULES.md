@@ -93,13 +93,14 @@ question was not answered; act on your own judgement."*
 |---|---|
 | Branch | `refactor/shodan-toolkit-flat-layout` — **implemented, committed** (`6920d03`) |
 | Scope | The Shodan toolkit's layout: the toolkit directory **is** the package. The `src/` level and the nested `shodan_toolkit/` directory are gone — every source file sits directly in `toolkits/shodan-toolkit/`, next to `tests/` and `examples/`, the same shape as the MikroTik toolkit. The import name is unchanged (`toolkits.shodan_toolkit` through the alias, `shodan_toolkit` in a standalone install). |
-| Status | Implemented: the modules moved, the tests use relative imports, the alias shim points at the new path, the distribution maps the package explicitly, and a new layout contract test (`toolkits/shodan-toolkit/tests/test_package_layout.py`, 11 checks) guards the rule. The toolkit suite is green (162 passed, 2 skipped), the alias contract is green (23/23), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new). Committed as `6920d03` ("refactor: make the Shodan toolkit a flat package") — the operator approved the commit (rule 4). Not pushed yet: the push needs its own approval. |
+| Status | Implemented: the modules moved, the tests use relative imports, the alias shim points at the new path, the distribution maps the package explicitly, and a new layout contract test (`toolkits/shodan-toolkit/tests/test_package_layout.py`, 11 checks) guards the rule. The toolkit suite is green (162 passed, 2 skipped), the alias contract is green (23/23), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new). Committed as `6920d03` ("refactor: make the Shodan toolkit a flat package") and pushed to `origin/refactor/shodan-toolkit-flat-layout` — the operator approved both the commit and the push (rule 4). |
 | Policy | The `toolkits` package must be imported **before** pytest imports a module from inside a hyphenated toolkit package, or pytest's "importlib" mode loads the package twice and the import alias goes stale. `consider_namespace_packages = true` in `pytest.ini` and in the toolkit's `pyproject.toml` makes pytest resolve the name through the normal import machinery, so there is exactly one copy of the package. |
 
 ### Latest change: the Shodan toolkit is a flat package
 
 On the branch `refactor/shodan-toolkit-flat-layout`, committed as
-`6920d03` ("refactor: make the Shodan toolkit a flat package").
+`6920d03` ("refactor: make the Shodan toolkit a flat package") and pushed
+to `origin/refactor/shodan-toolkit-flat-layout`.
 
 The toolkit used to be a project folder that held the package one level
 down (`src/shodan_toolkit/`, then `shodan_toolkit/`). It is now the
