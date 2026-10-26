@@ -1,5 +1,95 @@
 # Changelog
 
+## [Unreleased] - The Excel toolkit is a module
+
+### Changed
+- **The Excel toolkit is now a module under `toolkits/`.**  It used to be a
+  single loose module at the project root, `agent_xlsx_toolkit.py`, next to the
+  other `agent_*.py` files, while the features that were already modules lived
+  in folders under `toolkits/`.  A toolkit is now one folder, like the
+  MikroTik, the Shodan, the math, the Git, the GitHub, the OS, the Linux, the
+  APT, the Windows and the database one.
+
+  | Path | Was | Now |
+  |------|-----|-----|
+  | `agent_xlsx_toolkit.py` | the whole toolkit — the operations *and* the LlamaIndex adapter | split in two |
+  | `toolkits/xlsx-toolkit/operations.py` | — | the nine Excel operations, the **library half** |
+  | `toolkits/xlsx-toolkit/agent_xlsx_toolkit.py` | — | the **adapter**, the only LlamaIndex-dependent module |
+  | `toolkits/xlsx-toolkit/__init__.py` | — | the public API surface |
+  | `toolkits/xlsx-toolkit/tests/` | — | the module-local tests |
+
+  The split is the point.  The operations carry **no** LlamaIndex import, so
+  they stay usable — and testable — as a plain Python library; the adapter is
+  the one module that knows about the agent framework, and it is imported on
+  demand.  Importing the toolkit therefore never pulls LlamaIndex into the
+  process.
+
+  The library half is built on `openpyxl` — the Excel file format is the file
+  format, so an Excel operation is an Excel operation whether or not an agent
+  framework is installed — and on the standard library, and on nothing else.
+  The layout contract pins that exact set, so a new dependency cannot slip in
+  unnoticed.
+
+- **The import path moved.**  The package lives in a hyphenated directory, so it
+  is reached through the alias that `toolkits/__init__.py` registers:
+
+  ```python
+  from toolkits.xlsx_toolkit import read_xlsx_file  # the library
+  from toolkits.xlsx_toolkit.agent_xlsx_toolkit import get_all_tools  # the adapter
+  ```
+
+  The **two** call sites — `agent_tool_retriever.py` and
+  `agent_tool_selection.py` — were updated.  As with the other toolkits under
+  `toolkits/`, the adapter is now imported **behind a guard**, so a missing or
+  broken toolkit degrades to "no tools" instead of a failed boot.  The Excel
+  toolkit was **mandatory** before this change; it is optional now.
+
+  That is not a formality.  Before this change a missing `openpyxl` took the
+  whole agent down with an unhandled `ModuleNotFoundError`; now the agent
+  boots with 146 tools instead of 155.  The behaviour of the *tools* did not
+  change — the operations still report a failure as a message string and never
+  raise.
+
+- **The logger's name moved.**  It was `agent_xlsx_toolkit`, and it is now
+  `toolkits.xlsx-toolkit.operations` — that is what `logging.getLogger(__name__)`
+  does when the module moves.  The adapter re-exports it, so the toolkit still
+  logs through one logger.
+
+### Added
+- **`toolkits/xlsx-toolkit/`** — the package, with a `README.md`, a `py.typed`
+  marker and a `pyproject.toml` for a standalone install
+  (`pip install ./toolkits/xlsx-toolkit`).  The distribution depends on
+  `openpyxl`; the adapter is an extra (`xlsx-toolkit[agent]`).
+
+- **`toolkits/xlsx-toolkit/tests/`** — the test suite, 95 tests.  The suite
+  that used to live at `tests/test_xlsx_toolkit.py` moved with the toolkit and
+  was extended: the error contract of all nine operations, the tool surface and
+  its order are now pinned.
+
+- **`toolkits/xlsx-toolkit/tests/test_package_layout.py`** — the layout contract,
+  33 checks: the flat layout, the relative imports, the alias, the LlamaIndex
+  boundary, the dependency profile of the library half, the nine-tool surface
+  and the fact that no call site imports the old module name any more.
+
+- **`toolkits/xlsx-toolkit/tests/test_split_verification.py`** — the test of the
+  mechanical check, driven with twelve deliberate drifts: a reworded tool
+  description, a dropped docstring, a changed body, a changed parameter
+  default, two operations swapped, a LlamaIndex import in the library half, a
+  tool that went missing, an operation that went missing, a lost module-level
+  logger, a lost dependency, an unexpected one and a lost openpyxl import.
+
+- **`investigate/xlsx-toolkit-module/verify_split.py`** — the mechanical check: it
+  compares the *committed* original with the new files, by AST, and fails on a
+  changed signature, a changed docstring, a changed body, a changed order, a
+  changed tool description, a lost module-level logger, a changed dependency
+  profile, a lost openpyxl import or a LlamaIndex import in the wrong half.
+  The original is **found, not assumed**: a named ref that still carries the
+  file, and otherwise the parent of the commit that deleted it, so the check
+  also works in a CI checkout with a detached HEAD.
+
+- **`investigate/xlsx-toolkit-module/REPORT_xlsx_toolkit_module.md`** — the report:
+  what was implemented, and why.
+
 ## [Unreleased] - The database toolkit is a module
 
 ### Changed

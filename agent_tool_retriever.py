@@ -171,8 +171,17 @@ def build_tool_retriever(
     # 2. Excel & Data Analysis toolkits
     # -----------------------------------------------------------------------
     if include_xlsx_tools:
-        from agent_xlsx_toolkit import get_all_tools as _get_xlsx
-        all_tools.extend(_get_xlsx())
+        # The Excel toolkit lives in ``toolkits/`` and is optional.  It can
+        # fail to import for one reason: ``openpyxl``, the Excel file
+        # format, is not installed.  That must never break the retriever.
+        try:
+            from toolkits.xlsx_toolkit.agent_xlsx_toolkit import (
+                get_all_tools as _get_xlsx,
+            )
+            all_tools.extend(_get_xlsx())
+        except ImportError:
+            # The Excel toolkit is optional - skip it when it is not installed.
+            pass
 
     if include_data_analysis_tools:
         from agent_data_analysis_toolkit import get_all_tools as _get_analysis

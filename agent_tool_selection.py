@@ -105,8 +105,18 @@ def _discover_tools() -> List[FunctionTool]:
     from agent_cache_system import get_all_tools as _get_cache
     tools.extend(_get_cache())
 
-    from agent_xlsx_toolkit import get_all_tools as _get_xlsx
-    tools.extend(_get_xlsx())
+    # The Excel toolkit lives in ``toolkits/`` and is optional.  It can
+    # fail to import for one reason: ``openpyxl``, the Excel file format,
+    # is not installed.  A broken or absent toolkit must never break the
+    # selection menu.
+    try:
+        from toolkits.xlsx_toolkit.agent_xlsx_toolkit import (
+            get_all_tools as _get_xlsx,
+        )
+        tools.extend(_get_xlsx())
+    except ImportError:
+        # The Excel toolkit is optional - skip it when it is not installed.
+        pass
 
     from agent_data_analysis_toolkit import get_all_tools as _get_analysis
 
