@@ -28,7 +28,7 @@ from agent_git_toolkit import logger as git_logger
 from agent_linux_toolkit import logger as linux_logger
 from agent_windows_toolkit import logger as windows_logger
 from agent_os_toolkit import logger as os_logger
-from agent_math_toolkit import logger as math_logger
+from toolkits.math_toolkit.operations import logger as math_logger
 from agent_db_toolkit import logger as db_logger
 from agent_apt_toolkit import logger as apt_logger
 from chat_manager.startup import logger as chat_manager_logger
@@ -222,11 +222,14 @@ class TestNoDuplicateBasicConfig(unittest.TestCase):
         "agent_linux_toolkit",
         "agent_windows_toolkit",
         "agent_os_toolkit",
-        "agent_math_toolkit",
         "agent_db_toolkit",
         "agent_apt_toolkit",
         "chat_manager.startup",
         "agent_github_toolkit",
+        # The math toolkit is a module under ``toolkits/``: the library
+        # half and the LlamaIndex adapter are two separate modules.
+        "toolkits.math_toolkit.operations",
+        "toolkits.math_toolkit.agent_math_toolkit",
     ]
 
     def _check_no_basicconfig_in_source(self, module_name):

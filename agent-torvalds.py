@@ -70,14 +70,24 @@ from rich.markdown import Markdown
 from agent_git_toolkit import get_all_tools as get_git_tools
 from agent_os_toolkit import get_all_tools as get_os_tools
 from agent_db_toolkit import get_all_tools as get_db_tools
-from agent_math_toolkit import get_all_tools as get_math_tools
 from agent_linux_toolkit import get_all_tools as get_linux_tools
 from agent_windows_toolkit import get_all_tools as get_windows_tools
 from agent_github_toolkit import get_all_tools as get_github_tools
 from agent_apt_toolkit import get_all_tools as get_apt_tools
-# The MikroTik and Shodan toolkits live in ``toolkits/`` and are
+# The math, MikroTik and Shodan toolkits live in ``toolkits/`` and are
 # optional.  A missing or broken toolkit has to degrade to "no tools",
 # never to a failed boot, so the adapters are imported behind a guard.
+try:
+    from toolkits.math_toolkit.agent_math_toolkit import (
+        get_all_tools as get_math_tools,
+    )
+except ImportError:  # pragma: no cover - the toolkit is optional
+
+    def get_math_tools() -> list:
+        """The math toolkit is unavailable - expose no tools."""
+        return []
+
+
 try:
     from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import (
         get_all_tools as get_mikrotik_tools,

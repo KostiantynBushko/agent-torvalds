@@ -49,7 +49,7 @@ from components.human_loop_handler import HumanLoopHandler
 from components.hitl_events import AgentQuestionEvent, AgentAnswerEvent
 
 # Import toolkits
-from agent_math_toolkit import get_all_tools as get_math_tools
+from toolkits.math_toolkit.agent_math_toolkit import get_all_tools as get_math_tools
 from agent_os_toolkit import get_all_tools as get_os_tools
 from agent_git_toolkit import get_all_tools as get_git_tools
 from agent_cache_system import get_all_tools as get_cache_tools

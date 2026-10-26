@@ -62,9 +62,18 @@ def build_tool_retriever(
     # -----------------------------------------------------------------------
     all_tools: list[FunctionTool] = []
 
+    # The math toolkit lives in ``toolkits/`` and is optional.  It is
+    # imported behind a guard so that a missing toolkit degrades
+    # gracefully instead of breaking the agent boot.
     if include_math_tools:
-        from agent_math_toolkit import get_all_tools as _get_math
-        all_tools.extend(_get_math())
+        try:
+            from toolkits.math_toolkit.agent_math_toolkit import (
+                get_all_tools as _get_math,
+            )
+            all_tools.extend(_get_math())
+        except ImportError:
+            # The math toolkit is optional - skip it when it is not installed.
+            pass
 
     if include_git_tools:
         from agent_git_toolkit import get_all_tools as _get_git

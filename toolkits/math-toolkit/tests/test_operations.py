@@ -1,5 +1,5 @@
 """
-Unit tests for agent_math_toolkit.
+Unit tests for the math toolkit's library half.
 
 Tests all mathematical operations including:
 - Basic arithmetic (add, subtract, multiply, divide)
@@ -8,17 +8,17 @@ Tests all mathematical operations including:
 - Logarithmic functions (log, log10)
 - Factorial
 - Reverse Polish Notation evaluator
+
+These tests live inside the package, so they use **relative** imports
+(``from ..operations import ...``).  The module-local ``tests/`` directory
+must **not** contain an ``__init__.py`` - see the layout contract in
+``test_package_layout.py``.
 """
 
 import unittest
 import math
-import sys
-import os
 
-# Add the parent directory to the path so we can import agent_math_toolkit
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from agent_math_toolkit import (
+from ..operations import (
     add, subtract, multiply, divide,
     power, modulo, sqrt,
     sin, cos, tan,

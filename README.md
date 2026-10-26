@@ -27,6 +27,7 @@ Each module has its own README with the full reference:
 | Components | [components/README.md](components/README.md) |
 | MikroTik RouterOS Toolkit | [toolkits/MikroTik-RouterOS/README.md](toolkits/MikroTik-RouterOS/README.md) |
 | Shodan Toolkit | [toolkits/shodan-toolkit/README.md](toolkits/shodan-toolkit/README.md) |
+| Math Toolkit | [toolkits/math-toolkit/README.md](toolkits/math-toolkit/README.md) |
 
 The project documentation:
 
@@ -35,18 +36,13 @@ The project documentation:
 | Continuous integration — the CI test gate and the known-failure baseline | [docs/ci.md](docs/ci.md) |
 | Local LLM setup — install Ollama, pull the models, run the agent | [docs/ollama-setup.md](docs/ollama-setup.md) |
 
-### 1. Math Toolkit (`agent_math_toolkit.py`)
-- Provides mathematical operations: addition, multiplication, division
-- Enables precise numerical calculations
-- Supports statistical and engineering computations
-
-### 2. OS Toolkit (`agent_os_toolkit.py`)
+### 1. OS Toolkit (`agent_os_toolkit.py`)
 - Browse file systems (`ls`, `pwd`)
 - Create, read, write, move, and delete files and directories
 - Check file/directory existence and permissions
 - Full access to underlying OS functionality
 
-### 3. Linux Toolkit (`agent_linux_toolkit.py`)
+### 2. Linux Toolkit (`agent_linux_toolkit.py`)
 - Execute shell commands with timeout and error handling
 - Run multiple commands sequentially
 - Parse command output into structured format
@@ -54,7 +50,7 @@ The project documentation:
 - Execute commands with custom environment variables
 - Check file permissions
 
-### 4. Windows PowerShell Toolkit (`agent_windows_toolkit.py`)
+### 3. Windows PowerShell Toolkit (`agent_windows_toolkit.py`)
 - Execute PowerShell commands on Windows systems
 - Run multiple commands sequentially with batch operation support
 - Parse command output into structured format
@@ -63,7 +59,7 @@ The project documentation:
 - Execute commands with custom environment variables
 - Full Windows system integration
 
-### 5. Git Repository Toolkit (`agent_git_toolkit.py`)
+### 4. Git Repository Toolkit (`agent_git_toolkit.py`)
 - Initialize and manage Git repositories
 - Stage, commit, and push changes
 - Retrieve commit history and repository status
@@ -71,7 +67,7 @@ The project documentation:
 - Manage remote repositories and upstream tracking
 - Get latest commit and recent changes
 
-### 6. GitHub Toolkit (`agent_github_toolkit.py`)
+### 5. GitHub Toolkit (`agent_github_toolkit.py`)
 - GitHub API integration for Pull Request management
 - Create, list, update, close, and merge Pull Requests
 - Add comments and review file changes
@@ -79,7 +75,7 @@ The project documentation:
 - Configure Git credentials
 - Full PR workflow support
 
-### 7. APT Package Management Toolkit (`agent_apt_toolkit.py`)
+### 6. APT Package Management Toolkit (`agent_apt_toolkit.py`)
 - Interactive Debian/Ubuntu package installation
 - Command resolution to APT packages
 - Multiple password prompting methods (console, whiptail, env_var, parameter)
@@ -87,46 +83,46 @@ The project documentation:
 - Batch package installation
 - Automatic dependency resolution workflow
 
-### 8. Database Toolkit (`agent_db_toolkit.py`)
+### 7. Database Toolkit (`agent_db_toolkit.py`)
 - Execute SQL queries on **PostgreSQL** databases
 - Execute SQL queries on **MySQL** databases
 - Return query results as structured dictionaries
 - Configurable connection parameters via `db_toolkit_config.yaml`
 
-### 9. Chat Memory (`chat_manager/`)
+### 8. Chat Memory (`chat_manager/`)
 - The chat memory is provided by the **Chat History Manager** — see § 17
 - The legacy `agent_chat_memory.py` module has been removed; the manager is the only
   source of a memory buffer, and an in-memory buffer is the last resort
 - Token-limited memory buffers for conversation context, one per session
 - Integration with LlamaIndex for AI-powered memory management
 
-### 10. Persistent Cache System (`agent_cache_system.py`)
+### 9. Persistent Cache System (`agent_cache_system.py`)
 - JSON-based persistent cache for operational context between sessions
 - Stores session info, current directory, active databases, Git repos, error logs
 - Configurable cache location via `TORVALDS_CACHE_PATH` environment variable
 - Auto-load on startup, incremental updates, configurable retention
 
-### 11. Stats Handler (`agent_stats_handler.py`)
+### 10. Stats Handler (`agent_stats_handler.py`)
 - Per-request statistics collection using Llama Index callbacks
 - Tracks token usage (prompt/completion), LLM call count, tool invocations, timing, and errors
 - Rich console rendering of statistics after each agent response
 - Persistent stats history in cache (configurable max entries)
 - Configurable via environment variables (TORVALDS_STATS_ENABLED, TORVALDS_STATS_VERBOSE, etc.)
 
-### 12. Tool Retriever (`agent_tool_retriever.py`)
+### 11. Tool Retriever (`agent_tool_retriever.py`)
 - On-demand semantic tool loading using Llama Index ObjectIndex
 - Ollama embedding support (nomic-embed-text model)
 - Reduces context window pollution by loading only relevant tools per query
 - Configurable similarity_top_k for tool retrieval
 
-### 13. Main Orchestrator (`agent-torvalds.py`)
+### 12. Main Orchestrator (`agent-torvalds.py`)
 - The actual **agent** that coordinates all toolkits
 - Provides unified interface to all capabilities
 - Handles request routing and response aggregation
 - Integrated stats rendering and caching
 - Interactive console with command processing
 
-### 14. Spinner Manager (`spinner_manager.py`)
+### 13. Spinner Manager (`spinner_manager.py`)
 - Global singleton for console spinner management
 - Pause/resume functionality for interactive dialogs
 - Context manager support for automatic pause/resume
@@ -134,7 +130,7 @@ The project documentation:
 - Shared across toolkit modules
 
 
-### 15. Project Manager (`project_manager/`)
+### 14. Project Manager (`project_manager/`)
 - Automatic project type detection via file indicator scanning
 - Workspace configuration persistence in `.agentworkspace.json`
 - Project action execution (build, test, run, clean) with timeout support
@@ -144,7 +140,7 @@ The project documentation:
 - `--project-path` CLI flag to load and work on a specific project directory on startup
 - See [Project Manager README](project_manager/README.md) for details
 
-### 16. Multi-Window Console Agent (`agent-torvalds-mw.py`)
+### 15. Multi-Window Console Agent (`agent-torvalds-mw.py`)
 - The **multi-window** variant of the orchestrator, built on top of `agent-torvalds.py`
 - Persistent Multi-Window TUI: Markdown document viewer, background worker/tool progress,
   agent telemetry inspector, and a non-blocking command bar with HITL dialogs
@@ -159,7 +155,7 @@ The project documentation:
   `\chat-user`, …
 - Seamless fallback to the classic linear REPL via `--no-tui` or in headless/piped environments
 
-### 17. Chat History Manager (`chat_manager/`)
+### 16. Chat History Manager (`chat_manager/`)
 - Multi-user, multi-session chat history with a backend-agnostic storage interface
 - Session lifecycle: create, list, select, rename, delete, clear
 - Per-session message isolation — each session maps to its own LlamaIndex `chat_key`
@@ -175,7 +171,7 @@ The project documentation:
 - 198 hermetic unit tests
 - See [Chat History Manager README](chat_manager/README.md) for details
 
-### 18. MikroTik RouterOS Toolkit (`toolkits/MikroTik-RouterOS/`)
+### 17. MikroTik RouterOS Toolkit (`toolkits/MikroTik-RouterOS/`)
 - SSH-based configuration and monitoring of MikroTik routers
 - Eight tools: list targets, test connection, run a command, read a config
   section, export the configuration, read the identity, list the interfaces,
@@ -201,7 +197,7 @@ The project documentation:
   for the module reference
 - See [MikroTik RouterOS Toolkit docs](docs/mikrotik-toolkit.md) for details
 
-### 19. Shodan Toolkit (`toolkits/shodan-toolkit/`)
+### 18. Shodan Toolkit (`toolkits/shodan-toolkit/`)
 - Internet-exposure intelligence from the Shodan database: which hosts are
   reachable, what software they run, which ports are open, which are
   honeypots
@@ -229,6 +225,25 @@ The project documentation:
 - See the [Shodan Toolkit README](toolkits/shodan-toolkit/README.md) for the
   module reference
 - See [Shodan Toolkit docs](docs/shodan-toolkit.md) for details
+
+### 19. Math Toolkit (`toolkits/math-toolkit/`)
+- Provides mathematical operations: addition, subtraction, multiplication,
+  division, powers, modulo and square roots
+- Trigonometry in radians (`sin`, `cos`, `tan`) and logarithms (`log`,
+  `log10`), plus the factorial
+- A Reverse Polish Notation evaluator for expressions without parentheses
+- Reusable core package in `toolkits/math-toolkit/` with **no** LlamaIndex
+  imports, so it also works as a plain library
+- Every operation is total: a division by zero, a negative square root or a
+  malformed expression is reported as a readable error string instead of
+  raising, so the model gets a message it can reason about
+- The LlamaIndex adapter is the one module that knows about the agent
+  framework, and it is imported on demand
+- The fourteen tools form the **Mathematics** category of the startup tool
+  selection menu (`--select`, and `\tools` / `\tool-select` in the TUI),
+  so they can be loaded on their own
+- See the [Math Toolkit README](toolkits/math-toolkit/README.md) for the
+  module reference
 
 ---
 
@@ -630,7 +645,7 @@ the complete end-user reference.
 
 ### Math Operations
 ```python
-from agent_math_toolkit import add, multiply, divide
+from toolkits.math_toolkit import add, multiply, divide
 
 result = add(10, 20)        # 30
 result = multiply(5, 6)     # 30
@@ -821,7 +836,6 @@ manager.shutdown()
 
 ```
 agent-torvalds/
-| agent_math_toolkit.py          # Mathematical operations toolkit
 | agent_os_toolkit.py            # System-level operations toolkit
 | agent_linux_toolkit.py         # Linux shell command execution toolkit
 | agent_windows_toolkit.py       # Windows PowerShell execution toolkit
@@ -883,6 +897,13 @@ agent-torvalds/
 | +-- +-- _compat.py            # Optional-dependency compatibility layer
 | +-- +-- py.typed              # PEP 561 marker
 | +-- +-- tests/                # Module-local tests (no __init__.py)
+| +-- math-toolkit/             # Math toolkit (core library)
+| +-- +-- README.md             # Math toolkit module documentation
+| +-- +-- __init__.py           # Public API surface
+| +-- +-- operations.py         # The mathematics - the library half
+| +-- +-- agent_math_toolkit.py # The LlamaIndex adapter
+| +-- +-- py.typed              # PEP 561 marker
+| +-- +-- tests/                # Module-local tests (no __init__.py)
 | chat_manager/                 # Chat History Manager (multi-user, multi-session)
 | +-- README.md                 # Chat History Manager documentation
 | +-- __init__.py
@@ -929,7 +950,6 @@ agent-torvalds/
 | +-- test_linux_toolkit.py
 | +-- test_windows_toolkit.py
 | +-- test_apt_toolkit.py
-| +-- test_math_toolkit.py
 | +-- test_os_toolkit.py
 | +-- test_stats.py
 | +-- test_stats_mock.py

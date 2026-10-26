@@ -1,17 +1,59 @@
 """
-Math Toolkit - Mathematical operations and calculations.
+Math Toolkit - the reusable library half.
 
-This module provides essential mathematical functions for numerical computations,
-trigonometry, logarithms, and advanced expression evaluation.
+This module holds the **pure mathematics** of the math toolkit: the
+arithmetic, the trigonometry, the logarithms, the factorial and the
+Reverse Polish Notation evaluator.
+
+It is the *library half* of the feature, and it deliberately contains
+**no LlamaIndex imports**, so it stays independently testable and can be
+used as a plain library by any Python application::
+
+    from toolkits.math_toolkit import add, multiply, evaluate_rpn
+
+    add(2, 3)                      # 5
+    evaluate_rpn("3 4 + 2 *")       # 14
+
+The LlamaIndex adapter lives next to this module -
+``agent_math_toolkit.py`` - and is the one module of the toolkit that
+knows about the agent framework.  It is imported on demand, so importing
+this package never pulls LlamaIndex in.
+
+Error contract
+--------------
+
+Every operation is **total**: an invalid input (a division by zero, the
+square root of a negative number, a malformed RPN expression) is reported
+as a human-readable error *string* rather than raised as an exception.
+The agent can therefore hand the message straight back to the model,
+instead of the tool call dying with a traceback.
 
 Category: Mathematics
 Retriever Keywords: calculation, math, arithmetic, trigonometry, logarithm, statistics
 """
+
 import math
 import logging
-from llama_index.core.tools import FunctionTool
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "logger",
+    "add",
+    "subtract",
+    "multiply",
+    "divide",
+    "power",
+    "modulo",
+    "sqrt",
+    "sin",
+    "cos",
+    "tan",
+    "log",
+    "log10",
+    "factorial",
+    "evaluate_rpn",
+]
 
 
 def add(a: float, b: float) -> float:
@@ -486,73 +528,3 @@ def evaluate_rpn(expression: str) -> float:
         return stack[0]
     except Exception as e:
         return f"Error evaluating RPN expression: {str(e)}"
-
-
-def get_all_tools() -> list[FunctionTool]:
-    """
-    Return all math tools as FunctionTool objects for on-demand loading.
-    
-    Each tool includes category metadata for better retrieval.
-    
-    Returns:
-        list[FunctionTool]: List of math FunctionTool objects
-    """
-    logger.info("get_all_tools called for math toolkit")
-    return [
-        FunctionTool.from_defaults(
-            fn=add,
-            description="Add two numbers together. Use for basic addition and summing values. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=subtract,
-            description="Subtract one number from another. Use for finding differences. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=multiply,
-            description="Multiply two numbers. Use for scaling, areas, volumes. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=divide,
-            description="Divide one number by another. Use for ratios, averages, percentages. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=power,
-            description="Raise a number to a power. Use for exponential calculations, squaring, cubing. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=modulo,
-            description="Calculate remainder of division. Use for checking divisibility. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=sqrt,
-            description="Calculate square root. Use for geometry, statistics, physics. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=sin,
-            description="Calculate sine of an angle in radians. Use for trigonometry and wave functions. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=cos,
-            description="Calculate cosine of an angle in radians. Use for trigonometry and projections. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=tan,
-            description="Calculate tangent of an angle in radians. Use for trigonometry and slopes. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=log,
-            description="Calculate natural logarithm (base e). Use for exponential growth and entropy. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=log10,
-            description="Calculate base-10 logarithm. Use for pH, decibels, magnitude comparisons. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=factorial,
-            description="Calculate factorial. Use for permutations, combinations, probability. Category: Mathematics",
-        ),
-        FunctionTool.from_defaults(
-            fn=evaluate_rpn,
-            description="Evaluate Reverse Polish Notation expressions. Use for complex math without parentheses. Category: Mathematics",
-        ),
-    ]

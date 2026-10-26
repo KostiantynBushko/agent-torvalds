@@ -33,9 +33,16 @@ def _discover_tools() -> List[FunctionTool]:
     """
     tools: List[FunctionTool] = []
 
-    # Always available
-    from agent_math_toolkit import get_all_tools as _get_math
-    tools.extend(_get_math())
+    # The math toolkit lives in ``toolkits/`` and is optional.  A broken
+    # or absent toolkit must never break the selection menu.
+    try:
+        from toolkits.math_toolkit.agent_math_toolkit import (
+            get_all_tools as _get_math,
+        )
+        tools.extend(_get_math())
+    except ImportError:
+        # The math toolkit is optional - skip it when it is not installed.
+        pass
 
     from agent_git_toolkit import get_all_tools as _get_git
     tools.extend(_get_git())
