@@ -28,6 +28,7 @@ Each module has its own README with the full reference:
 | MikroTik RouterOS Toolkit | [toolkits/MikroTik-RouterOS/README.md](toolkits/MikroTik-RouterOS/README.md) |
 | Shodan Toolkit | [toolkits/shodan-toolkit/README.md](toolkits/shodan-toolkit/README.md) |
 | Math Toolkit | [toolkits/math-toolkit/README.md](toolkits/math-toolkit/README.md) |
+| Git Toolkit | [toolkits/git-toolkit/README.md](toolkits/git-toolkit/README.md) |
 
 The project documentation:
 
@@ -59,15 +60,7 @@ The project documentation:
 - Execute commands with custom environment variables
 - Full Windows system integration
 
-### 4. Git Repository Toolkit (`agent_git_toolkit.py`)
-- Initialize and manage Git repositories
-- Stage, commit, and push changes
-- Retrieve commit history and repository status
-- Generate and update changelogs
-- Manage remote repositories and upstream tracking
-- Get latest commit and recent changes
-
-### 5. GitHub Toolkit (`agent_github_toolkit.py`)
+### 4. GitHub Toolkit (`agent_github_toolkit.py`)
 - GitHub API integration for Pull Request management
 - Create, list, update, close, and merge Pull Requests
 - Add comments and review file changes
@@ -75,7 +68,7 @@ The project documentation:
 - Configure Git credentials
 - Full PR workflow support
 
-### 6. APT Package Management Toolkit (`agent_apt_toolkit.py`)
+### 5. APT Package Management Toolkit (`agent_apt_toolkit.py`)
 - Interactive Debian/Ubuntu package installation
 - Command resolution to APT packages
 - Multiple password prompting methods (console, whiptail, env_var, parameter)
@@ -83,46 +76,46 @@ The project documentation:
 - Batch package installation
 - Automatic dependency resolution workflow
 
-### 7. Database Toolkit (`agent_db_toolkit.py`)
+### 6. Database Toolkit (`agent_db_toolkit.py`)
 - Execute SQL queries on **PostgreSQL** databases
 - Execute SQL queries on **MySQL** databases
 - Return query results as structured dictionaries
 - Configurable connection parameters via `db_toolkit_config.yaml`
 
-### 8. Chat Memory (`chat_manager/`)
+### 7. Chat Memory (`chat_manager/`)
 - The chat memory is provided by the **Chat History Manager** — see § 17
 - The legacy `agent_chat_memory.py` module has been removed; the manager is the only
   source of a memory buffer, and an in-memory buffer is the last resort
 - Token-limited memory buffers for conversation context, one per session
 - Integration with LlamaIndex for AI-powered memory management
 
-### 9. Persistent Cache System (`agent_cache_system.py`)
+### 8. Persistent Cache System (`agent_cache_system.py`)
 - JSON-based persistent cache for operational context between sessions
 - Stores session info, current directory, active databases, Git repos, error logs
 - Configurable cache location via `TORVALDS_CACHE_PATH` environment variable
 - Auto-load on startup, incremental updates, configurable retention
 
-### 10. Stats Handler (`agent_stats_handler.py`)
+### 9. Stats Handler (`agent_stats_handler.py`)
 - Per-request statistics collection using Llama Index callbacks
 - Tracks token usage (prompt/completion), LLM call count, tool invocations, timing, and errors
 - Rich console rendering of statistics after each agent response
 - Persistent stats history in cache (configurable max entries)
 - Configurable via environment variables (TORVALDS_STATS_ENABLED, TORVALDS_STATS_VERBOSE, etc.)
 
-### 11. Tool Retriever (`agent_tool_retriever.py`)
+### 10. Tool Retriever (`agent_tool_retriever.py`)
 - On-demand semantic tool loading using Llama Index ObjectIndex
 - Ollama embedding support (nomic-embed-text model)
 - Reduces context window pollution by loading only relevant tools per query
 - Configurable similarity_top_k for tool retrieval
 
-### 12. Main Orchestrator (`agent-torvalds.py`)
+### 11. Main Orchestrator (`agent-torvalds.py`)
 - The actual **agent** that coordinates all toolkits
 - Provides unified interface to all capabilities
 - Handles request routing and response aggregation
 - Integrated stats rendering and caching
 - Interactive console with command processing
 
-### 13. Spinner Manager (`spinner_manager.py`)
+### 12. Spinner Manager (`spinner_manager.py`)
 - Global singleton for console spinner management
 - Pause/resume functionality for interactive dialogs
 - Context manager support for automatic pause/resume
@@ -130,7 +123,7 @@ The project documentation:
 - Shared across toolkit modules
 
 
-### 14. Project Manager (`project_manager/`)
+### 13. Project Manager (`project_manager/`)
 - Automatic project type detection via file indicator scanning
 - Workspace configuration persistence in `.agentworkspace.json`
 - Project action execution (build, test, run, clean) with timeout support
@@ -140,7 +133,7 @@ The project documentation:
 - `--project-path` CLI flag to load and work on a specific project directory on startup
 - See [Project Manager README](project_manager/README.md) for details
 
-### 15. Multi-Window Console Agent (`agent-torvalds-mw.py`)
+### 14. Multi-Window Console Agent (`agent-torvalds-mw.py`)
 - The **multi-window** variant of the orchestrator, built on top of `agent-torvalds.py`
 - Persistent Multi-Window TUI: Markdown document viewer, background worker/tool progress,
   agent telemetry inspector, and a non-blocking command bar with HITL dialogs
@@ -155,7 +148,7 @@ The project documentation:
   `\chat-user`, …
 - Seamless fallback to the classic linear REPL via `--no-tui` or in headless/piped environments
 
-### 16. Chat History Manager (`chat_manager/`)
+### 15. Chat History Manager (`chat_manager/`)
 - Multi-user, multi-session chat history with a backend-agnostic storage interface
 - Session lifecycle: create, list, select, rename, delete, clear
 - Per-session message isolation — each session maps to its own LlamaIndex `chat_key`
@@ -171,7 +164,7 @@ The project documentation:
 - 198 hermetic unit tests
 - See [Chat History Manager README](chat_manager/README.md) for details
 
-### 17. MikroTik RouterOS Toolkit (`toolkits/MikroTik-RouterOS/`)
+### 16. MikroTik RouterOS Toolkit (`toolkits/MikroTik-RouterOS/`)
 - SSH-based configuration and monitoring of MikroTik routers
 - Eight tools: list targets, test connection, run a command, read a config
   section, export the configuration, read the identity, list the interfaces,
@@ -197,7 +190,7 @@ The project documentation:
   for the module reference
 - See [MikroTik RouterOS Toolkit docs](docs/mikrotik-toolkit.md) for details
 
-### 18. Shodan Toolkit (`toolkits/shodan-toolkit/`)
+### 17. Shodan Toolkit (`toolkits/shodan-toolkit/`)
 - Internet-exposure intelligence from the Shodan database: which hosts are
   reachable, what software they run, which ports are open, which are
   honeypots
@@ -226,7 +219,7 @@ The project documentation:
   module reference
 - See [Shodan Toolkit docs](docs/shodan-toolkit.md) for details
 
-### 19. Math Toolkit (`toolkits/math-toolkit/`)
+### 18. Math Toolkit (`toolkits/math-toolkit/`)
 - Provides mathematical operations: addition, subtraction, multiplication,
   division, powers, modulo and square roots
 - Trigonometry in radians (`sin`, `cos`, `tan`) and logarithms (`log`,
@@ -243,6 +236,27 @@ The project documentation:
   selection menu (`--select`, and `\tools` / `\tool-select` in the TUI),
   so they can be loaded on their own
 - See the [Math Toolkit README](toolkits/math-toolkit/README.md) for the
+  module reference
+
+### 19. Git Toolkit (`toolkits/git-toolkit/`)
+- Initialize and manage Git repositories
+- Stage, commit, and push changes
+- Retrieve commit history and repository status
+- Generate and update changelogs
+- Manage remote repositories and upstream tracking
+- Get latest commit and recent changes
+- Built on `pygit2` (the binding to libgit2) — the reusable core package
+  in `toolkits/git-toolkit/` has **no** LlamaIndex imports, so it also
+  works as a plain library
+- The LlamaIndex adapter is the one module that knows about the agent
+  framework, and it is imported on demand
+- No tool raises: a failure is reported as `False`, as
+  `{"success": False, "error": ...}` or as an `"Error: ..."` string, so the
+  model gets a message it can reason about
+- The twenty-seven tools join the **Version Control** category of the
+  startup tool selection menu (`--select`, and `\tools` / `\tool-select`
+  in the TUI), so the whole category can be loaded on its own
+- See the [Git Toolkit README](toolkits/git-toolkit/README.md) for the
   module reference
 
 ---
@@ -680,7 +694,7 @@ sys_info = get_system_info()
 
 ### Git Operations
 ```python
-from agent_git_toolkit import git_init_repo, git_commit, git_get_status
+from toolkits.git_toolkit import git_init_repo, git_commit, git_get_status
 
 git_init_repo('/path/to/repo')
 git_commit('/path/to/repo', 'Initial commit')
@@ -839,7 +853,6 @@ agent-torvalds/
 | agent_os_toolkit.py            # System-level operations toolkit
 | agent_linux_toolkit.py         # Linux shell command execution toolkit
 | agent_windows_toolkit.py       # Windows PowerShell execution toolkit
-| agent_git_toolkit.py           # Git repository management toolkit
 | agent_github_toolkit.py        # GitHub API and PR management toolkit
 | agent_apt_toolkit.py           # APT package management toolkit
 | agent_db_toolkit.py            # Database query toolkit (PostgreSQL and MySQL)
@@ -904,6 +917,13 @@ agent-torvalds/
 | +-- +-- agent_math_toolkit.py # The LlamaIndex adapter
 | +-- +-- py.typed              # PEP 561 marker
 | +-- +-- tests/                # Module-local tests (no __init__.py)
+| +-- git-toolkit/              # Git toolkit (core library)
+| +-- +-- README.md             # Git toolkit module documentation
+| +-- +-- __init__.py           # Public API surface
+| +-- +-- operations.py         # The Git operations - the library half
+| +-- +-- agent_git_toolkit.py  # The LlamaIndex adapter
+| +-- +-- py.typed              # PEP 561 marker
+| +-- +-- tests/                # Module-local tests (no __init__.py)
 | chat_manager/                 # Chat History Manager (multi-user, multi-session)
 | +-- README.md                 # Chat History Manager documentation
 | +-- __init__.py
@@ -946,7 +966,6 @@ agent-torvalds/
 | tests/                        # Test suite
 | +-- __init__.py
 | +-- test_cache_system.py
-| +-- test_git_toolkit.py
 | +-- test_linux_toolkit.py
 | +-- test_windows_toolkit.py
 | +-- test_apt_toolkit.py
