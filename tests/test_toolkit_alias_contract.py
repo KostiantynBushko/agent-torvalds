@@ -11,6 +11,7 @@ each of them::
     toolkits.git-toolkit         ->  toolkits.git_toolkit
     toolkits.github-toolkit      ->  toolkits.github_toolkit
     toolkits.os-toolkit          ->  toolkits.os_toolkit
+    toolkits.linux-toolkit       ->  toolkits.linux_toolkit
 
 This module pins down the two properties that alias has to have.
 
@@ -67,6 +68,9 @@ GITHUB_REAL = "toolkits.github-toolkit"
 OS_ALIAS = "os_toolkit"
 OS_REAL = "toolkits.os-toolkit"
 
+LINUX_ALIAS = "linux_toolkit"
+LINUX_REAL = "toolkits.linux-toolkit"
+
 #: The alias of each toolkit and the ``__init__.py`` that must carry a
 #: code-level reference to it.
 TOOLKITS = (
@@ -76,6 +80,7 @@ TOOLKITS = (
     (GIT_ALIAS, GIT_REAL, REPO_ROOT / "toolkits" / "git-toolkit" / "__init__.py"),
     (GITHUB_ALIAS, GITHUB_REAL, REPO_ROOT / "toolkits" / "github-toolkit" / "__init__.py"),
     (OS_ALIAS, OS_REAL, REPO_ROOT / "toolkits" / "os-toolkit" / "__init__.py"),
+    (LINUX_ALIAS, LINUX_REAL, REPO_ROOT / "toolkits" / "linux-toolkit" / "__init__.py"),
 )
 
 #: The agent adapter of each toolkit: the alias of its package, the module
@@ -114,6 +119,11 @@ ADAPTERS = (
         OS_ALIAS,
         "agent_os_toolkit",
         REPO_ROOT / "toolkits" / "os-toolkit" / "agent_os_toolkit.py",
+    ),
+    (
+        LINUX_ALIAS,
+        "agent_linux_toolkit",
+        REPO_ROOT / "toolkits" / "linux-toolkit" / "agent_linux_toolkit.py",
     ),
 )
 
@@ -172,6 +182,7 @@ class TestStaticReference:
             f"toolkits.{GIT_ALIAS}",
             f"toolkits.{GITHUB_ALIAS}",
             f"toolkits.{OS_ALIAS}",
+            f"toolkits.{LINUX_ALIAS}",
         ],
     )
     def test_the_canonical_dotted_path_is_a_literal(self, dotted):
@@ -191,6 +202,7 @@ class TestStaticReference:
             GIT_ALIAS,
             GITHUB_ALIAS,
             OS_ALIAS,
+            LINUX_ALIAS,
         ],
     )
     def test_the_bare_alias_name_is_a_literal(self, alias):
@@ -214,6 +226,7 @@ class TestStaticReference:
             ("_GIT_ALIAS", f"toolkits.{GIT_ALIAS}"),
             ("_GITHUB_ALIAS", f"toolkits.{GITHUB_ALIAS}"),
             ("_OS_ALIAS", f"toolkits.{OS_ALIAS}"),
+            ("_LINUX_ALIAS", f"toolkits.{LINUX_ALIAS}"),
         ],
     )
     def test_the_alias_is_not_computed(self, constant, expected):

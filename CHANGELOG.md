@@ -1,5 +1,100 @@
 # Changelog
 
+## [Unreleased] - The Linux toolkit is a module
+
+### Changed
+- **The Linux toolkit is now a module under `toolkits/`.**  It used to be a single
+  loose module at the project root, `agent_linux_toolkit.py`, next to the other
+  `agent_*.py` files, while the features that were already modules lived in folders
+  under `toolkits/`.  A toolkit is now one folder, like the MikroTik, the Shodan,
+  the math, the Git, the GitHub and the OS one.
+
+  | Path | Was | Now |
+  |------|-----|-----|
+  | `agent_linux_toolkit.py` | the whole toolkit — the shell operations *and* the LlamaIndex adapter | split in two |
+  | `toolkits/linux-toolkit/operations.py` | — | the six shell and system operations, the **library half** |
+  | `toolkits/linux-toolkit/agent_linux_toolkit.py` | — | the **adapter**, the only LlamaIndex-dependent module |
+  | `toolkits/linux-toolkit/__init__.py` | — | the public API surface |
+  | `toolkits/linux-toolkit/tests/` | — | the module-local tests |
+
+  The split is the point.  The shell operations carry **no** LlamaIndex import, so
+  they stay usable — and testable — as a plain Python library; the adapter is the
+  one module that knows about the agent framework, and it is imported on demand.
+  Importing the toolkit therefore never pulls LlamaIndex into the process.
+
+  Like the OS toolkit, this toolkit's library half depends on the **standard
+  library only** — `subprocess`, `os`, `logging` and `typing`.  There is no
+  third-party dependency at all, so the shell operations work in any Python that
+  exists.
+
+- **The import path moved.**  The package lives in a hyphenated directory, so it is
+  reached through the alias that `toolkits/__init__.py` registers:
+
+  ```python
+  from toolkits.linux_toolkit import execute_shell_command   # the library
+  from toolkits.linux_toolkit.agent_linux_toolkit import get_all_tools  # the adapter
+  ```
+
+  The four call sites — `agent-torvalds.py`, `agent-torvalds-mw.py`,
+  `agent_tool_retriever.py` and `agent_tool_selection.py` — were updated.  As with
+  the other toolkits under `toolkits/`, the adapter is now imported **behind a
+  guard**, so a missing or broken toolkit degrades to "no tools" instead of a failed
+  boot.  The Linux toolkit was **mandatory** before this change; it is optional now.
+
+- **The logger's name moved.**  It was `agent_linux_toolkit`, and it is now
+  `toolkits.linux-toolkit.operations` — that is what `logging.getLogger(__name__)`
+  does when the module moves.  The adapter re-exports it, so the toolkit still logs
+  through one logger.
+
+### Added
+- **`toolkits/linux-toolkit/`** — the package, with a `README.md`, a `py.typed` marker
+  and a `pyproject.toml` for a standalone install
+  (`pip install ./toolkits/linux-toolkit`).  The distribution depends on the standard
+  library and on nothing else; the adapter is an extra (`linux-toolkit[agent]`).
+
+- **`toolkits/linux-toolkit/tests/`** — the test suite, 77 tests.  The eleven tests
+  the toolkit already had moved with it, and the suite was extended to cover the
+  error contract of every operation: a failure is *reported*, never raised.  Three
+  of the new tests pin behaviour that is easy to get wrong: `shell=False` treats the
+  command as a *path*, a command that writes to `stderr` may still have succeeded,
+  and `run_command_with_env` has a hard-coded 30 second timeout.
+
+- **`toolkits/linux-toolkit/tests/test_package_layout.py`** — the layout contract, 31
+  checks: the flat layout, the relative imports, the alias, the LlamaIndex
+  boundary, the dependency profile of the library half, the six-tool surface, and
+  the fact that no call site imports the old module name any more.
+
+- **`toolkits/linux-toolkit/tests/test_split_verification.py`** — the test of the
+  mechanical check, driven with seven deliberate drifts: a reworded tool
+  description, a changed parameter default, a dropped docstring, a changed body,
+  two operations swapped, a LlamaIndex import in the library half, and a tool that
+  went missing.  A check that has never failed proves nothing.
+
+- **`investigate/linux-toolkit-module/verify_split.py`** — the mechanical check that
+  the split moved everything verbatim: the operation names, their order, their
+  signatures, their docstrings, their bodies, and the tool names, their order and
+  their descriptions, compared against the committed original by AST.
+
+### Notes
+- **The behaviour did not change.**  The tool menu is identical to the one on
+  `master` — the same tools, in the same order, with the same descriptions.  The
+  CI gate reports the same 40 known failures, 0 new and 0 fixed.
+
+- **`get_system_info` is defined twice.**  The Linux toolkit and the OS toolkit
+  each have one, and both are loaded into the same process on Linux, so the tool
+  menu carries the name twice.  That duplicate is **pre-existing** — it is on
+  `master` too — and the move neither created nor changed it.  The two functions
+  are different: the Linux one shells out to `uname`/`lscpu`/`free`/`df` and
+  returns their output, the OS one reads `platform` directly and returns a
+  dictionary of structured fields.
+
+- **A pre-existing `SyntaxWarning` in `agent-torvalds.py`.**  Line 759 holds
+  `help="Disable runtime HITL toggle commands (\toggle-hitl, \hitl-status, etc.)"`,
+  and `\t` and `\h` are not valid escape sequences in a non-raw string.  The
+  layout contract parses that file to check its imports, and the warning showed
+  up there; the test now suppresses it.  **The bug is left alone on purpose** —
+  this is a behaviour-neutral refactoring, and the fix belongs in its own change.
+
 ## [Unreleased] - The OS toolkit is a module
 
 ### Changed
