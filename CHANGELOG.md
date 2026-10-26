@@ -1,5 +1,72 @@
 # Changelog
 
+## [Unreleased] - The Git toolkit is a module
+
+### Changed
+- **The Git toolkit is now a module under `toolkits/`.**  It used to be a single loose
+  module at the project root, `agent_git_toolkit.py`, next to 19 other `agent_*.py` files,
+  while the features that were already modules lived in folders under `toolkits/`.  A toolkit
+  is now one folder, like the MikroTik, the Shodan and the math one.
+
+  | Path | Was | Now |
+  |------|-----|-----|
+  | `agent_git_toolkit.py` | the whole toolkit — the Git operations *and* the LlamaIndex adapter | split in two |
+  | `toolkits/git-toolkit/operations.py` | — | the Git operations, the **library half** |
+  | `toolkits/git-toolkit/agent_git_toolkit.py` | — | the **adapter**, the only LlamaIndex-dependent module |
+  | `toolkits/git-toolkit/__init__.py` | — | the public API surface |
+  | `toolkits/git-toolkit/tests/` | `tests/test_git_toolkit.py` | the module-local tests |
+
+  The split is the point.  The Git operations carry **no** LlamaIndex import, so they stay
+  usable — and testable — as a plain Python library; the adapter is the one module that
+  knows about the agent framework, and it is imported on demand.  Importing the toolkit
+  therefore never pulls LlamaIndex into the process.
+
+  The library half keeps exactly one third-party dependency: `pygit2`, the binding to
+  `libgit2` the toolkit is built on.  LlamaIndex is *not* on that list — that is the
+  whole point of the split.
+
+- **The import path moved.**  The package lives in a hyphenated directory, so it is reached
+  through the alias that `toolkits/__init__.py` registers:
+
+  ```python
+  from toolkits.git_toolkit import git_get_status, git_commit        # the library
+  from toolkits.git_toolkit.agent_git_toolkit import get_all_tools    # the adapter
+  ```
+
+  The six call sites — `agent-torvalds.py`, `agent-torvalds-mw.py`, `agent-torvalds-cpp.py`,
+  `agent_tool_retriever.py`, `agent_tool_selection.py` and
+  `test_callback_events_debug.py` — were updated.  As with the other toolkits under
+  `toolkits/`, the adapter is now imported **behind a guard**, so a missing or broken
+  toolkit degrades to "no tools" instead of a failed boot.
+
+  The C++ orchestrator uses a star import of the adapter, so the adapter re-exports the
+  27 Git functions; `from toolkits.git_toolkit.agent_git_toolkit import *` still brings in
+  `git_get_latest_commit`, `git_init_repo` and the rest.
+
+### Added
+- **`toolkits/git-toolkit/`** — the package, with a `README.md`, a `py.typed` marker and a
+  `pyproject.toml` for a standalone install (`pip install ./toolkits/git-toolkit`).  The
+  distribution depends on `pygit2` and on nothing else; the adapter is an extra
+  (`git-toolkit[agent]`).
+
+- **A layout contract for the toolkit.**  `toolkits/git-toolkit/tests/test_package_layout.py`
+  is new — 24 checks that pin the layout, the relative imports, the import alias, the
+  LlamaIndex boundary and the dependency profile of the library half, so the package
+  cannot drift back to a loose module at the root.
+
+- **`toolkits/git-toolkit/tests/test_operations.py`** — the test suite, moved out of
+  `tests/test_git_toolkit.py` and switched to relative imports.
+
+- **The Git toolkit joined the alias contract.**  `tests/test_toolkit_alias_contract.py`
+  now covers it, so the alias is a literal, the submodules resolve to one object, and
+  `import toolkits` still does not import LlamaIndex.
+
+### Fixed
+- **The Git toolkit's own behaviour did not change.**  All 27 functions, every docstring and
+  the error contract — a failure is reported as `False`, as `{"success": False, "error": ...}`
+  or as an `"Error: ..."` string, never raised — moved verbatim.  The toolkit's 56 tests
+  pass before and after, and the CI gate reports no new failure.
+
 ## [Unreleased] - The math toolkit is a module
 
 ### Changed

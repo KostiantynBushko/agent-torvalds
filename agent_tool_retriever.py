@@ -75,9 +75,18 @@ def build_tool_retriever(
             # The math toolkit is optional - skip it when it is not installed.
             pass
 
+    # The Git toolkit lives in ``toolkits/`` and is optional.  It is
+    # imported behind a guard so that a missing toolkit degrades
+    # gracefully instead of breaking the agent boot.
     if include_git_tools:
-        from agent_git_toolkit import get_all_tools as _get_git
-        all_tools.extend(_get_git())
+        try:
+            from toolkits.git_toolkit.agent_git_toolkit import (
+                get_all_tools as _get_git,
+            )
+            all_tools.extend(_get_git())
+        except ImportError:
+            # The Git toolkit is optional - skip it when it is not installed.
+            pass
 
     if include_os_tools:
         from agent_os_toolkit import get_all_tools as _get_os

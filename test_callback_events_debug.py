@@ -51,7 +51,18 @@ from components.hitl_events import AgentQuestionEvent, AgentAnswerEvent
 # Import toolkits
 from toolkits.math_toolkit.agent_math_toolkit import get_all_tools as get_math_tools
 from agent_os_toolkit import get_all_tools as get_os_tools
-from agent_git_toolkit import get_all_tools as get_git_tools
+
+# The Git toolkit lives in ``toolkits/`` and is optional: a missing or
+# broken toolkit has to degrade to "no tools", never to a failed boot.
+try:
+    from toolkits.git_toolkit.agent_git_toolkit import (
+        get_all_tools as get_git_tools,
+    )
+except ImportError:  # pragma: no cover - the toolkit is optional
+
+    def get_git_tools() -> list:
+        """The Git toolkit is unavailable - expose no tools."""
+        return []
 from agent_cache_system import get_all_tools as get_cache_tools
 
 console = Console()
