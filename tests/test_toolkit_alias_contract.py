@@ -12,6 +12,7 @@ each of them::
     toolkits.github-toolkit      ->  toolkits.github_toolkit
     toolkits.os-toolkit          ->  toolkits.os_toolkit
     toolkits.linux-toolkit       ->  toolkits.linux_toolkit
+    toolkits.apt-toolkit         ->  toolkits.apt_toolkit
 
 This module pins down the two properties that alias has to have.
 
@@ -71,6 +72,9 @@ OS_REAL = "toolkits.os-toolkit"
 LINUX_ALIAS = "linux_toolkit"
 LINUX_REAL = "toolkits.linux-toolkit"
 
+APT_ALIAS = "apt_toolkit"
+APT_REAL = "toolkits.apt-toolkit"
+
 #: The alias of each toolkit and the ``__init__.py`` that must carry a
 #: code-level reference to it.
 TOOLKITS = (
@@ -81,6 +85,7 @@ TOOLKITS = (
     (GITHUB_ALIAS, GITHUB_REAL, REPO_ROOT / "toolkits" / "github-toolkit" / "__init__.py"),
     (OS_ALIAS, OS_REAL, REPO_ROOT / "toolkits" / "os-toolkit" / "__init__.py"),
     (LINUX_ALIAS, LINUX_REAL, REPO_ROOT / "toolkits" / "linux-toolkit" / "__init__.py"),
+    (APT_ALIAS, APT_REAL, REPO_ROOT / "toolkits" / "apt-toolkit" / "__init__.py"),
 )
 
 #: The agent adapter of each toolkit: the alias of its package, the module
@@ -125,10 +130,24 @@ ADAPTERS = (
         "agent_linux_toolkit",
         REPO_ROOT / "toolkits" / "linux-toolkit" / "agent_linux_toolkit.py",
     ),
+    (
+        APT_ALIAS,
+        "agent_apt_toolkit",
+        REPO_ROOT / "toolkits" / "apt-toolkit" / "agent_apt_toolkit.py",
+    ),
 )
 
 #: The adapter module names, for the checks that have to skip them.
 ADAPTER_MODULES = tuple(name for _, name, _ in ADAPTERS)
+
+#: The modules the shim never publishes eagerly.
+#
+#: The **adapters** import LlamaIndex, and ``import toolkits`` must
+#: never pull the framework into the process.  The **``__main__``
+#: modules** are executed, not imported: publishing one puts it in
+#: ``sys.modules``, and ``runpy`` then refuses to execute it, so
+#: ``python -m <toolkit>`` breaks.
+NEVER_PUBLISHED = ADAPTER_MODULES + ("__main__",)
 
 
 def _module_level_strings(path: Path) -> list[str]:
@@ -183,6 +202,7 @@ class TestStaticReference:
             f"toolkits.{GITHUB_ALIAS}",
             f"toolkits.{OS_ALIAS}",
             f"toolkits.{LINUX_ALIAS}",
+            f"toolkits.{APT_ALIAS}",
         ],
     )
     def test_the_canonical_dotted_path_is_a_literal(self, dotted):
@@ -203,6 +223,7 @@ class TestStaticReference:
             GITHUB_ALIAS,
             OS_ALIAS,
             LINUX_ALIAS,
+            APT_ALIAS,
         ],
     )
     def test_the_bare_alias_name_is_a_literal(self, alias):
@@ -227,6 +248,7 @@ class TestStaticReference:
             ("_GITHUB_ALIAS", f"toolkits.{GITHUB_ALIAS}"),
             ("_OS_ALIAS", f"toolkits.{OS_ALIAS}"),
             ("_LINUX_ALIAS", f"toolkits.{LINUX_ALIAS}"),
+            ("_APT_ALIAS", f"toolkits.{APT_ALIAS}"),
         ],
     )
     def test_the_alias_is_not_computed(self, constant, expected):
@@ -277,9 +299,10 @@ class TestSingleInstance:
 
         checked = 0
         for info in pkgutil.iter_modules(package_path):
-            if info.name in ADAPTER_MODULES:
+            if info.name in NEVER_PUBLISHED:
                 # The adapters are imported on demand, never eagerly - they
-                # pull in LlamaIndex.  They get their own test below.
+                # pull in LlamaIndex.  A __main__ module is executed, not
+                # imported.  Both get their own test below.
                 continue
             real_module = importlib.import_module(f"{real}.{info.name}")
             alias_module = sys.modules.get(f"toolkits.{alias}.{info.name}")
@@ -379,6 +402,67 @@ class TestInstanceIdentity:
 # ---------------------------------------------------------------------------
 # 3. The shim keeps its degradation contract
 # ---------------------------------------------------------------------------
+
+
+class TestNeverPublished:
+    """Some modules must never be published eagerly.
+
+    The shim publishes every submodule of a toolkit under the toolkit's
+    alias, so that both spellings resolve to one module object.  Two
+    kinds of module are excluded:
+
+    * the **agent adapters** - they import LlamaIndex, and ``import
+      toolkits`` must never pull the framework into the process;
+    * the **``__main__`` modules** - a ``__main__`` module is executed,
+      not imported.  Publishing it puts it in ``sys.modules``, and
+      ``runpy`` then refuses to execute it, so ``python -m <toolkit>``
+      breaks with a RuntimeWarning.
+    """
+
+    def test_the_shim_declares_the_never_published_modules(self):
+        """The exclusion has to be written down, not implied."""
+        source = ALIAS_SHIM.read_text()
+        assert "NEVER_PUBLISHED" in source, (
+            "the shim does not declare which modules are never published"
+        )
+        assert '"__main__"' in source, (
+            "the __main__ module is not excluded from the eager publication"
+        )
+
+    @pytest.mark.parametrize("alias,real,init_file", TOOLKITS)
+    def test_no_main_module_is_published(self, alias, real, init_file):
+        """No ``__main__`` module may sit in ``sys.modules`` under an alias."""
+        importlib.import_module(real)
+
+        published = f"toolkits.{alias}.__main__"
+        assert published not in sys.modules, (
+            f"{published} was published eagerly; \"python -m\" would refuse "
+            "to execute it"
+        )
+
+    def test_the_entry_point_of_a_toolkit_with_one_still_works(self):
+        """``python -m <toolkit>`` has to work.
+
+        The APT toolkit carries a ``__main__`` entry point for its
+        command-line interface, and the Shodan toolkit carries one for
+        its own.  Both were broken by the eager publication.
+        """
+        for module, argument in (
+            ("toolkits.apt_toolkit", "--show-method"),
+            ("toolkits.shodan_toolkit", "--help"),
+        ):
+            result = subprocess.run(
+                [sys.executable, "-m", module, argument],
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            assert result.returncode == 0, (
+                f"python -m {module} {argument} failed:\n{result.stderr}"
+            )
+            assert "RuntimeWarning" not in result.stderr, result.stderr
 
 
 class TestDegradation:

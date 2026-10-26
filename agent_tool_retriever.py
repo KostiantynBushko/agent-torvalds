@@ -129,8 +129,16 @@ def build_tool_retriever(
         all_tools.extend(_get_db())
 
     if include_apt_tools:
-        from agent_apt_toolkit import get_all_tools as _get_apt
-        all_tools.extend(_get_apt())
+        # The APT toolkit lives in ``toolkits/`` and is optional.  A
+        # broken or absent toolkit must never break the retriever.
+        try:
+            from toolkits.apt_toolkit.agent_apt_toolkit import (
+                get_all_tools as _get_apt,
+            )
+            all_tools.extend(_get_apt())
+        except ImportError:
+            # The APT toolkit is optional - skip it when it is not installed.
+            pass
 
     if include_cache_tools:
         from agent_cache_system import get_all_tools as _get_cache

@@ -82,7 +82,7 @@ The failures are concentrated in nine files:
 | `tests/test_hitl_runtime_toggle.py` | 8 | the command parser does not recognise the `hitl-*` commands |
 | `toolkits/math-toolkit/tests/test_operations.py` | 7 | the toolkit does not raise on a division by zero, a negative root or a bad RPN expression |
 | `tests/test_project_manager.py` | 6 | the scanner scores the fixture projects below the expected confidence |
-| `tests/test_apt_toolkit.py` | 4 | the apt toolkit's contract tests disagree with the implementation (one of them is a collection error) |
+| `toolkits/apt-toolkit/tests/test_operations.py` | 4 | the apt toolkit's contract tests disagree with the implementation (one of them is a collection error) |
 | `tests/test_whiptail_workflow_integration.py` | 2 | the whiptail workflow's error-recovery path does not behave as the test expects |
 | `tests/test_whiptail_password.py` | 1 | the test patches `__builtins__` as a module, which does not exist |
 | `tests/test_stats.py` | 1 | an `async def` test without the `asyncio` marker |

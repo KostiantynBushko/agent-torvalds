@@ -11,8 +11,9 @@ Each toolkit package carries its own agent adapter **inside the package** -
 ``toolkits/math-toolkit/agent_math_toolkit.py``,
 ``toolkits/git-toolkit/agent_git_toolkit.py``,
 ``toolkits/github-toolkit/agent_github_toolkit.py``,
-``toolkits/os-toolkit/agent_os_toolkit.py`` and
-``toolkits/linux-toolkit/agent_linux_toolkit.py``.  The
+``toolkits/os-toolkit/agent_os_toolkit.py``,
+``toolkits/linux-toolkit/agent_linux_toolkit.py`` and
+``toolkits/apt-toolkit/agent_apt_toolkit.py``.  The
 adapter is the only module of a toolkit that depends on LlamaIndex; the
 reusable library half around it does not.
 
@@ -25,8 +26,9 @@ Shodan toolkit (``toolkits/shodan-toolkit/``), the math toolkit
 (``toolkits/math-toolkit/``), the Git toolkit
 (``toolkits/git-toolkit/``), the GitHub toolkit
 (``toolkits/github-toolkit/``), the OS toolkit
-(``toolkits/os-toolkit/``) and the Linux toolkit
-(``toolkits/linux-toolkit/``) live in directories whose names
+(``toolkits/os-toolkit/``), the Linux toolkit
+(``toolkits/linux-toolkit/``) and the APT toolkit
+(``toolkits/apt-toolkit/``) live in directories whose names
 contain a hyphen. A hyphen is **not a valid Python identifier**, so those
 directories can never be reached with a plain ``import`` statement::
 
@@ -37,6 +39,7 @@ directories can never be reached with a plain ``import`` statement::
     from toolkits.github-toolkit import github_create_pull_request   # SyntaxError
     from toolkits.os-toolkit import pwd                              # SyntaxError
     from toolkits.linux-toolkit import execute_shell_command         # SyntaxError
+    from toolkits.apt-toolkit import install_package                # SyntaxError
 
 ``importlib.import_module("toolkits.MikroTik-RouterOS")`` does work, but it is
 awkward to use at every call site and it interacts badly with pytest's default
@@ -54,6 +57,7 @@ for each of them that points at the very same package object::
     from toolkits.github_toolkit import github_create_pull_request   # works
     from toolkits.os_toolkit import pwd                              # works
     from toolkits.linux_toolkit import execute_shell_command         # works
+    from toolkits.apt_toolkit import install_package                # works
 
 The aliases are registered only if the package is actually present and
 importable, so ``import toolkits`` never fails when an optional toolkit is
@@ -69,6 +73,7 @@ package, and the alias points straight at it::
     toolkits/github-toolkit/      ->  toolkits.github_toolkit
     toolkits/os-toolkit/          ->  toolkits.os_toolkit
     toolkits/linux-toolkit/       ->  toolkits.linux_toolkit
+    toolkits/apt-toolkit/         ->  toolkits.apt_toolkit
 
 The agent adapters are submodules of their toolkit package, so they are
 reached through the same alias::
@@ -80,8 +85,9 @@ reached through the same alias::
     from toolkits.github_toolkit.agent_github_toolkit import get_all_tools
     from toolkits.os_toolkit.agent_os_toolkit import get_all_tools
     from toolkits.linux_toolkit.agent_linux_toolkit import get_all_tools
+    from toolkits.apt_toolkit.agent_apt_toolkit import get_all_tools
 
-Those seven lines are the canonical import paths of the adapters.  The
+Those eight lines are the canonical import paths of the adapters.  The
 adapters themselves are **not** published eagerly - see the note below.
 
 --------------------------------------------------------------------------------
@@ -151,6 +157,7 @@ _ALIAS_NAMES = (
     "github_toolkit",
     "os_toolkit",
     "linux_toolkit",
+    "apt_toolkit",
 )
 
 #: The agent adapters of the toolkits, by module name.
@@ -169,6 +176,7 @@ _ALIAS_NAMES = (
 #:     from toolkits.github_toolkit.agent_github_toolkit import get_all_tools
 #:     from toolkits.os_toolkit.agent_os_toolkit import get_all_tools
 #:     from toolkits.linux_toolkit.agent_linux_toolkit import get_all_tools
+#:     from toolkits.apt_toolkit.agent_apt_toolkit import get_all_tools
 _ADAPTER_MODULES = (
     "agent_mikrotik_toolkit",
     "agent_shodan_toolkit",
@@ -177,7 +185,19 @@ _ADAPTER_MODULES = (
     "agent_github_toolkit",
     "agent_os_toolkit",
     "agent_linux_toolkit",
+    "agent_apt_toolkit",
 )
+
+#: The modules that are never published eagerly, whatever package they
+#: sit in.
+#:
+#: A ``__main__`` module is meant to be **executed**, not imported.  If
+#: the shim publishes it under the alias, ``runpy`` finds it in
+#: ``sys.modules`` and refuses to execute it - so ``python -m
+#: <toolkit>`` breaks with a RuntimeWarning.  The Shodan toolkit and the
+#: APT toolkit both carry a ``__main__`` entry point, and both were
+#: affected.
+NEVER_PUBLISHED = ("__main__",)
 
 #: Dotted path of the real (hyphenated) package directory.
 _MIKROTIK_PACKAGE = "toolkits.MikroTik-RouterOS"
@@ -228,6 +248,13 @@ _LINUX_PACKAGE = "toolkits.linux-toolkit"
 _LINUX_ALIAS = "toolkits.linux_toolkit"
 
 
+#: Dotted path of the real (hyphenated) package directory.
+_APT_PACKAGE = "toolkits.apt-toolkit"
+
+#: Dotted path of the valid-identifier alias registered in ``sys.modules``.
+_APT_ALIAS = "toolkits.apt_toolkit"
+
+
 def _publish_submodules(real_dotted: str, alias_dotted: str, package) -> None:
     """Publish every submodule of *package* under the alias namespace.
 
@@ -256,6 +283,10 @@ def _publish_submodules(real_dotted: str, alias_dotted: str, package) -> None:
     for info in pkgutil.iter_modules(package_path):
         if info.name in _ADAPTER_MODULES:
             # Imported on demand, never eagerly - see _ADAPTER_MODULES.
+            continue
+        if info.name in NEVER_PUBLISHED:
+            # A __main__ module is executed, not imported - see
+            # NEVER_PUBLISHED.
             continue
         try:
             module = importlib.import_module(f"{real_dotted}.{info.name}")
@@ -319,6 +350,11 @@ if _os is not None:
 _linux = _register_alias(_LINUX_PACKAGE, _LINUX_ALIAS)
 if _linux is not None:
     linux_toolkit = _linux
+
+
+_apt = _register_alias(_APT_PACKAGE, _APT_ALIAS)
+if _apt is not None:
+    apt_toolkit = _apt
 
 
 #: The aliases that are actually available.  ``from toolkits import *`` must

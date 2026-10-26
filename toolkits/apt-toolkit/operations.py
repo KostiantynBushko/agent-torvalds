@@ -1,10 +1,20 @@
 """
-APT Package Toolkit - Interactive package installation for Debian/Ubuntu.
+APT Toolkit - the library half.
 
-This module provides functionality to detect missing commands, resolve
-them to APT packages, and install them interactively with sudo password
-handling. Supports both console (stdin) and whiptail terminal dialog
-password prompting.
+This module holds the **package-resolution, sudo-handling and
+installation operations** of the APT toolkit.  It is the reusable half of
+the feature: it carries **no LlamaIndex import**, so it stays usable - and
+testable - as a plain Python library by any application that has no agent
+framework installed.
+
+The LlamaIndex adapter is a submodule of the package
+(:mod:`agent_apt_toolkit`); it is the one module of the toolkit that knows
+about the agent framework, and it is imported on demand.
+
+The operations are the ones that used to live in the single module
+``agent_apt_toolkit.py`` at the project root.  They moved here
+**verbatim**: same names, same signatures, same docstrings, same error
+contract - a failure is reported as a message string, never raised.
 
 Category: System / Package Management
 Retriever Keywords: apt, package, install, debian, ubuntu, sudo, missing, dependency
@@ -37,7 +47,6 @@ import subprocess
 import os
 import logging
 from typing import Dict, List, Optional, Any, Callable
-from llama_index.core.tools import FunctionTool
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -832,111 +841,3 @@ def interactive_install_missing_command(
 
     return workflow_result
 
-
-# ---------------------------------------------------------------------------
-# 5. Tool Registry
-# ---------------------------------------------------------------------------
-
-def get_all_tools() -> list[FunctionTool]:
-    """
-    Return all APT package tools as FunctionTool objects for on-demand loading.
-
-    Each tool includes category metadata for better retrieval.
-
-    Returns:
-        list[FunctionTool]: List of APT FunctionTool objects
-    """
-    logger.info("get_all_tools called")
-    return [
-        FunctionTool.from_defaults(
-            fn=find_package_for_command,
-            description="Find which APT package provides a given command/binary. Use for resolving missing tools to installable packages. Category: System / Package Management",
-        ),
-        FunctionTool.from_defaults(
-            fn=check_command_exists,
-            description="Check if a command/binary is available in the system PATH. Use for verifying tool availability. Category: System / Package Management",
-        ),
-        FunctionTool.from_defaults(
-            fn=install_package,
-            description="Install an APT package with sudo handling. Use for installing system packages on Debian/Ubuntu. Supports 'console' and 'whiptail' password methods. Category: System / Package Management",
-        ),
-        FunctionTool.from_defaults(
-            fn=install_multiple_packages,
-            description="Install multiple APT packages sequentially. Use for batch installations. Supports 'console' and 'whiptail' password methods. Category: System / Package Management",
-        ),
-        FunctionTool.from_defaults(
-            fn=interactive_install_missing_command,
-            description="End-to-end workflow: detect missing command, resolve to package, and install it. Use for automatic dependency resolution. Supports 'console' and 'whiptail' password methods. Category: System / Package Management",
-        ),
-        FunctionTool.from_defaults(
-            fn=prompt_sudo_password,
-            description="Obtain sudo password using multiple fallback strategies (env var, cache, console, whiptail). Use for credential handling in package installation. Category: System / Package Management",
-        ),
-        FunctionTool.from_defaults(
-            fn=test_sudo_password,
-            description="Test if a sudo password is valid. Use for credential verification. Category: System / Package Management",
-        ),
-        FunctionTool.from_defaults(
-            fn=clear_sudo_cache,
-            description="Clear the cached sudo password. Use for security or when password changes. Category: System / Package Management",
-        ),
-        FunctionTool.from_defaults(
-            fn=set_default_prompt_method,
-            description="Set the default password prompt method ('console' or 'whiptail') for the session. Use to switch between stdin and whiptail dialogs. Category: System / Package Management",
-        ),
-        FunctionTool.from_defaults(
-            fn=get_default_prompt_method,
-            description="Get the current default password prompt method. Use to check which method is configured. Category: System / Package Management",
-        ),
-    ]
-
-
-# ---------------------------------------------------------------------------
-# 6. Command-Line Interface
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    import argparse
-    import sys
-
-    def main():
-        parser = argparse.ArgumentParser(
-            description="APT Package Toolkit - Manage APT packages and sudo password handling",
-            epilog="Example: python agent_apt_toolkit.py --prompt-method whiptail"
-        )
-        parser.add_argument(
-            "--prompt-method",
-            type=str,
-            choices=["console", "whiptail", "env_var", "parameter"],
-            default=None,
-            help="Set the default password prompt method (console, whiptail, env_var, parameter)"
-        )
-        parser.add_argument(
-            "--show-method",
-            action="store_true",
-            help="Show the current default prompt method and exit"
-        )
-
-        args = parser.parse_args()
-
-        # Apply --prompt-method first if provided
-        if args.prompt_method:
-            result = set_default_prompt_method(args.prompt_method)
-            if not result["success"]:
-                print(f"Error: {result.get('error', 'Unknown error')}", file=sys.stderr)
-                sys.exit(1)
-
-        # Then show the current method if requested
-        if args.show_method:
-            print(f"Current default prompt method: {get_default_prompt_method()}")
-            sys.exit(0)
-
-        # If --prompt-method was set without --show-method, confirm the change
-        if args.prompt_method:
-            print(f"Default prompt method set to: {result['method']}")
-            sys.exit(0)
-
-        # If no arguments provided, show help
-        parser.print_help()
-
-    main()
