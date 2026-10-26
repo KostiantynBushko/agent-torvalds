@@ -11,6 +11,7 @@ orchestrator (``agent-torvalds.py``):
   - ``\\chat-rename <id> <new name>`` — rename a session
   - ``\\chat-info`` — show details of the active session
   - ``\\chat-clear`` — clear the active session message history
+  - ``\\chat-user`` — show or change the current user's own settings
 
 The command dispatch itself is delegated to
 :func:`chat_manager.commands.handler.handle_chat_command` so both
@@ -115,6 +116,50 @@ def render_chat_info_markdown(manager) -> str:
     return "\n".join(lines)
 
 
+def render_chat_user_markdown(manager) -> str:
+    """
+    Render the current user's settings as Markdown.
+
+    Args:
+        manager: An initialized ChatHistoryManager instance.
+
+    Returns:
+        str: Markdown document describing every user setting.
+    """
+    if manager is None or not manager.is_initialized:
+        return "# 👤 User Settings\n\nChatHistoryManager is not initialized."
+
+    try:
+        settings = manager.get_user_settings()
+    except RuntimeError as exc:
+        return f"# 👤 User Settings\n\nCould not read the user settings: {exc}"
+
+    user = manager.current_user.username if manager.current_user else "unknown"
+
+    lines = [
+        "# 👤 User Settings",
+        "",
+        f"**User:** `{user}`",
+        "",
+        "| Setting | Value | Range |",
+        "| :--- | :--- | :--- |",
+    ]
+
+    for key, spec, value in settings.as_rows():
+        if spec.writable:
+            accepted = spec.range_text
+        else:
+            accepted = "read-only"
+        lines.append(f"| `{key}` | {value} | {accepted} |")
+
+    lines.extend([
+        "",
+        "Change a setting with `\\chat-user set <key> <value>`.",
+    ])
+
+    return "\n".join(lines)
+
+
 def render_command_result_markdown(command: str, result: Optional[str]) -> str:
     """
     Render the outcome of a chat command as Markdown.
@@ -161,13 +206,15 @@ def handle_chat_command_markdown(cmd: str) -> Optional[str]:
 
     cmd_lower = cmd.strip().lower()
 
-    # The list and info views get a dedicated, richer rendering.
-    if cmd_lower in ("\\chat-sessions", "\\chat-list", "\\chat-info"):
+    # The list, info and user views get a dedicated, richer rendering.
+    if cmd_lower in ("\\chat-sessions", "\\chat-list", "\\chat-info", "\\chat-user"):
         from chat_manager.startup import get_chat_manager
 
         manager = get_chat_manager()
         if cmd_lower == "\\chat-info":
             return render_chat_info_markdown(manager)
+        if cmd_lower == "\\chat-user":
+            return render_chat_user_markdown(manager)
         return render_chat_sessions_markdown(manager)
 
     try:
@@ -182,6 +229,7 @@ def handle_chat_command_markdown(cmd: str) -> Optional[str]:
 __all__ = [
     "render_chat_sessions_markdown",
     "render_chat_info_markdown",
+    "render_chat_user_markdown",
     "render_command_result_markdown",
     "handle_chat_command_markdown",
 ]

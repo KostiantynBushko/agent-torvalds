@@ -25,6 +25,7 @@ touching agent logic.
 - [Installation](#installation)
 - [Usage Examples](#usage-examples)
 - [CLI Commands](#cli-commands)
+- [User settings](#user-settings)
 - [Agent Integration](#agent-integration)
 - [API Reference](#api-reference)
 - [Testing](#testing)
@@ -74,7 +75,7 @@ meant mixing unrelated messages into the same history.
 - The current OS user is resolved via `os.getlogin()`, falling back to `getpass.getuser()`, then
   to the literal `"default_user"`.
 - If the user does not exist, a record is created automatically with `backend_type='postgres'` and
-  `token_limit=5000`.
+  `chat_token_limit=5000`.
 - Every session belongs to exactly one user; the ownership check is enforced in the manager layer
   *and* in the SQL connector.
 
@@ -102,9 +103,13 @@ persisted as the user's active session.
 
 ### Interactive commands
 
-Seven runtime commands (`\chat-sessions`, `\chat-select`, `\chat-create`, `\chat-delete`,
-`\chat-rename`, `\chat-info`, `\chat-clear`) are dispatched by the agent's main loop. They are
-**commands, not agent tools** — the LLM cannot call them, only the human operator can.
+Eight runtime commands (`\chat-sessions`, `\chat-select`, `\chat-create`, `\chat-delete`,
+`\chat-rename`, `\chat-info`, `\chat-clear`, `\chat-user`) are dispatched by the agent's main
+loop. They are **commands, not agent tools** — the LLM cannot call them, only the human
+operator can.
+
+`\chat-user` is the command over the user's *own configuration* — the preferences stored in
+the `users` table. See [User settings](#user-settings) below.
 
 ---
 
@@ -116,6 +121,7 @@ chat_manager/
 ├── manager.py                     # ChatHistoryManager — core orchestrator
 ├── user.py                        # User dataclass (domain model)
 ├── session.py                     # Session dataclass + SessionType enum (domain model)
+├── settings.py                    # User settings — the user's own configuration
 ├── startup.py                     # Global singleton lifecycle + startup hooks
 ├── session_selector.py            # Interactive startup session picker
 ├── backend/                       # Message storage (LlamaIndex chat store)
@@ -131,15 +137,18 @@ chat_manager/
 │   ├── __init__.py
 │   ├── handler.py                 # Dispatch: is_chat_command() / handle_chat_command()
 │   └── cli.py                     # Per-command implementations
-└── tests/                         # 104 unit tests
+└── tests/                         # 175 unit tests
     ├── conftest.py
     ├── test_backend.py
     ├── test_commands.py
     ├── test_manager.py
+    ├── test_migration.py
     ├── test_models.py
     ├── test_session_selector.py
+    ├── test_settings.py
     ├── test_startup.py
-    └── test_storage.py
+    ├── test_storage.py
+    └── test_user_settings.py
 ```
 
 ### Dual-Connector Architecture
@@ -207,7 +216,10 @@ message backend.
 | `select_session(session_id)` | Activate a session (alias of `switch_session`). |
 | `switch_session(session_id)` | Activate a session and invalidate the memory buffer. |
 | `delete_session(session_id)` | Delete an owned, non-active session. |
-| `get_memory_buffer(token_limit)` | Lazily build/cache the `ChatMemoryBuffer` for the active session. |
+| `get_memory_buffer(chat_token_limit)` | Lazily build/cache the `ChatMemoryBuffer` for the active session. Rebuilds the buffer when the effective limit changed. |
+| `get_user_settings()` | Return the current user's settings as a `UserSettings` snapshot. |
+| `update_user_settings(**changes)` | Validate, persist and apply a settings change. Drops the cached buffer so a new limit is live immediately. |
+| `set_chat_token_limit(limit)` | Convenience wrapper for the one setting that changes most often. |
 | `add_message(content, role)` | Append a `ChatMessage` to the active session. |
 | `put_message(content, role)` | Alias of `add_message`. |
 | `get_messages()` | Return all `ChatMessage` objects for the active session. |
@@ -292,7 +304,23 @@ Accepted inputs: a **number** (1..N) selects that session, **`new <name>`** crea
 session, **Enter** keeps the current active session, and `Ctrl+C` / `EOF` aborts safely while
 keeping the current session.
 
-### 9. `commands/` — Interactive Command Layer
+### 9. `settings.py` — User Settings
+
+The user's own configuration: what the settings are, what their valid ranges are, and how a
+raw operator input is validated before it reaches the database.
+
+| Symbol | Description |
+|--------|-------------|
+| `UserSettings` | Immutable snapshot of the current user's preferences. |
+| `SettingSpec` | Description of one setting: key, unit, default, range, writability. |
+| `SettingError` | Raised for an unknown key, a read-only key, or a bad value. |
+| `DEFAULT_CHAT_TOKEN_LIMIT` | `5000` — the default chat-history token budget. |
+| `MIN_CHAT_TOKEN_LIMIT` / `MAX_CHAT_TOKEN_LIMIT` | `256` / `1_000_000` — the accepted range. |
+| `normalize_setting_key(key)` | Resolve a typed key to its canonical name (accepts the deprecated `token_limit`). |
+| `validate_setting_value(key, value)` | Validate a value for a setting and return it ready to persist. |
+| `validate_chat_token_limit(value)` | The chat-token limit's own validator. |
+
+### 10. `commands/` — Interactive Command Layer
 
 `handler.py` provides the dispatcher used by the agent's main loop:
 
@@ -302,8 +330,9 @@ keeping the current session.
 | `handle_chat_command(cmd)` | Execute the command and return the user-facing response string. |
 
 `cli.py` holds one function per command: `cmd_chat_sessions`, `cmd_chat_select`, `cmd_chat_create`,
-`cmd_chat_delete`, `cmd_chat_rename`, `cmd_chat_info`, `cmd_chat_clear`. Each returns a
-human-readable string and never raises for expected error conditions.
+`cmd_chat_delete`, `cmd_chat_rename`, `cmd_chat_info`, `cmd_chat_clear`, `cmd_chat_user`,
+`cmd_chat_user_get`, `cmd_chat_user_set`, `cmd_chat_user_help`. Each returns a human-readable
+string and never raises for expected error conditions.
 
 ---
 
@@ -319,7 +348,7 @@ in the `SCHEMA_SQL` constant of `chat_manager/storage/connector.py`.
 | `user_id` | TEXT | PRIMARY KEY | UUID of the user |
 | `username` | TEXT | NOT NULL, UNIQUE | OS login name |
 | `backend_type` | TEXT | NOT NULL, DEFAULT `'postgres'` | Preferred storage backend |
-| `token_limit` | INTEGER | NOT NULL, DEFAULT `5000` | Memory buffer token budget |
+| `chat_token_limit` | INTEGER | NOT NULL, DEFAULT `5000` | Chat-history token budget of the memory buffer |
 | `created_at` | TIMESTAMP | DEFAULT `CURRENT_TIMESTAMP` | Creation time |
 | `updated_at` | TIMESTAMP | DEFAULT `CURRENT_TIMESTAMP` | Last update time |
 
@@ -343,6 +372,21 @@ Indexes: `idx_sessions_user (user_id)`, `idx_sessions_type (session_type)`,
 The schema is created idempotently by `CustomDBConnector.connect()` via
 `Base.metadata.create_all(engine)` — no manual migration step is required on a fresh database.
 
+### The `token_limit` → `chat_token_limit` migration
+
+The column was renamed so that it says *whose* tokens it limits (see
+`investigate/chat-manager-user-settings/PROPOSAL_chat_token_limit.md`). An existing database
+still has the old column name, so `CustomDBConnector.connect()` renames it in place:
+
+```sql
+ALTER TABLE users RENAME COLUMN token_limit TO chat_token_limit
+```
+
+The migration is idempotent (it is skipped when the canonical column is already there) and
+never fatal — a failure is logged as a warning, because a chat history that cannot be migrated
+is a smaller problem than a chat history that cannot be reached. The values are kept, and no
+manual step is needed.
+
 ---
 
 ## Configuration
@@ -359,7 +403,7 @@ All configuration is environment-driven; nothing is hard-coded in the agent.
 | `TORVALDS_PG_PASSWORD` | `postgres` | PostgreSQL password |
 | `TORVALDS_PG_DATABASE` | `llama_index_db` | PostgreSQL database name |
 | `TORVALDS_CHAT_KEY` | — | Legacy single-key chat store name. If set, it is reused as the `chat_key` of the pre-seeded **General Chat** session, which keeps existing message history reachable after the upgrade. |
-| `TORVALDS_TOKEN_LIMIT` | `5000` | Token limit for the legacy compatibility buffer (the manager uses `users.token_limit`) |
+| `TORVALDS_TOKEN_LIMIT` | `5000` | Token limit for the **legacy** compatibility buffer. The manager uses `users.chat_token_limit` instead — see [User settings](#user-settings). |
 
 **URI precedence.** `TORVALDS_STORAGE_URI` and `TORVALDS_LLAMA_URI` take priority. When they are
 absent, both connectors are derived from the `TORVALDS_PG_*` variables — the metadata connector
@@ -594,7 +638,7 @@ connector.connect()
 
 user = connector.get_user_by_username("alice")
 if user is None:
-    user = connector.create_user(User(username="alice", token_limit=8000))
+    user = connector.create_user(User(username="alice", chat_token_limit=8000))
 
 for session in connector.list_sessions(user.user_id):
     print(session.session_name, session.is_active)
@@ -602,7 +646,26 @@ for session in connector.list_sessions(user.user_id):
 connector.close()
 ```
 
-### 9. Handling chat commands programmatically
+### 9. Reading and changing the user's settings
+
+```python
+from chat_manager import ChatHistoryManager
+
+manager = ChatHistoryManager()
+manager.initialize()
+
+# What is set right now?
+print(manager.get_user_settings().chat_token_limit)      # 5000
+
+# Give the agent a longer memory.
+manager.update_user_settings(chat_token_limit=12000)
+print(manager.get_user_settings().chat_token_limit)      # 12000
+
+# The live buffer picked the new limit up — no session switch needed.
+print(manager.get_memory_buffer().token_limit)            # 12000
+```
+
+### 10. Handling chat commands programmatically
 
 ```python
 from chat_manager.commands.handler import is_chat_command, handle_chat_command
@@ -637,6 +700,10 @@ and cannot be triggered by the model.
 | `\chat-rename <session_id> <new name>` | — | Rename a session. |
 | `\chat-info` | — | Show details of the active session (ID, name, type, chat key, timestamps). |
 | `\chat-clear` | — | Delete all messages in the active session, keeping the session. |
+| `\chat-user` | — | Show the current user's settings. |
+| `\chat-user get <key>` | — | Show one setting. |
+| `\chat-user set <key> <value>` | — | Change one setting. The change is validated, persisted, and applied to the live memory buffer. |
+| `\chat-user help` | — | List the settings, their ranges and their usage. |
 
 ### Sample session
 
@@ -675,6 +742,101 @@ Available sessions:
     3. Postgres migration [custom] (created 2026-10-20 10:02)
   * = currently active
 Select a session [1-3], 'new <name>' to create one, or Enter to keep the current one:
+```
+
+---
+
+## User settings
+
+The `users` table is the home of the user's *preferences*. The settings API reads and writes
+them; the `\chat-user` command is the operator's view onto the same values.
+
+### The settings
+
+| Key | Type | Default | Range | Writable | Meaning |
+|-----|------|---------|-------|----------|---------|
+| `chat_token_limit` | int | `5000` | `256` – `1 000_000` | yes | Maximum number of **chat-history** tokens kept in the memory buffer of the active session. Older messages are dropped when the budget is exceeded. |
+| `backend_type` | string | `postgres` | — | no | The storage backend provisioned for this user. Assigned on first login; shown for reference. |
+
+### The naming
+
+The setting was called `token_limit` until the rename documented in
+`investigate/chat-manager-user-settings/PROPOSAL_chat_token_limit.md`. The old name says the
+unit but not the scope, and the scope is the interesting part: *whose* tokens? The codebase
+uses `token_limit` for at least three other things — the model's `context_window`, the legacy
+`TORVALDS_TOKEN_LIMIT`, and the dead `TOKEN_LIMITS` constant in both orchestrators.
+
+`chat_token_limit` is the canonical name. The old name keeps working in three places:
+
+| Where | How |
+|-------|-----|
+| The database | The column is renamed in place on connect — the values are kept. |
+| The Python API | `User.token_limit` is a deprecated property; `User(token_limit=…)` still works; `to_dict()` carries both keys; `from_dict()` accepts either. |
+| The command | `\chat-user set token_limit 12000` still works — `token_limit` is a registered alias. The reply always names the canonical key. |
+
+### The API
+
+```python
+from chat_manager import ChatHistoryManager
+
+manager = ChatHistoryManager()
+manager.initialize()
+
+# Read
+settings = manager.get_user_settings()
+print(settings.chat_token_limit)      # 5000
+print(settings.get("token_limit"))    # 5000  — the alias resolves too
+
+# Write
+manager.update_user_settings(chat_token_limit=12000)
+manager.set_chat_token_limit(8000)    # the same thing, shorter
+```
+
+`update_user_settings()` validates every value **before** writing anything, so a bad value
+never leaves the settings half-updated, and it drops the cached memory buffer — a changed
+limit is live on the next turn, not after the next session switch.
+
+Invalid input raises `SettingError`:
+
+```python
+from chat_manager import SettingError
+
+try:
+    manager.update_user_settings(chat_token_limit=5)
+except SettingError as exc:
+    print(exc)   # The chat token limit must be at least 256 (got 5).
+```
+
+### The command
+
+```
+>>> \chat-user
+Settings for user 'kbush':
+  chat_token_limit  5000 tokens
+  backend_type      postgres string
+
+Change a setting with: \chat-user set <key> <value>
+Show one setting with: \chat-user get <key>
+
+>>> \chat-user set chat_token_limit 12000
+Set chat_token_limit = 12000 tokens. The memory buffer was rebuilt, so the new limit applies from the next message on.
+
+>>> \chat-user get chat_token_limit
+chat_token_limit = 12000 tokens
+
+>>> \chat-user set chat_token_limit 5
+The chat token limit must be at least 256 (got 5).
+
+>>> \chat-user help
+User settings:
+
+  chat_token_limit  (read-write)
+      Maximum number of chat-history tokens kept in the memory buffer of the active session. …
+      Accepted range: 256 - 1000000
+
+  backend_type  (read-only)
+      Storage backend provisioned for this user. …
+      Default: postgres
 ```
 
 ---
@@ -741,7 +903,12 @@ to the rest of the agent.
 ### `chat_manager` (package root)
 
 ```python
-from chat_manager import ChatHistoryManager, User, Session, SessionType
+from chat_manager import (
+    ChatHistoryManager, User, Session, SessionType,
+    UserSettings, SettingSpec, SettingError, SETTING_SPECS,
+    DEFAULT_CHAT_TOKEN_LIMIT, MIN_CHAT_TOKEN_LIMIT, MAX_CHAT_TOKEN_LIMIT,
+    normalize_setting_key, validate_chat_token_limit, validate_setting_value,
+)
 ```
 
 ### `chat_manager.manager.ChatHistoryManager`
@@ -778,6 +945,17 @@ from chat_manager.storage import Base, User, Session, CustomDBConnector
 from chat_manager.commands import (
     cmd_chat_sessions, cmd_chat_select, cmd_chat_create,
     cmd_chat_delete, cmd_chat_rename, cmd_chat_info, cmd_chat_clear,
+    cmd_chat_user, cmd_chat_user_get, cmd_chat_user_set, cmd_chat_user_help,
+)
+```
+
+### `chat_manager.settings`
+
+```python
+from chat_manager.settings import (
+    UserSettings, SettingSpec, SettingError, SETTING_SPECS, SETTINGS_BY_KEY,
+    DEFAULT_CHAT_TOKEN_LIMIT, MIN_CHAT_TOKEN_LIMIT, MAX_CHAT_TOKEN_LIMIT,
+    normalize_setting_key, validate_chat_token_limit, validate_setting_value,
 )
 ```
 
@@ -803,15 +981,18 @@ from chat_manager.session_selector import (
 
 ## Testing
 
-The package ships **104 unit tests** across seven modules, all hermetic — no live database is
+The package ships **175 unit tests** across ten modules, all hermetic — no live database is
 required.
 
 | Test module | Tests | Covers |
 |-------------|-------|---------|
+| `test_user_settings.py` | 38 | The settings API, the `\chat-user` command, the renamed field and its compatibility seams |
 | `test_manager.py` | 28 | Initialisation, session CRUD, message buffer, plan-mandated API surface |
 | `test_commands.py` | 22 | Every `\chat-*` command and the dispatcher |
+| `test_settings.py` | 20 | The settings module — validation, aliases, the `UserSettings` snapshot |
 | `test_backend.py` | 14 | Backend contract and error handling |
 | `test_storage.py` | 12 | Connector lifecycle, user and session CRUD |
+| `test_migration.py` | 10 | The `token_limit` → `chat_token_limit` column migration |
 | `test_models.py` | 11 | `User` / `Session` dataclasses, `SessionType` |
 | `test_session_selector.py` | 10 | Menu formatting and the interactive selection loop |
 | `test_startup.py` | 7 | Singleton lifecycle and startup hooks |
@@ -860,6 +1041,10 @@ The module was developed against a written design. The source documents live in
 | `Cannot delete the active session.` | Guard rail — the live session cannot be deleted. | Switch to another session first, then delete. |
 | Messages from a previous topic still appear | The legacy `TORVALDS_CHAT_KEY` is in use, so the General session points at the old flat history. | Unset `TORVALDS_CHAT_KEY` to start with a clean per-session history. |
 | `No sessions found.` at startup | The metadata database is empty and creation failed. | Check the database permissions and the startup log output. |
+| `Unknown setting '…'` | The setting name is not one of the known settings. | Run `\chat-user help` for the list. |
+| `The chat token limit must be at least 256` | The value is below `MIN_CHAT_TOKEN_LIMIT`. | Pick a value between 256 and 1 000 000. |
+| `The setting 'backend_type' is read-only` | The setting is assigned when the user is provisioned. | It cannot be changed at runtime. |
+| A changed limit seems to have no effect | The memory buffer caches the limit it was built with. | `update_user_settings()` drops the cache, so the new limit is live immediately. If you changed the value in the database directly, switch sessions or run `\chat-clear` to rebuild the buffer. |
 
 ---
 

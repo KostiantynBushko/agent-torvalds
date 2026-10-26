@@ -8,6 +8,10 @@ from chat_manager.commands.cli import (
     cmd_chat_rename,
     cmd_chat_info,
     cmd_chat_clear,
+    cmd_chat_user,
+    cmd_chat_user_get,
+    cmd_chat_user_set,
+    cmd_chat_user_help,
 )
 
 __all__ = [
@@ -18,4 +22,8 @@ __all__ = [
     "cmd_chat_rename",
     "cmd_chat_info",
     "cmd_chat_clear",
+    "cmd_chat_user",
+    "cmd_chat_user_get",
+    "cmd_chat_user_set",
+    "cmd_chat_user_help",
 ]

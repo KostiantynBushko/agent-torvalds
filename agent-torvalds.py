@@ -1151,6 +1151,7 @@ async def main():
         console.print("[dim]Type '\\chat-sessions' to list chat sessions.[/dim]")
         console.print("[dim]Type '\\chat-select <id>' to switch sessions.[/dim]")
         console.print("[dim]Type '\\chat-info' to show the active session.[/dim]")
+        console.print("[dim]Type '\\chat-user' to show or change your own settings.[/dim]")
     if runtime_toggle_enabled:
         console.print("[dim]Type '\\hitl-status' to check HITL status.[/dim]")
         console.print("[dim]Type '\\toggle-hitl' to enable/disable HITL at runtime.[/dim]")
