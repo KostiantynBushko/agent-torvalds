@@ -5,7 +5,8 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 future agent invocation.
 
 **Last updated:** 2026-10-26 (the **GitHub** toolkit became a module under
-`toolkits/` — the **third** PR of the "every toolkit is a module"
+`toolkits/` and was **squash-merged into `master` as PR #43**, commit
+`83456a7` — the **third** PR of the "every toolkit is a module"
 refactoring, and the first of them that arrived **without a test suite**;
 the Git toolkit was squash-merged into `master` as PR #41, commit
 `7d0e56a`; the math toolkit was merged into `master` as PR #39, merge
@@ -95,13 +96,25 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/github-toolkit-module` — **implemented and verified**, awaiting the operator's approval to commit and push |
+| Branch | `refactor/github-toolkit-module` — **implemented, verified and squash-merged into `master`** as PR #43 (commit `83456a7`) |
 | Scope | The **third** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_github_toolkit.py` leaves the project root and becomes `toolkits/github-toolkit/`. |
 | Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the 13 GitHub operations, no LlamaIndex import) and the adapter (`agent_github_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` (one third-party dependency, `requests`) and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.github_toolkit`, which `toolkits/__init__.py` registers next to the other four toolkits. The four call sites (both orchestrators, the retriever and the selection menu) now import the adapter **behind a guard**, like the other toolkits under `toolkits/`. **The toolkit had no test suite at all**, so one was written: `toolkits/github-toolkit/tests/test_operations.py` (95 tests) pins the behaviour of every operation, offline. A new layout contract (`toolkits/github-toolkit/tests/test_package_layout.py`, 25 checks) pins the layout, the relative imports, the alias, the LlamaIndex boundary, the dependency profile and the 13-tool surface. The toolkit suite is green (120 passed), the alias contract is green (44 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` unchanged, because the toolkit had no known failures of its own. The report is `investigate/github-toolkit-module/REPORT_github_toolkit_module.md`. |
 | Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported as `False` or as `{"success": False, "error": ...}`, never raised) were moved verbatim; the split was checked mechanically against the original file, not by eye. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_os_toolkit.py`, `agent_linux_toolkit.py`, `agent_windows_toolkit.py`, `agent_apt_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
-| State | **The commit and the push are not done yet** — rule 4 requires the operator's explicit approval, and the staged diff has to be shown first. Nothing is merged; `master` is untouched. |
+| State | **Nothing pending.** The GitHub toolkit is in `master`; the working tree is clean and no PR is open. The next toolkit of the series starts from `master` (`83456a7`). |
 
 ### Latest change: the GitHub toolkit is a module
+
+**Squash-merged into `master` as PR #43** (commit `83456a7`, head
+`0533206`).  The PR is based on `master` — not on `main`.
+
+The operator asked for a **squash**, as for PR #41.  The departure from
+the standing convention of a merge commit is safe here, for the reason
+recorded under the Git toolkit: the convention exists for the *stacked*
+PR chain, and this PR is based directly on the tip of `master`, so the
+next PR's merge base is `83456a7` and its diff does not balloon.  The
+tree check the convention exists for holds as well — `master`'s tree
+after the merge (`74a5f5b`) is byte-identical to the head tree of
+`0533206` that CI ran green.
 
 The **third** toolkit of the series, and the first one of them that
 arrived **without a test suite**.  That changed what the work was.
@@ -166,6 +179,33 @@ eyeballing would not have: a description that had been reworded from
 "review submissions **for** a Pull Request" to "review submissions **on**
 a Pull Request".  The rule for the rest of the series: move verbatim, and
 let a script prove it.
+
+**Two findings the move surfaced.**
+
+*A collision that does not happen — yet.*  The GitHub toolkit's three
+authentication tools are named `git_check_auth`, `git_get_user_info` and
+`git_configure_credentials` — in the namespace the **Git** toolkit owns,
+and both toolkits are now loaded into the same process.  The two tool
+surfaces are **disjoint** (27 + 13 = 40 distinct names), and the whole
+menu is 155 tools with 154 distinct names; the single duplicate,
+`get_system_info`, comes from the OS and the Windows toolkits and is
+**pre-existing** — it is on `master` too, with the same count of 155.
+But it is a live hazard for the rest of the series: a future Git
+toolkit operation called `git_check_auth` would collide for real.
+Renaming the three GitHub tools to `github_*` would remove the hazard,
+and it belongs in its own PR — the names are in the tool descriptions
+the retriever matches against, so they are **behaviour**.
+
+*A latent inconsistency, left alone.*  `git_check_auth()` reports the
+method as `"gh_cli"` only when `GITHUB_TOKEN` is `None`, while
+`_get_github_token()` treats an **empty** `GITHUB_TOKEN` as absent and
+falls through to the CLI.  So with `GITHUB_TOKEN=""` exported and a
+working `gh` CLI, the token comes from the CLI but the method is
+reported as `"token"`.  The behaviour is **unchanged** — this is a
+refactoring, and the point of the series is that nothing moves.  The
+suite pins the current behaviour as a characterisation test, so the
+inconsistency is now *documented* rather than invisible.  Fixing it
+belongs in its own PR, where the change is the change.
 
 ### Previous change: the Git toolkit is a module
 
