@@ -1,5 +1,5 @@
 """
-Unit tests for agent_git_toolkit.
+Unit tests for the Git toolkit's library half.
 
 Tests Git operations including:
 - Repository initialization, status, commits
@@ -8,6 +8,11 @@ Tests Git operations including:
 - File staging
 - Branch management (Phase 1 / Tier 1)
 - Diff & Sync tools (Phase 2 / Tier 2)
+
+These tests live inside the package, so they use **relative** imports
+(``from ..operations import ...``).  The module-local ``tests/`` directory
+must **not** contain an ``__init__.py`` - see the layout contract in
+``test_package_layout.py``.
 """
 import unittest
 import os
@@ -15,10 +20,7 @@ import tempfile
 import shutil
 import subprocess
 
-import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from agent_git_toolkit import (
+from ..operations import (
     git_init_repo,
     git_add_files,
     git_commit,
