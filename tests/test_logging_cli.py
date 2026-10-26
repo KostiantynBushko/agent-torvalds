@@ -29,7 +29,7 @@ from toolkits.linux_toolkit.operations import logger as linux_logger
 from toolkits.windows_toolkit.operations import logger as windows_logger
 from toolkits.os_toolkit.operations import logger as os_logger
 from toolkits.math_toolkit.operations import logger as math_logger
-from agent_db_toolkit import logger as db_logger
+from toolkits.db_toolkit.operations import logger as db_logger
 from toolkits.apt_toolkit.operations import logger as apt_logger
 from chat_manager.startup import logger as chat_manager_logger
 from toolkits.github_toolkit.operations import logger as github_logger
@@ -218,7 +218,6 @@ class TestNoDuplicateBasicConfig(unittest.TestCase):
     """
 
     TOOLKIT_MODULES = [
-        "agent_db_toolkit",
         "chat_manager.startup",
         # The math, Git and GitHub toolkits are modules under ``toolkits/``:
         # the library half and the LlamaIndex adapter are two separate
@@ -245,6 +244,10 @@ class TestNoDuplicateBasicConfig(unittest.TestCase):
         # half and the LlamaIndex adapter are two separate modules.
         "toolkits.windows_toolkit.operations",
         "toolkits.windows_toolkit.agent_windows_toolkit",
+        # The database toolkit is a module under ``toolkits/``: the library
+        # half and the LlamaIndex adapter are two separate modules.
+        "toolkits.db_toolkit.operations",
+        "toolkits.db_toolkit.agent_db_toolkit",
     ]
 
     def _check_no_basicconfig_in_source(self, module_name):

@@ -14,6 +14,7 @@ each of them::
     toolkits.linux-toolkit       ->  toolkits.linux_toolkit
     toolkits.apt-toolkit         ->  toolkits.apt_toolkit
     toolkits.windows-toolkit     ->  toolkits.windows_toolkit
+    toolkits.db-toolkit          ->  toolkits.db_toolkit
 
 This module pins down the two properties that alias has to have.
 
@@ -79,6 +80,9 @@ APT_REAL = "toolkits.apt-toolkit"
 WINDOWS_ALIAS = "windows_toolkit"
 WINDOWS_REAL = "toolkits.windows-toolkit"
 
+DB_ALIAS = "db_toolkit"
+DB_REAL = "toolkits.db-toolkit"
+
 #: The alias of each toolkit and the ``__init__.py`` that must carry a
 #: code-level reference to it.
 TOOLKITS = (
@@ -91,6 +95,7 @@ TOOLKITS = (
     (LINUX_ALIAS, LINUX_REAL, REPO_ROOT / "toolkits" / "linux-toolkit" / "__init__.py"),
     (APT_ALIAS, APT_REAL, REPO_ROOT / "toolkits" / "apt-toolkit" / "__init__.py"),
     (WINDOWS_ALIAS, WINDOWS_REAL, REPO_ROOT / "toolkits" / "windows-toolkit" / "__init__.py"),
+    (DB_ALIAS, DB_REAL, REPO_ROOT / "toolkits" / "db-toolkit" / "__init__.py"),
 )
 
 #: The agent adapter of each toolkit: the alias of its package, the module
@@ -144,6 +149,11 @@ ADAPTERS = (
         WINDOWS_ALIAS,
         "agent_windows_toolkit",
         REPO_ROOT / "toolkits" / "windows-toolkit" / "agent_windows_toolkit.py",
+    ),
+    (
+        DB_ALIAS,
+        "agent_db_toolkit",
+        REPO_ROOT / "toolkits" / "db-toolkit" / "agent_db_toolkit.py",
     ),
 )
 
@@ -213,6 +223,8 @@ class TestStaticReference:
             f"toolkits.{OS_ALIAS}",
             f"toolkits.{LINUX_ALIAS}",
             f"toolkits.{APT_ALIAS}",
+            f"toolkits.{WINDOWS_ALIAS}",
+            f"toolkits.{DB_ALIAS}",
         ],
     )
     def test_the_canonical_dotted_path_is_a_literal(self, dotted):
@@ -234,6 +246,8 @@ class TestStaticReference:
             OS_ALIAS,
             LINUX_ALIAS,
             APT_ALIAS,
+            WINDOWS_ALIAS,
+            DB_ALIAS,
         ],
     )
     def test_the_bare_alias_name_is_a_literal(self, alias):
@@ -259,6 +273,8 @@ class TestStaticReference:
             ("_OS_ALIAS", f"toolkits.{OS_ALIAS}"),
             ("_LINUX_ALIAS", f"toolkits.{LINUX_ALIAS}"),
             ("_APT_ALIAS", f"toolkits.{APT_ALIAS}"),
+            ("_WINDOWS_ALIAS", f"toolkits.{WINDOWS_ALIAS}"),
+            ("_DB_ALIAS", f"toolkits.{DB_ALIAS}"),
         ],
     )
     def test_the_alias_is_not_computed(self, constant, expected):

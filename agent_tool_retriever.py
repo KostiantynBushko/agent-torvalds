@@ -125,8 +125,19 @@ def build_tool_retriever(
             pass
 
     if include_db_tools:
-        from agent_db_toolkit import get_all_tools as _get_db
-        all_tools.extend(_get_db())
+        # The DB toolkit lives in ``toolkits/`` and is optional.  It can
+        # fail to import for two reasons: the database drivers are not
+        # installed (``ImportError``), and its configuration file -
+        # ``db_toolkit_config.yaml``, which it reads at import time - is
+        # missing or malformed.  Neither may break the retriever.
+        try:
+            from toolkits.db_toolkit.agent_db_toolkit import (
+                get_all_tools as _get_db,
+            )
+            all_tools.extend(_get_db())
+        except Exception:
+            # The DB toolkit is optional - skip it when it is not available.
+            pass
 
     if include_apt_tools:
         # The APT toolkit lives in ``toolkits/`` and is optional.  A
