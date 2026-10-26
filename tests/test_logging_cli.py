@@ -30,6 +30,7 @@ from toolkits.windows_toolkit.operations import logger as windows_logger
 from toolkits.os_toolkit.operations import logger as os_logger
 from toolkits.math_toolkit.operations import logger as math_logger
 from toolkits.db_toolkit.operations import logger as db_logger
+from toolkits.xlsx_toolkit.operations import logger as xlsx_logger
 from toolkits.apt_toolkit.operations import logger as apt_logger
 from chat_manager.startup import logger as chat_manager_logger
 from toolkits.github_toolkit.operations import logger as github_logger
@@ -248,6 +249,10 @@ class TestNoDuplicateBasicConfig(unittest.TestCase):
         # half and the LlamaIndex adapter are two separate modules.
         "toolkits.db_toolkit.operations",
         "toolkits.db_toolkit.agent_db_toolkit",
+        # The Excel toolkit is a module under ``toolkits/``: the library
+        # half and the LlamaIndex adapter are two separate modules.
+        "toolkits.xlsx_toolkit.operations",
+        "toolkits.xlsx_toolkit.agent_xlsx_toolkit",
     ]
 
     def _check_no_basicconfig_in_source(self, module_name):
@@ -310,6 +315,7 @@ class TestAllLoggersRespectRootLevel(unittest.TestCase):
         ("os_logger", os_logger),
         ("math_logger", math_logger),
         ("db_logger", db_logger),
+        ("xlsx_logger", xlsx_logger),
         ("apt_logger", apt_logger),
         ("chat_manager_logger", chat_manager_logger),
         ("github_logger", github_logger),
