@@ -4,7 +4,11 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-26 (the **APT** toolkit became a module under
+**Last updated:** 2026-10-26 (the **Windows** toolkit became a module
+under `toolkits/` and was **squash-merged into `master` as PR #50**,
+commit `9c48625` — the **seventh** PR of the "every toolkit is a module"
+refactoring, and the **last** of the *Linux/Windows* pair to move; the
+**APT** toolkit became a module under
 `toolkits/` and was **squash-merged into `master` as PR #48**, commit
 `5eb5151` — the **sixth** PR of the "every toolkit is a module"
 refactoring, and the first one whose library half is **not**
@@ -105,13 +109,91 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/apt-toolkit-module` — **squash-merged into `master` as PR #48** (commit `5eb5151`, head `4c2b941`; based on `master` at `d7cb132`) |
-| Scope | The **sixth** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_apt_toolkit.py` leaves the project root and becomes `toolkits/apt-toolkit/`. It is the first toolkit of the series whose library half is **not** dependency-free, and the first whose command-line interface is a module of its own. |
-| Status | Implemented, verified and **merged**. The loose root module is **split** into the library half (`operations.py` — the 13 package, sudo and install operations, no LlamaIndex import), the adapter (`agent_apt_toolkit.py` — the only LlamaIndex-dependent module) and the command-line interface (`cli.py` — it used to be a `__main__` block at the bottom of the module), with a `__init__.py`, a `__main__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.apt_toolkit`, which `toolkits/__init__.py` registers next to the other seven toolkits. The **four** call sites (both orchestrators, the retriever and the selection menu) were updated; all four imported the toolkit unguarded and now import it **behind a guard**, so the APT toolkit goes from mandatory to optional. **The toolkit already had a test suite** (4 known failures), and it moved with it; the suite was extended to 44 operations tests plus a new layout contract (`toolkits/apt-toolkit/tests/test_package_layout.py`, 37 checks) and a new test of the split-verification script (19 tests, fifteen deliberate drifts) — 100 passed, 4 known failures in all. The alias contract is green (75 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` rewritten, because the path of the four known failures changed. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical. The report is `investigate/apt-toolkit-module/REPORT_apt_toolkit_module.md`. |
-| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with fifteen deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. This toolkit's library half is the **first** of the series that is **not** dependency-free — it needs `rich` for the console password prompt and the repository's own `components.whiptail_password` for the whiptail one, both deferred to the call and both guarded. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_windows_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
-| State | **Merged.** Committed as `4c2b941`, pushed, opened as PR #48, and **squash-merged into `master` as `5eb5151`** after CI ran green. The tree check holds: `master`'s tree after the merge (`0af67be`) is byte-identical to the head tree of `4c2b941` that CI ran green. The next toolkit of the series starts from `master` (`5eb5151`). |
+| Branch | `refactor/windows-toolkit-module` — **squash-merged into `master` as PR #50** (commit `9c48625`, head `0b5f2af`; based on `master` at `02270ed`) |
+| Scope | The **seventh** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_windows_toolkit.py` leaves the project root and becomes `toolkits/windows-toolkit/`. It is the **last** of the *Linux/Windows* pair to move, and the last toolkit of the series whose library half is built on the **standard library alone**. |
+| Status | Implemented, verified and **merged**. The loose root module is **split** into the library half (`operations.py` — the 6 PowerShell and system operations, the private `_get_powershell_command` helper and the module-level logger, no LlamaIndex import) and the adapter (`agent_windows_toolkit.py` — the only LlamaIndex-dependent module), with an `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.windows_toolkit`, which `toolkits/__init__.py` registers next to the other eight toolkits. The **four** call sites (both orchestrators, the retriever and the selection menu) were updated; all four imported the toolkit unguarded and now import it **behind a guard**, so the Windows toolkit goes from mandatory to optional. **The toolkit had no test suite at all** before this change; the one that came with it has 87 tests and is **platform-independent** — it drives the operations through a stubbed `subprocess.run`, so it needs neither Windows nor a PowerShell installation. The alias contract is green, and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — `tests/ci_baseline.txt` did **not** need rewriting, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical (155 tools) — and byte-identical again with the platform simulated as Windows, so the Windows toolkit's own six tools are in it. The report is `investigate/windows-toolkit-module/REPORT_windows_toolkit_module.md`. |
+| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with nine deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. The one thing that did **not** move verbatim is the module header: the `os` import of the original was never used by any of the operations — `run_command_with_env` passes the variables to the shell as PowerShell assignments, not through `os.environ` — so it was dropped rather than carried along. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
+| State | **Merged.** Committed as `0b5f2af`, pushed, opened as PR #50, and **squash-merged into `master` as `9c48625`** after CI ran green. The tree check holds: `master`'s tree after the merge (`7a49b8a`) is byte-identical to the head tree of `0b5f2af` that CI ran green. The next toolkit of the series starts from `master` (`9c48625`). |
 
-### Latest change: the APT toolkit is a module
+### Latest change: the Windows toolkit is a module
+
+**Squash-merged into `master` as PR #50** (commit `9c48625`, head
+`0b5f2af`).  The PR is based on `master` — not on `main`.
+
+The squash departs from the standing convention of a merge commit, as
+PR #48, PR #46, PR #43 and PR #41 did before it, and for the same reason:
+the convention exists for the *stacked* PR chain, and this PR is based
+directly on the tip of `master` (`02270ed`), so the next PR's merge base
+is `9c48625` and its diff does not balloon.  The tree check the
+convention exists for holds as well — `master`'s tree after the merge
+(`7a49b8a`) is byte-identical to the head tree of `0b5f2af` that CI ran
+green.
+
+The **seventh** toolkit of the "every toolkit is a module" series, and
+the **last** of the *Linux/Windows* pair to move.  The two carry the
+same six operations under the same names, and they are loaded on
+different platforms, so exactly one of them is ever in the menu.
+
+| Path | Change |
+|------|--------|
+| `toolkits/windows-toolkit/operations.py` | **New.** The 6 PowerShell and system operations, the private `_get_powershell_command` helper and the module-level logger — the library half. No LlamaIndex import, standard library only (`subprocess`, `logging`, `typing`). |
+| `toolkits/windows-toolkit/agent_windows_toolkit.py` | **New.** The adapter — the only LlamaIndex-dependent module. It re-exports all 6 operations. |
+| `toolkits/windows-toolkit/__init__.py` | **New.** The public API surface and the code-level reference to the canonical alias. |
+| `toolkits/windows-toolkit/README.md`, `pyproject.toml`, `py.typed` | **New.** The module documentation, the standalone distribution (the adapter is the `agent` extra) and the PEP 561 marker. |
+| `toolkits/windows-toolkit/tests/test_operations.py` | **New.** 45 tests. The toolkit had **no** suite; this one is platform-independent — it drives the operations through a stubbed `subprocess.run`. |
+| `toolkits/windows-toolkit/tests/test_package_layout.py` | **New.** The layout contract — 30 checks. |
+| `toolkits/windows-toolkit/tests/test_split_verification.py` | **New.** The test of the split-verification script — 12 tests, nine deliberate drifts. |
+| `agent_windows_toolkit.py` | **Deleted** at the project root. Git tracked it as a rename to `toolkits/windows-toolkit/operations.py`. |
+| `toolkits/__init__.py` | The `windows_toolkit` alias, the `_WINDOWS_PACKAGE` / `_WINDOWS_ALIAS` literals and the adapter in `_ADAPTER_MODULES`. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | The Windows adapter moved into the guarded block with the math, Git, GitHub, MikroTik, Shodan, OS, Linux and APT ones. |
+| `agent_tool_retriever.py`, `agent_tool_selection.py` | The import path moved to the alias, behind a guard. |
+| `pytest.ini` | `toolkits/windows-toolkit/tests` added to `testpaths`. |
+| `tests/test_toolkit_alias_contract.py` | The Windows toolkit joined the alias contract — seven new rows. |
+| `tests/test_logging_cli.py` | The logger now comes from `toolkits.windows_toolkit.operations`; the two new modules joined the static inspection. |
+| `README.md`, `CHANGELOG.md` | The documentation. |
+| `investigate/windows-toolkit-module/REPORT_windows_toolkit_module.md` | **New.** What was implemented and why. |
+| `investigate/windows-toolkit-module/verify_split.py` | **New.** The mechanical check. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/toolkits/windows-toolkit/tests -q
+self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+```
+
+87 passed, and the CI gate reports **no new failure** (40 known failures,
+0 new, 0 fixed).  The baseline was **not** rewritten — the Windows
+toolkit had no known failures of its own, so no known failure changed
+path.  (The APT toolkit before it *did* need a rewritten baseline, for
+exactly the opposite reason: it carried four known failures, and the
+move changed their paths.)
+
+**Three things this change is worth knowing about.**
+
+*It is the third dependency-free library half.*  The OS toolkit was the
+first, the Linux toolkit the second, and this one the third: it is built
+on `subprocess`, `logging` and `typing` and on nothing else, so the
+PowerShell operations work in any Python that exists.  The layout
+contract pins the exact set.
+
+*The toolkit had no test suite at all.*  Every other toolkit of the
+series carried one into its package; this one did not, so nothing
+guarded its error contract — the "a failure is reported, never raised"
+promise that is the whole point of the toolkit.  The suite that came
+with the move has 87 tests, and it is **platform-independent**: it
+drives the operations through a stubbed `subprocess.run`, so it needs
+neither Windows nor a PowerShell installation.  That matters — the build
+that has to stay green runs on Linux, and a suite that could only run on
+Windows would never guard anything.
+
+*One import did not move, and that is deliberate.*  The original
+imported `os` and never used it: `run_command_with_env` passes the
+variables to the shell as **PowerShell assignments** (`$env:NAME="value"`),
+not through `os.environ`.  The unused import was dropped rather than
+carried along.  It is the only difference between the original module
+and the library half, apart from the module header itself.
+
+### Previous change: the APT toolkit is a module
 
 **Squash-merged into `master` as PR #48** (commit `5eb5151`, head
 `4c2b941`).  The PR is based on `master` — not on `main`.
