@@ -55,8 +55,16 @@ def _discover_tools() -> List[FunctionTool]:
         # The Git toolkit is optional - skip it when it is not installed.
         pass
 
-    from agent_github_toolkit import get_all_tools as _get_github
-    tools.extend(_get_github())
+    # The GitHub toolkit lives in ``toolkits/`` and is optional.  A broken
+    # or absent toolkit must never break the selection menu.
+    try:
+        from toolkits.github_toolkit.agent_github_toolkit import (
+            get_all_tools as _get_github,
+        )
+        tools.extend(_get_github())
+    except ImportError:
+        # The GitHub toolkit is optional - skip it when it is not installed.
+        pass
 
     from agent_os_toolkit import get_all_tools as _get_os
     tools.extend(_get_os())

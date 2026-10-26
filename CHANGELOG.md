@@ -1,5 +1,73 @@
 # Changelog
 
+## [Unreleased] - The GitHub toolkit is a module
+
+### Changed
+- **The GitHub toolkit is now a module under `toolkits/`.**  It used to be a single
+  loose module at the project root, `agent_github_toolkit.py`, next to 18 other
+  `agent_*.py` files, while the features that were already modules lived in folders
+  under `toolkits/`.  A toolkit is now one folder, like the MikroTik, the Shodan, the
+  math and the Git one.
+
+  | Path | Was | Now |
+  |------|-----|-----|
+  | `agent_github_toolkit.py` | the whole toolkit — the GitHub operations *and* the LlamaIndex adapter | split in two |
+  | `toolkits/github-toolkit/operations.py` | — | the GitHub operations, the **library half** |
+  | `toolkits/github-toolkit/agent_github_toolkit.py` | — | the **adapter**, the only LlamaIndex-dependent module |
+  | `toolkits/github-toolkit/__init__.py` | — | the public API surface |
+  | `toolkits/github-toolkit/tests/` | — | the module-local tests |
+
+  The split is the point.  The GitHub operations carry **no** LlamaIndex import, so
+  they stay usable — and testable — as a plain Python library; the adapter is the one
+  module that knows about the agent framework, and it is imported on demand.
+  Importing the toolkit therefore never pulls LlamaIndex into the process.
+
+  The library half keeps exactly one third-party dependency: `requests`, the HTTP
+  client the GitHub REST API is called through.  LlamaIndex is *not* on that list —
+  that is the whole point of the split.
+
+- **The import path moved.**  The package lives in a hyphenated directory, so it is
+  reached through the alias that `toolkits/__init__.py` registers:
+
+  ```python
+  from toolkits.github_toolkit import github_create_pull_request   # the library
+  from toolkits.github_toolkit.agent_github_toolkit import get_all_tools  # the adapter
+  ```
+
+  The four call sites — `agent-torvalds.py`, `agent-torvalds-mw.py`,
+  `agent_tool_retriever.py` and `agent_tool_selection.py` — were updated.  As with
+  the other toolkits under `toolkits/`, the adapter is now imported **behind a
+  guard**, so a missing or broken toolkit degrades to "no tools" instead of a failed
+  boot.
+
+### Added
+- **`toolkits/github-toolkit/`** — the package, with a `README.md`, a `py.typed` marker
+  and a `pyproject.toml` for a standalone install
+  (`pip install ./toolkits/github-toolkit`).  The distribution depends on `requests`
+  and on nothing else; the adapter is an extra (`github-toolkit[agent]`).
+
+- **A test suite for the GitHub toolkit.**  It is the first toolkit of the
+  "every toolkit is a module" refactoring that arrived **without** tests, so moving
+  it would have been an entirely unverified refactoring.  The suite — 95 tests —
+  pins the behaviour of every operation: the token resolution, the headers, the
+  status-code mapping, the error contract and the payload of all thirteen tools.  It
+  is **offline**: `requests` is stubbed at the transport boundary and the GitHub CLI
+  is stubbed too, so no test reaches `api.github.com` and no test needs a token.
+
+- **`toolkits/github-toolkit/tests/test_package_layout.py`** — the layout contract,
+  25 checks: the flat layout, the relative imports, the alias, the LlamaIndex
+  boundary, the dependency profile of the library half and the thirteen-tool surface.
+
+- **The adapter re-exports the 13 GitHub functions**, so a star import keeps working
+  the way it did when the toolkit was a single module.
+
+### Unchanged
+- **The behaviour.**  Every function, every docstring, the tool descriptions and the
+  error contract (a failure is reported as `False` or as
+  `{"success": False, "error": ...}`, never raised) were moved verbatim.  The CI gate
+  reports the same 40 known failures, **0 new and 0 fixed** — and `tests/ci_baseline.txt`
+  did not change at all, because the toolkit had no known failures of its own.
+
 ## [Unreleased] - The Git toolkit is a module
 
 ### Changed
