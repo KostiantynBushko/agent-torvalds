@@ -4,8 +4,8 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-25 (the current-work section refreshed — the
-flat-layout commit `6920d03`)
+**Last updated:** 2026-10-25 (the chat-manager stack merged into `master` —
+PRs #35, #36 and #37; merge commits `eaeb20e`, `fc86a48`, `4e06b4e`)
 
 ---
 
@@ -91,10 +91,11 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `feature/chat-manager-remove-legacy-memory` — **implemented, verified**, stacked on `feature/chat-manager-sqlite-fallback` (`f5b867c`) |
+| Branch | `feature/chat-manager-remove-legacy-memory` — **implemented, verified and merged into `master`** as PR #37 (merge commit `4e06b4e`) |
 | Scope | Phase C of the chat-manager investigation: the **removal of the legacy chat memory**. |
-| Status | Implemented: `agent_chat_memory.py` (273 lines) is deleted, and the three orchestrators call `chat_manager.startup.get_memory_buffer()` instead. The manager is now the only source of a memory buffer; `get_in_memory_buffer()` is the last resort, not a parallel implementation. The dead `TOKEN_LIMITS` constant is gone from both orchestrators. `--no-chat-history` is **kept** — a user-facing flag must not disappear — but it now means *persist nothing* (an in-memory store) and prints a deprecation notice. The chat manager suite is green (207 passed, 9 new), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new — the failure set is identical to the baseline). The implementation report is `investigate/chat-manager-remove-legacy-memory/IMPLEMENTATION_REPORT_remove_legacy.md`. |
+| Status | Implemented: `agent_chat_memory.py` (273 lines) is deleted, and the three orchestrators call `chat_manager.startup.get_memory_buffer()` instead. The manager is now the only source of a memory buffer; `get_in_memory_buffer()` is the last resort, not a parallel implementation. The dead `TOKEN_LIMITS` constant is gone from both orchestrators. `--no-chat-history` is **kept** — a user-facing flag must not disappear — but it now means *persist nothing* (an in-memory store) and prints a deprecation notice. The chat manager suite is green (207 passed, 9 new), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new — the failure set is identical to the baseline). The implementation report is `investigate/chat-manager-remove-legacy-memory/IMPLEMENTATION_REPORT_remove_legacy.md`. **Merged into `master` as PR #37** (merge commit `4e06b4e`); the merge result tree is byte-identical to the CI-validated head tree, so the merge introduced no untested content. |
 | Policy | This phase closes defect **C5**, and with it **C6** and **C9**. Two things are deliberately **not** removed: the `TORVALDS_CHAT_KEY` migration hook in the manager (keep it for one release — it points the General session at the old flat history, so pre-existing messages stay reachable) and the `--no-chat-history` flag (redefined, not deleted). The **message bodies** still degrade to an in-memory store; only the metadata survives a restart during an outage, and the README says so rather than glossing over it. |
+| State | **Nothing pending.** The chat-manager stack is merged bottom-up; `master` is `4e06b4e`, the working tree is clean, and no PR is open. |
 
 ### Latest change: the legacy chat memory is gone
 
@@ -123,6 +124,8 @@ memory alive when the database was down. The local fallback does that job proper
 with the sessions intact instead of as one flat key. Keeping both meant two
 implementations of the same idea, and the second one was the one the agent actually used
 during an outage.
+
+**Merged.** PR #37, merge commit `4e06b4e` — the top of the chat-manager stack.
 
 ### Previous work: the chat history survives a database outage
 
@@ -227,16 +230,27 @@ whole test suite does.
 
 | Phase | Scope | State |
 |-------|-------|-------|
-| **A** | The user-settings API and the `\chat-user` command | **implemented** — on `feature/chat-user-settings` |
-| **B** | The SQLite fallback in `CustomDBConnector` | **not started** |
-| **C** | The removal of the legacy implementation | **not started** — blocked on B |
+| **A** | The user-settings API and the `\chat-user` command | **implemented and merged** — PR #35, merge commit `eaeb20e` |
+| **B** | The SQLite fallback in `CustomDBConnector` | **implemented and merged** — PR #36, merge commit `fc86a48` |
+| **C** | The removal of the legacy implementation | **implemented and merged** — PR #37, merge commit `4e06b4e` |
+
+> **Update — the stack is merged.** The paragraph above is the investigation's conclusion
+> *at the time*; it no longer holds. The legacy implementation **has** been removed, and
+> the removal was safe because Phase B's fallback shipped first. `master` is `4e06b4e`.
 
 **Phase A closed four of the nine defects:** C1 (no public API), C2 (the changed limit never
 reached the live buffer), C3 (the `get_memory_buffer()` override was silently dropped) and C4
 (no command read or wrote the settings). C7 is closed *partly* — the manager's limit is now
 `users.chat_token_limit`, and the name says which of the four competing defaults it is; the
-dead `TOKEN_LIMITS` constants and the legacy `TORVALDS_TOKEN_LIMIT` are Phase C. C5, C6, C8 and
-C9 are untouched — they belong to the legacy implementation, which is still load-bearing.
+the dead `TOKEN_LIMITS` constants and the legacy `TORVALDS_TOKEN_LIMIT` are Phase C. C5, C6, C8 and
+C9 were untouched at that point — they belonged to the legacy implementation, which was still
+load-bearing.
+
+**The stack closed the rest.** Phase B closed **C8** (the metadata layer got the same
+fallback the message layer already had). Phase C closed **C5**, **C6** and **C9**, and took
+**C7** as far as it goes: the dead `TOKEN_LIMITS` constant is gone from both orchestrators,
+so the four competing defaults collapse to the single documented `chat_token_limit`, with
+`TORVALDS_TOKEN_LIMIT` surviving as one legacy override in `chat_manager/startup.py`.
 
 Nine defects were catalogued (C1–C9) with their locations, the risks and the full removal
 checklist are in `investigate/chat-manager-user-settings/INVESTIGATION_REPORT.md`.
@@ -265,9 +279,15 @@ The chat-manager work is a **stacked PR** chain too, and the order is forced:
 
 | # | Branch | Base | Merge commit |
 |---|---|---|---|
-| #35 | `feature/chat-user-settings` | `master` | `29d794a` |
-| #36 | `feature/chat-manager-sqlite-fallback` | `feature/chat-user-settings` | `f5b867c` |
-| #37 | `feature/chat-manager-remove-legacy-memory` | `feature/chat-manager-sqlite-fallback` | *(this branch)* |
+| #35 | `feature/chat-user-settings` | `master` | `eaeb20e` |
+| #36 | `feature/chat-manager-sqlite-fallback` | `feature/chat-user-settings` | `fc86a48` |
+| #37 | `feature/chat-manager-remove-legacy-memory` | `feature/chat-manager-sqlite-fallback` | `4e06b4e` |
+
+**Status: merged.** The stack landed in `master` bottom-up: `eaeb20e` (#35), `fc86a48`
+(#36), `4e06b4e` (#37). The **Base** column records the branch each PR was *opened
+against*; every PR was retargeted to `master` before it was merged, so each merge commit
+brought in one layer only. Each merge result tree is byte-identical to the CI-validated
+head tree of the branch it merged — the merge introduced no untested content.
 
 **Bottom-up: 35, then 36, then 37.** The order is not a preference — it is what the
 work *is*. #36 adds the local fallback, and #37 removes the legacy path on the
