@@ -67,7 +67,23 @@ from rich.markdown import Markdown
 # ---------------------------------------------------------------------------
 # Import toolkits
 # ---------------------------------------------------------------------------
-from agent_db_toolkit import get_all_tools as get_db_tools
+# The database toolkit lives in ``toolkits/`` and is optional.  It can
+# fail to import for two reasons: the database drivers are not installed
+# (``ImportError``), and its configuration file -
+# ``db_toolkit_config.yaml``, which it reads at import time - is missing
+# or malformed (``FileNotFoundError`` / ``yaml.YAMLError``).  Neither may
+# take the agent down, so the adapter is imported behind a guard.
+try:
+    from toolkits.db_toolkit.agent_db_toolkit import (
+        get_all_tools as get_db_tools,
+    )
+except Exception:  # pragma: no cover - the toolkit is optional
+
+    def get_db_tools() -> list:
+        """The DB toolkit is unavailable - expose no tools."""
+        return []
+
+
 # The math, Git, GitHub, MikroTik, Shodan, OS, Linux, APT and Windows
 # toolkits live in ``toolkits/`` and are optional.  A missing or broken
 # toolkit has to degrade to "no tools", never to a failed boot, so the

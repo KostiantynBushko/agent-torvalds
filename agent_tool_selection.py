@@ -77,8 +77,19 @@ def _discover_tools() -> List[FunctionTool]:
         # The OS toolkit is optional - skip it when it is not installed.
         pass
 
-    from agent_db_toolkit import get_all_tools as _get_db
-    tools.extend(_get_db())
+    # The DB toolkit lives in ``toolkits/`` and is optional.  It can fail
+    # to import for two reasons: the database drivers are not installed
+    # (``ImportError``), and its configuration file -
+    # ``db_toolkit_config.yaml``, which it reads at import time - is
+    # missing or malformed.  Neither may break the selection menu.
+    try:
+        from toolkits.db_toolkit.agent_db_toolkit import (
+            get_all_tools as _get_db,
+        )
+        tools.extend(_get_db())
+    except Exception:
+        # The DB toolkit is optional - skip it when it is not available.
+        pass
 
     # The APT toolkit lives in ``toolkits/`` and is optional.  A broken
     # or absent toolkit must never break the selection menu.

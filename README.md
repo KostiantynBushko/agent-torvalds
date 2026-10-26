@@ -34,6 +34,7 @@ Each module has its own README with the full reference:
 | Linux Toolkit | [toolkits/linux-toolkit/README.md](toolkits/linux-toolkit/README.md) |
 | APT Toolkit | [toolkits/apt-toolkit/README.md](toolkits/apt-toolkit/README.md) |
 | Windows Toolkit | [toolkits/windows-toolkit/README.md](toolkits/windows-toolkit/README.md) |
+| Database Toolkit | [toolkits/db-toolkit/README.md](toolkits/db-toolkit/README.md) |
 
 The project documentation:
 
@@ -105,11 +106,15 @@ The project documentation:
 - See section 23 and the
   [APT Toolkit README](toolkits/apt-toolkit/README.md)
 
-### 6. Database Toolkit (`agent_db_toolkit.py`)
+### 6. Database Toolkit (`toolkits/db-toolkit/`)
 - Execute SQL queries on **PostgreSQL** databases
 - Execute SQL queries on **MySQL** databases
 - Return query results as structured dictionaries
 - Configurable connection parameters via `db_toolkit_config.yaml`
+- The reusable core package in `toolkits/db-toolkit/` has **no**
+  LlamaIndex imports, so it also works as a plain library
+- See the
+  [Database Toolkit README](toolkits/db-toolkit/README.md)
 
 ### 7. Chat Memory (`chat_manager/`)
 - The chat memory is provided by the **Chat History Manager** — see § 17
@@ -887,7 +892,7 @@ result = interactive_install_missing_command("ffmpeg")
 
 ### Database Queries
 ```python
-from agent_db_toolkit import run_postgres_query, run_mysql_query
+from toolkits.db_toolkit import run_postgres_query, run_mysql_query
 
 # PostgreSQL
 results = run_postgres_query("SELECT * FROM users LIMIT 10")
@@ -1005,7 +1010,6 @@ manager.shutdown()
 
 ```
 | agent-torvalds/
-| agent_db_toolkit.py            # Database query toolkit (PostgreSQL and MySQL)
 | agent_cache_system.py          # Persistent cache for operational context
 | agent_stats_handler.py         # Per-request statistics collection and rendering
 | agent_tool_retriever.py        # On-demand semantic tool loading
@@ -1109,6 +1113,13 @@ manager.shutdown()
 | +-- +-- __init__.py           # Public API surface
 | +-- +-- operations.py         # The PowerShell operations - the library half
 | +-- +-- agent_windows_toolkit.py # The LlamaIndex adapter
+| +-- +-- py.typed              # PEP 561 marker
+| +-- +-- tests/                # Module-local tests (no __init__.py)
+| +-- db-toolkit/               # Database toolkit (core library)
+| +-- +-- README.md             # Database toolkit module documentation
+| +-- +-- __init__.py           # Public API surface
+| +-- +-- operations.py         # The SQL operations - the library half
+| +-- +-- agent_db_toolkit.py   # The LlamaIndex adapter
 | +-- +-- py.typed              # PEP 561 marker
 | +-- +-- tests/                # Module-local tests (no __init__.py)
 | chat_manager/                 # Chat History Manager (multi-user, multi-session)

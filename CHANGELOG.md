@@ -1,5 +1,102 @@
 # Changelog
 
+## [Unreleased] - The database toolkit is a module
+
+### Changed
+- **The database toolkit is now a module under `toolkits/`.**  It used to be a
+  single loose module at the project root, `agent_db_toolkit.py`, next to the
+  other `agent_*.py` files, while the features that were already modules lived
+  in folders under `toolkits/`.  A toolkit is now one folder, like the
+  MikroTik, the Shodan, the math, the Git, the GitHub, the OS, the Linux, the
+  APT and the Windows one.
+
+  | Path | Was | Now |
+  |------|-----|-----|
+  | `agent_db_toolkit.py` | the whole toolkit — the operations *and* the LlamaIndex adapter | split in two |
+  | `toolkits/db-toolkit/operations.py` | — | the two SQL operations and the config loader, the **library half** |
+  | `toolkits/db-toolkit/agent_db_toolkit.py` | — | the **adapter**, the only LlamaIndex-dependent module |
+  | `toolkits/db-toolkit/__init__.py` | — | the public API surface |
+  | `toolkits/db-toolkit/tests/` | — | the module-local tests |
+
+  The split is the point.  The operations carry **no** LlamaIndex import, so
+  they stay usable — and testable — as a plain Python library; the adapter is
+  the one module that knows about the agent framework, and it is imported on
+  demand.  Importing the toolkit therefore never pulls LlamaIndex into the
+  process.
+
+  Unlike the OS, the Linux and the Windows toolkit, this toolkit's library
+  half is **not** dependency-free.  It needs `psycopg2` and
+  `mysql-connector-python` — the two drivers — and `PyYAML`, which reads the
+  configuration file.  The layout contract pins that exact set, so a new
+  dependency cannot slip in unnoticed.
+
+- **The import path moved.**  The package lives in a hyphenated directory, so it
+  is reached through the alias that `toolkits/__init__.py` registers:
+
+  ```python
+  from toolkits.db_toolkit import run_postgres_query  # the library
+  from toolkits.db_toolkit.agent_db_toolkit import get_all_tools  # the adapter
+  ```
+
+  The **five** call sites — `agent-torvalds.py`, `agent-torvalds-mw.py`,
+  `agent_tool_retriever.py`, `agent_tool_selection.py` and
+  `agent-torvalds-cpp.py` — were updated.  As with the other toolkits under
+  `toolkits/`, the adapter is now imported **behind a guard**, so a missing or
+  broken toolkit degrades to "no tools" instead of a failed boot.  The database
+  toolkit was **mandatory** before this change; it is optional now.
+
+  The guard is wider than `except ImportError` for this one toolkit, and it
+  has to be: the toolkit reads `db_toolkit_config.yaml` **at import time**, so
+  a missing or malformed configuration file raises as well.  The behaviour of
+  the *tools* did not change — the operations still report a failure as a
+  message string and never raise.
+
+- **The logger's name moved.**  It was `agent_db_toolkit`, and it is now
+  `toolkits.db-toolkit.operations` — that is what `logging.getLogger(__name__)`
+  does when the module moves.  The adapter re-exports it, so the toolkit still
+  logs through one logger.
+
+### Added
+- **`toolkits/db-toolkit/`** — the package, with a `README.md`, a `py.typed`
+  marker and a `pyproject.toml` for a standalone install
+  (`pip install ./toolkits/db-toolkit`).  The distribution depends on the two
+  drivers and on `PyYAML`; the adapter is an extra (`db-toolkit[agent]`).
+
+- **`toolkits/db-toolkit/tests/`** — the test suite, 85 tests.  The toolkit had
+  **no** test suite before this change; the one that came with it is
+  **offline** — it drives the operations through a stubbed `psycopg2` and a
+  stubbed `mysql.connector`, so it needs no database server.
+
+- **`toolkits/db-toolkit/tests/test_package_layout.py`** — the layout contract,
+  34 checks: the flat layout, the relative imports, the alias, the LlamaIndex
+  boundary, the dependency profile of the library half, the two-tool surface,
+  the import-time configuration load, and the fact that no call site imports
+  the old module name any more.
+
+- **`toolkits/db-toolkit/tests/test_split_verification.py`** — the test of the
+  mechanical check, driven with eleven deliberate drifts: a reworded tool
+  description, a dropped docstring, a changed body, two operations swapped, a
+  LlamaIndex import in the library half, a tool that went missing, an
+  operation that went missing, a lost module-level logger, a lost import-time
+  configuration load, a lost dependency and an unexpected one.
+
+- **`investigate/db-toolkit-module/verify_split.py`** — the mechanical check: it
+  compares the *committed* original with the new files, by AST, and fails on a
+  changed signature, a changed docstring, a changed body, a changed order, a
+  changed tool description, a lost module-level logger, a lost import-time
+  configuration load, a changed dependency profile or a LlamaIndex import in
+  the wrong half.  The original is **found, not assumed**: a named ref that
+  still carries the file, and otherwise the parent of the commit that deleted
+  it, so the check also works in a CI checkout with a detached HEAD.
+
+- **`investigate/db-toolkit-module/REPORT_db_toolkit_module.md`** — the report:
+  what was implemented, and why.
+
+- **`conftest.py`** — the session-wide test preparation.  The toolkit reads its
+  configuration file at import time, so the file has to be in the working
+  directory before anything imports it; the conftest puts it there when it is
+  missing and removes it again when the session ends.
+
 ## [Unreleased] - The Windows toolkit is a module
 
 ### Changed
