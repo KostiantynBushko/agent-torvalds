@@ -80,7 +80,7 @@ The failures are concentrated in nine files:
 |---|---:|---|
 | `tests/test_events_manual.py` | 10 | the manual event scripts assert on a flow that no longer matches the consumer |
 | `tests/test_hitl_runtime_toggle.py` | 8 | the command parser does not recognise the `hitl-*` commands |
-| `tests/test_math_toolkit.py` | 7 | the toolkit does not raise on a division by zero, a negative root or a bad RPN expression |
+| `toolkits/math-toolkit/tests/test_operations.py` | 7 | the toolkit does not raise on a division by zero, a negative root or a bad RPN expression |
 | `tests/test_project_manager.py` | 6 | the scanner scores the fixture projects below the expected confidence |
 | `tests/test_apt_toolkit.py` | 4 | the apt toolkit's contract tests disagree with the implementation (one of them is a collection error) |
 | `tests/test_whiptail_workflow_integration.py` | 2 | the whiptail workflow's error-recovery path does not behave as the test expects |
@@ -137,7 +137,7 @@ When a known failure is fixed, the gate reports it:
 
 ```
 Fixed — these no longer fail, so the baseline can be tightened:
-  - tests/test_math_toolkit.py::TestBasicArithmetic::test_divide_by_zero
+  - toolkits/math-toolkit/tests/test_operations.py::TestBasicArithmetic::test_divide_by_zero
 ```
 
 Regenerate the file with:

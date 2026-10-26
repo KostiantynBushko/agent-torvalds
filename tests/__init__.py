@@ -1,3 +1,3 @@
 """
-Unit tests for agent_math_toolkit.
+Unit tests for the Torvalds agent.
 """
