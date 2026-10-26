@@ -5,8 +5,8 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 future agent invocation.
 
 **Last updated:** 2026-10-26 (the math toolkit became a module under
-`toolkits/` — branch `refactor/math-toolkit-module`, the first PR of the
-"every toolkit is a module" refactoring)
+`toolkits/` and was **merged into `master` as PR #39**, merge commit
+`e2fce1a` — the first PR of the "every toolkit is a module" refactoring)
 
 ---
 
@@ -92,13 +92,19 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/math-toolkit-module` — **implemented and verified**, awaiting the operator's approval to commit and push |
+| Branch | `refactor/math-toolkit-module` — **implemented, verified and merged into `master`** as PR #39 (merge commit `e2fce1a`) |
 | Scope | The **first** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_math_toolkit.py` leaves the project root and becomes `toolkits/math-toolkit/`. |
-| Status | Implemented: the loose root module is **split** into the library half (`operations.py` — the mathematics, no LlamaIndex import) and the adapter (`agent_math_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` (no third-party dependency) and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.math_toolkit`, which `toolkits/__init__.py` registers next to the other two toolkits. The six call sites (both orchestrators, the C++ one, the retriever, the selection menu and the debug script) now import the adapter **behind a guard**, like the other toolkits under `toolkits/`. The test suite moved to `toolkits/math-toolkit/tests/test_operations.py` with relative imports, and the seven known failures were rewritten in `tests/ci_baseline.txt` for the new path — the **same** seven tests, not a new set. A new layout contract (`toolkits/math-toolkit/tests/test_package_layout.py`, 18 checks) pins the layout, the relative imports, the alias and the LlamaIndex boundary. The toolkit suite is green (46 passed, the 7 known failures), the alias contract is green, and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed). The report is `investigate/math-toolkit-module/REPORT_math_toolkit_module.md`. |
+| Status | Implemented and **merged into `master` as PR #39** (merge commit `e2fce1a`; the merge result tree is byte-identical to the CI-validated head tree `c899e01`, so the merge introduced no untested content). The loose root module is **split** into the library half (`operations.py` — the mathematics, no LlamaIndex import) and the adapter (`agent_math_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` (no third-party dependency) and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.math_toolkit`, which `toolkits/__init__.py` registers next to the other two toolkits. The six call sites (both orchestrators, the C++ one, the retriever, the selection menu and the debug script) now import the adapter **behind a guard**, like the other toolkits under `toolkits/`. The test suite moved to `toolkits/math-toolkit/tests/test_operations.py` with relative imports, and the seven known failures were rewritten in `tests/ci_baseline.txt` for the new path — the **same** seven tests, not a new set. A new layout contract (`toolkits/math-toolkit/tests/test_package_layout.py`, 18 checks) pins the layout, the relative imports, the alias and the LlamaIndex boundary. The toolkit suite is green (46 passed, the 7 known failures), the alias contract is green, and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed). The report is `investigate/math-toolkit-module/REPORT_math_toolkit_module.md`. |
 | Policy | The **behaviour did not change** — every function, every docstring and the error contract (an invalid input is reported as a readable *string*, not raised) were moved verbatim. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. The maths stays usable as a plain library, and `import toolkits` still does not pull LlamaIndex in. One PR per toolkit, as the operator asked: the remaining loose toolkits are `agent_git_toolkit.py`, `agent_github_toolkit.py`, `agent_os_toolkit.py`, `agent_linux_toolkit.py`, `agent_windows_toolkit.py`, `agent_apt_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
-| State | **The commit and the push are not done yet** — rule 4 requires the operator's explicit approval, and the staged diff has to be shown first. Nothing is merged; `master` is untouched. |
+| State | **Nothing pending.** The math toolkit is merged into `master`; the working tree is clean and no PR is open. The next toolkit of the series starts from `master` (`e2fce1a`). |
 
 ### Latest change: the math toolkit is a module
+
+**Merged into `master` as PR #39** (merge commit `e2fce1a`, head `04ce149`).
+The PR is based on `master` — not on `main` — and the merge used a **merge
+commit**, never a squash, for the reason the rules below give: squashing
+drops the original SHAs from `master`'s history and the next PR's diff
+balloons to include every layer below it.
 
 | Path | Change |
 |------|--------|
