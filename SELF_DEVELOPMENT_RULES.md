@@ -5,9 +5,11 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 future agent invocation.
 
 **Last updated:** 2026-10-26 (the **Excel** toolkit became a module
-under `toolkits/` — the **ninth** PR of the "every toolkit is a module"
-refactoring, and the **last** of the two loose toolkits left at the
-project root apart from the data-analysis one; the **database** toolkit
+under `toolkits/` and was **squash-merged into `master` as PR #54**,
+commit `1f44d7e` (head `c8487dd`, based on `master` at `65a11db`) — the
+**ninth** PR of the "every toolkit is a module" refactoring, and the
+**last** of the two loose toolkits left at the project root apart from
+the data-analysis one; the **database** toolkit
 became a module
 under `toolkits/` and was **squash-merged into `master` as PR #52**,
 commit `be91e90` — the **eighth** PR of the "every toolkit is a module"
@@ -118,17 +120,25 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/xlsx-toolkit-module` — **implemented, verified, not yet committed** (based on `master` at `65a11db`) |
+| Branch | `refactor/xlsx-toolkit-module` — **squash-merged into `master` as PR #54**, commit `1f44d7e` (head `c8487dd`, based on `master` at `65a11db`) |
 | Scope | The **ninth** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_xlsx_toolkit.py` leaves the project root and becomes `toolkits/xlsx-toolkit/`. Its library half is pinned to **openpyxl** — the Excel file format is the file format — rather than to the standard library alone. |
-| Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the nine Excel operations and the module-level logger, no LlamaIndex import) and the adapter (`agent_xlsx_toolkit.py` — the only LlamaIndex-dependent module), with an `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.xlsx_toolkit`, which `toolkits/__init__.py` registers next to the other ten toolkits. The **two** call sites (the retriever and the selection menu) were updated; both imported the toolkit unguarded and now import it **behind a guard**, so the Excel toolkit goes from mandatory to optional. The suite that used to live at `tests/test_xlsx_toolkit.py` moved with the toolkit and grew from 30 to 46 tests — what was added is the **error contract** of every operation, which nothing pinned before. The module-local suite is 95 tests, the alias contract is green (99 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — `tests/ci_baseline.txt` did **not** need rewriting, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical (155 tools, the same MD5). The report is `investigate/xlsx-toolkit-module/REPORT_xlsx_toolkit_module.md`. |
+| Status | Implemented, verified and **merged**. The loose root module is **split** into the library half (`operations.py` — the nine Excel operations and the module-level logger, no LlamaIndex import) and the adapter (`agent_xlsx_toolkit.py` — the only LlamaIndex-dependent module), with an `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.xlsx_toolkit`, which `toolkits/__init__.py` registers next to the other ten toolkits. The **two** call sites (the retriever and the selection menu) were updated; both imported the toolkit unguarded and now import it **behind a guard**, so the Excel toolkit goes from mandatory to optional. The suite that used to live at `tests/test_xlsx_toolkit.py` moved with the toolkit and grew from 30 to 46 tests — what was added is the **error contract** of every operation, which nothing pinned before. The module-local suite is 95 tests, the alias contract is green (99 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — `tests/ci_baseline.txt` did **not** need rewriting, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical (155 tools, the same MD5). The report is `investigate/xlsx-toolkit-module/REPORT_xlsx_toolkit_module.md`. |
 | Policy | The **behaviour of the tools did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with twelve deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. Two things are specific to this toolkit. The **guard at the call sites is the ordinary one** — `except ImportError`, not the database toolkit's wider `except Exception` — because the Excel toolkit has **no import-time state**: its only import-time failure is a missing `openpyxl`, which is an `ImportError`. And the **two `openpyxl` imports are pinned separately** from the dependency set: dropping *both* loses the dependency, dropping *one* loses the statement, and the check has a rule for each. One PR per toolkit, as the operator asked. The **one** remaining loose toolkit is `agent_data_analysis_toolkit.py`. |
-| State | **Implemented and verified, not yet committed.** The branch is based on `master` at `65a11db`. The commit, the push and the PR are **waiting for the operator's explicit approval** (rule 4). The next toolkit of the series — the data-analysis one — starts from wherever this one lands. |
+| State | **Squash-merged into `master` as PR #54** (commit `1f44d7e`, head `c8487dd`). Committed as `c8487dd`, pushed to `origin/refactor/xlsx-toolkit-module`, opened as PR #54 against `master`, CI green, and squash-merged — the operator approved each step (rule 4). The tree check holds: `master`'s tree after the merge (`0b2045b`) is byte-identical to the head tree of `c8487dd` that CI ran green. The next toolkit of the series — the data-analysis one — starts from `master` at `1f44d7e`. |
 
 ### Latest change: the Excel toolkit is a module
 
-**Implemented and verified on `refactor/xlsx-toolkit-module`**, based on
-`master` at `65a11db`.  **Not yet committed** — the commit, the push and
-the PR are waiting for the operator's explicit approval (rule 4).
+**Squash-merged into `master` as PR #54** (commit `1f44d7e`, head
+`c8487dd`).  The PR is based on `master` — not on `main`.
+
+The squash departs from the standing convention of a merge commit, as
+PR #52, PR #50, PR #48, PR #46, PR #43 and PR #41 did before it, and
+for the same reason: the convention exists for the *stacked* PR chain,
+and this PR is based directly on the tip of `master` (`65a11db`), so the
+next PR's merge base is `1f44d7e` and its diff does not balloon.  The
+tree check the convention exists for holds as well — `master`'s tree
+after the merge (`0b2045b`) is byte-identical to the head tree of
+`c8487dd` that CI ran green.
 
 The **ninth** toolkit of the "every toolkit is a module" series, and the
 **first** of the two that were still loose at the project root.  The
