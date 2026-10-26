@@ -10,6 +10,7 @@ each of them::
     toolkits.math-toolkit        ->  toolkits.math_toolkit
     toolkits.git-toolkit         ->  toolkits.git_toolkit
     toolkits.github-toolkit      ->  toolkits.github_toolkit
+    toolkits.os-toolkit          ->  toolkits.os_toolkit
 
 This module pins down the two properties that alias has to have.
 
@@ -63,6 +64,9 @@ GIT_REAL = "toolkits.git-toolkit"
 GITHUB_ALIAS = "github_toolkit"
 GITHUB_REAL = "toolkits.github-toolkit"
 
+OS_ALIAS = "os_toolkit"
+OS_REAL = "toolkits.os-toolkit"
+
 #: The alias of each toolkit and the ``__init__.py`` that must carry a
 #: code-level reference to it.
 TOOLKITS = (
@@ -71,6 +75,7 @@ TOOLKITS = (
     (MATH_ALIAS, MATH_REAL, REPO_ROOT / "toolkits" / "math-toolkit" / "__init__.py"),
     (GIT_ALIAS, GIT_REAL, REPO_ROOT / "toolkits" / "git-toolkit" / "__init__.py"),
     (GITHUB_ALIAS, GITHUB_REAL, REPO_ROOT / "toolkits" / "github-toolkit" / "__init__.py"),
+    (OS_ALIAS, OS_REAL, REPO_ROOT / "toolkits" / "os-toolkit" / "__init__.py"),
 )
 
 #: The agent adapter of each toolkit: the alias of its package, the module
@@ -104,6 +109,11 @@ ADAPTERS = (
         GITHUB_ALIAS,
         "agent_github_toolkit",
         REPO_ROOT / "toolkits" / "github-toolkit" / "agent_github_toolkit.py",
+    ),
+    (
+        OS_ALIAS,
+        "agent_os_toolkit",
+        REPO_ROOT / "toolkits" / "os-toolkit" / "agent_os_toolkit.py",
     ),
 )
 
@@ -161,6 +171,7 @@ class TestStaticReference:
             f"toolkits.{MATH_ALIAS}",
             f"toolkits.{GIT_ALIAS}",
             f"toolkits.{GITHUB_ALIAS}",
+            f"toolkits.{OS_ALIAS}",
         ],
     )
     def test_the_canonical_dotted_path_is_a_literal(self, dotted):
@@ -173,7 +184,14 @@ class TestStaticReference:
 
     @pytest.mark.parametrize(
         "alias",
-        [MIKROTIK_ALIAS, SHODAN_ALIAS, MATH_ALIAS, GIT_ALIAS, GITHUB_ALIAS],
+        [
+            MIKROTIK_ALIAS,
+            SHODAN_ALIAS,
+            MATH_ALIAS,
+            GIT_ALIAS,
+            GITHUB_ALIAS,
+            OS_ALIAS,
+        ],
     )
     def test_the_bare_alias_name_is_a_literal(self, alias):
         """The bare module name must be greppable as well."""
@@ -195,6 +213,7 @@ class TestStaticReference:
             ("_MATH_ALIAS", f"toolkits.{MATH_ALIAS}"),
             ("_GIT_ALIAS", f"toolkits.{GIT_ALIAS}"),
             ("_GITHUB_ALIAS", f"toolkits.{GITHUB_ALIAS}"),
+            ("_OS_ALIAS", f"toolkits.{OS_ALIAS}"),
         ],
     )
     def test_the_alias_is_not_computed(self, constant, expected):

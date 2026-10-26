@@ -89,8 +89,16 @@ def build_tool_retriever(
             pass
 
     if include_os_tools:
-        from agent_os_toolkit import get_all_tools as _get_os
-        all_tools.extend(_get_os())
+        # The OS toolkit lives in ``toolkits/`` and is optional.  A
+        # broken or absent toolkit must never break the retriever.
+        try:
+            from toolkits.os_toolkit.agent_os_toolkit import (
+                get_all_tools as _get_os,
+            )
+            all_tools.extend(_get_os())
+        except ImportError:
+            # The OS toolkit is optional - skip it when it is not installed.
+            pass
 
     if include_linux_tools and sys.platform.startswith("linux"):
         from agent_linux_toolkit import get_all_tools as _get_linux

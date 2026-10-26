@@ -1,5 +1,71 @@
 # Changelog
 
+## [Unreleased] - The OS toolkit is a module
+
+### Changed
+- **The OS toolkit is now a module under `toolkits/`.**  It used to be a single
+  loose module at the project root, `agent_os_toolkit.py`, next to the other
+  `agent_*.py` files, while the features that were already modules lived in folders
+  under `toolkits/`.  A toolkit is now one folder, like the MikroTik, the Shodan,
+  the math, the Git and the GitHub one.
+
+  | Path | Was | Now |
+  |------|-----|-----|
+  | `agent_os_toolkit.py` | the whole toolkit — the file-system operations *and* the LlamaIndex adapter | split in two |
+  | `toolkits/os-toolkit/operations.py` | — | the file-system operations, the **library half** |
+  | `toolkits/os-toolkit/agent_os_toolkit.py` | — | the **adapter**, the only LlamaIndex-dependent module |
+  | `toolkits/os-toolkit/__init__.py` | — | the public API surface |
+  | `toolkits/os-toolkit/tests/` | — | the module-local tests |
+
+  The split is the point.  The file-system operations carry **no** LlamaIndex import,
+  so they stay usable — and testable — as a plain Python library; the adapter is the
+  one module that knows about the agent framework, and it is imported on demand.
+  Importing the toolkit therefore never pulls LlamaIndex into the process.
+
+  This toolkit is the odd one out in the series in a good way: its library half
+  depends on the **standard library only** — `os`, `shutil`, `pathlib` and
+  `platform`.  There is no third-party dependency at all, so the file-system
+  operations work in any Python that exists.  It is the first toolkit of the series
+  whose reusable half is dependency-free.
+
+- **The import path moved.**  The package lives in a hyphenated directory, so it is
+  reached through the alias that `toolkits/__init__.py` registers:
+
+  ```python
+  from toolkits.os_toolkit import pwd, ls, mkdir          # the library
+  from toolkits.os_toolkit.agent_os_toolkit import get_all_tools  # the adapter
+  ```
+
+  The six call sites — `agent-torvalds.py`, `agent-torvalds-mw.py`,
+  `agent_tool_retriever.py`, `agent_tool_selection.py`,
+  `agent-torvalds-cpp.py` and `test_callback_events_debug.py` — were updated.  As
+  with the other toolkits under `toolkits/`, the adapter is now imported **behind a
+  guard**, so a missing or broken toolkit degrades to "no tools" instead of a failed
+  boot.  The OS toolkit was the last toolkit that was still *mandatory*.
+
+- **The star import keeps working.**  `agent-torvalds-cpp.py` reaches the toolkit
+  with `from toolkits.os_toolkit.agent_os_toolkit import *`, and the adapter
+  re-exports the eleven operations, so the file reads the same as before.
+
+### Added
+- **`toolkits/os-toolkit/`** — the package, with a `README.md`, a `py.typed` marker
+  and a `pyproject.toml` for a standalone install
+  (`pip install ./toolkits/os-toolkit`).  The distribution depends on the standard
+  library and on nothing else; the adapter is an extra (`os-toolkit[agent]`).
+
+- **`toolkits/os-toolkit/tests/`** — the test suite, 69 tests.  The seventeen tests
+  the toolkit already had moved with it, and the suite was extended to cover the
+  error contract of every operation: a failure is *reported*, never raised.
+
+- **`toolkits/os-toolkit/tests/test_package_layout.py`** — the layout contract, 28
+  checks: the flat layout, the relative imports, the alias, the LlamaIndex
+  boundary, the dependency profile of the library half and the eleven-tool surface.
+
+- **`investigate/os-toolkit-module/verify_split.py`** — the mechanical check that
+  the split moved everything verbatim: the operation names, their order, their
+  signatures, their docstrings, their bodies, and the tool names, their order and
+  their descriptions, compared against the committed original by AST.
+
 ## [Unreleased] - The GitHub toolkit is a module
 
 ### Changed

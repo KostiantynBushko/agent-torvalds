@@ -4,7 +4,7 @@ from rich.console import Console
 
 from chat_manager.startup import get_memory_buffer
 
-from agent_os_toolkit import *
+from toolkits.os_toolkit.agent_os_toolkit import *
 from agent_db_toolkit import *
 from toolkits.math_toolkit.agent_math_toolkit import *
 from toolkits.git_toolkit.agent_git_toolkit import *

@@ -30,6 +30,7 @@ Each module has its own README with the full reference:
 | Math Toolkit | [toolkits/math-toolkit/README.md](toolkits/math-toolkit/README.md) |
 | Git Toolkit | [toolkits/git-toolkit/README.md](toolkits/git-toolkit/README.md) |
 | GitHub Toolkit | [toolkits/github-toolkit/README.md](toolkits/github-toolkit/README.md) |
+| OS Toolkit | [toolkits/os-toolkit/README.md](toolkits/os-toolkit/README.md) |
 
 The project documentation:
 
@@ -38,11 +39,16 @@ The project documentation:
 | Continuous integration — the CI test gate and the known-failure baseline | [docs/ci.md](docs/ci.md) |
 | Local LLM setup — install Ollama, pull the models, run the agent | [docs/ollama-setup.md](docs/ollama-setup.md) |
 
-### 1. OS Toolkit (`agent_os_toolkit.py`)
+### 1. OS Toolkit (`toolkits/os-toolkit/`)
 - Browse file systems (`ls`, `pwd`)
 - Create, read, write, move, and delete files and directories
 - Check file/directory existence and permissions
 - Full access to underlying OS functionality
+- Built on the **standard library only** — the reusable core package in
+  `toolkits/os-toolkit/` has **no** LlamaIndex imports and no third-party
+  dependency at all, so it also works as a plain library
+- See section 21 and the
+  [OS Toolkit README](toolkits/os-toolkit/README.md)
 
 ### 2. Linux Toolkit (`agent_linux_toolkit.py`)
 - Execute shell commands with timeout and error handling
@@ -283,6 +289,28 @@ The project documentation:
   TUI), so the whole category can be loaded on its own
 - See the [GitHub Toolkit README](toolkits/github-toolkit/README.md) for
   the module reference
+
+### 21. OS Toolkit (`toolkits/os-toolkit/`)
+- The current working directory, directory listings, and path checks
+- Creating, reading, writing, copying, moving and removing files and
+  directories
+- Comprehensive system information: OS, hardware, and user details
+- Built on the **standard library only** — `os`, `shutil`, `pathlib` and
+  `platform`. The reusable core package in `toolkits/os-toolkit/` has
+  **no** LlamaIndex imports and **no** third-party dependency at all, so
+  it works in any Python that exists
+- The LlamaIndex adapter is the one module that knows about the agent
+  framework, and it is imported on demand
+- No tool raises: a failure is reported as a message string (or as
+  `{"error": ...}`), so the model gets a message it can reason about
+- `rm` is destructive and irreversible; the tool description and the
+  docstring both say so, so the model sees the warning before it calls
+  the tool
+- The eleven tools join the **Operating System** category of the startup
+  tool selection menu (`--select`, and `\tools` / `\tool-select` in the
+  TUI), so the whole category can be loaded on its own
+- See the [OS Toolkit README](toolkits/os-toolkit/README.md) for the
+  module reference
 
 ---
 
@@ -693,7 +721,7 @@ result = divide(100, 4)     # 25.0
 
 ### System Operations
 ```python
-from agent_os_toolkit import ls, pwd, mkdir, read_file
+from toolkits.os_toolkit import ls, pwd, mkdir, read_file
 
 current_dir = pwd()
 files = ls('.')
@@ -875,7 +903,6 @@ manager.shutdown()
 
 ```
 agent-torvalds/
-| agent_os_toolkit.py            # System-level operations toolkit
 | agent_linux_toolkit.py         # Linux shell command execution toolkit
 | agent_windows_toolkit.py       # Windows PowerShell execution toolkit
 | agent_apt_toolkit.py           # APT package management toolkit
@@ -953,6 +980,13 @@ agent-torvalds/
 | +-- +-- __init__.py           # Public API surface
 | +-- +-- operations.py         # The GitHub operations - the library half
 | +-- +-- agent_github_toolkit.py # The LlamaIndex adapter
+| +-- +-- py.typed              # PEP 561 marker
+| +-- +-- tests/                # Module-local tests (no __init__.py)
+| +-- os-toolkit/               # OS toolkit (core library)
+| +-- +-- README.md             # OS toolkit module documentation
+| +-- +-- __init__.py           # Public API surface
+| +-- +-- operations.py         # The file-system operations - the library half
+| +-- +-- agent_os_toolkit.py   # The LlamaIndex adapter
 | +-- +-- py.typed              # PEP 561 marker
 | +-- +-- tests/                # Module-local tests (no __init__.py)
 | chat_manager/                 # Chat History Manager (multi-user, multi-session)
