@@ -121,8 +121,16 @@ def _discover_tools() -> List[FunctionTool]:
 
     # Platform-specific
     if sys.platform.startswith("linux"):
-        from agent_linux_toolkit import get_all_tools as _get_linux
-        tools.extend(_get_linux())
+        # The Linux toolkit lives in ``toolkits/`` and is optional.  A
+        # broken or absent toolkit must never break the selection menu.
+        try:
+            from toolkits.linux_toolkit.agent_linux_toolkit import (
+                get_all_tools as _get_linux,
+            )
+            tools.extend(_get_linux())
+        except ImportError:
+            # The Linux toolkit is optional - skip it when it is not installed.
+            pass
     elif sys.platform.startswith("win"):
         from agent_windows_toolkit import get_all_tools as _get_windows
         tools.extend(_get_windows())
