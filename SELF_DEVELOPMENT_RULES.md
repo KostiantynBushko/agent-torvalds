@@ -4,8 +4,13 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-26 (the **Windows** toolkit became a module
-under `toolkits/` and was **squash-merged into `master` as PR #50**,
+**Last updated:** 2026-10-26 (the **database** toolkit became a module
+under `toolkits/` and was **squash-merged into `master` as PR #52**,
+commit `be91e90` — the **eighth** PR of the "every toolkit is a module"
+refactoring, and the first whose library half is pinned to a **database
+driver** (`psycopg2` and `mysql-connector-python`); the **Windows**
+toolkit became a module under `toolkits/` and was **squash-merged into
+`master` as PR #50**,
 commit `9c48625` — the **seventh** PR of the "every toolkit is a module"
 refactoring, and the **last** of the *Linux/Windows* pair to move; the
 **APT** toolkit became a module under
@@ -109,13 +114,92 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/windows-toolkit-module` — **squash-merged into `master` as PR #50** (commit `9c48625`, head `0b5f2af`; based on `master` at `02270ed`) |
-| Scope | The **seventh** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_windows_toolkit.py` leaves the project root and becomes `toolkits/windows-toolkit/`. It is the **last** of the *Linux/Windows* pair to move, and the last toolkit of the series whose library half is built on the **standard library alone**. |
-| Status | Implemented, verified and **merged**. The loose root module is **split** into the library half (`operations.py` — the 6 PowerShell and system operations, the private `_get_powershell_command` helper and the module-level logger, no LlamaIndex import) and the adapter (`agent_windows_toolkit.py` — the only LlamaIndex-dependent module), with an `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.windows_toolkit`, which `toolkits/__init__.py` registers next to the other eight toolkits. The **four** call sites (both orchestrators, the retriever and the selection menu) were updated; all four imported the toolkit unguarded and now import it **behind a guard**, so the Windows toolkit goes from mandatory to optional. **The toolkit had no test suite at all** before this change; the one that came with it has 87 tests and is **platform-independent** — it drives the operations through a stubbed `subprocess.run`, so it needs neither Windows nor a PowerShell installation. The alias contract is green, and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — `tests/ci_baseline.txt` did **not** need rewriting, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical (155 tools) — and byte-identical again with the platform simulated as Windows, so the Windows toolkit's own six tools are in it. The report is `investigate/windows-toolkit-module/REPORT_windows_toolkit_module.md`. |
-| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with nine deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. The one thing that did **not** move verbatim is the module header: the `os` import of the original was never used by any of the operations — `run_command_with_env` passes the variables to the shell as PowerShell assignments, not through `os.environ` — so it was dropped rather than carried along. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
-| State | **Merged.** Committed as `0b5f2af`, pushed, opened as PR #50, and **squash-merged into `master` as `9c48625`** after CI ran green. The tree check holds: `master`'s tree after the merge (`7a49b8a`) is byte-identical to the head tree of `0b5f2af` that CI ran green. The next toolkit of the series starts from `master` (`9c48625`). |
+| Branch | `refactor/db-toolkit-module` — **squash-merged into `master` as PR #52** (commit `be91e90`, head `aa576af`; based on `master` at `513988a`) |
+| Scope | The **eighth** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_db_toolkit.py` leaves the project root and becomes `toolkits/db-toolkit/`. It is the first toolkit of the series whose library half is pinned to a **database driver** (`psycopg2`, `mysql-connector-python`) rather than to the standard library alone. |
+| Status | Implemented, verified and **merged**. The loose root module is **split** into the library half (`operations.py` — the configuration loader, the two SQL operations and the module-level logger, no LlamaIndex import) and the adapter (`agent_db_toolkit.py` — the only LlamaIndex-dependent module), with an `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.db_toolkit`, which `toolkits/__init__.py` registers next to the other nine toolkits. The **five** call sites (both orchestrators, the C++ orchestrator, the retriever and the selection menu) were updated; all five imported the toolkit unguarded and now import it **behind a guard**, so the database toolkit goes from mandatory to optional. **The toolkit had no test suite at all** before this change; the one that came with it has 85 tests and is **offline** — it drives the operations through a stubbed `psycopg2` and a stubbed `mysql.connector`, so it needs no database server. The alias contract is green, and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — `tests/ci_baseline.txt` did **not** need rewriting, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical (155 tools). The report is `investigate/db-toolkit-module/REPORT_db_toolkit_module.md`. |
+| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with eleven deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. Two things are specific to this toolkit. The **guard at the call sites is wider than everywhere else** — `except Exception`, not `except ImportError` — because the library half reads its configuration *at import time*, so a missing or malformed `db_toolkit_config.yaml` raises `FileNotFoundError` / `yaml.YAMLError`, and an `ImportError`-only guard would still take the agent down. And the **import-time configuration load is itself behaviour**, so it moved with the operations and the check pins the statement, not only the function that produces the value. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
+| State | **Merged.** Committed as `aa576af`, pushed, opened as PR #52, and **squash-merged into `master` as `be91e90`** after CI ran green. The tree check holds: `master`'s tree after the merge (`ab2dac5`) is byte-identical to the head tree of `aa576af` that CI ran green. The next toolkit of the series starts from `master` (`be91e90`). |
 
-### Latest change: the Windows toolkit is a module
+### Latest change: the database toolkit is a module
+
+**Squash-merged into `master` as PR #52** (commit `be91e90`, head
+`aa576af`).  The PR is based on `master` — not on `main`.
+
+The squash departs from the standing convention of a merge commit, as
+PR #50, PR #48, PR #46, PR #43 and PR #41 did before it, and for the
+same reason: the convention exists for the *stacked* PR chain, and this
+PR is based directly on the tip of `master` (`513988a`), so the next
+PR's merge base is `be91e90` and its diff does not balloon.  The tree
+check the convention exists for holds as well — `master`'s tree after
+the merge (`ab2dac5`) is byte-identical to the head tree of `aa576af`
+that CI ran green.
+
+The **eighth** toolkit of the "every toolkit is a module" series, and
+the first whose library half is pinned to a **database driver**.
+
+| Path | Change |
+|------|--------|
+| `toolkits/db-toolkit/operations.py` | **New.** The configuration loader, the two SQL operations and the module-level logger — the library half. No LlamaIndex import. |
+| `toolkits/db-toolkit/agent_db_toolkit.py` | **New.** The adapter — the only LlamaIndex-dependent module. |
+| `toolkits/db-toolkit/__init__.py` | **New.** The public API surface and the code-level reference to the canonical alias. |
+| `toolkits/db-toolkit/README.md`, `pyproject.toml`, `py.typed` | **New.** The module documentation, the standalone distribution (the adapter is the `agent` extra) and the PEP 561 marker. |
+| `toolkits/db-toolkit/tests/test_operations.py` | **New.** 37 tests. The toolkit had **no** suite; this one is **offline** — it drives the operations through a stubbed `psycopg2` and a stubbed `mysql.connector`. |
+| `toolkits/db-toolkit/tests/test_package_layout.py` | **New.** The layout contract — 34 checks. |
+| `toolkits/db-toolkit/tests/test_split_verification.py` | **New.** The test of the split-verification script — 14 tests, eleven deliberate drifts. |
+| `toolkits/db-toolkit/tests/conftest.py` | **New.** Puts the configuration file in place for a session started inside the toolkit directory. |
+| `agent_db_toolkit.py` | **Deleted** at the project root. Git tracked it as a rename to `toolkits/db-toolkit/operations.py`. |
+| `toolkits/__init__.py` | The `db_toolkit` alias, the `_DB_PACKAGE` / `_DB_ALIAS` literals and the adapter in `_ADAPTER_MODULES`. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py`, `agent-torvalds-cpp.py` | The database adapter moved into the guarded block with the other optional ones. |
+| `agent_tool_retriever.py`, `agent_tool_selection.py` | The import path moved to the alias, behind a guard. |
+| `conftest.py` | **New** at the repository root — the configuration file has to be in place before the alias shim imports the toolkit. |
+| `pytest.ini` | `toolkits/db-toolkit/tests` added to `testpaths`. |
+| `requirements.txt` | The two drivers and `PyYAML` are declared. |
+| `tests/test_toolkit_alias_contract.py` | The database toolkit joined the alias contract; the Windows toolkit was added to the three literal checks as well. |
+| `tests/test_logging_cli.py` | The logger now comes from `toolkits.db_toolkit.operations`; the new modules joined the static inspection. |
+| `README.md`, `CHANGELOG.md` | The documentation. |
+| `investigate/db-toolkit-module/REPORT_db_toolkit_module.md` | **New.** What was implemented and why. |
+| `investigate/db-toolkit-module/verify_split.py` | **New.** The mechanical check. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/toolkits/db-toolkit/tests -q
+self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+```
+
+85 passed, and the CI gate reports **no new failure** (40 known failures,
+0 new, 0 fixed).  The baseline was **not** rewritten — the database
+toolkit had no known failures of its own.
+
+**Three things this change is worth knowing about.**
+
+*The guard at the call sites is wider than everywhere else.*  Every other
+toolkit under `toolkits/` fails to import with an `ImportError` when it
+is broken.  This one can also fail with a `FileNotFoundError`, because
+the library half reads its configuration **when it is imported**.  The
+guard catches that — `except Exception`, not `except ImportError` —
+and the comment at every call site says why.  Without it, a missing
+`db_toolkit_config.yaml` would still take the whole agent down, which is
+what it did before this change.
+
+*The import-time configuration load is behaviour, so it moved.*  The
+operations read the module-level `_cfg`, so a caller that imports the
+module and then calls an operation sees exactly what it always saw.  The
+mechanical check pins the *statement*, not only the function that
+produces the value.
+
+*The toolkit had no test suite at all.*  Nothing guarded its error
+contract — the "a failure is reported, never raised" promise that is
+the whole point of the toolkit.  It is now pinned by 37 tests, offline,
+with no database server anywhere near them.
+
+**One small drive-by.**  The alias contract listed the canonical path of
+every toolkit, but the Windows toolkit had never been added to the three
+literal checks — the rows that pin `toolkits.windows_toolkit` as a
+*literal* in the shim.  The database toolkit joined them, and so did the
+Windows one: the contract is now complete for all ten toolkits.
+
+### Previous change: the Windows toolkit is a module
 
 **Squash-merged into `master` as PR #50** (commit `9c48625`, head
 `0b5f2af`).  The PR is based on `master` — not on `main`.
