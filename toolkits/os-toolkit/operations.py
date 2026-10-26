@@ -1,18 +1,29 @@
 """
-OS/File Toolkit - File system operations and system information.
+OS/File Toolkit - the library half.
 
-This module provides essential file and directory operations for interacting
-with the operating system's file system safely and efficiently.
+This module holds the **file-system and system-information operations**
+of the OS toolkit.  It is the reusable half of the feature: it carries
+**no LlamaIndex import**, so it stays usable - and testable - as a plain
+Python library by any application that has no agent framework installed.
+
+The LlamaIndex adapter is a submodule of the package
+(:mod:`agent_os_toolkit`); it is the one module of the toolkit that knows
+about the agent framework, and it is imported on demand.
+
+The operations are the ones that used to live in the single module
+``agent_os_toolkit.py`` at the project root.  They moved here **verbatim**:
+same names, same signatures, same docstrings, same error contract - a
+failure is reported as a message string, never raised.
 
 Category: Operating System / File Operations
 Retriever Keywords: file, directory, path, copy, move, delete, create, read, write, system info
 """
-import os
-import shutil
+
 import logging
-from pathlib import Path
+import os
 import platform
-from llama_index.core.tools import FunctionTool
+import shutil
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -376,61 +387,3 @@ def get_system_info() -> dict:
         return info
     except Exception as e:
         return {"error": str(e)}
-
-
-def get_all_tools() -> list[FunctionTool]:
-    """
-    Return all OS/File tools as FunctionTool objects for on-demand loading.
-    
-    Each tool includes category metadata for better retrieval.
-    
-    Returns:
-        list[FunctionTool]: List of OS/File FunctionTool objects
-    """
-    logger.info("get_all_tools called")
-    return [
-        FunctionTool.from_defaults(
-            fn=pwd,
-            description="Get current working directory. Use for checking current location. Category: Operating System",
-        ),
-        FunctionTool.from_defaults(
-            fn=ls,
-            description="List files and directories. Use for browsing directory contents. Category: Operating System",
-        ),
-        FunctionTool.from_defaults(
-            fn=touch,
-            description="Create an empty file. Use for creating new files or updating timestamps. Category: Operating System",
-        ),
-        FunctionTool.from_defaults(
-            fn=check_path_exists,
-            description="Check if a file or directory exists. Use for verifying paths before operations. Category: Operating System",
-        ),
-        FunctionTool.from_defaults(
-            fn=mkdir,
-            description="Create a new directory. Use for making folders with automatic parent directory creation. Category: Operating System",
-        ),
-        FunctionTool.from_defaults(
-            fn=rm,
-            description="Remove a file or directory. Use with caution - this is destructive and irreversible. Category: Operating System",
-        ),
-        FunctionTool.from_defaults(
-            fn=cp,
-            description="Copy a file or directory. Use for duplicating files or backing up data. Category: Operating System",
-        ),
-        FunctionTool.from_defaults(
-            fn=mv,
-            description="Move or rename a file or directory. Use for relocating or renaming files. Category: Operating System",
-        ),
-        FunctionTool.from_defaults(
-            fn=read_file,
-            description="Read file contents. Use for viewing text files, configs, and logs. Category: Operating System",
-        ),
-        FunctionTool.from_defaults(
-            fn=write_file,
-            description="Write content to a file. Use for creating or overwriting files. Category: Operating System",
-        ),
-        FunctionTool.from_defaults(
-            fn=get_system_info,
-            description="Get system information. Use for OS details, hardware info, and diagnostics. Category: Operating System",
-        ),
-    ]

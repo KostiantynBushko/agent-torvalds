@@ -4,13 +4,13 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-26 (the **GitHub** toolkit became a module under
-`toolkits/` and was **squash-merged into `master` as PR #43**, commit
-`83456a7` — the **third** PR of the "every toolkit is a module"
-refactoring, and the first of them that arrived **without a test suite**;
-the Git toolkit was squash-merged into `master` as PR #41, commit
-`7d0e56a`; the math toolkit was merged into `master` as PR #39, merge
-commit `e2fce1a`)
+**Last updated:** 2026-10-26 (the **OS** toolkit became a module under
+`toolkits/` — the **fourth** PR of the "every toolkit is a module"
+refactoring, and the last toolkit that was still **mandatory**; the
+GitHub toolkit was squash-merged into `master` as PR #43, commit
+`83456a7`; the Git toolkit was squash-merged into `master` as PR #41,
+commit `7d0e56a`; the math toolkit was merged into `master` as PR #39,
+merge commit `e2fce1a`)
 
 ---
 
@@ -96,13 +96,72 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/github-toolkit-module` — **implemented, verified and squash-merged into `master`** as PR #43 (commit `83456a7`) |
-| Scope | The **third** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_github_toolkit.py` leaves the project root and becomes `toolkits/github-toolkit/`. |
-| Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the 13 GitHub operations, no LlamaIndex import) and the adapter (`agent_github_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` (one third-party dependency, `requests`) and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.github_toolkit`, which `toolkits/__init__.py` registers next to the other four toolkits. The four call sites (both orchestrators, the retriever and the selection menu) now import the adapter **behind a guard**, like the other toolkits under `toolkits/`. **The toolkit had no test suite at all**, so one was written: `toolkits/github-toolkit/tests/test_operations.py` (95 tests) pins the behaviour of every operation, offline. A new layout contract (`toolkits/github-toolkit/tests/test_package_layout.py`, 25 checks) pins the layout, the relative imports, the alias, the LlamaIndex boundary, the dependency profile and the 13-tool surface. The toolkit suite is green (120 passed), the alias contract is green (44 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` unchanged, because the toolkit had no known failures of its own. The report is `investigate/github-toolkit-module/REPORT_github_toolkit_module.md`. |
-| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported as `False` or as `{"success": False, "error": ...}`, never raised) were moved verbatim; the split was checked mechanically against the original file, not by eye. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_os_toolkit.py`, `agent_linux_toolkit.py`, `agent_windows_toolkit.py`, `agent_apt_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
-| State | **Nothing pending.** The GitHub toolkit is in `master`; the working tree is clean and no PR is open. The next toolkit of the series starts from `master` (`83456a7`). |
+| Branch | `refactor/os-toolkit-module` — **implemented and verified**, awaiting the operator's approval to commit and push |
+| Scope | The **fourth** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_os_toolkit.py` leaves the project root and becomes `toolkits/os-toolkit/`. It was the toolkit the orchestrator leans on, and the **last** one that was still mandatory. |
+| Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the 11 file-system operations, no LlamaIndex import and **no third-party dependency at all**) and the adapter (`agent_os_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.os_toolkit`, which `toolkits/__init__.py` registers next to the other five toolkits. The **six** call sites (both orchestrators, the retriever, the selection menu, the llama.cpp orchestrator and the callback debug script) were updated; the four that imported the toolkit unguarded now import it **behind a guard**, so the OS toolkit goes from mandatory to optional — the same trade the other moves made, and the last toolkit still outside it. **The toolkit already had a test suite** (17 tests), and it moved with it; the suite was extended to 41, covering the error contract of all eleven operations. A new layout contract (`toolkits/os-toolkit/tests/test_package_layout.py`, 28 checks) pins the layout, the relative imports, the alias, the LlamaIndex boundary, the dependency profile and the 11-tool surface. The toolkit suite is green (69 passed), the alias contract is green (51 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` unchanged, because the toolkit had no known failures of its own. The tool menu is **unchanged**: 155 tools, 154 distinct names, the same pre-existing `get_system_info` duplicate. The report is `investigate/os-toolkit-module/REPORT_os_toolkit_module.md`. |
+| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported as a message string, never raised) were moved verbatim; the split was checked mechanically against the original file, not by eye, and the check itself was tested against three deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_linux_toolkit.py`, `agent_windows_toolkit.py`, `agent_apt_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
+| State | **The commit and the push are not done yet** — rule 4 requires the operator's explicit approval, and the staged diff has to be shown first. Nothing is merged; `master` is untouched. |
 
-### Latest change: the GitHub toolkit is a module
+### Latest change: the OS toolkit is a module
+
+The **fourth** toolkit of the series, and the **last** one that was still
+mandatory.  Every other toolkit had already moved under `toolkits/`,
+where a missing or broken toolkit degrades to "no tools" instead of a
+failed boot; the OS toolkit was still a top-level module that every
+orchestrator imported unguarded.
+
+**The "C++ orchestrator" was a false alarm.**  The series' notes called
+this the toolkit the C++ orchestrator leans on.  There is no compiled
+binary in the repository — `agent-torvalds-cpp.py` is Python, and the
+"cpp" is the `llama-cpp-python` binding behind its LLM.  `find` for
+`*.cpp`, `*.hpp`, `*.cc` and `*.h` returns only files inside `.venv/`.
+So there was no artefact that a renamed module could have broken.
+
+**What was real is the star import.**  `agent-torvalds-cpp.py` does
+`from toolkits.os_toolkit.agent_os_toolkit import *`, and the old module
+had **no `__all__`**, so its star import also leaked `os`, `shutil`,
+`logging`, `Path` and `platform` into that module.  The adapter declares
+`__all__`, so the leak is gone — deliberately, and safely: the file uses
+none of those names (`asyncio`, `Console` and `logging` are imported
+explicitly).  The layout contract pins the narrowing, so it cannot
+drift back unnoticed.
+
+**The library half has no third-party dependency at all** — `os`,
+`shutil`, `pathlib` and `platform`, the standard library.  It is the
+first toolkit of the series whose reusable half is dependency-free, and
+the layout contract now enforces it.  The file-system operations work
+in any Python that exists.
+
+**The toolkit already had a test suite**, and it moved with it — so
+"behaviour-neutral" was something the suite could *show*, as it was for
+the math and the Git toolkits.  The suite was extended from 17 to 37
+tests, covering the error contract of all eleven operations: a failure
+is *reported*, never raised.  One existing test was made robust — it
+asserted `"README.md" in ls(".")`, which only held when pytest was
+started from the repository root.
+
+**The split was checked mechanically against the committed original**,
+by AST: the eleven operation names, their order, their signatures, their
+docstrings, their bodies, and the eleven tool names, their order and
+their descriptions.  The check was itself tested against three
+deliberate drifts — a reworded description, a changed parameter
+default, a dropped docstring — and caught all three.  A check that has
+never failed proves nothing.
+
+**The tool menu is unchanged**: 155 tools, 154 distinct names, the same
+pre-existing `get_system_info` duplicate (the OS toolkit and the Windows
+toolkit both define it, and both are loaded into one process).  The
+duplicate is on `master` too, so the move neither created nor changed
+it.
+
+**One thing changed on purpose:** the logger's name moved from
+`agent_os_toolkit` to `toolkits.os-toolkit.operations`, because that is
+what `logging.getLogger(__name__)` does when the module moves.  The
+math, Git and GitHub moves changed theirs the same way.  The adapter
+re-exports the operations' logger, so the whole toolkit still logs
+through one logger, as the single module did.
+
+### Previous change: the GitHub toolkit is a module
 
 **Squash-merged into `master` as PR #43** (commit `83456a7`, head
 `0533206`).  The PR is based on `master` — not on `main`.
