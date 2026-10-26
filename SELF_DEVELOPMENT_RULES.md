@@ -5,10 +5,10 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 future agent invocation.
 
 **Last updated:** 2026-10-26 (the **APT** toolkit became a module under
-`toolkits/` and is **open as a pull request against `master`** — the
-**sixth** PR of the "every
-toolkit is a module" refactoring, and the first one whose library half is
-**not** dependency-free; the **Linux** toolkit became a module under
+`toolkits/` and was **squash-merged into `master` as PR #48**, commit
+`5eb5151` — the **sixth** PR of the "every toolkit is a module"
+refactoring, and the first one whose library half is **not**
+dependency-free; the **Linux** toolkit became a module under
 `toolkits/` and was **squash-merged into `master` as PR #46**, commit
 `94fb513` — the **fifth** PR of the series, and the **last** of the six
 *Linux/Windows* pair to move;
@@ -105,15 +105,25 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/apt-toolkit-module` — **open as a pull request against `master`** (based on `master` at `d7cb132`) |
+| Branch | `refactor/apt-toolkit-module` — **squash-merged into `master` as PR #48** (commit `5eb5151`, head `4c2b941`; based on `master` at `d7cb132`) |
 | Scope | The **sixth** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_apt_toolkit.py` leaves the project root and becomes `toolkits/apt-toolkit/`. It is the first toolkit of the series whose library half is **not** dependency-free, and the first whose command-line interface is a module of its own. |
-| Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the 6 shell and system operations, no LlamaIndex import and **no third-party dependency at all**: `subprocess`, `os`, `logging`, `typing`) and the adapter (`agent_linux_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.linux_toolkit`, which `toolkits/__init__.py` registers next to the other six toolkits. The **four** call sites (both orchestrators, the retriever and the selection menu) were updated; all four imported the toolkit unguarded and now import it **behind a guard**, so the Linux toolkit goes from mandatory to optional. **The toolkit already had a test suite** (11 tests), and it moved with it; the suite was extended to 36 operations tests plus a new layout contract (`toolkits/linux-toolkit/tests/test_package_layout.py`, 31 checks) and a new test of the split-verification script (11 tests) — 78 in all. The toolkit suite is green (78 passed), the alias contract is green (58 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` unchanged, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical. The report is `investigate/apt-toolkit-module/REPORT_apt_toolkit_module.md`. |
-| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with seven deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_windows_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
-| State | **Open.** Implemented and verified on the branch. The next toolkit of the series starts from `master` (`94fb513`) or from the merge of the pull request, whichever the operator prefers. |
+| Status | Implemented, verified and **merged**. The loose root module is **split** into the library half (`operations.py` — the 13 package, sudo and install operations, no LlamaIndex import), the adapter (`agent_apt_toolkit.py` — the only LlamaIndex-dependent module) and the command-line interface (`cli.py` — it used to be a `__main__` block at the bottom of the module), with a `__init__.py`, a `__main__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.apt_toolkit`, which `toolkits/__init__.py` registers next to the other seven toolkits. The **four** call sites (both orchestrators, the retriever and the selection menu) were updated; all four imported the toolkit unguarded and now import it **behind a guard**, so the APT toolkit goes from mandatory to optional. **The toolkit already had a test suite** (4 known failures), and it moved with it; the suite was extended to 44 operations tests plus a new layout contract (`toolkits/apt-toolkit/tests/test_package_layout.py`, 37 checks) and a new test of the split-verification script (19 tests, fifteen deliberate drifts) — 100 passed, 4 known failures in all. The alias contract is green (75 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` rewritten, because the path of the four known failures changed. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical. The report is `investigate/apt-toolkit-module/REPORT_apt_toolkit_module.md`. |
+| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with fifteen deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. This toolkit's library half is the **first** of the series that is **not** dependency-free — it needs `rich` for the console password prompt and the repository's own `components.whiptail_password` for the whiptail one, both deferred to the call and both guarded. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_windows_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
+| State | **Merged.** Committed as `4c2b941`, pushed, opened as PR #48, and **squash-merged into `master` as `5eb5151`** after CI ran green. The tree check holds: `master`'s tree after the merge (`0af67be`) is byte-identical to the head tree of `4c2b941` that CI ran green. The next toolkit of the series starts from `master` (`5eb5151`). |
 
 ### Latest change: the APT toolkit is a module
 
-**Open as a pull request against `master`** (based on `master` at `d7cb132`).
+**Squash-merged into `master` as PR #48** (commit `5eb5151`, head
+`4c2b941`).  The PR is based on `master` — not on `main`.
+
+The squash departs from the standing convention of a merge commit, as
+PR #46, PR #43 and PR #41 did before it, and for the same reason: the
+convention exists for the *stacked* PR chain, and this PR is based
+directly on the tip of `master` (`d7cb132`), so the next PR's merge base
+is `5eb5151` and its diff does not balloon.  The tree check the
+convention exists for holds as well — `master`'s tree after the merge
+(`0af67be`) is byte-identical to the head tree of `4c2b941` that CI ran
+green.
 
 The **sixth** toolkit of the "every toolkit is a module" series, and the
 first one whose library half is **not** dependency-free.  The OS and the
