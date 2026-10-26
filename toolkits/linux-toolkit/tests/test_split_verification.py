@@ -54,8 +54,14 @@ CHECKER = _load_checker()
 
 
 def _original_source() -> str:
-    """The committed original, straight from git."""
-    return CHECKER.git_show("master", CHECKER.ORIGINAL_PATH)
+    """The committed original, straight from git.
+
+    The reference is *found* rather than assumed: a CI checkout is a
+    detached HEAD that has no ``master`` branch, so a check that asked
+    for one would fail there for a reason that has nothing to do with
+    the split.
+    """
+    return CHECKER.git_show(CHECKER.resolve_original_ref(), CHECKER.ORIGINAL_PATH)
 
 
 def _operations_source() -> str:
@@ -87,7 +93,7 @@ def test_the_script_itself_reports_success():
     run it.
     """
     result = subprocess.run(
-        [sys.executable, str(VERIFY_SPLIT), "--ref", "master"],
+        [sys.executable, str(VERIFY_SPLIT)],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -96,6 +102,22 @@ def test_the_script_itself_reports_success():
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "The split is behaviour-neutral." in result.stdout
+
+
+def test_the_original_is_found_without_a_named_branch():
+    """The check must find the original where no branch is named.
+
+    A CI checkout is a detached HEAD: it has no ``master`` branch and
+    the file itself is gone from the tree, so the only place the
+    original can come from is the history - the state the file was in
+    just before it was deleted.
+    """
+    ref = CHECKER.resolve_original_ref()
+    assert ref, "no reference was found"
+
+    original = CHECKER.git_show(ref, CHECKER.ORIGINAL_PATH)
+    assert "def execute_shell_command" in original
+    assert "def get_all_tools" in original
 
 
 # ---------------------------------------------------------------------------

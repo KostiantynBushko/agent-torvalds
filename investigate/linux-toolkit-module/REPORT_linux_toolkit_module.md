@@ -143,8 +143,8 @@ The toolkit already had a test suite, and it moved with it, so
 | `tests/test_linux_toolkit.py` | 11 tests | — |
 | `toolkits/linux-toolkit/tests/test_operations.py` | — | 36 tests |
 | `toolkits/linux-toolkit/tests/test_package_layout.py` | — | 31 tests |
-| `toolkits/linux-toolkit/tests/test_split_verification.py` | — | 10 tests |
-| **Total** | **11** | **77** |
+| `toolkits/linux-toolkit/tests/test_split_verification.py` | — | 11 tests |
+| **Total** | **11** | **78** |
 
 The eleven original tests moved unchanged (apart from the import, which
 became relative).  The new ones cover the error contract of every
@@ -197,8 +197,11 @@ leaving it to be discovered.
 * the six tool names, their order and their descriptions;
 * the LlamaIndex import is in the adapter only.
 
+The reference the original is taken from is **found, not assumed** — see
+section 9.
+
 ```
-$ python investigate/linux-toolkit-module/verify_split.py --ref master
+$ python investigate/linux-toolkit-module/verify_split.py
 
 original            : master:agent_linux_toolkit.py
 library half        : toolkits/linux-toolkit/operations.py
@@ -244,8 +247,8 @@ self-development/.venv/bin/python -m pytest self-development/toolkits/linux-tool
 self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
 ```
 
-**77 passed** in the toolkit suite (36 operations + 31 layout contract +
-10 split verification), and the CI gate reports **no new failure** —
+**78 passed** in the toolkit suite (36 operations + 31 layout contract +
+11 split verification), and the CI gate reports **no new failure** —
 40 known failures, 0 new, 0 fixed.
 
 The alias contract is green as well: **58 passed** (it was 51; the
@@ -291,7 +294,7 @@ duplicate `basicConfig` call.
 
 ---
 
-## 9. Two things found along the way
+## 9. Three things found along the way
 
 **A pre-existing `SyntaxWarning` in `agent-torvalds.py`.**  Line 759
 holds:
@@ -314,6 +317,35 @@ listing still names `tests/test_os_toolkit.py`, which the OS toolkit
 moved into its package in the previous change of the series.  The
 Linux toolkit's own line is correct this time — `tests/test_linux_toolkit.py`
 is gone from the listing, because the suite moved into the package.
+
+**The check only worked on a developer's machine.**  The split
+verification asked git for the original by name — `git show
+master:agent_linux_toolkit.py` — and the test that drove it hard-coded
+the same name.  That works in a clone, and it fails in CI: a CI
+checkout is a **detached HEAD** of the merge commit with a shallow
+history, so there is no `master` branch to ask.  The build went red with
+ten new failures — `fatal: invalid object name 'master'` — and every one
+of them was in the check, not in the toolkit.
+
+The fix is to stop assuming a name.  The original is *the file as it was
+committed before it was deleted*, so the check now asks git where that
+still lives:
+
+1. a named ref that still carries the file — `master`, `origin/master`,
+   `main`, `origin/main`;
+2. otherwise, the **parent of the commit that deleted it** — which is
+   exactly the state the file was in when it was removed.
+
+The second step is what makes the check work in CI, and it is the more
+precise definition anyway: it names the original by the deletion, not
+by a branch that may or may not exist.  The CI workflow now checks the
+repository out with `fetch-depth: 0`, because a shallow history cannot
+answer the question at all.
+
+The lesson is the one the series keeps learning: **a check that only
+runs where the author sits is not a check.**  It ran green on the
+developer's machine for the whole of the change, and the build found it
+in two minutes.
 
 ---
 

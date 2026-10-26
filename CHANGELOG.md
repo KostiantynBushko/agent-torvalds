@@ -52,7 +52,7 @@
   (`pip install ./toolkits/linux-toolkit`).  The distribution depends on the standard
   library and on nothing else; the adapter is an extra (`linux-toolkit[agent]`).
 
-- **`toolkits/linux-toolkit/tests/`** — the test suite, 77 tests.  The eleven tests
+- **`toolkits/linux-toolkit/tests/`** — the test suite, 78 tests.  The eleven tests
   the toolkit already had moved with it, and the suite was extended to cover the
   error contract of every operation: a failure is *reported*, never raised.  Three
   of the new tests pin behaviour that is easy to get wrong: `shell=False` treats the
@@ -74,6 +74,28 @@
   the split moved everything verbatim: the operation names, their order, their
   signatures, their docstrings, their bodies, and the tool names, their order and
   their descriptions, compared against the committed original by AST.
+
+### Fixed
+- **The split-verification check no longer depends on a branch called
+  `master`.**  It asked git for the committed original by name
+  (`git show master:agent_linux_toolkit.py`), and the test that drove it
+  hard-coded the same name.  That works in a clone and it fails in CI: a
+  CI checkout is a detached HEAD of the merge commit with a shallow
+  history, so there is no `master` branch to ask, and the build went red
+  with ten new failures — all of them in the check, none in the toolkit.
+
+  The check now **finds** the original instead of assuming where it is: a
+  named ref that still carries the file (`master`, `origin/master`,
+  `main`, `origin/main`), and otherwise the **parent of the commit that
+  deleted it** — which is exactly the state the file was in when it was
+  removed.  The second step is what makes the check work in CI, and it is
+  the more precise definition anyway.  The workflow now checks the
+  repository out with `fetch-depth: 0`, because a shallow history cannot
+  answer the question at all.
+
+  A check that only runs where its author sits is not a check: it ran
+  green on the developer's machine for the whole of the change, and the
+  build found it in two minutes.
 
 ### Notes
 - **The behaviour did not change.**  The tool menu is identical to the one on
