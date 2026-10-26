@@ -4,10 +4,13 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-26 (the **OS** toolkit became a module under
-`toolkits/` and was **squash-merged into `master` as PR #45**, commit
-`899f9b2` — the **fourth** PR of the "every toolkit is a module"
-refactoring, and the last toolkit that was still **mandatory**; the
+**Last updated:** 2026-10-26 (the **Linux** toolkit became a module under
+`toolkits/` — the **fifth** PR of the "every toolkit is a module"
+refactoring, and the **last** of the six *Linux/Windows* pair to move;
+the **OS** toolkit became a module under `toolkits/` and was
+**squash-merged into `master` as PR #45**, commit
+`899f9b2` — the **fourth** PR of the series, and the last toolkit that
+was still **mandatory**; the
 GitHub toolkit was squash-merged into `master` as PR #43, commit
 `83456a7`; the Git toolkit was squash-merged into `master` as PR #41,
 commit `7d0e56a`; the math toolkit was merged into `master` as PR #39,
@@ -97,13 +100,81 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/os-toolkit-module` — **implemented, verified and squash-merged into `master`** as PR #45 (commit `899f9b2`) |
-| Scope | The **fourth** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_os_toolkit.py` leaves the project root and becomes `toolkits/os-toolkit/`. It was the toolkit the orchestrator leans on, and the **last** one that was still mandatory. |
-| Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the 11 file-system operations, no LlamaIndex import and **no third-party dependency at all**) and the adapter (`agent_os_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.os_toolkit`, which `toolkits/__init__.py` registers next to the other five toolkits. The **six** call sites (both orchestrators, the retriever, the selection menu, the llama.cpp orchestrator and the callback debug script) were updated; the four that imported the toolkit unguarded now import it **behind a guard**, so the OS toolkit goes from mandatory to optional — the same trade the other moves made, and the last toolkit still outside it. **The toolkit already had a test suite** (17 tests), and it moved with it; the suite was extended to 41, covering the error contract of all eleven operations. A new layout contract (`toolkits/os-toolkit/tests/test_package_layout.py`, 28 checks) pins the layout, the relative imports, the alias, the LlamaIndex boundary, the dependency profile and the 11-tool surface. The toolkit suite is green (69 passed), the alias contract is green (51 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` unchanged, because the toolkit had no known failures of its own. The tool menu is **unchanged**: 155 tools, 154 distinct names, the same pre-existing `get_system_info` duplicate. The report is `investigate/os-toolkit-module/REPORT_os_toolkit_module.md`. |
-| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported as a message string, never raised) were moved verbatim; the split was checked mechanically against the original file, not by eye, and the check itself was tested against three deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_linux_toolkit.py`, `agent_windows_toolkit.py`, `agent_apt_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
-| State | **Nothing pending.** The OS toolkit is in `master`; the working tree is clean and no PR is open. The next toolkit of the series starts from `master` (`899f9b2`). |
+| Branch | `refactor/linux-toolkit-module` — **implemented and verified, not yet committed** (based on `master` at `dead333`) |
+| Scope | The **fifth** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_linux_toolkit.py` leaves the project root and becomes `toolkits/linux-toolkit/`. It is the Linux half of the Linux/Windows pair, and it was the last of the two that was still **mandatory**. |
+| Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the 6 shell and system operations, no LlamaIndex import and **no third-party dependency at all**: `subprocess`, `os`, `logging`, `typing`) and the adapter (`agent_linux_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.linux_toolkit`, which `toolkits/__init__.py` registers next to the other six toolkits. The **four** call sites (both orchestrators, the retriever and the selection menu) were updated; all four imported the toolkit unguarded and now import it **behind a guard**, so the Linux toolkit goes from mandatory to optional. **The toolkit already had a test suite** (11 tests), and it moved with it; the suite was extended to 36 operations tests plus a new layout contract (`toolkits/linux-toolkit/tests/test_package_layout.py`, 31 checks) and a new test of the split-verification script (10 tests) — 77 in all. The toolkit suite is green (77 passed), the alias contract is green (58 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` unchanged, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical. The report is `investigate/linux-toolkit-module/REPORT_linux_toolkit_module.md`. |
+| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with seven deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_windows_toolkit.py`, `agent_apt_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
+| State | **Ready for review.** The change is implemented and verified on the branch; it is **not committed and not pushed** — Rule 4 requires the operator's explicit approval for that. The next toolkit of the series starts from `master` (`dead333`). |
 
-### Latest change: the OS toolkit is a module
+### Latest change: the Linux toolkit is a module
+
+**Implemented and verified on `refactor/linux-toolkit-module`, based on
+`master` (`dead333`).  Not committed, not pushed** — Rule 4.
+
+The **fifth** toolkit of the "every toolkit is a module" series, and the
+**last** of the Linux/Windows pair to move.  Its counterpart, the
+Windows toolkit, is the natural next one: the two carry the same six
+operations under the same names, and they are loaded on different
+platforms, so exactly one of them is ever in the menu.
+
+| Path | Change |
+|------|--------|
+| `toolkits/linux-toolkit/operations.py` | **New.** The 6 shell and system operations — the library half. No LlamaIndex import, standard library only. |
+| `toolkits/linux-toolkit/agent_linux_toolkit.py` | **New.** The adapter — the only LlamaIndex-dependent module. It re-exports all 6 functions. |
+| `toolkits/linux-toolkit/__init__.py` | **New.** The public API surface and the code-level reference to the canonical alias. |
+| `toolkits/linux-toolkit/README.md`, `pyproject.toml`, `py.typed` | **New.** The module documentation, the standalone distribution (the adapter is the `agent` extra) and the PEP 561 marker. |
+| `toolkits/linux-toolkit/tests/test_operations.py` | **New** (moved from `tests/test_linux_toolkit.py`). Relative imports; extended from 11 to 36 tests. |
+| `toolkits/linux-toolkit/tests/test_package_layout.py` | **New.** The layout contract — 31 checks. |
+| `toolkits/linux-toolkit/tests/test_split_verification.py` | **New.** The test of the split-verification script — 10 tests, seven deliberate drifts. |
+| `agent_linux_toolkit.py` | **Deleted** at the project root. Git tracked it as a rename to `toolkits/linux-toolkit/operations.py`. |
+| `tests/test_linux_toolkit.py` | **Deleted** at the project root. Git tracked it as a rename to the module-local test. |
+| `toolkits/__init__.py` | The `linux_toolkit` alias, the `_LINUX_PACKAGE` / `_LINUX_ALIAS` literals and the adapter in `_ADAPTER_MODULES`. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | The Linux adapter moved into the guarded block with the math, Git, GitHub, MikroTik, Shodan and OS ones. |
+| `agent_tool_retriever.py`, `agent_tool_selection.py` | The import path moved to the alias, behind a guard. |
+| `pytest.ini` | `toolkits/linux-toolkit/tests` added to `testpaths`. |
+| `tests/test_toolkit_alias_contract.py` | The Linux toolkit joined the alias contract — seven new rows. |
+| `tests/test_logging_cli.py` | The logger now comes from `toolkits.linux_toolkit.operations`; the two new modules joined the static inspection. |
+| `README.md`, `CHANGELOG.md` | The documentation. |
+| `investigate/linux-toolkit-module/REPORT_linux_toolkit_module.md` | **New.** What was implemented and why. |
+| `investigate/linux-toolkit-module/verify_split.py` | **New.** The mechanical check. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/toolkits/linux-toolkit/tests -q
+self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+```
+
+77 passed, and the CI gate reports **no new failure** (40 known failures,
+0 new, 0 fixed) — and, because the Linux toolkit had no known failures of
+its own, no *fixed* one either.
+
+**Three things this change is worth knowing about.**
+
+*It is the second dependency-free library half.*  The OS toolkit was the
+first; the Linux toolkit is built on `subprocess`, `os`, `logging` and
+`typing` and on nothing else, so the shell operations work in any
+Python that exists.  The layout contract pins the exact set.
+
+*The check is now a test.*  The previous toolkits had their split verified
+by a script that was exercised by hand.  Here the script
+(`investigate/linux-toolkit-module/verify_split.py`) has a pure
+`compare()` function, so it can be driven with deliberately broken
+sources — and it is: seven drifts, from a reworded tool description to a
+swapped operation, all caught.  A check that has never failed proves
+nothing, and a check that is only run by hand proves less.
+
+*Two findings, both left alone.*  `agent-torvalds.py:759` holds an
+invalid escape sequence (`\toggle-hitl`, `\hitl-status` in a non-raw
+string), which is a pre-existing `SyntaxWarning`; the layout contract
+parses that file and surfaced it, so the test suppresses it — but the
+**bug stays**, because this is a behaviour-neutral refactoring and the
+fix belongs in its own change.  And `get_system_info` is defined by
+**both** the Linux and the OS toolkit, so the tool menu carries the name
+twice on Linux; that duplicate is pre-existing (it is on `master` too)
+and the move neither created nor changed it.
+
+### Previous change: the OS toolkit is a module
 
 **Squash-merged into `master` as PR #45** (commit `899f9b2`, head
 `7120bb9`).  The PR is based on `master` — not on `main`.
