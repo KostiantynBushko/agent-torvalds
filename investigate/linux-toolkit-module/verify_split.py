@@ -28,9 +28,17 @@ The original is taken from git (``git show <ref>:agent_linux_toolkit.py``),
 so the check compares the *committed* original with the new files - not
 with a copy that might have been edited along the way.
 
+The reference is **found, not assumed**.  The original is the file as it
+was committed before it was deleted, so the check asks git where that
+still lives: a named ref that still carries the file (``master``,
+``origin/master``, ...), and otherwise the parent of the commit that
+deleted it.  A hard-coded ``master`` would have been a trap - a CI
+checkout is a detached HEAD without that branch, and the check would
+have failed there for a reason that has nothing to do with the split.
+
 Usage::
 
-    python investigate/linux-toolkit-module/verify_split.py [--ref HEAD]
+    python investigate/linux-toolkit-module/verify_split.py [--ref <ref>]
 
 Exit code 0 means the split is behaviour-neutral.
 """
@@ -82,6 +90,60 @@ def git_show(ref: str, path: str) -> str:
             f"cannot read {path} at {ref}:\n{result.stderr.strip()}"
         )
     return result.stdout
+
+
+def git(args: list[str]) -> subprocess.CompletedProcess:
+    """Run a git command in the repository and return the result."""
+    return subprocess.run(
+        ["git", *args],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def file_exists_at(ref: str, path: str) -> bool:
+    """Whether *path* exists in the tree of *ref*."""
+    return git(["cat-file", "-e", f"{ref}:{path}"]).returncode == 0
+
+
+def deletion_commits(path: str) -> list[str]:
+    """The commits that deleted *path*, newest first."""
+    result = git(["log", "--all", "--diff-filter=D", "--format=%H", "--", path])
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def resolve_original_ref(path: str = ORIGINAL_PATH) -> str:
+    """Return a git reference at which the original *path* still exists.
+
+    The original is the file as it was committed *before* it was deleted,
+    so the search is:
+
+    1. the named refs that are likely to carry it - the branch the
+       refactoring was based on, and its remote counterpart;
+    2. otherwise, the parent of the commit that deleted it - which is
+       exactly the state the file was in when it was removed.
+
+    The second step is what makes the check work in CI, where the
+    checkout is a detached HEAD that carries neither a ``master`` branch
+    nor the file itself.
+    """
+    for ref in ("master", "origin/master", "main", "origin/main"):
+        if file_exists_at(ref, path):
+            return ref
+
+    for commit in deletion_commits(path):
+        parent = f"{commit}^"
+        if file_exists_at(parent, path):
+            return parent
+
+    raise SystemExit(
+        f"cannot find {path} in the git history.\n"
+        f"Fetch the full history (git fetch --unshallow) and try again."
+    )
 
 
 def functions(tree: ast.Module) -> dict[str, ast.FunctionDef]:
@@ -310,19 +372,24 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--ref",
-        default="HEAD",
-        help="the git reference the original is taken from (default: HEAD)",
+        default=None,
+        help=(
+            "the git reference the original is taken from "
+            "(default: the reference is found automatically)"
+        ),
     )
     args = parser.parse_args()
 
-    original_source = git_show(args.ref, ORIGINAL_PATH)
+    ref = args.ref or resolve_original_ref()
+
+    original_source = git_show(ref, ORIGINAL_PATH)
     operations_source = (REPO_ROOT / OPERATIONS_PATH).read_text(encoding="utf-8")
     adapter_source = (REPO_ROOT / ADAPTER_PATH).read_text(encoding="utf-8")
 
     failures = compare(original_source, operations_source, adapter_source)
 
     # -- the report ----------------------------------------------------------
-    print(f"original            : {args.ref}:{ORIGINAL_PATH}")
+    print(f"original            : {ref}:{ORIGINAL_PATH}")
     print(f"library half        : {OPERATIONS_PATH}")
     print(f"agent adapter       : {ADAPTER_PATH}")
     print()
