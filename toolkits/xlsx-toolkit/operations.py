@@ -1,8 +1,16 @@
 """
-Excel XLSX Toolkit - Read, write, and modify Microsoft Excel (.xlsx) files.
+Excel XLSX Toolkit - the reusable library half.
+
+Read, write, and modify Microsoft Excel (.xlsx) files.
 
 This module provides functions to interact with Excel files using openpyxl.
 Supports reading, writing, cell operations, sheet management, and styling.
+
+It is the **library half** of the toolkit: it carries **no** LlamaIndex
+import, so the Excel operations stay usable - and testable - as a plain
+Python library.  The LlamaIndex adapter is a submodule of this package -
+``agent_xlsx_toolkit.py`` - and it is the one module of the feature that
+knows about the agent framework.
 
 Category: Data / Excel
 Retriever Keywords: excel, xlsx, spreadsheet, workbook, worksheet, cells, read, write
@@ -15,7 +23,6 @@ import logging
 from typing import Any
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
-from llama_index.core.tools import FunctionTool
 
 logger = logging.getLogger(__name__)
 
@@ -365,57 +372,3 @@ def create_empty_workbook(path: str, sheet_names: list = None) -> str:
         return f"Empty workbook created at {path}"
     except Exception as e:
         return f"Error creating workbook: {str(e)}"
-
-
-# ---------------------------------------------------------------------------
-# Tool registry
-# ---------------------------------------------------------------------------
-
-def get_all_tools() -> list[FunctionTool]:
-    """
-    Return all Excel/XLSX tools as FunctionTool objects for on-demand loading.
-    
-    Each tool includes category metadata for better retrieval.
-    
-    Returns:
-        list[FunctionTool]: List of Excel FunctionTool objects
-    """
-    logger.info("get_all_tools called for Excel/XLSX toolkit")
-    return [
-        FunctionTool.from_defaults(
-            fn=read_xlsx_file,
-            description="Read data from an Excel .xlsx file. Returns list of dicts with column headers as keys. Category: Data / Excel",
-        ),
-        FunctionTool.from_defaults(
-            fn=write_xlsx_file,
-            description="Write data to a new Excel .xlsx file. Accepts list of dictionaries. Category: Data / Excel",
-        ),
-        FunctionTool.from_defaults(
-            fn=get_sheet_names,
-            description="List all sheet names in an Excel workbook. Category: Data / Excel",
-        ),
-        FunctionTool.from_defaults(
-            fn=get_cell_value,
-            description="Get the value of a specific cell (e.g., A1) in an Excel file. Category: Data / Excel",
-        ),
-        FunctionTool.from_defaults(
-            fn=set_cell_value,
-            description="Set the value of a specific cell and save the file. Category: Data / Excel",
-        ),
-        FunctionTool.from_defaults(
-            fn=get_dimensions,
-            description="Get the used range dimensions of an Excel sheet. Category: Data / Excel",
-        ),
-        FunctionTool.from_defaults(
-            fn=copy_sheet,
-            description="Copy a sheet from one workbook to a new file. Category: Data / Excel",
-        ),
-        FunctionTool.from_defaults(
-            fn=apply_style,
-            description="Apply formatting style (bold, color, alignment, border, fill) to a cell range. Category: Data / Excel",
-        ),
-        FunctionTool.from_defaults(
-            fn=create_empty_workbook,
-            description="Create a new empty Excel workbook with optional named sheets. Category: Data / Excel",
-        ),
-    ]

@@ -15,6 +15,7 @@ each of them::
     toolkits.apt-toolkit         ->  toolkits.apt_toolkit
     toolkits.windows-toolkit     ->  toolkits.windows_toolkit
     toolkits.db-toolkit          ->  toolkits.db_toolkit
+    toolkits.xlsx-toolkit        ->  toolkits.xlsx_toolkit
 
 This module pins down the two properties that alias has to have.
 
@@ -83,6 +84,9 @@ WINDOWS_REAL = "toolkits.windows-toolkit"
 DB_ALIAS = "db_toolkit"
 DB_REAL = "toolkits.db-toolkit"
 
+XLSX_ALIAS = "xlsx_toolkit"
+XLSX_REAL = "toolkits.xlsx-toolkit"
+
 #: The alias of each toolkit and the ``__init__.py`` that must carry a
 #: code-level reference to it.
 TOOLKITS = (
@@ -96,6 +100,7 @@ TOOLKITS = (
     (APT_ALIAS, APT_REAL, REPO_ROOT / "toolkits" / "apt-toolkit" / "__init__.py"),
     (WINDOWS_ALIAS, WINDOWS_REAL, REPO_ROOT / "toolkits" / "windows-toolkit" / "__init__.py"),
     (DB_ALIAS, DB_REAL, REPO_ROOT / "toolkits" / "db-toolkit" / "__init__.py"),
+    (XLSX_ALIAS, XLSX_REAL, REPO_ROOT / "toolkits" / "xlsx-toolkit" / "__init__.py"),
 )
 
 #: The agent adapter of each toolkit: the alias of its package, the module
@@ -154,6 +159,11 @@ ADAPTERS = (
         DB_ALIAS,
         "agent_db_toolkit",
         REPO_ROOT / "toolkits" / "db-toolkit" / "agent_db_toolkit.py",
+    ),
+    (
+        XLSX_ALIAS,
+        "agent_xlsx_toolkit",
+        REPO_ROOT / "toolkits" / "xlsx-toolkit" / "agent_xlsx_toolkit.py",
     ),
 )
 
@@ -225,6 +235,7 @@ class TestStaticReference:
             f"toolkits.{APT_ALIAS}",
             f"toolkits.{WINDOWS_ALIAS}",
             f"toolkits.{DB_ALIAS}",
+            f"toolkits.{XLSX_ALIAS}",
         ],
     )
     def test_the_canonical_dotted_path_is_a_literal(self, dotted):
@@ -248,6 +259,7 @@ class TestStaticReference:
             APT_ALIAS,
             WINDOWS_ALIAS,
             DB_ALIAS,
+            XLSX_ALIAS,
         ],
     )
     def test_the_bare_alias_name_is_a_literal(self, alias):
@@ -275,6 +287,7 @@ class TestStaticReference:
             ("_APT_ALIAS", f"toolkits.{APT_ALIAS}"),
             ("_WINDOWS_ALIAS", f"toolkits.{WINDOWS_ALIAS}"),
             ("_DB_ALIAS", f"toolkits.{DB_ALIAS}"),
+            ("_XLSX_ALIAS", f"toolkits.{XLSX_ALIAS}"),
         ],
     )
     def test_the_alias_is_not_computed(self, constant, expected):

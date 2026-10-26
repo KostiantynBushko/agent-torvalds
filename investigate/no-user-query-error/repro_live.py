@@ -98,7 +98,7 @@ async def main() -> int:
 
     install_recorder()
 
-    from agent_xlsx_toolkit import get_all_tools as get_xlsx_tools
+    from toolkits.xlsx_toolkit.agent_xlsx_toolkit import get_all_tools as get_xlsx_tools
     from components.hitl_agent import HITLFunctionAgent
     from components.ollama_config import apply_context_window
     from llama_index.core.memory import ChatMemoryBuffer
