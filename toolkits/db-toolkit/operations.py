@@ -1,8 +1,26 @@
 """
-Database Toolkit - SQL query execution for PostgreSQL and MySQL.
+Database Toolkit - the library half.
 
 This module provides functions to run SQL queries against PostgreSQL and MySQL
 databases using connection parameters loaded from a YAML configuration file.
+
+This is the **library half** of the database toolkit.  It carries **no
+LlamaIndex import**, so it stays usable - and testable - as a plain Python
+library.  The LlamaIndex adapter lives next to it in
+``agent_db_toolkit.py`` and is the one module of the toolkit that knows
+about the agent framework.
+
+The operations are the ones that used to live in the single module
+``agent_db_toolkit.py`` at the project root.  They moved here **verbatim**:
+same names, same signatures, same docstrings, same error contract - a
+failure is reported as a message string, never raised.
+
+One property of the module moved with it, and it is worth knowing about:
+the configuration is read **at import time**, from
+``db_toolkit_config.yaml`` in the working directory.  That is what the
+original module did, and it is preserved - so importing this module
+without that file raises ``FileNotFoundError``, exactly as importing the
+original did.
 
 Category: Database
 Retriever Keywords: sql, postgres, mysql, query, database, schema, rows
@@ -15,8 +33,9 @@ import yaml
 import psycopg2
 import mysql.connector
 import logging
-from llama_index.core.tools import FunctionTool
 
+# Logging is configured centrally in agent-torvalds.py.
+# Do NOT call logging.basicConfig() here — it is a no-op after the first call.
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -146,29 +165,3 @@ def run_mysql_query(query: str) -> list[dict]:
         return rows
     except Exception as e:
         return f"Error running MySQL query: {str(e)}"
-
-
-# ---------------------------------------------------------------------------
-# Tool registry
-# ---------------------------------------------------------------------------
-
-def get_all_tools() -> list[FunctionTool]:
-    """
-    Return all database tools as FunctionTool objects for on-demand loading.
-    
-    Each tool includes category metadata for better retrieval.
-    
-    Returns:
-        list[FunctionTool]: List of database FunctionTool objects
-    """
-    logger.info("get_all_tools called for database toolkit")
-    return [
-        FunctionTool.from_defaults(
-            fn=run_postgres_query,
-            description="Run a SQL query on PostgreSQL. Use for SELECT, DDL, DML on Postgres. Category: Database",
-        ),
-        FunctionTool.from_defaults(
-            fn=run_mysql_query,
-            description="Run a SQL query on MySQL. Use for SELECT, DDL, DML on MySQL. Category: Database",
-        ),
-    ]

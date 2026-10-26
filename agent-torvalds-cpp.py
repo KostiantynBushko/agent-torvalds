@@ -5,7 +5,16 @@ from rich.console import Console
 from chat_manager.startup import get_memory_buffer
 
 from toolkits.os_toolkit.agent_os_toolkit import *
-from agent_db_toolkit import *
+
+# The database toolkit is optional: the drivers may not be installed, and
+# its configuration file - ``db_toolkit_config.yaml``, which it reads at
+# import time - may be missing or malformed.  Neither may take the
+# orchestrator down, so the star import is behind a guard.
+try:
+    from toolkits.db_toolkit.agent_db_toolkit import *
+except Exception:  # pragma: no cover - the toolkit is optional
+    pass
+
 from toolkits.math_toolkit.agent_math_toolkit import *
 from toolkits.git_toolkit.agent_git_toolkit import *
 
