@@ -7,7 +7,7 @@ from chat_manager.startup import get_memory_buffer
 from agent_git_toolkit import *
 from agent_os_toolkit import *
 from agent_db_toolkit import *
-from agent_math_toolkit import *
+from toolkits.math_toolkit.agent_math_toolkit import *
 
 # Path to your local GGUF model
 MODEL_PATH = "${HOME}/ai-agent-investiagte/models/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf"
