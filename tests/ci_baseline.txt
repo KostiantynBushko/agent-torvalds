@@ -8,10 +8,10 @@
 # fixed — the gate reports them as "fixed" and the baseline can be
 # tightened.
 
-tests/test_apt_toolkit.py::TestGetAllTools::test_returns_list_of_tools
-tests/test_apt_toolkit.py::TestGetAllTools::test_tool_names
-tests/test_apt_toolkit.py::TestInteractiveInstallMissingCommand::test_full_workflow_success
-tests/test_apt_toolkit.py::test_sudo_password
+toolkits/apt-toolkit/tests/test_operations.py::TestGetAllTools::test_returns_list_of_tools
+toolkits/apt-toolkit/tests/test_operations.py::TestGetAllTools::test_tool_names
+toolkits/apt-toolkit/tests/test_operations.py::TestInteractiveInstallMissingCommand::test_full_workflow_success
+toolkits/apt-toolkit/tests/test_operations.py::test_sudo_password
 tests/test_event_consumer_hitl.py::TestSendEvent::test_send_event_with_handler
 tests/test_events_manual.py::test_add_remove_interactive_tools
 tests/test_events_manual.py::test_agent_stream_event

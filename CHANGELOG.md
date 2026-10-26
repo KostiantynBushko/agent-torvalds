@@ -1,5 +1,131 @@
 # Changelog
 
+## [Unreleased] - The APT toolkit is a module
+
+### Changed
+- **The APT toolkit is now a module under `toolkits/`.**  It used to be a single
+  loose module at the project root, `agent_apt_toolkit.py`, next to the other
+  `agent_*.py` files, while the features that were already modules lived in folders
+  under `toolkits/`.  A toolkit is now one folder, like the MikroTik, the Shodan,
+  the math, the Git, the GitHub, the OS and the Linux one.
+
+  | Path | Was | Now |
+  |------|-----|-----|
+  | `agent_apt_toolkit.py` | the whole toolkit — the operations *and* the LlamaIndex adapter *and* the command-line interface | split in three |
+  | `toolkits/apt-toolkit/operations.py` | — | the thirteen package, sudo and install operations, the **library half** |
+  | `toolkits/apt-toolkit/agent_apt_toolkit.py` | — | the **adapter**, the only LlamaIndex-dependent module |
+  | `toolkits/apt-toolkit/cli.py` | — | the command-line interface, which used to be a `__main__` block |
+  | `toolkits/apt-toolkit/__main__.py` | — | the `python -m toolkits.apt_toolkit` entry point |
+  | `toolkits/apt-toolkit/__init__.py` | — | the public API surface |
+  | `toolkits/apt-toolkit/tests/` | — | the module-local tests |
+
+  The split is the point.  The operations carry **no** LlamaIndex import, so they
+  stay usable — and testable — as a plain Python library; the adapter is the one
+  module that knows about the agent framework, and it is imported on demand.
+  Importing the toolkit therefore never pulls LlamaIndex into the process.
+
+  Unlike the OS and the Linux toolkit, this toolkit's library half is **not**
+  dependency-free.  It needs `rich` for the *console* password prompt, which is
+  the default prompt method, and the repository's own
+  `components.whiptail_password` for the *whiptail* one.  Both imports are
+  deferred to the call and both degrade gracefully — a missing `rich` turns the
+  console prompt into an error message, and a missing `components` falls back to
+  the console prompt, which is the documented behaviour.
+
+- **The import path moved.**  The package lives in a hyphenated directory, so it is
+  reached through the alias that `toolkits/__init__.py` registers:
+
+  ```python
+  from toolkits.apt_toolkit import install_package          # the library
+  from toolkits.apt_toolkit.agent_apt_toolkit import get_all_tools  # the adapter
+  ```
+
+  The four call sites — `agent-torvalds.py`, `agent-torvalds-mw.py`,
+  `agent_tool_retriever.py` and `agent_tool_selection.py` — were updated.  As with
+  the other toolkits under `toolkits/`, the adapter is now imported **behind a
+  guard**, so a missing or broken toolkit degrades to "no tools" instead of a failed
+  boot.  The APT toolkit was **mandatory** before this change; it is optional now.
+
+- **The command-line interface moved.**  It used to be an
+  `if __name__ == "__main__":` block at the bottom of the module; it is
+  `toolkits/apt-toolkit/cli.py` now, with the package as its entry point:
+
+  ```bash
+  python -m toolkits.apt_toolkit --show-method
+  python -m toolkits.apt_toolkit --prompt-method whiptail
+  ```
+
+  The options, the output and the exit codes are unchanged.  The one line that
+  had to change is the example in the help text, which named the file the
+  interface used to live in.
+
+- **The logger's name moved.**  It was `agent_apt_toolkit`, and it is now
+  `toolkits.apt-toolkit.operations` — that is what `logging.getLogger(__name__)`
+  does when the module moves.  The adapter re-exports it, so the toolkit still logs
+  through one logger.
+
+### Added
+- **`toolkits/apt-toolkit/`** — the package, with a `README.md`, a `py.typed` marker
+  and a `pyproject.toml` for a standalone install
+  (`pip install ./toolkits/apt-toolkit`).  The distribution depends on `rich`; the
+  adapter is an extra (`apt-toolkit[agent]`).
+
+- **`toolkits/apt-toolkit/tests/`** — the test suite, 101 tests.  The 48 tests the
+  toolkit already had moved with it, and two new files were added: the layout
+  contract (37 checks) and the test of the split-verification script (16 tests).
+
+- **`toolkits/apt-toolkit/tests/test_package_layout.py`** — the layout contract, 37
+  checks: the flat layout, the relative imports, the alias, the LlamaIndex
+  boundary, the dependency profile of the library half, the ten-tool surface, the
+  command-line interface, and the fact that no call site imports the old module
+  name any more.
+
+- **`toolkits/apt-toolkit/tests/test_split_verification.py`** — the test of the
+  mechanical check, driven with twelve deliberate drifts: a reworded tool
+  description, a changed parameter default, a dropped docstring, a changed body,
+  two operations swapped, a LlamaIndex import in the library half, a tool that
+  went missing, an operation that went missing, a reworded command-line option,
+  narrowed command-line choices, a reworded command-line message and a dropped
+  command-line option.
+
+- **`investigate/apt-toolkit-module/verify_split.py`** — the mechanical check: it
+  compares the *committed* original with the new files, by AST, and fails on a
+  changed signature, a changed docstring, a changed body, a changed order, a
+  changed tool description, a changed command-line interface or a LlamaIndex
+  import in the wrong half.  The original is **found, not assumed**: a named ref
+  that still carries the file, and otherwise the parent of the commit that deleted
+  it, so the check also works in a CI checkout with a detached HEAD.  It compares
+  the **section headers** of the module as well — they are the reader's map of
+  the file, and the first cut of the split lost every one of them.
+
+- **`investigate/apt-toolkit-module/REPORT_apt_toolkit_module.md`** — the report:
+  what was implemented, and why.
+
+### Fixed
+- **`python -m <toolkit>` works again.**  The alias shim published *every*
+  submodule of a toolkit under the toolkit's alias — including the `__main__`
+  modules.  A `__main__` module is meant to be executed, not imported: publishing
+  it puts it in `sys.modules`, and `runpy` then refuses to execute it.
+
+  ```
+  RuntimeWarning: 'toolkits.shodan_toolkit.__main__' found in sys.modules
+  after import of package 'toolkits.shodan_toolkit', but prior to execution
+  of 'toolkits.shodan_toolkit.__main__'
+  ```
+
+  The shim skips the `__main__` modules now, the way it already skipped the agent
+  adapters.  This had broken the **Shodan** toolkit's `python -m
+  toolkits.shodan_toolkit` long before the APT toolkit had an entry point at
+  all.
+
+- **The dead `collect_ignore` option in `pytest.ini` is gone.**  It named
+  `agent_apt_toolkit.py`, and it was meant to keep pytest from collecting the
+  toolkit's `test_sudo_password` operation as a test.  `collect_ignore` is **not**
+  a pytest ini option — it belongs in a `conftest.py` — so pytest warned
+  "Unknown config option: collect_ignore" on every run and ignored it.  The
+  source module is not collected because it is not in `testpaths`, which is the
+  protection every other toolkit relies on.
+
 ## [Unreleased] - The Linux toolkit is a module
 
 ### Changed

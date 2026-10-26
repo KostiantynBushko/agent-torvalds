@@ -32,6 +32,7 @@ Each module has its own README with the full reference:
 | GitHub Toolkit | [toolkits/github-toolkit/README.md](toolkits/github-toolkit/README.md) |
 | OS Toolkit | [toolkits/os-toolkit/README.md](toolkits/os-toolkit/README.md) |
 | Linux Toolkit | [toolkits/linux-toolkit/README.md](toolkits/linux-toolkit/README.md) |
+| APT Toolkit | [toolkits/apt-toolkit/README.md](toolkits/apt-toolkit/README.md) |
 
 The project documentation:
 
@@ -86,13 +87,17 @@ The project documentation:
 - See section 20 and the
   [GitHub Toolkit README](toolkits/github-toolkit/README.md)
 
-### 5. APT Package Management Toolkit (`agent_apt_toolkit.py`)
+### 5. APT Package Management Toolkit (`toolkits/apt-toolkit/`)
 - Interactive Debian/Ubuntu package installation
 - Command resolution to APT packages
 - Multiple password prompting methods (console, whiptail, env_var, parameter)
 - Sudo password caching and validation
 - Batch package installation
 - Automatic dependency resolution workflow
+- The reusable core package in `toolkits/apt-toolkit/` has **no**
+  LlamaIndex imports, so it also works as a plain library
+- See section 23 and the
+  [APT Toolkit README](toolkits/apt-toolkit/README.md)
 
 ### 6. Database Toolkit (`agent_db_toolkit.py`)
 - Execute SQL queries on **PostgreSQL** databases
@@ -340,6 +345,38 @@ The project documentation:
   selection menu (`--select`, and `\tools` / `\tool-select` in the TUI),
   so the whole category can be loaded on its own
 - See the [Linux Toolkit README](toolkits/linux-toolkit/README.md) for the
+  module reference
+
+### 23. APT Toolkit (`toolkits/apt-toolkit/`)
+- Resolving a missing command to the APT package that provides it —
+  through `apt-file`, `dpkg` or `apt-cache`, in that order
+- Checking whether a command is on the `PATH`
+- Installing one package, or several in sequence
+- The end-to-end workflow: detect the missing command, resolve it,
+  install it, and verify that it is there afterwards
+- Obtaining the sudo password from a parameter, the
+  `TORVALDS_SUDO_PASSWORD` environment variable, the session cache,
+  or the console — with an automatic fallback between the console
+  and the whiptail dialog
+- Validating a sudo password, and clearing the cached one
+- Choosing the default password prompt method for the session
+- The reusable core package in `toolkits/apt-toolkit/` has **no**
+  LlamaIndex imports, so the operations also work as a plain
+  library. It needs `rich` for the console password prompt, and
+  the repository's own `components.whiptail_password` for the
+  whiptail one — both imports are deferred, and both degrade
+  gracefully when they are missing
+- The LlamaIndex adapter is the one module that knows about the
+  agent framework, and it is imported on demand
+- No tool raises: a failure is reported — `success: False` and
+  the reason in `error` — so the model gets a message it can
+  reason about
+- The ten tools join the **System / Package Management** category
+  of the startup tool selection menu (`--select`, and `\tools` /
+  `\tool-select` in the TUI)
+- The command-line interface moved with the toolkit:
+  `python -m toolkits.apt_toolkit --show-method`
+- See the [APT Toolkit README](toolkits/apt-toolkit/README.md) for the
   module reference
 
 ---
@@ -804,7 +841,7 @@ prs = github_list_pull_requests("username", "repo-name", state="open")
 
 ### APT Package Management
 ```python
-from agent_apt_toolkit import install_package, interactive_install_missing_command
+from toolkits.apt_toolkit import install_package, interactive_install_missing_command
 
 # Install a package
 result = install_package("ffmpeg", update_first=True)
@@ -934,7 +971,6 @@ manager.shutdown()
 ```
 | agent-torvalds/
 | agent_windows_toolkit.py       # Windows PowerShell execution toolkit
-| agent_apt_toolkit.py           # APT package management toolkit
 | agent_db_toolkit.py            # Database query toolkit (PostgreSQL and MySQL)
 | agent_cache_system.py          # Persistent cache for operational context
 | agent_stats_handler.py         # Per-request statistics collection and rendering
@@ -1025,6 +1061,15 @@ manager.shutdown()
 | +-- +-- agent_linux_toolkit.py # The LlamaIndex adapter
 | +-- +-- py.typed              # PEP 561 marker
 | +-- +-- tests/                # Module-local tests (no __init__.py)
+| +-- apt-toolkit/              # APT toolkit (core library)
+| +-- +-- README.md             # APT toolkit module documentation
+| +-- +-- __init__.py           # Public API surface
+| +-- +-- operations.py         # The package and install operations
+| +-- +-- agent_apt_toolkit.py  # The LlamaIndex adapter
+| +-- +-- cli.py                # The command-line interface
+| +-- +-- __main__.py           # `python -m toolkits.apt_toolkit`
+| +-- +-- py.typed              # PEP 561 marker
+| +-- +-- tests/                # Module-local tests (no __init__.py)
 | chat_manager/                 # Chat History Manager (multi-user, multi-session)
 | +-- README.md                 # Chat History Manager documentation
 | +-- __init__.py
@@ -1068,7 +1113,6 @@ manager.shutdown()
 | +-- __init__.py
 | +-- test_cache_system.py
 | +-- test_windows_toolkit.py
-| +-- test_apt_toolkit.py
 | +-- test_os_toolkit.py
 | +-- test_stats.py
 | +-- test_stats_mock.py
