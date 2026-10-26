@@ -4,11 +4,12 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-26 (the **Git** toolkit became a module under
-`toolkits/` and was **squash-merged into `master` as PR #41**, commit
-`7d0e56a` — the second PR of the "every toolkit is a module" refactoring;
-the math toolkit was merged into `master` as PR #39, merge commit
-`e2fce1a`)
+**Last updated:** 2026-10-26 (the **GitHub** toolkit became a module under
+`toolkits/` — the **third** PR of the "every toolkit is a module"
+refactoring, and the first of them that arrived **without a test suite**;
+the Git toolkit was squash-merged into `master` as PR #41, commit
+`7d0e56a`; the math toolkit was merged into `master` as PR #39, merge
+commit `e2fce1a`)
 
 ---
 
@@ -94,13 +95,79 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/git-toolkit-module` — **implemented, verified and squash-merged into `master`** as PR #41 (commit `7d0e56a`) |
-| Scope | The **second** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_git_toolkit.py` leaves the project root and becomes `toolkits/git-toolkit/`. |
-| Status | Implemented and **squash-merged into `master` as PR #41** (merge commit `e2fce1a`; the merge result tree is byte-identical to the CI-validated head tree `c899e01`, so the merge introduced no untested content). The loose root module is **split** into the library half (`operations.py` — the mathematics, no LlamaIndex import) and the adapter (`agent_math_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` (no third-party dependency) and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.math_toolkit`, which `toolkits/__init__.py` registers next to the other two toolkits. The six call sites (both orchestrators, the C++ one, the retriever, the selection menu and the debug script) now import the adapter **behind a guard**, like the other toolkits under `toolkits/`. The test suite moved to `toolkits/math-toolkit/tests/test_operations.py` with relative imports, and the seven known failures were rewritten in `tests/ci_baseline.txt` for the new path — the **same** seven tests, not a new set. A new layout contract (`toolkits/math-toolkit/tests/test_package_layout.py`, 18 checks) pins the layout, the relative imports, the alias and the LlamaIndex boundary. The toolkit suite is green (46 passed, the 7 known failures), the alias contract is green, and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed). The report is `investigate/math-toolkit-module/REPORT_math_toolkit_module.md`. |
-| Policy | The **behaviour did not change** — every function, every docstring and the error contract (a failure is reported as `False`, as `{"success": False, "error": ...}` or as an `"Error: ..."` string, never raised) were moved verbatim. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_github_toolkit.py`, `agent_os_toolkit.py`, `agent_linux_toolkit.py`, `agent_windows_toolkit.py`, `agent_apt_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
-| State | **Nothing pending.** The Git toolkit is in `master`; the working tree is clean and no PR is open. The next toolkit of the series starts from `master` (`7d0e56a`). |
+| Branch | `refactor/github-toolkit-module` — **implemented and verified**, awaiting the operator's approval to commit and push |
+| Scope | The **third** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_github_toolkit.py` leaves the project root and becomes `toolkits/github-toolkit/`. |
+| Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the 13 GitHub operations, no LlamaIndex import) and the adapter (`agent_github_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` (one third-party dependency, `requests`) and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.github_toolkit`, which `toolkits/__init__.py` registers next to the other four toolkits. The four call sites (both orchestrators, the retriever and the selection menu) now import the adapter **behind a guard**, like the other toolkits under `toolkits/`. **The toolkit had no test suite at all**, so one was written: `toolkits/github-toolkit/tests/test_operations.py` (95 tests) pins the behaviour of every operation, offline. A new layout contract (`toolkits/github-toolkit/tests/test_package_layout.py`, 25 checks) pins the layout, the relative imports, the alias, the LlamaIndex boundary, the dependency profile and the 13-tool surface. The toolkit suite is green (120 passed), the alias contract is green (44 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` unchanged, because the toolkit had no known failures of its own. The report is `investigate/github-toolkit-module/REPORT_github_toolkit_module.md`. |
+| Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported as `False` or as `{"success": False, "error": ...}`, never raised) were moved verbatim; the split was checked mechanically against the original file, not by eye. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_os_toolkit.py`, `agent_linux_toolkit.py`, `agent_windows_toolkit.py`, `agent_apt_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
+| State | **The commit and the push are not done yet** — rule 4 requires the operator's explicit approval, and the staged diff has to be shown first. Nothing is merged; `master` is untouched. |
 
-### Latest change: the Git toolkit is a module
+### Latest change: the GitHub toolkit is a module
+
+The **third** toolkit of the series, and the first one of them that
+arrived **without a test suite**.  That changed what the work was.
+
+The math and the Git toolkits had tests that moved with them, so
+"behaviour-neutral" was something the suite could show.  The GitHub
+toolkit had **no tests at all** — no `tests/test_github_toolkit.py`, and
+nothing in `tests/ci_baseline.txt` either.  A move of it would have been
+an entirely unverified refactoring, and the layout contract alone would
+not have made the claim true.
+
+So the toolkit got a suite: `toolkits/github-toolkit/tests/test_operations.py`,
+**95 tests** that pin the behaviour of every operation — the token
+resolution, the headers, the status-code mapping, the error contract and
+the payload of all thirteen tools.  It is **offline**: `requests` is
+stubbed at the transport boundary and the GitHub CLI is stubbed too, so
+no test reaches `api.github.com` and no test needs a token.  A developer
+who has `gh` installed, or a `GITHUB_TOKEN` exported, gets the same result
+as everybody else.
+
+The split is the same as the Git toolkit's, and the dependency profile
+matches it too: the library half is built on `requests` — the HTTP
+client the REST API is called through — and on nothing else, so the
+contract pins the *exact* set rather than merely "no LlamaIndex".
+
+| Path | Change |
+|------|--------|
+| `toolkits/github-toolkit/operations.py` | **New.** The 13 GitHub operations — the library half. No LlamaIndex import. |
+| `toolkits/github-toolkit/agent_github_toolkit.py` | **New.** The adapter — the only LlamaIndex-dependent module. It re-exports all 13 functions, so a star import keeps working. |
+| `toolkits/github-toolkit/__init__.py` | **New.** The public API surface and the code-level reference to the canonical alias. |
+| `toolkits/github-toolkit/README.md`, `pyproject.toml`, `py.typed` | **New.** The module documentation, the standalone distribution (`requests`; the adapter is the `agent` extra) and the PEP 561 marker. |
+| `toolkits/github-toolkit/tests/test_operations.py` | **New.** 95 tests — the suite the toolkit never had. |
+| `toolkits/github-toolkit/tests/test_package_layout.py` | **New.** The layout contract — 25 checks. |
+| `agent_github_toolkit.py` | **Deleted** at the project root. Git tracked it as a rename to `toolkits/github-toolkit/operations.py`. |
+| `toolkits/__init__.py` | The `github_toolkit` alias, the `_GITHUB_PACKAGE` / `_GITHUB_ALIAS` literals and the adapter in `_ADAPTER_MODULES`. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | The GitHub adapter moved into the guarded block with the math, Git, MikroTik and Shodan ones. |
+| `agent_tool_retriever.py`, `agent_tool_selection.py` | The import path moved to the alias, behind a guard. |
+| `pytest.ini` | `toolkits/github-toolkit/tests` added to `testpaths`. |
+| `tests/test_toolkit_alias_contract.py` | The GitHub toolkit joined the alias contract — three new rows. |
+| `tests/test_logging_cli.py` | The logger now comes from `toolkits.github_toolkit.operations`; the two new modules joined the static inspection. |
+| `README.md`, `CHANGELOG.md` | The documentation. |
+| `investigate/github-toolkit-module/REPORT_github_toolkit_module.md` | The report. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/toolkits/github-toolkit/tests -q
+self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+```
+
+120 passed, and the CI gate reports **no new failure** (40 known failures,
+0 new, 0 fixed) — and, because the GitHub toolkit had no known failures
+of its own, no *fixed* one either.
+
+**One thing the split was checked against.**  The descriptions of the
+thirteen tools are behaviour: they are what the retriever matches
+against and what the model reads.  So the split was verified
+mechanically — the tool names, their order and their descriptions were
+compared, by AST, against the original file at `HEAD`; the thirteen
+signatures and every docstring likewise.  That check caught a drift that
+eyeballing would not have: a description that had been reworded from
+"review submissions **for** a Pull Request" to "review submissions **on**
+a Pull Request".  The rule for the rest of the series: move verbatim, and
+let a script prove it.
+
+### Previous change: the Git toolkit is a module
 
 **Squash-merged into `master` as PR #41** (commit `7d0e56a`, head
 `79c69d8`).  The PR is based on `master` — not on `main`.

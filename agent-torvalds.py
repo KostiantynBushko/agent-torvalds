@@ -71,11 +71,11 @@ from agent_os_toolkit import get_all_tools as get_os_tools
 from agent_db_toolkit import get_all_tools as get_db_tools
 from agent_linux_toolkit import get_all_tools as get_linux_tools
 from agent_windows_toolkit import get_all_tools as get_windows_tools
-from agent_github_toolkit import get_all_tools as get_github_tools
 from agent_apt_toolkit import get_all_tools as get_apt_tools
-# The math, Git, MikroTik and Shodan toolkits live in ``toolkits/`` and
-# are optional.  A missing or broken toolkit has to degrade to "no tools",
-# never to a failed boot, so the adapters are imported behind a guard.
+# The math, Git, GitHub, MikroTik and Shodan toolkits live in
+# ``toolkits/`` and are optional.  A missing or broken toolkit has to
+# degrade to "no tools", never to a failed boot, so the adapters are
+# imported behind a guard.
 try:
     from toolkits.git_toolkit.agent_git_toolkit import (
         get_all_tools as get_git_tools,
@@ -84,6 +84,17 @@ except ImportError:  # pragma: no cover - the toolkit is optional
 
     def get_git_tools() -> list:
         """The Git toolkit is unavailable - expose no tools."""
+        return []
+
+
+try:
+    from toolkits.github_toolkit.agent_github_toolkit import (
+        get_all_tools as get_github_tools,
+    )
+except ImportError:  # pragma: no cover - the toolkit is optional
+
+    def get_github_tools() -> list:
+        """The GitHub toolkit is unavailable - expose no tools."""
         return []
 
 
