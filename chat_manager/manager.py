@@ -49,15 +49,19 @@ class ChatHistoryManager:
         self,
         storage_uri: str | None = None,
         llama_uri: str | None = None,
+        fallback_uri: str | None = None,
     ) -> None:
         """Initialize the ChatHistoryManager.
 
         Args:
             storage_uri: Custom DB connection URI (defaults to TORVALDS_STORAGE_URI).
             llama_uri: LlamaIndex message storage URI (defaults to TORVALDS_LLAMA_URI).
+            fallback_uri: Local database URI used when the primary one cannot
+                be reached (defaults to the connector's own resolution).
         """
         self._storage_uri = storage_uri or os.environ.get("TORVALDS_STORAGE_URI")
         self._llama_uri = llama_uri or self._resolve_llama_uri()
+        self._fallback_uri = fallback_uri
 
         # Custom DB connector for user/session metadata
         self._db: CustomDBConnector | None = None
@@ -105,8 +109,17 @@ class ChatHistoryManager:
         This is the main entry point called at agent startup.
         """
         # 1. Connect custom DB
-        self._db = CustomDBConnector(connection_uri=self._storage_uri)
+        self._db = CustomDBConnector(
+            connection_uri=self._storage_uri,
+            fallback_uri=self._fallback_uri,
+        )
         self._db.connect()
+
+        if self._db.is_degraded:
+            logger.warning(
+                f"ChatHistoryManager is running in local fallback mode: "
+                f"{self._db.degradation_reason}"
+            )
 
         # 2. Connect message backend (with fallback)
         self._connect_message_backend()
@@ -726,3 +739,20 @@ class ChatHistoryManager:
     def is_initialized(self) -> bool:
         """Whether the manager is fully initialized."""
         return self._db is not None and self._current_user is not None
+
+    @property
+    def is_degraded(self) -> bool:
+        """Whether the metadata layer runs on the local fallback.
+
+        True means the primary database could not be reached and a local
+        SQLite database is used instead: the chat history works, but it is
+        not shared with the other machines that use the primary database.
+        """
+        return self._db is not None and self._db.is_degraded
+
+    @property
+    def storage_mode(self) -> str:
+        """Where the metadata lives: ``primary``, ``fallback`` or ``unavailable``."""
+        if self._db is None or not self._db.is_connected:
+            return "unavailable"
+        return "fallback" if self._db.is_degraded else "primary"

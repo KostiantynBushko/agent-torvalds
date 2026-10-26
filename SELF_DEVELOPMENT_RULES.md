@@ -91,12 +91,44 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `feature/chat-user-settings` — **implemented, verified, committed** (`d58b33d`) |
-| Scope | Phase A of the chat-manager investigation: the **user-settings API** and the **`\chat-user` command**, plus the rename of `token_limit` → **`chat_token_limit`**. |
-| Status | Implemented: the new `chat_manager/settings.py` module, `ChatHistoryManager.get_user_settings()` / `update_user_settings()` / `set_chat_token_limit()`, the `\chat-user` command (show / get / set / help) wired into the registry, the dispatcher, the TUI and both orchestrators, the idempotent `ALTER TABLE users RENAME COLUMN token_limit TO chat_token_limit` migration, and the three compatibility seams (the deprecated `User.token_limit` property, the `User(token_limit=…)` constructor keyword, and the `token_limit` command alias). The `chat_manager` suite is green (175 passed), the new integration suite is green (16 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new). The proposal is `investigate/chat-manager-user-settings/PROPOSAL_chat_token_limit.md`; the implementation report is `investigate/chat-manager-user-settings/IMPLEMENTATION_REPORT_user_settings.md`. |
-| Policy | The **legacy** implementation is untouched on purpose. `agent_chat_memory.py`, `--no-chat-history` and the dead `TOKEN_LIMITS` constants are Phase C, and Phase C waits for Phase B (the SQLite fallback in `CustomDBConnector`) — without it, a metadata-database outage costs the agent its chat history entirely. `TORVALDS_TOKEN_LIMIT` therefore keeps its name: it configures the legacy buffer, not the manager's setting. |
+| Branch | `feature/chat-manager-sqlite-fallback` — **implemented, verified**, stacked on `feature/chat-user-settings` (`d58b33d`) |
+| Scope | Phase B of the chat-manager investigation: the **local fallback of the metadata layer**. |
+| Status | Implemented: `CustomDBConnector.connect()` now tries the primary database and, when it cannot be reached, retries against a local SQLite file (`~/.torvalds/chat_manager.db` by default, overridable with `TORVALDS_STORAGE_FALLBACK_URI`, switchable off with `TORVALDS_STORAGE_FALLBACK=off`). The whole manager — user provisioning, the session lifecycle, the active session — comes up on the fallback; only the *sharing* is lost. The degradation is reported in six places: the log, `connector.is_degraded` / `active_uri` / `degradation_reason`, `manager.is_degraded` / `storage_mode`, a yellow startup notice in both orchestrators, and a `Storage:` line in `\chat-info`. The chat manager suite is green (198 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new). The implementation report is `investigate/chat-manager-sqlite-fallback/IMPLEMENTATION_REPORT_sqlite_fallback.md`. |
+| Policy | This phase closes defect **C8** and unblocks **C5**, **C6** and **C9** — but it does **not** perform the removal of the legacy implementation. That is **Phase C**, and it gets its own branch so the removal can be reviewed on its own. The legacy path (`agent_chat_memory.py`, `--no-chat-history`, the dead `TOKEN_LIMITS`) is untouched here. The **message bodies** still degrade to an in-memory store; only the metadata survives a restart during an outage, and the README says so rather than glossing over it. |
 
-### Latest change: the user can finally change their own settings
+### Latest change: the chat history survives a database outage
+
+| Path | Change |
+|------|--------|
+| `chat_manager/storage/connector.py` | The fallback: `_prepare_sqlite_uri()`, `_resolve_fallback_uri()`, `_connect_to()`, the new `connect()`, and the `is_degraded` / `active_uri` / `degradation_reason` properties. |
+| `chat_manager/manager.py` | The `fallback_uri` constructor argument, the `is_degraded` and `storage_mode` properties, and the degradation log line in `initialize()`. |
+| `chat_manager/commands/cli.py` | The `Storage:` line in `\chat-info`. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | The yellow startup notice. |
+| `chat_manager/tests/test_fallback.py` | **New.** 23 tests. |
+| `chat_manager/tests/conftest.py` | The two new environment variables are cleared around every test. |
+| `investigate/chat-manager-sqlite-fallback/IMPLEMENTATION_REPORT_sqlite_fallback.md` | **New.** What was implemented and why. |
+| `chat_manager/README.md`, `README.md`, `CHANGELOG.md` | The documentation. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/chat_manager/tests -q
+self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+```
+
+127 tests pass, and the CI gate reports **no new failure** (40 known failures, 0 new).
+
+**Why it matters.** The investigation found the asymmetry that kept the legacy
+chat memory alive: the *message* layer degraded on its own (to an in-memory
+store), the *metadata* layer did not — so a database outage cost the agent its
+sessions entirely, and the orchestrators fell back to the legacy single-key
+buffer. The metadata layer now degrades the same way, which is the
+precondition the investigation set for removing the legacy path.
+
+### Previous work: the user can finally change their own settings
+
+Phase A of the same investigation: the **user-settings API** and the **`\chat-user` command**,
+plus the rename of `token_limit` → **`chat_token_limit`**.
 
 | Path | Change |
 |------|--------|
@@ -108,9 +140,9 @@ question was not answered; act on your own judgement."*
 | `components/command_registry.py` | The `CommandSpec` — `\help` lists the command in both orchestrators. |
 | `components/tui/chat_history_view.py` | `render_chat_user_markdown()` — the settings as a Markdown table. |
 | `agent-torvalds.py`, `agent-torvalds-mw.py` | The startup hints and the command list. |
-| `chat_manager/tests/test_settings.py` | **New.** 20 tests. |
-| `chat_manager/tests/test_user_settings.py` | **New.** 38 tests. |
-| `chat_manager/tests/test_migration.py` | **New.** 10 tests. |
+| `chat_manager/tests/test_settings.py` | **New.** 22 tests. |
+| `chat_manager/tests/test_user_settings.py` | **New.** 40 tests. |
+| `chat_manager/tests/test_migration.py` | **New.** 9 tests. |
 | `tests/test_user_settings_command.py` | **New.** 16 tests — the integration. |
 | `investigate/chat-manager-user-settings/PROPOSAL_chat_token_limit.md` | **New.** The naming proposal. |
 | `investigate/chat-manager-user-settings/IMPLEMENTATION_REPORT_user_settings.md` | **New.** What was implemented and why. |
