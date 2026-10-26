@@ -5,7 +5,8 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 future agent invocation.
 
 **Last updated:** 2026-10-26 (the **Linux** toolkit became a module under
-`toolkits/` — the **fifth** PR of the "every toolkit is a module"
+`toolkits/` and was **squash-merged into `master` as PR #46**, commit
+`94fb513` — the **fifth** PR of the "every toolkit is a module"
 refactoring, and the **last** of the six *Linux/Windows* pair to move;
 the **OS** toolkit became a module under `toolkits/` and was
 **squash-merged into `master` as PR #45**, commit
@@ -100,16 +101,25 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/linux-toolkit-module` — **implemented and verified, not yet committed** (based on `master` at `dead333`) |
+| Branch | `refactor/linux-toolkit-module` — **squash-merged into `master` as PR #46** (commit `94fb513`, head `772f819`; based on `master` at `dead333`) |
 | Scope | The **fifth** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_linux_toolkit.py` leaves the project root and becomes `toolkits/linux-toolkit/`. It is the Linux half of the Linux/Windows pair, and it was the last of the two that was still **mandatory**. |
-| Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the 6 shell and system operations, no LlamaIndex import and **no third-party dependency at all**: `subprocess`, `os`, `logging`, `typing`) and the adapter (`agent_linux_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.linux_toolkit`, which `toolkits/__init__.py` registers next to the other six toolkits. The **four** call sites (both orchestrators, the retriever and the selection menu) were updated; all four imported the toolkit unguarded and now import it **behind a guard**, so the Linux toolkit goes from mandatory to optional. **The toolkit already had a test suite** (11 tests), and it moved with it; the suite was extended to 36 operations tests plus a new layout contract (`toolkits/linux-toolkit/tests/test_package_layout.py`, 31 checks) and a new test of the split-verification script (10 tests) — 77 in all. The toolkit suite is green (77 passed), the alias contract is green (58 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` unchanged, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical. The report is `investigate/linux-toolkit-module/REPORT_linux_toolkit_module.md`. |
+| Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the 6 shell and system operations, no LlamaIndex import and **no third-party dependency at all**: `subprocess`, `os`, `logging`, `typing`) and the adapter (`agent_linux_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.linux_toolkit`, which `toolkits/__init__.py` registers next to the other six toolkits. The **four** call sites (both orchestrators, the retriever and the selection menu) were updated; all four imported the toolkit unguarded and now import it **behind a guard**, so the Linux toolkit goes from mandatory to optional. **The toolkit already had a test suite** (11 tests), and it moved with it; the suite was extended to 36 operations tests plus a new layout contract (`toolkits/linux-toolkit/tests/test_package_layout.py`, 31 checks) and a new test of the split-verification script (11 tests) — 78 in all. The toolkit suite is green (78 passed), the alias contract is green (58 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` unchanged, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical. The report is `investigate/linux-toolkit-module/REPORT_linux_toolkit_module.md`. |
 | Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with seven deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_windows_toolkit.py`, `agent_apt_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
-| State | **Ready for review.** The change is implemented and verified on the branch; it is **not committed and not pushed** — Rule 4 requires the operator's explicit approval for that. The next toolkit of the series starts from `master` (`dead333`). |
+| State | **Merged.** Committed as `cf2eefc`, pushed, opened as PR #46, and **squash-merged into `master` as `94fb513`** after a second commit (`772f819`, "fix: make the split check work in CI") fixed a defect the build found. The tree check holds: `master`'s tree after the merge is byte-identical to the head tree of `772f819` that CI ran green. The next toolkit of the series starts from `master` (`94fb513`). |
 
 ### Latest change: the Linux toolkit is a module
 
-**Implemented and verified on `refactor/linux-toolkit-module`, based on
-`master` (`dead333`).  Not committed, not pushed** — Rule 4.
+**Squash-merged into `master` as PR #46** (commit `94fb513`, head
+`772f819`).  The PR is based on `master` — not on `main`.
+
+The squash departs from the standing convention of a merge commit, as
+PR #43 and PR #41 did before it, and for the same reason: the
+convention exists for the *stacked* PR chain, and this PR is based
+directly on the tip of `master` (`dead333`), so the next PR's merge
+base is `94fb513` and its diff does not balloon.  The tree check the
+convention exists for holds as well — `master`'s tree after the merge
+(`395a8f0f`) is byte-identical to the head tree of `772f819` that CI ran
+green.
 
 The **fifth** toolkit of the "every toolkit is a module" series, and the
 **last** of the Linux/Windows pair to move.  Its counterpart, the
@@ -145,7 +155,7 @@ self-development/.venv/bin/python -m pytest self-development/toolkits/linux-tool
 self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
 ```
 
-77 passed, and the CI gate reports **no new failure** (40 known failures,
+78 passed, and the CI gate reports **no new failure** (40 known failures,
 0 new, 0 fixed) — and, because the Linux toolkit had no known failures of
 its own, no *fixed* one either.
 
@@ -163,6 +173,31 @@ by a script that was exercised by hand.  Here the script
 sources — and it is: seven drifts, from a reworded tool description to a
 swapped operation, all caught.  A check that has never failed proves
 nothing, and a check that is only run by hand proves less.
+
+**The build found a defect the developer's machine could not.**  The
+split-verification check asked git for the committed original *by name*
+— `git show master:agent_linux_toolkit.py` — and the test that drove it
+hard-coded the same name.  That works in a clone; it fails in CI, where
+the checkout is a detached HEAD of the merge commit with a shallow
+history, so there is no `master` branch to ask.  The first CI run went
+red with **ten new failures**, every one of them in the check and none
+in the toolkit.
+
+The fix is to stop assuming a name.  The original is *the file as it was
+committed before it was deleted*, so the check now **finds** it: a
+named ref that still carries the file (`master`, `origin/master`,
+`main`, `origin/main`), and otherwise the **parent of the commit that
+deleted it**.  The second step is what makes the check work in CI, and
+it is the more precise definition anyway — it names the original by the
+deletion rather than by a branch that may or may not exist.  The
+workflow now checks the repository out with `fetch-depth: 0`, because a
+shallow history cannot answer the question at all.
+
+The lesson is worth keeping: **a check that only runs where its author
+sits is not a check.**  It ran green locally for the whole of the
+change, and the build found it in two minutes.  The next toolkit of the
+series must run its verification the way CI runs it — from the
+repository root of the branch, and with the history the check needs.
 
 *Two findings, both left alone.*  `agent-torvalds.py:759` holds an
 invalid escape sequence (`\toggle-hitl`, `\hitl-status` in a non-raw
