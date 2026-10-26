@@ -123,16 +123,12 @@ from agent_cache_system import (
 )
 
 # ---------------------------------------------------------------------------
-# Chat memory (PostgreSQL-backed with in-memory fallback)
-# ---------------------------------------------------------------------------
-import agent_chat_memory
-
-# ---------------------------------------------------------------------------
 # Chat History Manager (multi-user, multi-session chat history)
 # ---------------------------------------------------------------------------
 from chat_manager.startup import (
     initialize_chat_manager,
     get_chat_manager,
+    get_memory_buffer,
     select_startup_session,
 )
 from chat_manager.commands.handler import is_chat_command, handle_chat_command
@@ -214,7 +210,6 @@ from components.mikrotik_commands import (
 # ---------------------------------------------------------------------------
 REQUEST_TIMEOUT = int(os.environ.get("TORVALDS_REQUEST_TIMEOUT", "99999"))
 MAX_ITERATIONS = int(os.environ.get("TORVALDS_MAX_ITERATIONS", "500"))
-TOKEN_LIMITS = int(os.environ.get("TORVALDS_TOKEN_LIMIT", "10000"))
 MODEL = os.environ.get("TORVALDS_MODEL", "richardyoung/qwen3.6-27b-abliterated:Q4_K_M")
 # Endpoint of the Ollama server that hosts the chat model.
 OLLAMA_BASE_URL = get_ollama_base_url()
@@ -566,7 +561,7 @@ def create_agent(
     # the prompt correctly.
     apply_context_window(llm)
 
-    chat_memory = agent_chat_memory.get_chat_memory()
+    chat_memory = get_memory_buffer()
 
     # Use the provided system prompt or build one with project context
     prompt = system_prompt or build_system_prompt()
@@ -756,7 +751,7 @@ def parse_args():
     parser.add_argument(
         "--no-chat-history",
         action="store_true",
-        help="Disable the ChatHistoryManager (use the legacy single-session chat memory)",
+        help="Do not persist the chat history - run with an in-memory store only (deprecated)",
     )
     parser.add_argument(
         "--no-session-select",
@@ -841,7 +836,7 @@ async def prompt_handler(
     agent.hitl_enabled = human_loop_handler._is_hitl_enabled()
 
     try:
-        chat_memory = agent_chat_memory.get_chat_memory()
+        chat_memory = get_memory_buffer()
         increment_session_commands()
 
         # Inject project context into agent memory before each query
@@ -1147,6 +1142,12 @@ async def main():
 
     # Chat History Manager enabled
     chat_history_enabled = not args.no_chat_history
+    if not chat_history_enabled:
+        console.print(
+            "[yellow]--no-chat-history is deprecated: the chat history is no longer "
+            "the legacy single-session buffer. The flag now means 'persist nothing' "
+            "and the conversation runs in memory only.[/yellow]"
+        )
 
     # Runtime Prompt Injection configuration
     prompt_injection_enabled = PROMPT_INJECTION_ENABLED and not args.no_prompt_injection
@@ -1416,7 +1417,7 @@ async def main():
 
     # Count chat memory messages
     try:
-        msgs = agent_chat_memory.get_chat_memory().get()
+        msgs = get_memory_buffer().get()
         tui_state.memory_msg_count = len(msgs)
     except Exception:
         pass

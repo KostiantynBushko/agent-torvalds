@@ -2,7 +2,7 @@ import asyncio
 from llama_index.core.agent.workflow import FunctionAgent
 from rich.console import Console
 
-import agent_chat_memory
+from chat_manager.startup import get_memory_buffer
 
 from agent_git_toolkit import *
 from agent_os_toolkit import *
@@ -32,7 +32,7 @@ agent = FunctionAgent(
            git_get_latest_commit, git_init_repo,
            pwd, ls, touch, check_path_exists, mkdir, rm, cp, mv, read_file, write_file, get_system_info],
     llm=llm,
-    memory=agent_chat_memory.chat_memory,
+    memory=get_memory_buffer(),
     system_prompt=(
         "Your name is **Torvald** – an AI assistant that can directly interact with the host operating system and a wide range of technical tools."
         ""
@@ -58,7 +58,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 async def prompt_handler(cmd: str) -> str:
     try:
-        result = await agent.run(cmd, memory=agent_chat_memory.chat_memory)
+        result = await agent.run(cmd, memory=get_memory_buffer())
         if hasattr(result, "response"):
             return result.response
         elif isinstance(result, dict):
