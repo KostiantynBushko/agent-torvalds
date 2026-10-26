@@ -6,7 +6,7 @@ toolkit module to pause/resume the console spinner during interactive operations
 (whiptail dialogs, password prompts, etc.).
 
 Architecture:
-    agent-torvalds.py  ──imports──>  spinner_manager.py  <──imports──  agent_apt_toolkit.py
+    agent-torvalds.py  ──imports──>  spinner_manager.py  <──imports──  toolkits/apt-toolkit/
                                      (shared singleton)
 
 Key Features:

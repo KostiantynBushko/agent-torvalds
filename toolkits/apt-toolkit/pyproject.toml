@@ -1,0 +1,106 @@
+[build-system]
+requires = ["setuptools>=68,<81", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apt-toolkit"
+version = "0.1.0"
+description = "APT package installation and sudo handling exposed as tools for LlamaIndex FunctionAgent"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Kostiantyn Bushko" }]
+keywords = ["apt", "package", "install", "debian", "ubuntu", "sudo", "llama-index", "agent", "function-tool"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+# The library half of the toolkit is built on the standard library -
+# subprocess, os, logging and typing - plus one third-party package:
+#
+#   * `rich` is used by the *console* password prompt, which is the
+#     default prompt method.  The import is deferred to the call, so the
+#     module still imports without it, but the default prompt needs it.
+#
+# The *whiptail* password prompt reaches for `components.whiptail_password`,
+# which is a module of **this** repository, not of the distribution.  The
+# import is deferred and guarded: without it, the whiptail prompt falls
+# back to the console one, which is the documented behaviour.
+#
+# The agent adapter, the one module that knows about LlamaIndex, is an
+# extra.
+dependencies = ["rich>=13.0"]
+
+[project.optional-dependencies]
+agent = ["llama-index-core>=0.12"]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/KostiantynBushko/agent-torvalds"
+Repository = "https://github.com/KostiantynBushko/agent-torvalds"
+Issues = "https://github.com/KostiantynBushko/agent-torvalds/issues"
+
+# The toolkit directory is the package.  Its name contains a hyphen, which
+# is not a valid Python identifier, so setuptools cannot derive the
+# package name from the directory: the mapping is spelled out instead.
+#
+# The package is still called "apt_toolkit", so the import name is
+# unchanged for a standalone installation.
+[tool.setuptools]
+packages = ["apt_toolkit"]
+package-dir = { "apt_toolkit" = "." }
+
+[tool.setuptools.package-data]
+apt_toolkit = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# The toolkit directory is the package, and its name contains a hyphen.
+# pytest's default "prepend" import mode cannot resolve a relative import
+# inside such a package, because resolve_package_path() stops the upward
+# walk at the first non-identifier directory name. "importlib" mode makes
+# the package-local tests importable.
+#
+# "consider_namespace_packages" makes the module name of a test file carry
+# the package it belongs to, so the relative imports ("from ..operations
+# import ...") resolve no matter which directory pytest was started from.
+addopts = "-v --tb=short --import-mode=importlib"
+consider_namespace_packages = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = [".", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+# UP006/UP007/UP035/UP045: the package supports Python 3.10, but the
+# annotations are still evaluated at runtime by pydantic and by
+# llama-index's schema builder.  Keep typing.Dict/List/Optional so the
+# package stays importable on 3.10 without surprises.
+ignore = ["E501", "B008", "SIM108", "UP006", "UP007", "UP035", "UP045"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_configs = true
+ignore_missing_imports = true
+disallow_untyped_defs = false
