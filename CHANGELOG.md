@@ -1,5 +1,87 @@
 # Changelog
 
+## [Unreleased] - The Windows toolkit is a module
+
+### Changed
+- **The Windows PowerShell toolkit is now a module under `toolkits/`.**  It used to
+  be a single loose module at the project root, `agent_windows_toolkit.py`, next
+  to the other `agent_*.py` files, while the features that were already modules
+  lived in folders under `toolkits/`.  A toolkit is now one folder, like the
+  MikroTik, the Shodan, the math, the Git, the GitHub, the OS, the Linux and the
+  APT one.
+
+  | Path | Was | Now |
+  |------|-----|-----|
+  | `agent_windows_toolkit.py` | the whole toolkit — the operations *and* the LlamaIndex adapter | split in two |
+  | `toolkits/windows-toolkit/operations.py` | — | the six PowerShell and system operations, the **library half** |
+  | `toolkits/windows-toolkit/agent_windows_toolkit.py` | — | the **adapter**, the only LlamaIndex-dependent module |
+  | `toolkits/windows-toolkit/__init__.py` | — | the public API surface |
+  | `toolkits/windows-toolkit/tests/` | — | the module-local tests |
+
+  The split is the point.  The operations carry **no** LlamaIndex import, so they
+  stay usable — and testable — as a plain Python library; the adapter is the one
+  module that knows about the agent framework, and it is imported on demand.
+  Importing the toolkit therefore never pulls LlamaIndex into the process.
+
+  Like the OS and the Linux toolkit, this toolkit's library half is built on the
+  **standard library alone** — `subprocess`, `logging` and `typing`.  The one
+  thing that did not move verbatim is the module header: the `os` import of the
+  original was never used by any of the operations, so it was dropped rather than
+  carried along.
+
+- **The import path moved.**  The package lives in a hyphenated directory, so it is
+  reached through the alias that `toolkits/__init__.py` registers:
+
+  ```python
+  from toolkits.windows_toolkit import execute_shell_command  # the library
+  from toolkits.windows_toolkit.agent_windows_toolkit import get_all_tools  # the adapter
+  ```
+
+  The four call sites — `agent-torvalds.py`, `agent-torvalds-mw.py`,
+  `agent_tool_retriever.py` and `agent_tool_selection.py` — were updated.  As with
+  the other toolkits under `toolkits/`, the adapter is now imported **behind a
+  guard**, so a missing or broken toolkit degrades to "no tools" instead of a failed
+  boot.  The Windows toolkit was **mandatory** before this change; it is optional
+  now.
+
+- **The logger's name moved.**  It was `agent_windows_toolkit`, and it is now
+  `toolkits.windows-toolkit.operations` — that is what `logging.getLogger(__name__)`
+  does when the module moves.  The adapter re-exports it, so the toolkit still logs
+  through one logger.
+
+### Added
+- **`toolkits/windows-toolkit/`** — the package, with a `README.md`, a `py.typed` marker
+  and a `pyproject.toml` for a standalone install
+  (`pip install ./toolkits/windows-toolkit`).  The distribution has no
+  dependency; the adapter is an extra (`windows-toolkit[agent]`).
+
+- **`toolkits/windows-toolkit/tests/`** — the test suite, 87 tests.  The toolkit
+  had **no** test suite before this change; the one that came with it is
+  platform-independent — it drives the operations through a stubbed
+  `subprocess.run`, so it needs neither Windows nor a PowerShell installation.
+
+- **`toolkits/windows-toolkit/tests/test_package_layout.py`** — the layout contract,
+  30 checks: the flat layout, the relative imports, the alias, the LlamaIndex
+  boundary, the dependency profile of the library half, the six-tool surface, and
+  the fact that no call site imports the old module name any more.
+
+- **`toolkits/windows-toolkit/tests/test_split_verification.py`** — the test of the
+  mechanical check, driven with nine deliberate drifts: a reworded tool
+  description, a changed parameter default, a dropped docstring, a changed body,
+  two operations swapped, a LlamaIndex import in the library half, a tool that
+  went missing, an operation that went missing, and a lost module-level logger.
+
+- **`investigate/windows-toolkit-module/verify_split.py`** — the mechanical check: it
+  compares the *committed* original with the new files, by AST, and fails on a
+  changed signature, a changed docstring, a changed body, a changed order, a
+  changed tool description, a lost module-level logger or a LlamaIndex import in
+  the wrong half.  The original is **found, not assumed**: a named ref that still
+  carries the file, and otherwise the parent of the commit that deleted it, so the
+  check also works in a CI checkout with a detached HEAD.
+
+- **`investigate/windows-toolkit-module/REPORT_windows_toolkit_module.md`** — the
+  report: what was implemented, and why.
+
 ## [Unreleased] - The APT toolkit is a module
 
 ### Changed

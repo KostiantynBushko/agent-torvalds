@@ -33,6 +33,7 @@ Each module has its own README with the full reference:
 | OS Toolkit | [toolkits/os-toolkit/README.md](toolkits/os-toolkit/README.md) |
 | Linux Toolkit | [toolkits/linux-toolkit/README.md](toolkits/linux-toolkit/README.md) |
 | APT Toolkit | [toolkits/apt-toolkit/README.md](toolkits/apt-toolkit/README.md) |
+| Windows Toolkit | [toolkits/windows-toolkit/README.md](toolkits/windows-toolkit/README.md) |
 
 The project documentation:
 
@@ -65,7 +66,7 @@ The project documentation:
 - See section 22 and the
   [Linux Toolkit README](toolkits/linux-toolkit/README.md)
 
-### 3. Windows PowerShell Toolkit (`agent_windows_toolkit.py`)
+### 3. Windows PowerShell Toolkit (`toolkits/windows-toolkit/`)
 - Execute PowerShell commands on Windows systems
 - Run multiple commands sequentially with batch operation support
 - Parse command output into structured format
@@ -73,6 +74,11 @@ The project documentation:
 - Check file permissions and access rules
 - Execute commands with custom environment variables
 - Full Windows system integration
+- Built on the **standard library only** — the reusable core package in
+  `toolkits/windows-toolkit/` has **no** LlamaIndex imports and no third-party
+  dependency at all, so it also works as a plain library
+- See section 24 and the
+  [Windows Toolkit README](toolkits/windows-toolkit/README.md)
 
 ### 4. GitHub Toolkit (`toolkits/github-toolkit/`)
 - GitHub API integration for Pull Request management
@@ -378,6 +384,35 @@ The project documentation:
   `python -m toolkits.apt_toolkit --show-method`
 - See the [APT Toolkit README](toolkits/apt-toolkit/README.md) for the
   module reference
+
+### 24. Windows PowerShell Toolkit (`toolkits/windows-toolkit/`)
+- Running PowerShell commands, with a timeout, a working directory and an
+  option to skip the shell
+- Running a series of commands one after another
+- Splitting command output into lines and metadata
+- System information — OS, CPU, memory and disk — gathered through the
+  PowerShell cmdlets
+- File ownership and access rules
+- Running a command with extra environment variables
+- The PowerShell executable is picked automatically: `pwsh` (PowerShell
+  Core 7+) is preferred, `powershell.exe` (Windows PowerShell 5.1+) is
+  the fallback
+- Built on the **standard library only** — `subprocess`, `logging` and
+  `typing`. The reusable core package in `toolkits/windows-toolkit/` has
+  **no** LlamaIndex imports and **no** third-party dependency at all, so
+  it works in any Python that exists
+- The LlamaIndex adapter is the one module that knows about the agent
+  framework, and it is imported on demand
+- No tool raises: a failure is reported — a non-zero exit code, or
+  `returncode: -1` and the error text in `stderr` — so the model gets a
+  message it can reason about
+- The six tools join the **System** category of the startup tool
+  selection menu (`--select`, and `\tools` / `\tool-select` in the TUI),
+  so the whole category can be loaded on its own
+- The toolkit is loaded **only on Windows**, so exactly one of the
+  Windows, Linux and OS toolkits is ever in the menu
+- See the [Windows Toolkit README](toolkits/windows-toolkit/README.md) for
+  the module reference
 
 ---
 
@@ -806,7 +841,7 @@ sys_info = get_system_info()
 
 ### Windows PowerShell Commands
 ```python
-from agent_windows_toolkit import execute_shell_command, get_system_info
+from toolkits.windows_toolkit import execute_shell_command, get_system_info
 
 result = execute_shell_command('Get-Process | Select-Object -First 5')
 sys_info = get_system_info()
@@ -970,7 +1005,6 @@ manager.shutdown()
 
 ```
 | agent-torvalds/
-| agent_windows_toolkit.py       # Windows PowerShell execution toolkit
 | agent_db_toolkit.py            # Database query toolkit (PostgreSQL and MySQL)
 | agent_cache_system.py          # Persistent cache for operational context
 | agent_stats_handler.py         # Per-request statistics collection and rendering
@@ -1068,6 +1102,13 @@ manager.shutdown()
 | +-- +-- agent_apt_toolkit.py  # The LlamaIndex adapter
 | +-- +-- cli.py                # The command-line interface
 | +-- +-- __main__.py           # `python -m toolkits.apt_toolkit`
+| +-- +-- py.typed              # PEP 561 marker
+| +-- +-- tests/                # Module-local tests (no __init__.py)
+| +-- windows-toolkit/          # Windows PowerShell toolkit (core library)
+| +-- +-- README.md             # Windows toolkit module documentation
+| +-- +-- __init__.py           # Public API surface
+| +-- +-- operations.py         # The PowerShell operations - the library half
+| +-- +-- agent_windows_toolkit.py # The LlamaIndex adapter
 | +-- +-- py.typed              # PEP 561 marker
 | +-- +-- tests/                # Module-local tests (no __init__.py)
 | chat_manager/                 # Chat History Manager (multi-user, multi-session)

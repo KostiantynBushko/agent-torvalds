@@ -145,8 +145,16 @@ def build_tool_retriever(
         all_tools.extend(_get_cache())
 
     if include_windows_tools and sys.platform.startswith("win"):
-        from agent_windows_toolkit import get_all_tools as _get_windows
-        all_tools.extend(_get_windows())
+        # The Windows toolkit lives in ``toolkits/`` and is optional.  A
+        # broken or absent toolkit must never break the retriever.
+        try:
+            from toolkits.windows_toolkit.agent_windows_toolkit import (
+                get_all_tools as _get_windows,
+            )
+            all_tools.extend(_get_windows())
+        except ImportError:
+            # The Windows toolkit is optional - skip it when it is not installed.
+            pass
 
     # -----------------------------------------------------------------------
     # 2. Excel & Data Analysis toolkits

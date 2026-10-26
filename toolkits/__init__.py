@@ -12,8 +12,9 @@ Each toolkit package carries its own agent adapter **inside the package** -
 ``toolkits/git-toolkit/agent_git_toolkit.py``,
 ``toolkits/github-toolkit/agent_github_toolkit.py``,
 ``toolkits/os-toolkit/agent_os_toolkit.py``,
-``toolkits/linux-toolkit/agent_linux_toolkit.py`` and
-``toolkits/apt-toolkit/agent_apt_toolkit.py``.  The
+``toolkits/linux-toolkit/agent_linux_toolkit.py``,
+``toolkits/apt-toolkit/agent_apt_toolkit.py`` and
+``toolkits/windows-toolkit/agent_windows_toolkit.py``.  The
 adapter is the only module of a toolkit that depends on LlamaIndex; the
 reusable library half around it does not.
 
@@ -40,6 +41,7 @@ directories can never be reached with a plain ``import`` statement::
     from toolkits.os-toolkit import pwd                              # SyntaxError
     from toolkits.linux-toolkit import execute_shell_command         # SyntaxError
     from toolkits.apt-toolkit import install_package                # SyntaxError
+    from toolkits.windows-toolkit import execute_shell_command       # SyntaxError
 
 ``importlib.import_module("toolkits.MikroTik-RouterOS")`` does work, but it is
 awkward to use at every call site and it interacts badly with pytest's default
@@ -58,6 +60,7 @@ for each of them that points at the very same package object::
     from toolkits.os_toolkit import pwd                              # works
     from toolkits.linux_toolkit import execute_shell_command         # works
     from toolkits.apt_toolkit import install_package                # works
+    from toolkits.windows_toolkit import execute_shell_command       # works
 
 The aliases are registered only if the package is actually present and
 importable, so ``import toolkits`` never fails when an optional toolkit is
@@ -74,6 +77,7 @@ package, and the alias points straight at it::
     toolkits/os-toolkit/          ->  toolkits.os_toolkit
     toolkits/linux-toolkit/       ->  toolkits.linux_toolkit
     toolkits/apt-toolkit/         ->  toolkits.apt_toolkit
+    toolkits/windows-toolkit/     ->  toolkits.windows_toolkit
 
 The agent adapters are submodules of their toolkit package, so they are
 reached through the same alias::
@@ -86,8 +90,9 @@ reached through the same alias::
     from toolkits.os_toolkit.agent_os_toolkit import get_all_tools
     from toolkits.linux_toolkit.agent_linux_toolkit import get_all_tools
     from toolkits.apt_toolkit.agent_apt_toolkit import get_all_tools
+    from toolkits.windows_toolkit.agent_windows_toolkit import get_all_tools
 
-Those eight lines are the canonical import paths of the adapters.  The
+Those nine lines are the canonical import paths of the adapters.  The
 adapters themselves are **not** published eagerly - see the note below.
 
 --------------------------------------------------------------------------------
@@ -158,6 +163,7 @@ _ALIAS_NAMES = (
     "os_toolkit",
     "linux_toolkit",
     "apt_toolkit",
+    "windows_toolkit",
 )
 
 #: The agent adapters of the toolkits, by module name.
@@ -177,6 +183,7 @@ _ALIAS_NAMES = (
 #:     from toolkits.os_toolkit.agent_os_toolkit import get_all_tools
 #:     from toolkits.linux_toolkit.agent_linux_toolkit import get_all_tools
 #:     from toolkits.apt_toolkit.agent_apt_toolkit import get_all_tools
+#:     from toolkits.windows_toolkit.agent_windows_toolkit import get_all_tools
 _ADAPTER_MODULES = (
     "agent_mikrotik_toolkit",
     "agent_shodan_toolkit",
@@ -186,6 +193,7 @@ _ADAPTER_MODULES = (
     "agent_os_toolkit",
     "agent_linux_toolkit",
     "agent_apt_toolkit",
+    "agent_windows_toolkit",
 )
 
 #: The modules that are never published eagerly, whatever package they
@@ -253,6 +261,13 @@ _APT_PACKAGE = "toolkits.apt-toolkit"
 
 #: Dotted path of the valid-identifier alias registered in ``sys.modules``.
 _APT_ALIAS = "toolkits.apt_toolkit"
+
+
+#: Dotted path of the real (hyphenated) package directory.
+_WINDOWS_PACKAGE = "toolkits.windows-toolkit"
+
+#: Dotted path of the valid-identifier alias registered in ``sys.modules``.
+_WINDOWS_ALIAS = "toolkits.windows_toolkit"
 
 
 def _publish_submodules(real_dotted: str, alias_dotted: str, package) -> None:
@@ -355,6 +370,11 @@ if _linux is not None:
 _apt = _register_alias(_APT_PACKAGE, _APT_ALIAS)
 if _apt is not None:
     apt_toolkit = _apt
+
+
+_windows = _register_alias(_WINDOWS_PACKAGE, _WINDOWS_ALIAS)
+if _windows is not None:
+    windows_toolkit = _windows
 
 
 #: The aliases that are actually available.  ``from toolkits import *`` must
