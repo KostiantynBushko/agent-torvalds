@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import loggers from modules that actually define them
 from toolkits.git_toolkit.operations import logger as git_logger
-from agent_linux_toolkit import logger as linux_logger
+from toolkits.linux_toolkit.operations import logger as linux_logger
 from agent_windows_toolkit import logger as windows_logger
 from toolkits.os_toolkit.operations import logger as os_logger
 from toolkits.math_toolkit.operations import logger as math_logger
@@ -218,7 +218,6 @@ class TestNoDuplicateBasicConfig(unittest.TestCase):
     """
 
     TOOLKIT_MODULES = [
-        "agent_linux_toolkit",
         "agent_windows_toolkit",
         "agent_db_toolkit",
         "agent_apt_toolkit",
@@ -236,6 +235,10 @@ class TestNoDuplicateBasicConfig(unittest.TestCase):
         # and the LlamaIndex adapter are two separate modules.
         "toolkits.os_toolkit.operations",
         "toolkits.os_toolkit.agent_os_toolkit",
+        # The Linux toolkit is a module under ``toolkits/``: the library
+        # half and the LlamaIndex adapter are two separate modules.
+        "toolkits.linux_toolkit.operations",
+        "toolkits.linux_toolkit.agent_linux_toolkit",
     ]
 
     def _check_no_basicconfig_in_source(self, module_name):

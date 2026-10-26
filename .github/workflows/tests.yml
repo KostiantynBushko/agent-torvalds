@@ -30,6 +30,12 @@ jobs:
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
+        with:
+          # The full history: the split-verification check compares the
+          # new files with the *committed* original, and it finds it in
+          # the history - the state the file was in before it was
+          # deleted.  A shallow checkout cannot answer that.
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5

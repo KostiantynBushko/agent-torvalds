@@ -1,8 +1,20 @@
 """
-Linux Toolkit - Shell command execution and system inspection.
+Linux Toolkit - the library half.
 
-This module provides functionality to execute shell commands on Linux systems,
-parse outputs, check file permissions, and gather system information.
+This module holds the **shell-execution and system-inspection
+operations** of the Linux toolkit.  It is the reusable half of the
+feature: it carries **no LlamaIndex import**, so it stays usable - and
+testable - as a plain Python library by any application that has no
+agent framework installed.
+
+The LlamaIndex adapter is a submodule of the package
+(:mod:`agent_linux_toolkit`); it is the one module of the toolkit that
+knows about the agent framework, and it is imported on demand.
+
+The operations are the ones that used to live in the single module
+``agent_linux_toolkit.py`` at the project root.  They moved here
+**verbatim**: same names, same signatures, same docstrings, same error
+contract - a failure is reported as a message string, never raised.
 
 Category: System
 Retriever Keywords: shell, command, linux, execute, system, permissions, environment
@@ -15,7 +27,6 @@ import subprocess
 import os
 import logging
 from typing import Dict, List, Optional, Any
-from llama_index.core.tools import FunctionTool
 
 # Logging is configured centrally in agent-torvalds.py.
 # Do NOT call logging.basicConfig() here — it is a no-op after the first call.
@@ -312,38 +323,3 @@ def run_command_with_env(command: str, env_vars: Dict[str, str]) -> Dict[str, An
         }
 
 
-def get_all_tools() -> list[FunctionTool]:
-    """
-    Return all Linux tools as FunctionTool objects for on-demand loading.
-    
-    Each tool includes category metadata for better retrieval.
-    
-    Returns:
-        list[FunctionTool]: List of Linux FunctionTool objects
-    """
-    return [
-        FunctionTool.from_defaults(
-            fn=execute_shell_command,
-            description="Execute a shell command. Use for running any terminal command with timeout and working directory support. Category: System",
-        ),
-        FunctionTool.from_defaults(
-            fn=execute_multiple_commands,
-            description="Execute multiple shell commands sequentially. Use for batch operations and command pipelines. Category: System",
-        ),
-        FunctionTool.from_defaults(
-            fn=parse_command_output,
-            description="Parse command output into structured format. Use for splitting output into lines and extracting metadata. Category: System",
-        ),
-        FunctionTool.from_defaults(
-            fn=get_system_info,
-            description="Get system information including OS, CPU, memory, and disk. Use for diagnostics and monitoring. Category: System",
-        ),
-        FunctionTool.from_defaults(
-            fn=check_file_permissions,
-            description="Check file permissions, owner, and group. Use for inspecting file access rights. Category: System",
-        ),
-        FunctionTool.from_defaults(
-            fn=run_command_with_env,
-            description="Execute command with custom environment variables. Use for isolated execution contexts. Category: System",
-        ),
-    ]
