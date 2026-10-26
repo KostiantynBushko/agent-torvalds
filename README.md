@@ -29,6 +29,7 @@ Each module has its own README with the full reference:
 | Shodan Toolkit | [toolkits/shodan-toolkit/README.md](toolkits/shodan-toolkit/README.md) |
 | Math Toolkit | [toolkits/math-toolkit/README.md](toolkits/math-toolkit/README.md) |
 | Git Toolkit | [toolkits/git-toolkit/README.md](toolkits/git-toolkit/README.md) |
+| GitHub Toolkit | [toolkits/github-toolkit/README.md](toolkits/github-toolkit/README.md) |
 
 The project documentation:
 
@@ -60,13 +61,18 @@ The project documentation:
 - Execute commands with custom environment variables
 - Full Windows system integration
 
-### 4. GitHub Toolkit (`agent_github_toolkit.py`)
+### 4. GitHub Toolkit (`toolkits/github-toolkit/`)
 - GitHub API integration for Pull Request management
 - Create, list, update, close, and merge Pull Requests
 - Add comments and review file changes
 - Check authentication status and user information
 - Configure Git credentials
 - Full PR workflow support
+- Built on `requests` — the reusable core package in
+  `toolkits/github-toolkit/` has **no** LlamaIndex imports, so it also
+  works as a plain library
+- See section 20 and the
+  [GitHub Toolkit README](toolkits/github-toolkit/README.md)
 
 ### 5. APT Package Management Toolkit (`agent_apt_toolkit.py`)
 - Interactive Debian/Ubuntu package installation
@@ -258,6 +264,25 @@ The project documentation:
   in the TUI), so the whole category can be loaded on its own
 - See the [Git Toolkit README](toolkits/git-toolkit/README.md) for the
   module reference
+
+### 20. GitHub Toolkit (`toolkits/github-toolkit/`)
+- Full Pull Request lifecycle: create, list, inspect, update, close, merge
+- Comments, file-change reviews, and review submissions
+- Authentication status and the authenticated user profile
+- Git credential configuration for commits
+- Built on `requests` — the reusable core package in
+  `toolkits/github-toolkit/` has **no** LlamaIndex imports, so it also
+  works as a plain library
+- The LlamaIndex adapter is the one module that knows about the agent
+  framework, and it is imported on demand
+- No tool raises: a failure is reported as `False` or as
+  `{"success": False, "error": ...}`, so the model gets a message it can
+  reason about
+- The thirteen tools join the **Version Control** category of the startup
+  tool selection menu (`--select`, and `\tools` / `\tool-select` in the
+  TUI), so the whole category can be loaded on its own
+- See the [GitHub Toolkit README](toolkits/github-toolkit/README.md) for
+  the module reference
 
 ---
 
@@ -703,7 +728,7 @@ status = git_get_status('/path/to/repo')
 
 ### GitHub PR Operations
 ```python
-from agent_github_toolkit import github_create_pull_request, github_list_pull_requests
+from toolkits.github_toolkit import github_create_pull_request, github_list_pull_requests
 
 # Create a PR
 result = github_create_pull_request(
@@ -853,7 +878,6 @@ agent-torvalds/
 | agent_os_toolkit.py            # System-level operations toolkit
 | agent_linux_toolkit.py         # Linux shell command execution toolkit
 | agent_windows_toolkit.py       # Windows PowerShell execution toolkit
-| agent_github_toolkit.py        # GitHub API and PR management toolkit
 | agent_apt_toolkit.py           # APT package management toolkit
 | agent_db_toolkit.py            # Database query toolkit (PostgreSQL and MySQL)
 | agent_cache_system.py          # Persistent cache for operational context
@@ -922,6 +946,13 @@ agent-torvalds/
 | +-- +-- __init__.py           # Public API surface
 | +-- +-- operations.py         # The Git operations - the library half
 | +-- +-- agent_git_toolkit.py  # The LlamaIndex adapter
+| +-- +-- py.typed              # PEP 561 marker
+| +-- +-- tests/                # Module-local tests (no __init__.py)
+| +-- github-toolkit/           # GitHub toolkit (core library)
+| +-- +-- README.md             # GitHub toolkit module documentation
+| +-- +-- __init__.py           # Public API surface
+| +-- +-- operations.py         # The GitHub operations - the library half
+| +-- +-- agent_github_toolkit.py # The LlamaIndex adapter
 | +-- +-- py.typed              # PEP 561 marker
 | +-- +-- tests/                # Module-local tests (no __init__.py)
 | chat_manager/                 # Chat History Manager (multi-user, multi-session)
