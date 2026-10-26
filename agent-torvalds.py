@@ -68,10 +68,9 @@ from rich.markdown import Markdown
 # Import toolkits
 # ---------------------------------------------------------------------------
 from agent_db_toolkit import get_all_tools as get_db_tools
-from agent_windows_toolkit import get_all_tools as get_windows_tools
-# The math, Git, GitHub, MikroTik, Shodan, OS, Linux and APT toolkits
-# live in ``toolkits/`` and are optional.  A missing or broken toolkit
-# has to degrade to "no tools", never to a failed boot, so the
+# The math, Git, GitHub, MikroTik, Shodan, OS, Linux, APT and Windows
+# toolkits live in ``toolkits/`` and are optional.  A missing or broken
+# toolkit has to degrade to "no tools", never to a failed boot, so the
 # adapters are imported behind a guard.
 try:
     from toolkits.os_toolkit.agent_os_toolkit import (
@@ -92,6 +91,17 @@ except ImportError:  # pragma: no cover - the toolkit is optional
 
     def get_apt_tools() -> list:
         """The APT toolkit is unavailable - expose no tools."""
+        return []
+
+
+try:
+    from toolkits.windows_toolkit.agent_windows_toolkit import (
+        get_all_tools as get_windows_tools,
+    )
+except ImportError:  # pragma: no cover - the toolkit is optional
+
+    def get_windows_tools() -> list:
+        """The Windows toolkit is unavailable - expose no tools."""
         return []
 
 

@@ -1,8 +1,26 @@
 """
-Windows PowerShell Toolkit - PowerShell command execution and system inspection.
+Windows PowerShell Toolkit - the library half.
 
-This module provides functionality to execute PowerShell commands on Windows systems,
-parse outputs, check file permissions, and gather system information.
+This module holds the **PowerShell-execution and system-inspection
+operations** of the Windows toolkit.  It is the reusable half of the
+feature: it carries **no LlamaIndex import**, so it stays usable - and
+testable - as a plain Python library by any application that has no
+agent framework installed.
+
+The LlamaIndex adapter is a submodule of the package
+(:mod:`agent_windows_toolkit`); it is the one module of the toolkit that
+knows about the agent framework, and it is imported on demand.
+
+The operations are the ones that used to live in the single module
+``agent_windows_toolkit.py`` at the project root.  They moved here
+**verbatim**: same names, same signatures, same docstrings, same error
+contract - a failure is reported as a message string, never raised.
+
+The only thing that did not move verbatim is the module header: the
+``os`` import of the original was never used by any of the operations
+(the environment variables are passed to the shell as PowerShell
+assignments, not through ``os.environ``), so it was dropped rather than
+carried along.
 
 Category: System
 Retriever Keywords: shell, command, windows, powershell, execute, system, permissions, environment
@@ -13,10 +31,8 @@ Prerequisites:
     - Appropriate execution policy and permissions
 """
 import subprocess
-import os
 import logging
 from typing import Dict, List, Optional, Any
-from llama_index.core.tools import FunctionTool
 
 # Logging is configured centrally in agent-torvalds.py.
 # Do NOT call logging.basicConfig() here — it is a no-op after the first call.
@@ -362,41 +378,3 @@ def run_command_with_env(command: str, env_vars: Dict[str, str]) -> Dict[str, An
             "returncode": -1,
             "success": False,
         }
-
-
-def get_all_tools() -> list[FunctionTool]:
-    """
-    Return all Windows PowerShell tools as FunctionTool objects for on-demand loading.
-    
-    Each tool includes category metadata for better retrieval.
-    
-    Returns:
-        list[FunctionTool]: List of Windows PowerShell FunctionTool objects
-    """
-    logger.info("get_all_tools called for windows tools")
-    return [
-        FunctionTool.from_defaults(
-            fn=execute_shell_command,
-            description="Execute a PowerShell command. Use for running any terminal command with timeout and working directory support. Category: System",
-        ),
-        FunctionTool.from_defaults(
-            fn=execute_multiple_commands,
-            description="Execute multiple PowerShell commands sequentially. Use for batch operations and command pipelines. Category: System",
-        ),
-        FunctionTool.from_defaults(
-            fn=parse_command_output,
-            description="Parse command output into structured format. Use for splitting output into lines and extracting metadata. Category: System",
-        ),
-        FunctionTool.from_defaults(
-            fn=get_system_info,
-            description="Get system information including OS, CPU, memory, and disk. Use for diagnostics and monitoring. Category: System",
-        ),
-        FunctionTool.from_defaults(
-            fn=check_file_permissions,
-            description="Check file permissions, owner, and access rules. Use for inspecting file access rights. Category: System",
-        ),
-        FunctionTool.from_defaults(
-            fn=run_command_with_env,
-            description="Execute command with custom environment variables. Use for isolated execution contexts. Category: System",
-        ),
-    ]
