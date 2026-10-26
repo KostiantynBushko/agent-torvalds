@@ -1282,6 +1282,12 @@ async def main():
         try:
             console.print("[dim]Initializing chat history manager...[/dim]")
             chat_manager = initialize_chat_manager()
+            if chat_manager.is_degraded:
+                console.print(
+                    "[yellow]The chat database is unreachable - running in local "
+                    "fallback mode. The history is not shared with other machines."
+                    "[/yellow]"
+                )
             active = chat_manager.get_active_session()
             if active:
                 console.print(
