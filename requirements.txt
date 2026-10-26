@@ -38,7 +38,7 @@ llama-index-storage-chat-store-postgres>=0.5.0
 # *server* extension - see setup_postgres_db.sql.
 llama-index-vector-stores-postgres>=0.9.0
 
-# Synchronous PostgreSQL driver (agent_db_toolkit.py)
+# Synchronous PostgreSQL driver (toolkits/db-toolkit/)
 psycopg2-binary>=2.9.12
 
 # PostgreSQL 3.x driver used by llama-index-storage-chat-store-postgres
@@ -53,7 +53,7 @@ asyncpg>=0.30.0
 # Keep below 2.1: llama-index-vector-stores-postgres pins sqlalchemy<2.1.
 SQLAlchemy>=2.0.54,<2.1
 
-# MySQL driver (agent_db_toolkit.py)
+# MySQL driver (toolkits/db-toolkit/)
 mysql-connector-python>=26.7.0
 
 # Python bindings for the pgvector extension, required by
