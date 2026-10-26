@@ -13,6 +13,7 @@ each of them::
     toolkits.os-toolkit          ->  toolkits.os_toolkit
     toolkits.linux-toolkit       ->  toolkits.linux_toolkit
     toolkits.apt-toolkit         ->  toolkits.apt_toolkit
+    toolkits.windows-toolkit     ->  toolkits.windows_toolkit
 
 This module pins down the two properties that alias has to have.
 
@@ -75,6 +76,9 @@ LINUX_REAL = "toolkits.linux-toolkit"
 APT_ALIAS = "apt_toolkit"
 APT_REAL = "toolkits.apt-toolkit"
 
+WINDOWS_ALIAS = "windows_toolkit"
+WINDOWS_REAL = "toolkits.windows-toolkit"
+
 #: The alias of each toolkit and the ``__init__.py`` that must carry a
 #: code-level reference to it.
 TOOLKITS = (
@@ -86,6 +90,7 @@ TOOLKITS = (
     (OS_ALIAS, OS_REAL, REPO_ROOT / "toolkits" / "os-toolkit" / "__init__.py"),
     (LINUX_ALIAS, LINUX_REAL, REPO_ROOT / "toolkits" / "linux-toolkit" / "__init__.py"),
     (APT_ALIAS, APT_REAL, REPO_ROOT / "toolkits" / "apt-toolkit" / "__init__.py"),
+    (WINDOWS_ALIAS, WINDOWS_REAL, REPO_ROOT / "toolkits" / "windows-toolkit" / "__init__.py"),
 )
 
 #: The agent adapter of each toolkit: the alias of its package, the module
@@ -134,6 +139,11 @@ ADAPTERS = (
         APT_ALIAS,
         "agent_apt_toolkit",
         REPO_ROOT / "toolkits" / "apt-toolkit" / "agent_apt_toolkit.py",
+    ),
+    (
+        WINDOWS_ALIAS,
+        "agent_windows_toolkit",
+        REPO_ROOT / "toolkits" / "windows-toolkit" / "agent_windows_toolkit.py",
     ),
 )
 

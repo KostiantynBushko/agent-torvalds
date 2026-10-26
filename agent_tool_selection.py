@@ -140,8 +140,16 @@ def _discover_tools() -> List[FunctionTool]:
             # The Linux toolkit is optional - skip it when it is not installed.
             pass
     elif sys.platform.startswith("win"):
-        from agent_windows_toolkit import get_all_tools as _get_windows
-        tools.extend(_get_windows())
+        # The Windows toolkit lives in ``toolkits/`` and is optional.  A
+        # broken or absent toolkit must never break the selection menu.
+        try:
+            from toolkits.windows_toolkit.agent_windows_toolkit import (
+                get_all_tools as _get_windows,
+            )
+            tools.extend(_get_windows())
+        except ImportError:
+            # The Windows toolkit is optional - skip it when it is not installed.
+            pass
 
     return tools
 
