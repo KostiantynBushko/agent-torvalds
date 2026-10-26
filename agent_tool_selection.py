@@ -80,8 +80,16 @@ def _discover_tools() -> List[FunctionTool]:
     from agent_db_toolkit import get_all_tools as _get_db
     tools.extend(_get_db())
 
-    from agent_apt_toolkit import get_all_tools as _get_apt
-    tools.extend(_get_apt())
+    # The APT toolkit lives in ``toolkits/`` and is optional.  A broken
+    # or absent toolkit must never break the selection menu.
+    try:
+        from toolkits.apt_toolkit.agent_apt_toolkit import (
+            get_all_tools as _get_apt,
+        )
+        tools.extend(_get_apt())
+    except ImportError:
+        # The APT toolkit is optional - skip it when it is not installed.
+        pass
 
     from agent_cache_system import get_all_tools as _get_cache
     tools.extend(_get_cache())

@@ -1,5 +1,11 @@
 """
-Unit tests for agent_apt_toolkit.py
+Unit tests for the APT toolkit's library half.
+
+The suite moved here together with the toolkit: it used to live at
+``tests/test_apt_toolkit.py`` and import the single module
+``agent_apt_toolkit`` from the project root.  It now imports the
+library half of the package through a **relative** import, so it
+belongs to the package it tests.
 
 Tests cover:
   - Package resolution (find_package_for_command)
@@ -16,10 +22,14 @@ import subprocess
 from unittest.mock import patch, MagicMock, call
 import os
 
-# Import the module under test
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from agent_apt_toolkit import (
+# Import the module under test.
+#
+# The operations are imported with a *relative* import - the only form
+# that resolves inside the hyphenated package directory.  The module
+# itself is imported as well, because the tests reach into its
+# session-scoped sudo password cache.
+from .. import operations
+from ..operations import (
     find_package_for_command,
     check_command_exists,
     prompt_sudo_password,
@@ -28,8 +38,12 @@ from agent_apt_toolkit import (
     install_package,
     install_multiple_packages,
     interactive_install_missing_command,
-    get_all_tools,
 )
+
+# ``get_all_tools`` is the one name that did **not** move into the
+# library half: it is the adapter's, and the adapter is the one module
+# of the toolkit that knows about LlamaIndex.
+from ..agent_apt_toolkit import get_all_tools
 
 
 # ============================================================================
@@ -52,10 +66,9 @@ def make_subprocess_result(returncode=0, stdout="", stderr="", timeout=None):
 @pytest.fixture(autouse=True)
 def reset_sudo_cache():
     """Reset the sudo password cache before each test."""
-    import agent_apt_toolkit
-    agent_apt_toolkit._sudo_password_cache = None
+    operations._sudo_password_cache = None
     yield
-    agent_apt_toolkit._sudo_password_cache = None
+    operations._sudo_password_cache = None
 
 
 # ============================================================================
@@ -65,7 +78,7 @@ def reset_sudo_cache():
 class TestFindPackageForCommand:
     """Tests for find_package_for_command()"""
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_apt_file_success(self, mock_run):
         """Method 1: apt-file finds the package."""
         mock_run.return_value = make_subprocess_result(
@@ -79,7 +92,7 @@ class TestFindPackageForCommand:
         assert "ffmpeg" in result["candidates"]
         mock_run.assert_called_once()
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_apt_file_no_results(self, mock_run):
         """apt-file returns empty stdout → fallback to dpkg."""
         mock_run.return_value = make_subprocess_result(returncode=0, stdout="")
@@ -96,7 +109,7 @@ class TestFindPackageForCommand:
         assert result["method"] == "apt-cache"
         assert result["success"] is True
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_fallback_to_dpkg(self, mock_run):
         """apt-file not available, dpkg finds it."""
         mock_run.side_effect = [
@@ -108,7 +121,7 @@ class TestFindPackageForCommand:
         assert result["method"] == "dpkg"
         assert result["package_name"] == "coreutils"
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_fallback_to_apt_cache(self, mock_run):
         """Both apt-file and dpkg fail, falls back to apt-cache."""
         mock_run.side_effect = [
@@ -124,7 +137,7 @@ class TestFindPackageForCommand:
         assert result["method"] == "apt-cache"
         assert result["package_name"] == "vim"
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_all_methods_fail(self, mock_run):
         """All three methods fail → return failure dict."""
         mock_run.side_effect = [
@@ -138,7 +151,7 @@ class TestFindPackageForCommand:
         assert result["method"] == "none"
         assert result["candidates"] == []
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_apt_file_timeout(self, mock_run):
         """apt-file times out, falls back gracefully."""
         mock_run.side_effect = [
@@ -157,7 +170,7 @@ class TestFindPackageForCommand:
 class TestCheckCommandExists:
     """Tests for check_command_exists()"""
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_command_exists(self, mock_run):
         """Command found in PATH."""
         mock_run.return_value = make_subprocess_result(
@@ -168,7 +181,7 @@ class TestCheckCommandExists:
         assert result["path"] == "/usr/bin/python3"
         assert result["success"] is True
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_command_not_found(self, mock_run):
         """Command not in PATH."""
         mock_run.return_value = make_subprocess_result(
@@ -179,7 +192,7 @@ class TestCheckCommandExists:
         assert result["path"] is None
         assert result["success"] is False
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_exception_handling(self, mock_run):
         """Exception during which call."""
         mock_run.side_effect = Exception("Unexpected error")
@@ -196,7 +209,7 @@ class TestCheckCommandExists:
 class TestPromptSudoPassword:
     """Tests for prompt_sudo_password()"""
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_parameter_method_success(self, mock_run):
         """Parameter method with valid password."""
         mock_run.return_value = make_subprocess_result(returncode=0)
@@ -206,7 +219,7 @@ class TestPromptSudoPassword:
         assert result["method"] == "parameter"
         assert result["password"] == "mypassword"
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_parameter_method_invalid_password(self, mock_run):
         """Parameter method with invalid password."""
         mock_run.return_value = make_subprocess_result(returncode=1)
@@ -221,52 +234,50 @@ class TestPromptSudoPassword:
         assert result["password_provided"] is False
         assert "No password provided" in result["error"]
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_env_var_method_success(self, mock_run):
         """Environment variable method with valid password."""
         mock_run.return_value = make_subprocess_result(returncode=0)
-        with patch("agent_apt_toolkit.os.environ.get", return_value="envpassword"):
+        with patch("toolkits.apt_toolkit.operations.os.environ.get", return_value="envpassword"):
             result = prompt_sudo_password(method="env_var")
             assert result["password_provided"] is True
             assert result["success"] is True
             assert result["method"] == "env_var"
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_env_var_method_invalid_password(self, mock_run):
         """Environment variable method with invalid password."""
         mock_run.return_value = make_subprocess_result(returncode=1)
-        with patch("agent_apt_toolkit.os.environ.get", return_value="wrongpassword"):
+        with patch("toolkits.apt_toolkit.operations.os.environ.get", return_value="wrongpassword"):
             result = prompt_sudo_password(method="env_var")
             assert result["password_provided"] is False
             assert "Invalid password" in result["error"]
 
     def test_env_var_method_no_env_var(self):
         """Environment variable method without env var set."""
-        with patch("agent_apt_toolkit.os.environ.get", return_value=None):
+        with patch("toolkits.apt_toolkit.operations.os.environ.get", return_value=None):
             result = prompt_sudo_password(method="env_var")
             assert result["password_provided"] is False
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_cache_method_success(self, mock_run):
         """Cache method with valid cached password."""
-        import agent_apt_toolkit
-        agent_apt_toolkit._sudo_password_cache = "cached_password"
+        operations._sudo_password_cache = "cached_password"
         mock_run.return_value = make_subprocess_result(returncode=0)
         result = prompt_sudo_password(method="cache")
         assert result["password_provided"] is True
         assert result["success"] is True
         assert result["method"] == "cache"
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_cache_method_invalid_cache(self, mock_run):
         """Cache method with invalid cached password."""
-        import agent_apt_toolkit
-        agent_apt_toolkit._sudo_password_cache = "wrong_cached"
+        operations._sudo_password_cache = "wrong_cached"
         mock_run.return_value = make_subprocess_result(returncode=1)
         result = prompt_sudo_password(method="cache")
         assert result["password_provided"] is False
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_auto_method_parameter_priority(self, mock_run):
         """Auto method uses parameter when provided."""
         mock_run.return_value = make_subprocess_result(returncode=0)
@@ -274,8 +285,8 @@ class TestPromptSudoPassword:
         assert result["method"] == "parameter"
         assert result["success"] is True
 
-    @patch("agent_apt_toolkit.subprocess.run")
-    @patch("agent_apt_toolkit.os.environ.get")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.os.environ.get")
     def test_auto_method_env_var_fallback(self, mock_env, mock_run):
         """Auto method falls back to env_var when no parameter."""
         mock_env.return_value = "env_password"
@@ -284,8 +295,8 @@ class TestPromptSudoPassword:
         assert result["method"] == "env_var"
         assert result["success"] is True
 
-    @patch("agent_apt_toolkit.subprocess.run")
-    @patch("agent_apt_toolkit.os.environ.get")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.os.environ.get")
     def test_auto_method_console_fallback(self, mock_env, mock_run):
         """Auto method falls back to console when no other method works."""
         mock_env.return_value = None
@@ -301,13 +312,13 @@ class TestPromptSudoPassword:
 class TestTestSudoPassword:
     """Tests for test_sudo_password()"""
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_valid_password(self, mock_run):
         """Password is valid (sudo returns 0)."""
         mock_run.return_value = make_subprocess_result(returncode=0)
         assert test_sudo_password("correctpassword") is True
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_invalid_password(self, mock_run):
         """Password is invalid (sudo returns non-zero)."""
         mock_run.return_value = make_subprocess_result(returncode=1)
@@ -318,7 +329,7 @@ class TestTestSudoPassword:
         assert test_sudo_password("") is False
         assert test_sudo_password(None) is False
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_exception(self, mock_run):
         """Exception during test."""
         mock_run.side_effect = Exception("sudo error")
@@ -334,11 +345,10 @@ class TestClearSudoCache:
 
     def test_clear_cache(self):
         """Cache clearing works."""
-        import agent_apt_toolkit
-        agent_apt_toolkit._sudo_password_cache = "some_password"
+        operations._sudo_password_cache = "some_password"
         result = clear_sudo_cache()
         assert result["success"] is True
-        assert agent_apt_toolkit._sudo_password_cache is None
+        assert operations._sudo_password_cache is None
 
 
 # ============================================================================
@@ -348,7 +358,7 @@ class TestClearSudoCache:
 class TestInstallPackage:
     """Tests for install_package()"""
 
-    @patch("agent_apt_toolkit.check_command_exists")
+    @patch("toolkits.apt_toolkit.operations.check_command_exists")
     def test_already_installed(self, mock_check):
         """Package already installed → short-circuit."""
         mock_check.return_value = {"exists": True, "path": "/usr/bin/ffmpeg"}
@@ -357,11 +367,11 @@ class TestInstallPackage:
         assert result["installed"] is True
         assert "Already installed" in result["steps"]
 
-    @patch("agent_apt_toolkit.check_command_exists", side_effect=[
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", side_effect=[
         {"exists": False, "path": None},  # pre-check
         {"exists": True, "path": "/usr/bin/ffmpeg"},  # post-check
     ])
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_successful_install_with_password(self, mock_run, mock_check):
         """Install succeeds when password is provided."""
         mock_run.return_value = make_subprocess_result(returncode=0)
@@ -372,12 +382,12 @@ class TestInstallPackage:
         assert result["installed"] is True
         assert result["package"] == "ffmpeg"
 
-    @patch("agent_apt_toolkit.check_command_exists", side_effect=[
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", side_effect=[
         {"exists": False},  # pre-check
         {"exists": True, "path": "/usr/bin/ffmpeg"},  # post-check
     ])
-    @patch("agent_apt_toolkit.subprocess.run")
-    @patch("agent_apt_toolkit.prompt_sudo_password")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.prompt_sudo_password")
     def test_install_prompts_for_password(self, mock_prompt, mock_run, mock_check):
         """When no password given, prompt is called."""
         mock_prompt.return_value = {
@@ -389,8 +399,8 @@ class TestInstallPackage:
         assert mock_prompt.called
         assert result["success"] is True
 
-    @patch("agent_apt_toolkit.check_command_exists", return_value={"exists": False})
-    @patch("agent_apt_toolkit.prompt_sudo_password")
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", return_value={"exists": False})
+    @patch("toolkits.apt_toolkit.operations.prompt_sudo_password")
     def test_no_password_provided(self, mock_prompt, mock_check):
         """Prompt returns no password → fail."""
         mock_prompt.return_value = {"password_provided": False}
@@ -398,11 +408,11 @@ class TestInstallPackage:
         assert result["success"] is False
         assert "No sudo password provided" in result["error"]
 
-    @patch("agent_apt_toolkit.check_command_exists", side_effect=[
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", side_effect=[
         {"exists": False},  # pre-check
         {"exists": True, "path": "/usr/bin/ffmpeg"},  # post-check
     ])
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_install_with_update(self, mock_run, mock_check):
         """apt-get update runs when update_first=True."""
         mock_run.return_value = make_subprocess_result(returncode=0)
@@ -413,11 +423,11 @@ class TestInstallPackage:
         assert mock_run.call_count >= 2
         assert result["success"] is True
 
-    @patch("agent_apt_toolkit.check_command_exists", side_effect=[
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", side_effect=[
         {"exists": False},
         {"exists": True, "path": "/usr/bin/ffmpeg"},
     ])
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_update_fails(self, mock_run, mock_check):
         """apt-get update failure aborts installation."""
         mock_run.side_effect = [
@@ -429,11 +439,11 @@ class TestInstallPackage:
         assert result["success"] is False
         assert "apt-get update failed" in result["error"]
 
-    @patch("agent_apt_toolkit.check_command_exists", side_effect=[
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", side_effect=[
         {"exists": False},
         {"exists": False},  # post-check still fails
     ])
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_install_fails(self, mock_run, mock_check):
         """apt-get install failure."""
         mock_run.return_value = make_subprocess_result(
@@ -453,7 +463,7 @@ class TestInstallPackage:
 class TestInstallMultiplePackages:
     """Tests for install_multiple_packages()"""
 
-    @patch("agent_apt_toolkit.install_package")
+    @patch("toolkits.apt_toolkit.operations.install_package")
     def test_installs_all_packages(self, mock_install):
         """Each package is installed sequentially."""
         mock_install.return_value = {"success": True, "installed": True}
@@ -465,7 +475,7 @@ class TestInstallMultiplePackages:
         assert len(results) == 3
         assert mock_install.call_count == 3
 
-    @patch("agent_apt_toolkit.install_package")
+    @patch("toolkits.apt_toolkit.operations.install_package")
     def test_update_only_first(self, mock_install):
         """update_first=True only passed to first package."""
         mock_install.return_value = {"success": True}
@@ -486,7 +496,7 @@ class TestInstallMultiplePackages:
 class TestInteractiveInstallMissingCommand:
     """Tests for interactive_install_missing_command()"""
 
-    @patch("agent_apt_toolkit.check_command_exists")
+    @patch("toolkits.apt_toolkit.operations.check_command_exists")
     def test_command_already_exists(self, mock_check):
         """Command exists → return immediately."""
         mock_check.return_value = {
@@ -497,15 +507,15 @@ class TestInteractiveInstallMissingCommand:
         assert result["success"] is True
         assert "already available" in result["message"]
 
-    @patch("agent_apt_toolkit.check_command_exists", side_effect=[
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", side_effect=[
         {"exists": False},  # initial check
         {"exists": False},  # install pre-check
         {"exists": True, "path": "/usr/bin/ffmpeg"},  # install post-check
         {"exists": True, "path": "/usr/bin/ffmpeg"},  # final check
     ])
-    @patch("agent_apt_toolkit.find_package_for_command")
-    @patch("agent_apt_toolkit.prompt_sudo_password")
-    @patch("agent_apt_toolkit.install_package")
+    @patch("toolkits.apt_toolkit.operations.find_package_for_command")
+    @patch("toolkits.apt_toolkit.operations.prompt_sudo_password")
+    @patch("toolkits.apt_toolkit.operations.install_package")
     def test_full_workflow_success(
         self, mock_install, mock_prompt, mock_resolve, mock_check
     ):
@@ -525,8 +535,8 @@ class TestInteractiveInstallMissingCommand:
         assert result["command_available"] is True
         assert "Successfully installed" in result["message"]
 
-    @patch("agent_apt_toolkit.check_command_exists", return_value={"exists": False})
-    @patch("agent_apt_toolkit.find_package_for_command")
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", return_value={"exists": False})
+    @patch("toolkits.apt_toolkit.operations.find_package_for_command")
     def test_resolution_fails(self, mock_resolve, mock_check):
         """Cannot find package → fail early."""
         mock_resolve.return_value = {
@@ -537,12 +547,12 @@ class TestInteractiveInstallMissingCommand:
         assert result["success"] is False
         assert "Could not find a package" in result["error"]
 
-    @patch("agent_apt_toolkit.check_command_exists", side_effect=[
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", side_effect=[
         {"exists": False},
         {"exists": False},
     ])
-    @patch("agent_apt_toolkit.find_package_for_command")
-    @patch("agent_apt_toolkit.prompt_sudo_password")
+    @patch("toolkits.apt_toolkit.operations.find_package_for_command")
+    @patch("toolkits.apt_toolkit.operations.prompt_sudo_password")
     def test_password_not_provided(self, mock_prompt, mock_resolve, mock_check):
         """User cancels password prompt."""
         mock_resolve.return_value = {
@@ -556,15 +566,15 @@ class TestInteractiveInstallMissingCommand:
         assert result["success"] is False
         assert "Sudo password was not provided" in result["error"]
 
-    @patch("agent_apt_toolkit.check_command_exists", side_effect=[
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", side_effect=[
         {"exists": False},
         {"exists": False},
         {"exists": True, "path": "/usr/bin/tool"},
         {"exists": True, "path": "/usr/bin/tool"},
     ])
-    @patch("agent_apt_toolkit.find_package_for_command")
-    @patch("agent_apt_toolkit.prompt_sudo_password")
-    @patch("agent_apt_toolkit.install_package")
+    @patch("toolkits.apt_toolkit.operations.find_package_for_command")
+    @patch("toolkits.apt_toolkit.operations.prompt_sudo_password")
+    @patch("toolkits.apt_toolkit.operations.install_package")
     def test_no_password_prompt(
         self, mock_install, mock_prompt, mock_resolve, mock_check
     ):
@@ -579,14 +589,14 @@ class TestInteractiveInstallMissingCommand:
         )
         assert not mock_prompt.called
 
-    @patch("agent_apt_toolkit.check_command_exists", side_effect=[
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", side_effect=[
         {"exists": False},
         {"exists": False},
         {"exists": True, "path": "/usr/bin/ffmpeg"},
         {"exists": True, "path": "/usr/bin/ffmpeg"},
     ])
-    @patch("agent_apt_toolkit.find_package_for_command")
-    @patch("agent_apt_toolkit.install_package")
+    @patch("toolkits.apt_toolkit.operations.find_package_for_command")
+    @patch("toolkits.apt_toolkit.operations.install_package")
     def test_with_pre_provided_password(
         self, mock_install, mock_resolve, mock_check
     ):
@@ -648,7 +658,7 @@ class TestGetAllTools:
 class TestEdgeCases:
     """Edge cases and boundary conditions."""
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_empty_command_name(self, mock_run):
         """Empty command string handled gracefully."""
         mock_run.return_value = make_subprocess_result(returncode=0, stdout="")
@@ -656,7 +666,7 @@ class TestEdgeCases:
         # Should not crash
         assert "exists" in result
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_special_chars_in_package_name(self, mock_run):
         """Package names with hyphens and underscores."""
         mock_run.return_value = make_subprocess_result(
@@ -665,16 +675,16 @@ class TestEdgeCases:
         result = check_command_exists("my-tool")
         assert result["exists"] is True
 
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_long_timeout_handling(self, mock_run):
         """Long-running subprocess handled with timeout."""
         mock_run.return_value = make_subprocess_result(returncode=0, stdout="ok")
         result = check_command_exists("slow-tool")
         assert "exists" in result
 
-    @patch("agent_apt_toolkit.check_command_exists", return_value={"exists": False})
-    @patch("agent_apt_toolkit.prompt_sudo_password")
-    @patch("agent_apt_toolkit.subprocess.run")
+    @patch("toolkits.apt_toolkit.operations.check_command_exists", return_value={"exists": False})
+    @patch("toolkits.apt_toolkit.operations.prompt_sudo_password")
+    @patch("toolkits.apt_toolkit.operations.subprocess.run")
     def test_install_with_empty_password(
         self, mock_run, mock_prompt, mock_check
     ):
