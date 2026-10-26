@@ -35,6 +35,7 @@ Each module has its own README with the full reference:
 | APT Toolkit | [toolkits/apt-toolkit/README.md](toolkits/apt-toolkit/README.md) |
 | Windows Toolkit | [toolkits/windows-toolkit/README.md](toolkits/windows-toolkit/README.md) |
 | Database Toolkit | [toolkits/db-toolkit/README.md](toolkits/db-toolkit/README.md) |
+| Excel Toolkit | [toolkits/xlsx-toolkit/README.md](toolkits/xlsx-toolkit/README.md) |
 
 The project documentation:
 
@@ -115,6 +116,19 @@ The project documentation:
   LlamaIndex imports, so it also works as a plain library
 - See the
   [Database Toolkit README](toolkits/db-toolkit/README.md)
+
+### 6a. Excel Toolkit (`toolkits/xlsx-toolkit/`)
+- Read an `.xlsx` file as a list of dictionaries, keyed by the header row
+- Write a list of dictionaries to a new workbook
+- List the sheets of a workbook, copy one sheet into a new file, and read
+  the used range of a sheet
+- Read and write a single cell, by its reference (`A1`)
+- Apply bold, colour, alignment, border and fill over a range of cells
+- Create an empty workbook, optionally with named sheets
+- The reusable core package in `toolkits/xlsx-toolkit/` has **no**
+  LlamaIndex imports, so it also works as a plain library
+- See the
+  [Excel Toolkit README](toolkits/xlsx-toolkit/README.md)
 
 ### 7. Chat Memory (`chat_manager/`)
 - The chat memory is provided by the **Chat History Manager** — see § 17
@@ -901,6 +915,20 @@ results = run_postgres_query("SELECT * FROM users LIMIT 10")
 results = run_mysql_query("SELECT COUNT(*) as total FROM orders")
 ```
 
+### Excel Files
+```python
+from toolkits.xlsx_toolkit import read_xlsx_file, write_xlsx_file, get_cell_value
+
+# Read a sheet as a list of dicts, keyed by the header row
+rows = read_xlsx_file("report.xlsx", sheet_name="Summary")
+
+# Write a list of dicts to a new workbook
+write_xlsx_file("output.xlsx", [{"Name": "Alice", "Age": 30}])
+
+# Read a single cell
+value = get_cell_value("report.xlsx", "Summary", "A1")
+```
+
 ### Cache System
 ```python
 from agent_cache_system import save_to_cache, load_from_cache, get_cache_status
@@ -1120,6 +1148,13 @@ manager.shutdown()
 | +-- +-- __init__.py           # Public API surface
 | +-- +-- operations.py         # The SQL operations - the library half
 | +-- +-- agent_db_toolkit.py   # The LlamaIndex adapter
+| +-- +-- py.typed              # PEP 561 marker
+| +-- +-- tests/                # Module-local tests (no __init__.py)
+| +-- xlsx-toolkit/             # Excel toolkit (core library)
+| +-- +-- README.md             # Excel toolkit module documentation
+| +-- +-- __init__.py           # Public API surface
+| +-- +-- operations.py         # The Excel operations - the library half
+| +-- +-- agent_xlsx_toolkit.py # The LlamaIndex adapter
 | +-- +-- py.typed              # PEP 561 marker
 | +-- +-- tests/                # Module-local tests (no __init__.py)
 | chat_manager/                 # Chat History Manager (multi-user, multi-session)
