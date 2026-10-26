@@ -301,6 +301,8 @@ therefore hashable.
 | `get_chat_manager()` | Return the singleton, or `None` if not initialised. |
 | `shutdown_chat_manager()` | Shut down and clear the singleton. |
 | `is_chat_manager_initialized()` | `True` when the manager is ready. |
+| `get_memory_buffer(chat_token_limit)` | Return the memory buffer for the active session. Falls back to an in-memory buffer when the manager is not up. |
+| `get_in_memory_buffer(chat_token_limit)` | Return a process-wide in-memory buffer that persists nothing. |
 | `select_startup_session(input_func, output_func)` | Run the interactive startup picker with injectable I/O. |
 
 ### 8. `session_selector.py` — Interactive Startup Picker
@@ -483,7 +485,7 @@ All configuration is environment-driven; nothing is hard-coded in the agent.
 | `TORVALDS_PG_PASSWORD` | `postgres` | PostgreSQL password |
 | `TORVALDS_PG_DATABASE` | `llama_index_db` | PostgreSQL database name |
 | `TORVALDS_CHAT_KEY` | — | Legacy single-key chat store name. If set, it is reused as the `chat_key` of the pre-seeded **General Chat** session, which keeps existing message history reachable after the upgrade. |
-| `TORVALDS_TOKEN_LIMIT` | `5000` | Token limit for the **legacy** compatibility buffer. The manager uses `users.chat_token_limit` instead — see [User settings](#user-settings). |
+| `TORVALDS_TOKEN_LIMIT` | `5000` | Token limit for the in-memory buffer used when the manager is not up. The manager uses `users.chat_token_limit` instead — see [User settings](#user-settings). |
 
 **URI precedence.** `TORVALDS_STORAGE_URI` and `TORVALDS_LLAMA_URI` take priority. When they are
 absent, both connectors are derived from the `TORVALDS_PG_*` variables — the metadata connector
@@ -494,7 +496,7 @@ uses the synchronous `postgresql://` driver, the message connector uses the asyn
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--no-chat-history` | off | Disable the ChatHistoryManager entirely and fall back to the legacy single-session chat memory. |
+| `--no-chat-history` | off | Do not persist the chat history — run with an in-memory store only. Deprecated, but kept so the flag does not disappear. |
 | `--no-session-select` | off | Skip the interactive startup session selection menu. |
 
 ---
@@ -843,8 +845,9 @@ them; the `\chat-user` command is the operator's view onto the same values.
 The setting was called `token_limit` until the rename documented in
 `investigate/chat-manager-user-settings/PROPOSAL_chat_token_limit.md`. The old name says the
 unit but not the scope, and the scope is the interesting part: *whose* tokens? The codebase
-uses `token_limit` for at least three other things — the model's `context_window`, the legacy
-`TORVALDS_TOKEN_LIMIT`, and the dead `TOKEN_LIMITS` constant in both orchestrators.
+uses `token_limit` for at least three other things — the model's `context_window`, the
+in-memory fallback's `TORVALDS_TOKEN_LIMIT`, and the `TOKEN_LIMITS` constant that both
+orchestrators used to define and never read.
 
 `chat_token_limit` is the canonical name. The old name keeps working in three places:
 
@@ -923,7 +926,7 @@ User settings:
 
 ## Agent Integration
 
-The integration lives in `agent-torvalds.py` and `agent_chat_memory.py`.
+The integration lives in `agent-torvalds.py`, `agent-torvalds-mw.py` and `agent-torvalds-cpp.py`.
 
 ### Wiring
 
@@ -932,6 +935,7 @@ The integration lives in `agent-torvalds.py` and `agent_chat_memory.py`.
 from chat_manager.startup import (
     initialize_chat_manager,
     get_chat_manager,
+    get_memory_buffer,
     shutdown_chat_manager,
 )
 from chat_manager.commands.handler import is_chat_command, handle_chat_command
@@ -954,22 +958,33 @@ if chat_history_enabled and is_chat_command(cmd):
     continue
 ```
 
-### Compatibility layer
+### The memory buffer
 
-`agent_chat_memory.py` keeps its historical public API (`get_chat_store()`, `get_chat_memory()`,
-`chat_memory` proxy, `get_all_tools()`) but now **delegates to the ChatHistoryManager first**:
+The manager is the only source of a chat memory buffer. `get_memory_buffer()` hands out the
+buffer for the active session, and falls back to an in-memory buffer when the manager is not up:
 
 ```python
-manager_buffer = _get_manager_memory_buffer()   # ChatHistoryManager path
-if manager_buffer is not None:
-    return manager_buffer
-# ... otherwise the legacy single-key path
+from chat_manager.startup import get_memory_buffer
+
+chat_memory = get_memory_buffer()   # the active session's buffer
 ```
 
-If the manager is unavailable — the package is not importable, the database is down, or the user
-passed `--no-chat-history` — the legacy single-key behaviour is used, so the agent always has a
-working memory buffer. `get_active_chat_key()` was added to expose the active session's chat key
-to the rest of the agent.
+The fallback is the last resort, not a parallel implementation: the buffer it returns is cached
+process-wide, so every caller sees the same conversation.
+
+The agent never talks to a raw `PostgresChatStore`. The backend abstraction in `backend/` is the
+only thing that opens a database connection.
+
+### The legacy module
+
+`agent_chat_memory.py` used to be the compatibility layer over this package: it kept the
+historical `get_chat_store()` / `get_chat_memory()` / `chat_memory` API alive and fell back to a
+legacy single-key buffer when the manager was unavailable.
+
+It has been removed. The legacy path had one job — keeping the agent's memory alive when the
+database was down — and the local fallback (§ [The local fallback](#the-local-fallback)) now
+does that job properly, with the sessions intact rather than as one flat key. The orchestrators
+call `get_memory_buffer()` directly.
 
 ### Shutdown
 
