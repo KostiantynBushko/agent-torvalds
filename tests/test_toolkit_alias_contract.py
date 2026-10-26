@@ -1,12 +1,13 @@
 """
 Contract tests for the toolkit import aliases.
 
-The two hyphenated toolkits cannot be reached with a plain ``import``
+The hyphenated toolkits cannot be reached with a plain ``import``
 statement, so ``toolkits/__init__.py`` registers a valid-identifier alias for
 each of them::
 
     toolkits.MikroTik-RouterOS   ->  toolkits.mikrotik_routeros
     toolkits.shodan-toolkit      ->  toolkits.shodan_toolkit
+    toolkits.math-toolkit        ->  toolkits.math_toolkit
 
 This module pins down the two properties that alias has to have.
 
@@ -51,11 +52,15 @@ MIKROTIK_REAL = "toolkits.MikroTik-RouterOS"
 SHODAN_ALIAS = "shodan_toolkit"
 SHODAN_REAL = "toolkits.shodan-toolkit"
 
+MATH_ALIAS = "math_toolkit"
+MATH_REAL = "toolkits.math-toolkit"
+
 #: The alias of each toolkit and the ``__init__.py`` that must carry a
 #: code-level reference to it.
 TOOLKITS = (
     (MIKROTIK_ALIAS, MIKROTIK_REAL, REPO_ROOT / "toolkits" / "MikroTik-RouterOS" / "__init__.py"),
     (SHODAN_ALIAS, SHODAN_REAL, REPO_ROOT / "toolkits" / "shodan-toolkit" / "__init__.py"),
+    (MATH_ALIAS, MATH_REAL, REPO_ROOT / "toolkits" / "math-toolkit" / "__init__.py"),
 )
 
 #: The agent adapter of each toolkit: the alias of its package, the module
@@ -74,6 +79,11 @@ ADAPTERS = (
         SHODAN_ALIAS,
         "agent_shodan_toolkit",
         REPO_ROOT / "toolkits" / "shodan-toolkit" / "agent_shodan_toolkit.py",
+    ),
+    (
+        MATH_ALIAS,
+        "agent_math_toolkit",
+        REPO_ROOT / "toolkits" / "math-toolkit" / "agent_math_toolkit.py",
     ),
 )
 
@@ -123,7 +133,14 @@ class TestStaticReference:
         """The shim is the file that registers the aliases."""
         assert ALIAS_SHIM.is_file()
 
-    @pytest.mark.parametrize("dotted", [f"toolkits.{MIKROTIK_ALIAS}", f"toolkits.{SHODAN_ALIAS}"])
+    @pytest.mark.parametrize(
+        "dotted",
+        [
+            f"toolkits.{MIKROTIK_ALIAS}",
+            f"toolkits.{SHODAN_ALIAS}",
+            f"toolkits.{MATH_ALIAS}",
+        ],
+    )
     def test_the_canonical_dotted_path_is_a_literal(self, dotted):
         """The full dotted path must be written out, not computed."""
         source = ALIAS_SHIM.read_text()
@@ -132,7 +149,7 @@ class TestStaticReference:
             "invisible to a static reader"
         )
 
-    @pytest.mark.parametrize("alias", [MIKROTIK_ALIAS, SHODAN_ALIAS])
+    @pytest.mark.parametrize("alias", [MIKROTIK_ALIAS, SHODAN_ALIAS, MATH_ALIAS])
     def test_the_bare_alias_name_is_a_literal(self, alias):
         """The bare module name must be greppable as well."""
         assert f'"{alias}"' in ALIAS_SHIM.read_text()
@@ -150,6 +167,7 @@ class TestStaticReference:
         [
             ("_MIKROTIK_ALIAS", f"toolkits.{MIKROTIK_ALIAS}"),
             ("_SHODAN_ALIAS", f"toolkits.{SHODAN_ALIAS}"),
+            ("_MATH_ALIAS", f"toolkits.{MATH_ALIAS}"),
         ],
     )
     def test_the_alias_is_not_computed(self, constant, expected):

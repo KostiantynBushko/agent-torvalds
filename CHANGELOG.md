@@ -1,5 +1,57 @@
 # Changelog
 
+## [Unreleased] - The math toolkit is a module
+
+### Changed
+- **The math toolkit is now a module under `toolkits/`.**  It used to be a single loose
+  module at the project root, `agent_math_toolkit.py`, next to 20 other `agent_*.py` files,
+  while the features that were already modules lived in folders under `toolkits/`.  A toolkit
+  is now one folder, like the MikroTik and the Shodan one.
+
+  | Path | Was | Now |
+  |------|-----|-----|
+  | `agent_math_toolkit.py` | the whole toolkit — the mathematics *and* the LlamaIndex adapter | split in two |
+  | `toolkits/math-toolkit/operations.py` | — | the mathematics, the **library half** |
+  | `toolkits/math-toolkit/agent_math_toolkit.py` | — | the **adapter**, the only LlamaIndex-dependent module |
+  | `toolkits/math-toolkit/__init__.py` | — | the public API surface |
+  | `toolkits/math-toolkit/tests/` | `tests/test_math_toolkit.py` | the module-local tests |
+
+  The split is the point.  The mathematics carries **no** LlamaIndex import, so it stays
+  usable — and testable — as a plain Python library; the adapter is the one module that
+  knows about the agent framework, and it is imported on demand.  Importing the toolkit
+  therefore never pulls LlamaIndex into the process.
+
+- **The import path moved.**  The package lives in a hyphenated directory, so it is reached
+  through the alias that `toolkits/__init__.py` registers:
+
+  ```python
+  from toolkits.math_toolkit import add, multiply, evaluate_rpn            # the library
+  from toolkits.math_toolkit.agent_math_toolkit import get_all_tools       # the adapter
+  ```
+
+  The six call sites — `agent-torvalds.py`, `agent-torvalds-mw.py`, `agent-torvalds-cpp.py`,
+  `agent_tool_retriever.py`, `agent_tool_selection.py` and
+  `test_callback_events_debug.py` — were updated.  As with the other toolkits under
+  `toolkits/`, the adapter is now imported **behind a guard**, so a missing or broken
+  toolkit degrades to "no tools" instead of a failed boot.
+
+### Added
+- **`toolkits/math-toolkit/`** — the package, with a `README.md`, a `py.typed` marker and a
+  `pyproject.toml` for a standalone install (`pip install ./toolkits/math-toolkit`).  The
+  distribution has **no** third-party dependency: the library half is pure standard library,
+  and the adapter is an extra (`math-toolkit[agent]`).
+
+- **A layout contract for the toolkit.**  `toolkits/math-toolkit/tests/test_package_layout.py`
+  is new — 18 checks that pin the layout, the relative imports, the import alias and the
+  LlamaIndex boundary, so the package cannot drift back to a loose module at the root.
+
+- **`toolkits/math-toolkit/tests/test_operations.py`** — the test suite, moved out of
+  `tests/test_math_toolkit.py` and switched to relative imports.
+
+- **The math toolkit joined the alias contract.**  `tests/test_toolkit_alias_contract.py`
+  now covers it, so the alias is a literal, the submodules resolve to one object, and
+  `import toolkits` still does not import LlamaIndex.
+
 ## [Unreleased] - The legacy chat memory is gone
 
 ### Removed

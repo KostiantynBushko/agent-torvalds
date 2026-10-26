@@ -6,8 +6,9 @@ This package contains self-contained Python modules that can be used both:
 2. Through optional LlamaIndex FunctionAgent adapters
 
 Each toolkit package carries its own agent adapter **inside the package** -
-``toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py`` and
-``toolkits/shodan-toolkit/agent_shodan_toolkit.py``.  The
+``toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py``,
+``toolkits/shodan-toolkit/agent_shodan_toolkit.py`` and
+``toolkits/math-toolkit/agent_math_toolkit.py``.  The
 adapter is the only module of a toolkit that depends on LlamaIndex; the
 reusable library half around it does not.
 
@@ -15,13 +16,15 @@ reusable library half around it does not.
 Import aliases for the hyphenated toolkit directories
 --------------------------------------------------------------------------------
 
-Both the MikroTik RouterOS toolkit (``toolkits/MikroTik-RouterOS/``) and the
-Shodan toolkit (``toolkits/shodan-toolkit/``) live in directories whose names
+The MikroTik RouterOS toolkit (``toolkits/MikroTik-RouterOS/``), the
+Shodan toolkit (``toolkits/shodan-toolkit/``) and the math toolkit
+(``toolkits/math-toolkit/``) live in directories whose names
 contain a hyphen. A hyphen is **not a valid Python identifier**, so those
 directories can never be reached with a plain ``import`` statement::
 
     from toolkits.MikroTik-RouterOS import MikroTikTarget   # SyntaxError
     from toolkits.shodan-toolkit import ShodanClient        # SyntaxError
+    from toolkits.math-toolkit import add                   # SyntaxError
 
 ``importlib.import_module("toolkits.MikroTik-RouterOS")`` does work, but it is
 awkward to use at every call site and it interacts badly with pytest's default
@@ -34,6 +37,7 @@ for each of them that points at the very same package object::
     from toolkits.mikrotik_routeros import MikroTikTarget   # works
     import toolkits.mikrotik_routeros as mikrotik_routeros  # works
     from toolkits.shodan_toolkit import ShodanClient        # works
+    from toolkits.math_toolkit import add                   # works
 
 The aliases are registered only if the package is actually present and
 importable, so ``import toolkits`` never fails when an optional toolkit is
@@ -44,14 +48,16 @@ package, and the alias points straight at it::
 
     toolkits/MikroTik-RouterOS/   ->  toolkits.mikrotik_routeros
     toolkits/shodan-toolkit/      ->  toolkits.shodan_toolkit
+    toolkits/math-toolkit/        ->  toolkits.math_toolkit
 
 The agent adapters are submodules of their toolkit package, so they are
 reached through the same alias::
 
     from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import get_all_tools
     from toolkits.shodan_toolkit.agent_shodan_toolkit import get_all_tools
+    from toolkits.math_toolkit.agent_math_toolkit import get_all_tools
 
-Those two lines are the canonical import paths of the adapters.  The
+Those three lines are the canonical import paths of the adapters.  The
 adapters themselves are **not** published eagerly - see the note below.
 
 --------------------------------------------------------------------------------
@@ -113,7 +119,7 @@ import sys
 #: The bare module names are listed here as literals so that a static reader
 #: can find them; the complete dotted paths live in the ``_..._ALIAS``
 #: constants below.
-_ALIAS_NAMES = ("mikrotik_routeros", "shodan_toolkit")
+_ALIAS_NAMES = ("mikrotik_routeros", "shodan_toolkit", "math_toolkit")
 
 #: The agent adapters of the toolkits, by module name.
 #:
@@ -126,7 +132,12 @@ _ALIAS_NAMES = ("mikrotik_routeros", "shodan_toolkit")
 #:
 #:     from toolkits.mikrotik_routeros.agent_mikrotik_toolkit import get_all_tools
 #:     from toolkits.shodan_toolkit.agent_shodan_toolkit import get_all_tools
-_ADAPTER_MODULES = ("agent_mikrotik_toolkit", "agent_shodan_toolkit")
+#:     from toolkits.math_toolkit.agent_math_toolkit import get_all_tools
+_ADAPTER_MODULES = (
+    "agent_mikrotik_toolkit",
+    "agent_shodan_toolkit",
+    "agent_math_toolkit",
+)
 
 #: Dotted path of the real (hyphenated) package directory.
 _MIKROTIK_PACKAGE = "toolkits.MikroTik-RouterOS"
@@ -140,6 +151,13 @@ _SHODAN_PACKAGE = "toolkits.shodan-toolkit"
 
 #: Dotted path of the valid-identifier alias registered in ``sys.modules``.
 _SHODAN_ALIAS = "toolkits.shodan_toolkit"
+
+
+#: Dotted path of the real (hyphenated) package directory.
+_MATH_PACKAGE = "toolkits.math-toolkit"
+
+#: Dotted path of the valid-identifier alias registered in ``sys.modules``.
+_MATH_ALIAS = "toolkits.math_toolkit"
 
 
 def _publish_submodules(real_dotted: str, alias_dotted: str, package) -> None:
@@ -208,6 +226,11 @@ if _mikrotik is not None:
 _shodan = _register_alias(_SHODAN_PACKAGE, _SHODAN_ALIAS)
 if _shodan is not None:
     shodan_toolkit = _shodan
+
+
+_math = _register_alias(_MATH_PACKAGE, _MATH_ALIAS)
+if _math is not None:
+    math_toolkit = _math
 
 
 #: The aliases that are actually available.  ``from toolkits import *`` must
