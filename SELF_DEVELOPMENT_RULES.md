@@ -5,7 +5,8 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 future agent invocation.
 
 **Last updated:** 2026-10-26 (the **OS** toolkit became a module under
-`toolkits/` — the **fourth** PR of the "every toolkit is a module"
+`toolkits/` and was **squash-merged into `master` as PR #45**, commit
+`899f9b2` — the **fourth** PR of the "every toolkit is a module"
 refactoring, and the last toolkit that was still **mandatory**; the
 GitHub toolkit was squash-merged into `master` as PR #43, commit
 `83456a7`; the Git toolkit was squash-merged into `master` as PR #41,
@@ -96,13 +97,25 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/os-toolkit-module` — **implemented and verified**, awaiting the operator's approval to commit and push |
+| Branch | `refactor/os-toolkit-module` — **implemented, verified and squash-merged into `master`** as PR #45 (commit `899f9b2`) |
 | Scope | The **fourth** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_os_toolkit.py` leaves the project root and becomes `toolkits/os-toolkit/`. It was the toolkit the orchestrator leans on, and the **last** one that was still mandatory. |
 | Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the 11 file-system operations, no LlamaIndex import and **no third-party dependency at all**) and the adapter (`agent_os_toolkit.py` — the only LlamaIndex-dependent module), with a `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.os_toolkit`, which `toolkits/__init__.py` registers next to the other five toolkits. The **six** call sites (both orchestrators, the retriever, the selection menu, the llama.cpp orchestrator and the callback debug script) were updated; the four that imported the toolkit unguarded now import it **behind a guard**, so the OS toolkit goes from mandatory to optional — the same trade the other moves made, and the last toolkit still outside it. **The toolkit already had a test suite** (17 tests), and it moved with it; the suite was extended to 41, covering the error contract of all eleven operations. A new layout contract (`toolkits/os-toolkit/tests/test_package_layout.py`, 28 checks) pins the layout, the relative imports, the alias, the LlamaIndex boundary, the dependency profile and the 11-tool surface. The toolkit suite is green (69 passed), the alias contract is green (51 passed), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — with `tests/ci_baseline.txt` unchanged, because the toolkit had no known failures of its own. The tool menu is **unchanged**: 155 tools, 154 distinct names, the same pre-existing `get_system_info` duplicate. The report is `investigate/os-toolkit-module/REPORT_os_toolkit_module.md`. |
 | Policy | The **behaviour did not change** — every function, every docstring, every tool description and the error contract (a failure is reported as a message string, never raised) were moved verbatim; the split was checked mechanically against the original file, not by eye, and the check itself was tested against three deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. One PR per toolkit, as the operator asked. The remaining loose toolkits are `agent_linux_toolkit.py`, `agent_windows_toolkit.py`, `agent_apt_toolkit.py`, `agent_db_toolkit.py`, `agent_xlsx_toolkit.py` and `agent_data_analysis_toolkit.py`. |
-| State | **The commit and the push are not done yet** — rule 4 requires the operator's explicit approval, and the staged diff has to be shown first. Nothing is merged; `master` is untouched. |
+| State | **Nothing pending.** The OS toolkit is in `master`; the working tree is clean and no PR is open. The next toolkit of the series starts from `master` (`899f9b2`). |
 
 ### Latest change: the OS toolkit is a module
+
+**Squash-merged into `master` as PR #45** (commit `899f9b2`, head
+`7120bb9`).  The PR is based on `master` — not on `main`.
+
+The operator asked for a **squash**, as for PR #43 and PR #41.  The
+departure from the standing convention of a merge commit is safe here,
+for the reason recorded under the Git toolkit: the convention exists for
+the *stacked* PR chain, and this PR is based directly on the tip of
+`master`, so the next PR's merge base is `899f9b2` and its diff does not
+balloon.  The tree check the convention exists for holds as well —
+`master`'s tree after the merge (`0688c763`) is byte-identical to the
+head tree of `7120bb9` that CI ran green.
 
 The **fourth** toolkit of the series, and the **last** one that was still
 mandatory.  Every other toolkit had already moved under `toolkits/`,
