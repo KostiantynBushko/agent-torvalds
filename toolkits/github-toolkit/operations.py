@@ -1,8 +1,27 @@
 """
-GitHub Toolkit - GitHub API integration for Pull Request and repository management.
+GitHub Toolkit - the library half.
 
-This module provides GitHub API functionality for creating, managing, and reviewing
-Pull Requests, as well as authentication and user management operations.
+GitHub API integration for Pull Request and repository management:
+creating, managing and reviewing Pull Requests, plus authentication and
+user management operations.
+
+This module is the **reusable** half of the GitHub toolkit.  It carries
+**no LlamaIndex import**, so the GitHub operations stay usable - and
+testable - as a plain Python library.  The LlamaIndex adapter lives
+next door in ``agent_github_toolkit.py`` and is the only module of the
+toolkit that knows about the agent framework.
+
+Importing this package
+----------------------
+The directory name contains a hyphen, which is not a valid Python
+identifier.  Use the alias registered by ``toolkits/__init__.py``::
+
+    from toolkits.github_toolkit import github_create_pull_request
+
+or load it explicitly::
+
+    import importlib
+    github_toolkit = importlib.import_module("toolkits.github-toolkit")
 
 Category: Version Control
 Retriever Keywords: github, pull request, PR, api, review, comment, merge, authentication
@@ -11,7 +30,6 @@ import os
 import logging
 import requests
 from typing import Optional
-from llama_index.core.tools import FunctionTool
 
 logger = logging.getLogger(__name__)
 
@@ -772,71 +790,3 @@ def github_get_pull_request_reviews(
         }
     else:
         return result
-
-
-def get_all_tools() -> list[FunctionTool]:
-    """
-    Return all GitHub tools as FunctionTool objects for on-demand loading.
-    
-    Each tool includes category metadata for better retrieval.
-    
-    Returns:
-        list[FunctionTool]: List of GitHub FunctionTool objects
-    """
-    logger.info("github get_all_tools called")
-    return [
-        # Tier 4: Authentication & Configuration
-        FunctionTool.from_defaults(
-            fn=git_check_auth,
-            description="Verify GitHub authentication status. Use for checking if GitHub API access is working. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=git_get_user_info,
-            description="Get GitHub user information. Use for retrieving profile and identity details. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=git_configure_credentials,
-            description="Configure Git credentials. Use for setting up user identity for commits. Category: Version Control",
-        ),
-        # Tier 3: GitHub PR Operations
-        FunctionTool.from_defaults(
-            fn=github_create_pull_request,
-            description="Create a Pull Request on GitHub. Use for submitting PRs from feature branches. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=github_list_pull_requests,
-            description="List Pull Requests for a repository. Use for inspecting open/closed PRs. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=github_get_pull_request,
-            description="Get details of a specific Pull Request. Use for viewing PR information. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=github_update_pull_request,
-            description="Update a Pull Request's title, description, or other metadata. Use for modifying PRs. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=github_close_pull_request,
-            description="Close a Pull Request without merging. Use for abandoning or dismissing PRs. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=github_merge_pull_request,
-            description="Merge a Pull Request. Use for completing the PR workflow with merge/squash/rebase. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=github_comment_on_pull_request,
-            description="Add a comment to a Pull Request. Use for leaving feedback or notes. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=github_review_file_changes,
-            description="Get file changes in a Pull Request. Use for reviewing diffs and patches. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=github_get_pull_request_comments,
-            description="Get all comments on a Pull Request. Use for retrieving discussion and feedback. Category: Version Control",
-        ),
-        FunctionTool.from_defaults(
-            fn=github_get_pull_request_reviews,
-            description="Get review submissions for a Pull Request. Use for checking approval status. Category: Version Control",
-        ),
-    ]

@@ -8,8 +8,9 @@ This package contains self-contained Python modules that can be used both:
 Each toolkit package carries its own agent adapter **inside the package** -
 ``toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py``,
 ``toolkits/shodan-toolkit/agent_shodan_toolkit.py``,
-``toolkits/math-toolkit/agent_math_toolkit.py`` and
-``toolkits/git-toolkit/agent_git_toolkit.py``.  The
+``toolkits/math-toolkit/agent_math_toolkit.py``,
+``toolkits/git-toolkit/agent_git_toolkit.py`` and
+``toolkits/github-toolkit/agent_github_toolkit.py``.  The
 adapter is the only module of a toolkit that depends on LlamaIndex; the
 reusable library half around it does not.
 
@@ -19,8 +20,9 @@ Import aliases for the hyphenated toolkit directories
 
 The MikroTik RouterOS toolkit (``toolkits/MikroTik-RouterOS/``), the
 Shodan toolkit (``toolkits/shodan-toolkit/``), the math toolkit
-(``toolkits/math-toolkit/``) and the Git toolkit
-(``toolkits/git-toolkit/``) live in directories whose names
+(``toolkits/math-toolkit/``), the Git toolkit
+(``toolkits/git-toolkit/``) and the GitHub toolkit
+(``toolkits/github-toolkit/``) live in directories whose names
 contain a hyphen. A hyphen is **not a valid Python identifier**, so those
 directories can never be reached with a plain ``import`` statement::
 
@@ -28,6 +30,7 @@ directories can never be reached with a plain ``import`` statement::
     from toolkits.shodan-toolkit import ShodanClient        # SyntaxError
     from toolkits.math-toolkit import add                   # SyntaxError
     from toolkits.git-toolkit import git_get_status         # SyntaxError
+    from toolkits.github-toolkit import github_create_pull_request   # SyntaxError
 
 ``importlib.import_module("toolkits.MikroTik-RouterOS")`` does work, but it is
 awkward to use at every call site and it interacts badly with pytest's default
@@ -42,6 +45,7 @@ for each of them that points at the very same package object::
     from toolkits.shodan_toolkit import ShodanClient        # works
     from toolkits.math_toolkit import add                   # works
     from toolkits.git_toolkit import git_get_status         # works
+    from toolkits.github_toolkit import github_create_pull_request   # works
 
 The aliases are registered only if the package is actually present and
 importable, so ``import toolkits`` never fails when an optional toolkit is
@@ -54,6 +58,7 @@ package, and the alias points straight at it::
     toolkits/shodan-toolkit/      ->  toolkits.shodan_toolkit
     toolkits/math-toolkit/        ->  toolkits.math_toolkit
     toolkits/git-toolkit/         ->  toolkits.git_toolkit
+    toolkits/github-toolkit/      ->  toolkits.github_toolkit
 
 The agent adapters are submodules of their toolkit package, so they are
 reached through the same alias::
@@ -62,8 +67,9 @@ reached through the same alias::
     from toolkits.shodan_toolkit.agent_shodan_toolkit import get_all_tools
     from toolkits.math_toolkit.agent_math_toolkit import get_all_tools
     from toolkits.git_toolkit.agent_git_toolkit import get_all_tools
+    from toolkits.github_toolkit.agent_github_toolkit import get_all_tools
 
-Those four lines are the canonical import paths of the adapters.  The
+Those five lines are the canonical import paths of the adapters.  The
 adapters themselves are **not** published eagerly - see the note below.
 
 --------------------------------------------------------------------------------
@@ -130,6 +136,7 @@ _ALIAS_NAMES = (
     "shodan_toolkit",
     "math_toolkit",
     "git_toolkit",
+    "github_toolkit",
 )
 
 #: The agent adapters of the toolkits, by module name.
@@ -145,11 +152,13 @@ _ALIAS_NAMES = (
 #:     from toolkits.shodan_toolkit.agent_shodan_toolkit import get_all_tools
 #:     from toolkits.math_toolkit.agent_math_toolkit import get_all_tools
 #:     from toolkits.git_toolkit.agent_git_toolkit import get_all_tools
+#:     from toolkits.github_toolkit.agent_github_toolkit import get_all_tools
 _ADAPTER_MODULES = (
     "agent_mikrotik_toolkit",
     "agent_shodan_toolkit",
     "agent_math_toolkit",
     "agent_git_toolkit",
+    "agent_github_toolkit",
 )
 
 #: Dotted path of the real (hyphenated) package directory.
@@ -178,6 +187,13 @@ _GIT_PACKAGE = "toolkits.git-toolkit"
 
 #: Dotted path of the valid-identifier alias registered in ``sys.modules``.
 _GIT_ALIAS = "toolkits.git_toolkit"
+
+
+#: Dotted path of the real (hyphenated) package directory.
+_GITHUB_PACKAGE = "toolkits.github-toolkit"
+
+#: Dotted path of the valid-identifier alias registered in ``sys.modules``.
+_GITHUB_ALIAS = "toolkits.github_toolkit"
 
 
 def _publish_submodules(real_dotted: str, alias_dotted: str, package) -> None:
@@ -256,6 +272,11 @@ if _math is not None:
 _git = _register_alias(_GIT_PACKAGE, _GIT_ALIAS)
 if _git is not None:
     git_toolkit = _git
+
+
+_github = _register_alias(_GITHUB_PACKAGE, _GITHUB_ALIAS)
+if _github is not None:
+    github_toolkit = _github
 
 
 #: The aliases that are actually available.  ``from toolkits import *`` must

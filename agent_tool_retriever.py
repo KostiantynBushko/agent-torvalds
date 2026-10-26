@@ -97,8 +97,16 @@ def build_tool_retriever(
         all_tools.extend(_get_linux())
 
     if include_github_tools:
-        from agent_github_toolkit import get_all_tools as _get_github
-        all_tools.extend(_get_github())
+        # The GitHub toolkit lives in ``toolkits/`` and is optional.  A
+        # broken or absent toolkit must never break the retriever.
+        try:
+            from toolkits.github_toolkit.agent_github_toolkit import (
+                get_all_tools as _get_github,
+            )
+            all_tools.extend(_get_github())
+        except ImportError:
+            # The GitHub toolkit is optional - skip it when it is not installed.
+            pass
 
     if include_db_tools:
         from agent_db_toolkit import get_all_tools as _get_db
