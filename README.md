@@ -153,7 +153,8 @@ The project documentation:
   - Runtime Prompt Injection: dynamic system prompt derived from the active project
   - Callback-manager propagation for LLM-level event tracking
 - TUI slash commands: `\help`, `\tools`, `\tool-list`, `\projects`, `\project-info`,
-  `\project-status`, `\project-summary`, `\chat-sessions`, `\chat-select`, `\chat-info`, …
+  `\project-status`, `\project-summary`, `\chat-sessions`, `\chat-select`, `\chat-info`,
+  `\chat-user`, …
 - Seamless fallback to the classic linear REPL via `--no-tui` or in headless/piped environments
 
 ### 17. Chat History Manager (`chat_manager/`)
@@ -162,10 +163,12 @@ The project documentation:
 - Per-session message isolation — each session maps to its own LlamaIndex `chat_key`
 - Automatic user identification from the OS login with on-demand provisioning
 - Active session persisted in the database and restored on the next startup
-- Interactive startup session picker plus seven `\chat-*` runtime commands
+- User settings API (`get_user_settings` / `update_user_settings`) and the `\chat-user` command
+  over the user's own preferences — the chat token limit among them
+- Interactive startup session picker plus eight `\chat-*` runtime commands
 - Dual-connector architecture: SQLAlchemy for metadata, LlamaIndex for message bodies
 - Graceful fallback to an in-memory message store when PostgreSQL is unavailable
-- 104 hermetic unit tests
+- 175 hermetic unit tests
 - See [Chat History Manager README](chat_manager/README.md) for details
 
 ### 18. MikroTik RouterOS Toolkit (`toolkits/MikroTik-RouterOS/`)
@@ -239,6 +242,7 @@ The project documentation:
 | **Chat Memory** | Persistent conversation memory with LlamaIndex integration |
 | **Multi-Session Chat History** | Isolated per-session conversations, multi-user scoping, and database-persisted active session |
 | **Chat Session Commands** | `\chat-sessions`, `\chat-select`, `\chat-create`, `\chat-delete`, `\chat-rename`, `\chat-info`, `\chat-clear` |
+| **User Settings Commands** | `\chat-user`, `\chat-user get <key>`, `\chat-user set <key> <value>`, `\chat-user help` |
 | **Interactive Help** | `\help` lists every available command with its description, filtered by the features enabled in the current session |
 | **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
 | **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
@@ -796,6 +800,10 @@ manager.shutdown()
 # \chat-rename <id> <name>    - Rename a session
 # \chat-info                  - Show the active session
 # \chat-clear                 - Clear the active session's message history
+# \chat-user                  - Show your own settings
+# \chat-user get <key>        - Show one setting
+# \chat-user set <key> <val>  - Change one setting
+# \chat-user help             - List the settings and their ranges
 #
 # Note: \chat-create / \chat-rename split on whitespace, so use a single-word
 # name there. The startup menu's "new <name>" form keeps the full name.
@@ -929,7 +937,7 @@ agent-torvalds/
 ## Recent Updates (September 2026)
 
 ### Latest Features Added
-- **Chat History Manager**: Multi-user, multi-session chat history with isolated per-session message storage, database-persisted active session, and seven `\chat-*` runtime commands
+- **Chat History Manager**: Multi-user, multi-session chat history with isolated per-session message storage, database-persisted active session, and eight `\chat-*` runtime commands
 - **Human-in-the-Loop (HITL)**: Interactive questioning with runtime toggle; no timeout by default — the agent waits for the user
 - **APT Package Management Toolkit**: Full Debian/Ubuntu package installation with multiple password methods
 - **Windows PowerShell Toolkit**: Native Windows PowerShell support for command execution

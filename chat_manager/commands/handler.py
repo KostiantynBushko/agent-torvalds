@@ -27,6 +27,7 @@ CHAT_COMMANDS = {
     "\\chat-rename": "rename",
     "\\chat-info": "info",
     "\\chat-clear": "clear",
+    "\\chat-user": "user",
 }
 
 # Prefixes of the commands that accept an argument.
@@ -66,6 +67,10 @@ def handle_chat_command(cmd: str) -> str | None:
         cmd_chat_rename,
         cmd_chat_info,
         cmd_chat_clear,
+        cmd_chat_user,
+        cmd_chat_user_get,
+        cmd_chat_user_set,
+        cmd_chat_user_help,
     )
 
     manager = get_chat_manager()
@@ -119,5 +124,33 @@ def handle_chat_command(cmd: str) -> str | None:
     # \chat-clear
     if cmd_lower == "\\chat-clear":
         return cmd_chat_clear(manager)
+
+    # \chat-user [get <key> | set <key> <value> | help]
+    if cmd_lower == "\\chat-user":
+        return cmd_chat_user(manager)
+
+    if cmd_lower.startswith("\\chat-user "):
+        parts = cmd.strip().split(maxsplit=2)
+        subcommand = parts[1].strip().lower()
+        remainder = parts[2].strip() if len(parts) > 2 else ""
+
+        if subcommand == "get":
+            if not remainder:
+                return "Usage: \\chat-user get <key>"
+            return cmd_chat_user_get(manager, remainder)
+
+        if subcommand == "set":
+            set_parts = remainder.split(maxsplit=1)
+            if len(set_parts) < 2:
+                return "Usage: \\chat-user set <key> <value>"
+            return cmd_chat_user_set(manager, set_parts[0], set_parts[1])
+
+        if subcommand in ("help", "?"):
+            return cmd_chat_user_help(manager)
+
+        return (
+            f"Unknown subcommand '{subcommand}' for \\chat-user.\n"
+            "Usage: \\chat-user [get <key> | set <key> <value> | help]"
+        )
 
     return None
