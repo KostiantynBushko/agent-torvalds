@@ -415,7 +415,7 @@ The operator reported it again, in
 
 ```
 🤖 Agent asks:
-That deletion is already in place — it was the D12 fix, committed in 87aaa6b ...
+That deletion is already in place — it was the D12 fix, committed in 4e30415 ...
 
 question: 'Which one should I use?'
 [y/N]
@@ -467,7 +467,7 @@ Do you want me to check which branches are stale?     -> yesno
 
 ```
 🤖 Agent asks:
-That deletion is already in place — it was the D12 fix, committed in 87aaa6b ...
+That deletion is already in place — it was the D12 fix, committed in 4e30415 ...
 
 Which one should I use?
 

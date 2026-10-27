@@ -1,7 +1,7 @@
 # The Excel toolkit is a module
 
 **Branch:** `refactor/xlsx-toolkit-module`
-**Base:** `master` at `65a11db`
+**Base:** `master` at `9a33678`
 **Scope:** the ninth toolkit of the "every toolkit is a module under
 `toolkits/`" refactoring.
 

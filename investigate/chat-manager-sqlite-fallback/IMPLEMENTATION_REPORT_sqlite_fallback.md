@@ -1,7 +1,7 @@
 # Implementation report — the local fallback of the metadata layer
 
 **Date:** 2026-10-25
-**Branch:** `feature/chat-manager-sqlite-fallback` (off `master`, `2c5bf2e`)
+**Branch:** `feature/chat-manager-sqlite-fallback` (off `master`, `5468e3b`)
 **Scope:** Phase B of the chat-manager investigation
 (`investigate/chat-manager-user-settings/INVESTIGATION_REPORT.md` §5.2 and §5.3).
 **Status:** implemented, verified.
