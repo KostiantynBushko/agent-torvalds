@@ -10,14 +10,23 @@ Retriever Keywords: pandas, dataframe, analysis, statistics, aggregate, pivot, f
 
 Prerequisites:
     - pandas>=2.0.0 must be installed
+    - numpy>=2.0.0 must be installed (the numeric column inference)
     - openpyxl>=3.1.5 must be installed (for Excel I/O)
+
+This is the **library half** of the data analysis toolkit.  It holds the
+thirteen operations and the module-level logger, and it carries **no
+LlamaIndex import**, so the operations stay usable - and testable - as a
+plain Python library.
+
+The LlamaIndex adapter is the other half of the package:
+``agent_data_analysis_toolkit.py``.  It is the only module of the
+toolkit that knows about LlamaIndex, and it is imported on demand, so
+importing the library never pulls LlamaIndex in.
 """
 import os
 import pandas as pd
 import numpy as np
-import json
 import logging
-from llama_index.core.tools import FunctionTool
 
 logger = logging.getLogger(__name__)
 
@@ -385,73 +394,3 @@ def get_dataframe_info(df_or_path: str, sheet_name: str = None) -> dict:
         }
     except Exception as e:
         return f"Error getting DataFrame info: {str(e)}"
-
-
-# ---------------------------------------------------------------------------
-# Tool registry
-# ---------------------------------------------------------------------------
-
-def get_all_tools() -> list[FunctionTool]:
-    """
-    Return all data analysis tools as FunctionTool objects for on-demand loading.
-    
-    Each tool includes category metadata for better retrieval.
-    
-    Returns:
-        list[FunctionTool]: List of data analysis FunctionTool objects
-    """
-    logger.info("get_all_tools called for data analysis toolkit")
-    return [
-        FunctionTool.from_defaults(
-            fn=read_excel_to_df,
-            description="Load an Excel file and return data as a list of dictionaries. Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=read_csv_to_df,
-            description="Load a CSV file and return data as a list of dictionaries. Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=describe_data,
-            description="Generate descriptive statistics summary for all numeric columns. Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=filter_data,
-            description="Filter rows based on a condition (e.g., '> 100'). Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=aggregate_data,
-            description="Group data and apply aggregation (sum, mean, count, etc.). Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=pivot_table,
-            description="Create a pivot table from tabular data. Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=detect_missing_data,
-            description="Detect and report missing/null values in the data. Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=correlation_matrix,
-            description="Compute correlation matrix for numeric columns. Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=export_dataframe,
-            description="Export a list of dictionaries to Excel or CSV file. Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=get_unique_values,
-            description="Get unique/distinct values in a column. Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=sort_data,
-            description="Sort data by a specified column. Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=compute_statistics,
-            description="Compute detailed statistics (mean, median, std, etc.) for a single column. Category: Data / Analysis",
-        ),
-        FunctionTool.from_defaults(
-            fn=get_dataframe_info,
-            description="Get DataFrame information including shape, columns, and data types. Category: Data / Analysis",
-        ),
-    ]

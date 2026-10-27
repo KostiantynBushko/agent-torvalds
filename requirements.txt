@@ -68,7 +68,6 @@ pgvector>=0.5.1
 # ---------------------------------------------------------------------------
 PyYAML>=6.0.3
 rich>=15.0.0
-numpy>=2.5.3
 
 # HTTP client used by agent_github_toolkit.py
 requests>=2.31.0
@@ -84,8 +83,15 @@ pygit2>=1.14.0
 # ---------------------------------------------------------------------------
 # Excel & Data Analysis Dependencies
 # ---------------------------------------------------------------------------
+# Excel file format - used by toolkits/xlsx-toolkit/ and, at run time, by
+# pandas when the data analysis toolkit reads or writes a workbook.
 openpyxl>=3.1.5
+
+# DataFrame - the data model of toolkits/data-analysis-toolkit/
 pandas>=2.0.0
+
+# Numeric column inference of the pivot table - toolkits/data-analysis-toolkit/
+numpy>=2.5.3
 
 # ---------------------------------------------------------------------------
 # Testing Dependencies

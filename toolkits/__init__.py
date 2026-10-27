@@ -15,8 +15,9 @@ Each toolkit package carries its own agent adapter **inside the package** -
 ``toolkits/linux-toolkit/agent_linux_toolkit.py``,
 ``toolkits/apt-toolkit/agent_apt_toolkit.py``,
 ``toolkits/windows-toolkit/agent_windows_toolkit.py``,
-``toolkits/db-toolkit/agent_db_toolkit.py`` and
-``toolkits/xlsx-toolkit/agent_xlsx_toolkit.py``.  The
+``toolkits/db-toolkit/agent_db_toolkit.py``,
+``toolkits/xlsx-toolkit/agent_xlsx_toolkit.py`` and
+``toolkits/data-analysis-toolkit/agent_data_analysis_toolkit.py``.  The
 adapter is the only module of a toolkit that depends on LlamaIndex; the
 reusable library half around it does not.
 
@@ -33,8 +34,9 @@ Shodan toolkit (``toolkits/shodan-toolkit/``), the math toolkit
 (``toolkits/linux-toolkit/``), the APT toolkit
 (``toolkits/apt-toolkit/``), the Windows toolkit
 (``toolkits/windows-toolkit/``), the database toolkit
-(``toolkits/db-toolkit/``) and the Excel toolkit
-(``toolkits/xlsx-toolkit/``) live in directories whose names
+(``toolkits/db-toolkit/``), the Excel toolkit
+(``toolkits/xlsx-toolkit/``) and the data analysis toolkit
+(``toolkits/data-analysis-toolkit/``) live in directories whose names
 contain a hyphen. A hyphen is **not a valid Python identifier**, so those
 directories can never be reached with a plain ``import`` statement::
 
@@ -49,6 +51,7 @@ directories can never be reached with a plain ``import`` statement::
     from toolkits.windows-toolkit import execute_shell_command       # SyntaxError
     from toolkits.db-toolkit import run_postgres_query               # SyntaxError
     from toolkits.xlsx-toolkit import read_xlsx_file                 # SyntaxError
+    from toolkits.data-analysis-toolkit import read_excel_to_df      # SyntaxError
 
 ``importlib.import_module("toolkits.MikroTik-RouterOS")`` does work, but it is
 awkward to use at every call site and it interacts badly with pytest's default
@@ -70,6 +73,7 @@ for each of them that points at the very same package object::
     from toolkits.windows_toolkit import execute_shell_command       # works
     from toolkits.db_toolkit import run_postgres_query               # works
     from toolkits.xlsx_toolkit import read_xlsx_file                 # works
+    from toolkits.data_analysis_toolkit import read_excel_to_df      # works
 
 The aliases are registered only if the package is actually present and
 importable, so ``import toolkits`` never fails when an optional toolkit is
@@ -89,6 +93,7 @@ package, and the alias points straight at it::
     toolkits/windows-toolkit/     ->  toolkits.windows_toolkit
     toolkits/db-toolkit/          ->  toolkits.db_toolkit
     toolkits/xlsx-toolkit/        ->  toolkits.xlsx_toolkit
+    toolkits/data-analysis-toolkit/  ->  toolkits.data_analysis_toolkit
 
 The agent adapters are submodules of their toolkit package, so they are
 reached through the same alias::
@@ -104,8 +109,9 @@ reached through the same alias::
     from toolkits.windows_toolkit.agent_windows_toolkit import get_all_tools
     from toolkits.db_toolkit.agent_db_toolkit import get_all_tools
     from toolkits.xlsx_toolkit.agent_xlsx_toolkit import get_all_tools
+    from toolkits.data_analysis_toolkit.agent_data_analysis_toolkit import get_all_tools
 
-Those eleven lines are the canonical import paths of the adapters.  The
+Those twelve lines are the canonical import paths of the adapters.  The
 adapters themselves are **not** published eagerly - see the note below.
 
 --------------------------------------------------------------------------------
@@ -179,6 +185,7 @@ _ALIAS_NAMES = (
     "windows_toolkit",
     "db_toolkit",
     "xlsx_toolkit",
+    "data_analysis_toolkit",
 )
 
 #: The agent adapters of the toolkits, by module name.
@@ -200,6 +207,8 @@ _ALIAS_NAMES = (
 #:     from toolkits.apt_toolkit.agent_apt_toolkit import get_all_tools
 #:     from toolkits.windows_toolkit.agent_windows_toolkit import get_all_tools
 #:     from toolkits.db_toolkit.agent_db_toolkit import get_all_tools
+#:     from toolkits.xlsx_toolkit.agent_xlsx_toolkit import get_all_tools
+#:     from toolkits.data_analysis_toolkit.agent_data_analysis_toolkit import get_all_tools
 _ADAPTER_MODULES = (
     "agent_mikrotik_toolkit",
     "agent_shodan_toolkit",
@@ -212,6 +221,7 @@ _ADAPTER_MODULES = (
     "agent_windows_toolkit",
     "agent_db_toolkit",
     "agent_xlsx_toolkit",
+    "agent_data_analysis_toolkit",
 )
 
 #: The modules that are never published eagerly, whatever package they
@@ -300,6 +310,14 @@ _XLSX_PACKAGE = "toolkits.xlsx-toolkit"
 
 #: Dotted path of the valid-identifier alias registered in ``sys.modules``.
 _XLSX_ALIAS = "toolkits.xlsx_toolkit"
+
+
+#: Dotted path of the real (hyphenated) package directory.
+_DATA_ANALYSIS_PACKAGE = "toolkits.data-analysis-toolkit"
+
+
+#: Dotted path of the valid-identifier alias registered in ``sys.modules``.
+_DATA_ANALYSIS_ALIAS = "toolkits.data_analysis_toolkit"
 
 
 def _publish_submodules(real_dotted: str, alias_dotted: str, package) -> None:
@@ -417,6 +435,11 @@ if _db is not None:
 _xlsx = _register_alias(_XLSX_PACKAGE, _XLSX_ALIAS)
 if _xlsx is not None:
     xlsx_toolkit = _xlsx
+
+
+_data_analysis = _register_alias(_DATA_ANALYSIS_PACKAGE, _DATA_ANALYSIS_ALIAS)
+if _data_analysis is not None:
+    data_analysis_toolkit = _data_analysis
 
 
 #: The aliases that are actually available.  ``from toolkits import *`` must

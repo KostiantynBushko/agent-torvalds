@@ -118,11 +118,22 @@ def _discover_tools() -> List[FunctionTool]:
         # The Excel toolkit is optional - skip it when it is not installed.
         pass
 
-    from agent_data_analysis_toolkit import get_all_tools as _get_analysis
+    # The data analysis toolkit lives in ``toolkits/`` and is optional.  It
+    # can fail to import for one reason: ``pandas`` - and the ``numpy`` it
+    # is built on - is not installed.  A broken or absent toolkit must
+    # never break the selection menu.
+    try:
+        from toolkits.data_analysis_toolkit.agent_data_analysis_toolkit import (
+            get_all_tools as _get_analysis,
+        )
+    except ImportError:
+        # The data analysis toolkit is optional - skip it when it is not installed.
+        _get_analysis = None
 
     from project_manager.agent_project_manager_toolkit import get_all_tools as _get_pm
     tools.extend(_get_pm())
-    tools.extend(_get_analysis())
+    if _get_analysis is not None:
+        tools.extend(_get_analysis())
 
     # MikroTik RouterOS toolkit. The adapter degrades gracefully when the
     # optional 'asyncssh' dependency is missing, so a broken or absent
