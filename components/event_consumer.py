@@ -47,6 +47,7 @@ from components.console_markdown import (
 )
 from components.hitl_question import strip_marker
 from components.hitl_timeout import NO_TIMEOUT, describe_timeout
+from components.chat_message import to_strings
 
 logger = logging.getLogger(__name__)
 
@@ -447,9 +448,32 @@ class EventConsumer:
         """Handle agent input event."""
         logger.debug("EventConsumer._on_agent_input: received agent input")
         input_val = getattr(event, 'input', None)
-        logger.debug("EventConsumer._on_agent_input: input=%r", input_val)
+
+        # The prompt, rendered the way a person reads it.  It used to be
+        # logged as a Python repr: one enormous record of escaped object
+        # syntax, spread over dozens of lines, that answered none of the
+        # questions an operator has about the prompt.
+        lines = to_strings(input_val)
+        if lines:
+            logger.debug(
+                "EventConsumer._on_agent_input: prompt: %d messages", len(lines)
+            )
+            for index, line in enumerate(lines):
+                logger.debug(
+                    "EventConsumer._on_agent_input:   [%d] %s", index, line
+                )
+        elif input_val is not None:
+            # Not a prompt - show the payload as it is.
+            logger.debug("EventConsumer._on_agent_input: input=%r", input_val)
+
         if input_val is not None:
-            self.state.set("agent_input", str(input_val))
+            # The readable text, not the repr of the whole conversation:
+            # the state is a debugging aid, and the repr of a long run is
+            # megabytes of escaped object syntax.
+            self.state.set(
+                "agent_input",
+                "\n".join(lines) if lines else str(input_val),
+            )
 
     async def _on_agent_setup(self, event: AgentSetup) -> None:
         """Handle agent setup event."""

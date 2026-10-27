@@ -765,6 +765,72 @@ Configure per-request statistics via environment variables:
 |---|---|---|
 | `TORVALDS_CACHE_PATH` | `~/.cache/torvalds/agent_cache.json` | Custom cache file location |
 
+### Debugging Configuration
+
+The agent logs the prompt it sends to the model in a **readable** form:
+one line per message, the way a person reads it.  The log appears at
+the `DEBUG` level.
+
+```console
+$ python agent-torvalds.py --log-level DEBUG
+...
+EventConsumer._on_agent_input: prompt: 5 messages
+EventConsumer._on_agent_input:   [0] system: You are Torvalds, a technical AI assistant that interacts with the operating system.
+EventConsumer._on_agent_input:   [1] user: I want to improve debug message for context window
+EventConsumer._on_agent_input:   [3] assistant: thinking: The user asks for a better debug message. | tool call: pwd(path=/)
+EventConsumer._on_agent_input:   [4] tool: output: /home/kbush
+```
+
+A message is rendered as its **role**, a colon, and what it carries:
+its text, its thinking, and the tool calls it requests.  A tool call
+that the chat history carries in the OpenAI shape
+(`additional_kwargs["tool_calls"]`) is rendered as well, so the log
+shows the same tools the model is shown.
+
+The rendering lives in `components/chat_message.py` — `to_string()`
+for one message, `to_strings()` for a whole prompt.
+
+The **empty lines are removed**: a system prompt that ends with a few
+newlines, or a document that separates its paragraphs with a run of
+blank lines, would otherwise fill the log with empty records.  One
+empty line is kept — it is a paragraph break and it carries meaning —
+and a run of them is reduced to one.
+
+### The Context Window
+
+The agent writes the size of the model's context window to the log at
+the `INFO` level, together with the place the number came from:
+
+```console
+$ python agent-torvalds.py
+...
+2026-10-27 21:24:03,517 [INFO] components.ollama_config: Context window: 8192 tokens — the running model (/api/ps)
+```
+
+The number is the window the **server** uses, not the maximum the
+model advertises — the two are often very different, and a prompt that
+exceeds the real window is truncated from the front by the server,
+which drops the user request.  The sources are tried in this order:
+
+| Source | What it is |
+|---|---|
+| `TORVALDS_CONTEXT_LENGTH` | the explicit override |
+| `/api/ps` | the context length of the running model |
+| `PARAMETER num_ctx` | the Modelfile of the model |
+| `llm.metadata.context_window` | the maximum the model advertises |
+
+The name of the source is in the log line, because a number on its own
+does not say whether it is the window the server really uses.  With
+the context guard on (`--context-guard-on`), the budget it derives
+from the window is logged as well:
+
+```console
+2026-10-27 21:24:03,601 [INFO] components.hitl_agent: Context guard: the context window is 8192 tokens — the prompt may use 6554 of them.
+```
+
+`investigate/context-window-proof/` holds the proof that the number
+comes from the server.
+
 ### Human-in-the-Loop Configuration
 
 | Variable | Default | Description |
