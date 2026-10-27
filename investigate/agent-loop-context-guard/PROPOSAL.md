@@ -133,6 +133,7 @@ agent that works in a cramped window and one that fights for every token.
 
 ## Next step
 
-The work is on the branch `fix/context-guard-agent-loop` in the
-`self-development/` clone. It is **not committed** — per Rule 4 of
-`SELF_DEVELOPMENT_RULES.md` a commit needs the operator's explicit approval.
+The work was on the branch `fix/context-guard-agent-loop` in the
+`self-development/` clone. The operator approved the commit and merged
+it as **PR #61**, which squash-merged the fix into `master` as
+`0147443` on 2026-10-27.
