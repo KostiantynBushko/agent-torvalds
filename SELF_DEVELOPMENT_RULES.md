@@ -4,9 +4,15 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-27 (the **context guard** became **optional** — off
-by default, turned on by `--context-guard-on`; the **Claude co-author
-contributor** was purged
+**Last updated:** 2026-10-27 (the **context window** is logged at the
+`INFO` level and **proved** to be the window the *server* uses — the
+model advertises 262144 tokens, the server runs with 8192 — and the
+**empty lines** are gone from the prompt in the debug log; the **prompt
+in the debug log is
+readable** — the messages that go to the model are *rendered* instead of
+being dumped as a Python repr; the **context guard** became **optional**
+— off by default, turned on by `--context-guard-on`; the **Claude
+co-author contributor** was purged
 from the history, and the tooling that keeps it out was **squash-merged into
 `master` as PR #58**, commit `f58eb56`; the **commit SHAs** that the rewrite
 made stale were refreshed and **squash-merged into `master` as PR #59**,
@@ -131,13 +137,350 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `feature/context-guard-optional` — **the reviewable branch**, carrying **PR #62** (<https://github.com/KostiantynBushko/agent-torvalds/pull/62>). It was rebased onto `master` after the operator merged PR #61, so it now carries the **on/off switch alone**. The PR is **open, waiting for the operator's review**; the merge is the operator's call. `fix/context-guard-agent-loop` on `origin` is the **stale pre-squash** branch — the loop fix it carried is in `master` now. |
-| Scope | Make the **context guard** opt-in: off by default, turned on by `--context-guard-on` (or `TORVALDS_CONTEXT_GUARD=true`). The guard trims the prompt to the model's context window, and it changes what the model is shown — so the decision belongs to the operator. |
-| Status | The guard stands down by default. `HITLFunctionAgent.context_guard_enabled` is `False` out of the box, and `take_step()` returns to the base implementation untouched when it is. `--context-guard-on` (in `agent-torvalds.py` **and** `agent-torvalds-mw.py`) and `TORVALDS_CONTEXT_GUARD=true` turn it on; the startup banner reports the effective state. The trimming itself did not change — `components/context_guard.py` is the same code. |
-| Policy | The switch is **off** by default, and that is the point: the guard drops the oldest turns and shortens the ones that do not fit, so the operator decides whether the model sees the trimmed conversation or the full one. The **price of the switch** is stated in the CHANGELOG and in the README: with the guard off, a long tool-using run grows the prompt without bound, the Ollama server truncates it from the front, and the user request is dropped — the "No user query found in messages." failure the guard was written to prevent. |
-| State | The change is **committed** (`42f4640`, "feat: make the context guard optional, off by default") and **verified**: `tests/test_context_guard_toggle.py` (8 tests) pins the switch, `tests/test_context_guard_agent.py` now turns the guard on explicitly, and the CI gate reports **no new failure** (40 known, 0 new, 0 fixed). The branch was **rebased onto `master`** (`0147443`, the squash-merge of PR #61); the rebase **dropped the loop-fix commit as already applied**, leaving the switch on its own. The branch is **pushed** and **PR #62 is open** against `master` — Rule 4: the merge needs the operator's explicit approval. |
+| Branch | `feature/context-window-debug-report` — based on `master` at `a7cb2ee` (the squash-merge of PR #62). The changes are **in the working tree**: not committed, not pushed. |
+| Scope | Make the **prompt in the debug log readable** — and, on the operator's second request on the same branch, **reduce the empty lines** in it, **log the context window at the `INFO` level**, and **prove that the number is the window the server really uses**. |
+| Status | Implemented and **verified**. `components/chat_message.py` renders a message (`to_string()`) and a prompt (`to_strings()`); the event consumer logs one line per message and the state handler holds the same text. The rendering covers the **text**, the **thinking** and the **tool calls** — in both shapes a chat history can carry a tool call in: as a `ToolCallBlock`, and in the OpenAI-shaped `additional_kwargs["tool_calls"]`. The **empty lines** are reduced: one paragraph break is kept, a run of them is reduced to one, and the leading and trailing ones are dropped. The **context window** is logged at the `INFO` level with the source it came from, and the **proof** in `investigate/context-window-proof/` shows that the number is the server's and not the model's advertisement. |
+| Policy | **Simple, and only that.** The operator's own idea was *"just to print ChatMessage in human readable way, something like ChatMessage has a to_string method"*, and the first implementation went far past it — a token-counting report, a context-window resolver, a budget, a detail limit and an escape hatch. All of it was **removed**; what is left is one function and one call site. The rendering is a **function** and not a method because `ChatMessage` is a class of the LlamaIndex framework, and a method on it would have to be monkey-patched onto the framework. |
+| Investigation | **Logging into a file** — the operator asked for the logging to be redirectable into a file, rotated at a predefined size, with a symlink to the current log file in the directory. The investigation is in `investigate/logging-to-file/`: the report, a **working prototype**, the harness (seven invariants) and the drift proof (seven deliberate breaks, all caught). **No source file of the agent was modified** — the investigation folder only. |
+| State | **Verified, not yet committed.** `tests/test_chat_message.py` — 34 tests. `tests/test_ollama_context_window.py` — 14 tests. `investigate/chat-message-debug/verify_chat_message.py` — four invariants, written against the public behaviour (the log records and the state). `investigate/chat-message-debug/verify_harness_catches_regressions.py` — the proof that the harness catches four deliberate drifts. `investigate/context-window-proof/verify_context_window.py` — four invariants, checked against a **live** Ollama server. `investigate/context-window-proof/verify_harness_catches_regressions.py` — the proof that the harness catches four deliberate drifts. The CI gate reports **0 new failures**. Rule 4: the commit and the push need the operator's explicit approval. |
 
-### Latest change: the context guard is optional
+### Latest change: the empty lines are gone, and the context window is logged
+
+**The operator asked for it on 2026-10-27**, on the same branch:
+*"first of all can we reduce empty string, and can you prove we actually
+see context window? Also I want to see context windows size in info log
+level add it as well in the same branch"*.
+
+Three things.
+
+**1. The empty lines are gone from the log.**  The system prompt ends
+with a few newlines, and the log showed them as a wall of empty
+records.  One empty line is kept — it is a paragraph break and it
+carries meaning — and a run of them is reduced to one.  The leading
+and the trailing empty lines are dropped, and a message that carries
+nothing but whitespace reads as `(empty)`.
+
+**2. The context window is logged at the `INFO` level**, together with
+the place the number came from:
+
+```
+2026-10-27 21:24:03,517 [INFO] components.ollama_config: Context window: 8192 tokens — the running model (/api/ps)
+```
+
+The number alone says nothing about whether it is the window the server
+really uses or merely the maximum the model advertises, so the source is
+in the line as well.  The sources are tried in this order:
+`TORVALDS_CONTEXT_LENGTH`, the running model (`/api/ps`),
+`PARAMETER num_ctx` in the Modelfile, and finally the maximum the
+model advertises.  With the context guard on, the budget it derives
+from the window is logged too.
+
+**3. The proof that the number is the server's.**  This is the part
+worth keeping.  The agent's model advertises **262144** tokens; the
+server runs it with **8192**.  The advertised maximum is 32 times
+larger, and a prompt that exceeds the real window is truncated from the
+front by the server — which drops the user request and makes the model
+template fail with "No user query found in messages.".
+
+`investigate/context-window-proof/verify_context_window.py` asks the
+live server directly and compares:
+
+| | Tokens | Where it comes from |
+|---|---:|---|
+| The model **advertises** | 262144 | `llm.metadata.context_window` |
+| The server is **configured** | 8192 | `PARAMETER num_ctx` in the Modelfile |
+| The server **allocated** | 8192 | `context_length` in `/api/ps` |
+| The **agent reports** | **8192** | `components/ollama_config.py` |
+
+Four invariants: **P1** the number is the server's, **P2** it is not
+the advertised maximum, **P3** the log names the size *and* the source,
+**P4** the number is *read* and not baked in.  P4 is the one that
+matters: it takes the server away and checks that the number changes
+(8192 with the server, 12345 with the override, 262144 without the
+server).  A hardcoded number would answer 8192 in all three cases.
+
+The second script proves the harness catches four deliberate drifts —
+the same discipline as the chat-message harness: *a check that has
+never failed proves nothing*.
+
+| Path | Change |
+|---|---|
+| `components/chat_message.py` | `_tidy()` — the empty lines are reduced. |
+| `components/ollama_config.py` | `resolve_context_window_with_source()` returns the number **and** its source; `apply_context_window()` logs both at the `INFO` level. |
+| `components/hitl_agent.py` | The context guard logs the window and the budget it derives from it. |
+| `tests/test_chat_message.py` | 8 more tests — the empty lines. |
+| `tests/test_ollama_context_window.py` | 8 more tests — the sources and the log. |
+| `investigate/context-window-proof/` | **New.** The proof: four invariants, the drift proof and `PROOF.md`. |
+| `README.md`, `CHANGELOG.md` | The documentation. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/tests/test_chat_message.py self-development/tests/test_ollama_context_window.py -q
+self-development/.venv/bin/python self-development/investigate/chat-message-debug/verify_chat_message.py
+self-development/.venv/bin/python self-development/investigate/context-window-proof/verify_context_window.py
+self-development/.venv/bin/python self-development/investigate/context-window-proof/verify_harness_catches_regressions.py
+```
+
+48 tests pass, the eight invariants hold, and every deliberate drift is
+caught.
+
+### Investigation: the logging into a file, with a rotation and a symlink
+
+The operator asked for it on 2026-10-27:
+*"I want be able to redirect logging into file, this solution must have a
+posibility to rotare log when reaching current log file predefined size.
+Inside directory we must have soft link to current log file the files"*.
+
+**No source file of the agent was modified.**  The investigation folder
+`investigate/logging-to-file/` was added: the report, a **working
+prototype**, the verification harness and the drift proof.
+
+#### The current state — half the feature is in the tree, and unreachable
+
+`agent-torvalds-mw.py` has had a `to_file` parameter on
+`configure_logging()` since the multi-window work, and **no caller ever
+passes it** — the parameter is dead code.  The classic orchestrator has
+no file support at all.  A plain `logging.FileHandler` never rotates:
+the file grows until the disk is full.
+
+#### The design
+
+| | |
+|---|---|
+| The directory | `~/.torvalds/logs/` — the convention the project already uses (`~/.torvalds/chat_manager.db`, `~/.cache/torvalds/agent_cache.json`).  Not the working tree. |
+| The files | `agent.log` (the current log, a **real** file), `agent-current.log -> agent.log` (the symlink), `agent.log.1` … `agent.log.N` (the generations). |
+| The symlink | It points at the **path** of the live file, not at its inode.  `doRollover()` renames the file away and reopens the same path, so the link is valid before and after every rotation and never has to be re-pointed.  It is created atomically (`os.replace`) and re-asserted after a rollover, so it heals itself. |
+| The rotation | `logging.handlers.RotatingFileHandler` — the **standard library**.  The subclass adds the symlink and the file mode.  The size limit is **soft**: the file can exceed it by the record that crossed it.  `backupCount = 0` disables the rotation, and is refused. |
+| The size | `--log-max-size 10MB` — `B`, `KB`, `MB`, `GB`.  An unknown unit is a **typo that is reported**, because a log that never rotates is the failure this feature exists to prevent. |
+| The tee | The stderr handler stays.  The file is a tee, not a replacement. |
+| Off by default | The agent's behaviour does not change until the operator asks for it. |
+
+| Flag | Environment variable | Default |
+|---|---|---|
+| `--log-file PATH` | `TORVALDS_LOG_FILE` | *off* |
+| `--log-dir DIR` | `TORVALDS_LOG_DIR` | `~/.torvalds/logs` |
+| `--log-max-size SIZE` | `TORVALDS_LOG_MAX_SIZE` | `10MB` |
+| `--log-max-files N` | `TORVALDS_LOG_MAX_FILES` | `5` |
+| `--log-symlink NAME` | `TORVALDS_LOG_SYMLINK` | `<stem>-current.log` |
+
+#### What the harness found
+
+**The file mode was wrong, and only the harness noticed.**  The stdlib
+handler creates the file with `0666 & ~umask` — `0664` on this machine,
+so a log carrying the prompts was readable by every account on the box.
+The first run failed on it: `[FAIL] L6  the file mode is 0o664`.
+
+**The symlink needs no maintenance at all — and that was a surprise.**
+The first drift removed the "refresh the symlink after a rollover" call
+and **the harness passed**.  The drift was not a defect: the symlink
+points at a *path*, and the path does not change when the file is
+rotated.  The refresh is only load-bearing for a symlink somebody
+deleted while the agent runs, and that case is now a check of its own.
+
+*"A check that has never failed proves nothing."*
+
+#### The invariants
+
+| | Invariant | Caught by |
+|---|---|---|
+| **L1** | Every record reaches the log file. | a record that is swallowed |
+| **L2** | The log file is rotated when it reaches the size limit. | the rotation being disabled |
+| **L3** | The symlink points at the file being written *now*, and it comes back after it was deleted. | the symlink pointing at the rotated file, or not being refreshed |
+| **L4** | The number of retained generations is bounded. | the retention being ignored |
+| **L5** | A symlink that cannot be created degrades the pointer, never the logging. | the failure being raised |
+| **L6** | The log file is appended to, is private (`0600`), and is not truncated when the logging is reconfigured. | the truncation, and the missing mode |
+| **L7** | The size limit is written the way an operator writes it, and an unknown unit is reported. | the typo being ignored |
+
+**Verifying the investigation**
+
+```bash
+self-development/.venv/bin/python investigate/logging-to-file/prototype_file_logging.py
+self-development/.venv/bin/python investigate/logging-to-file/verify_logging_to_file.py
+self-development/.venv/bin/python investigate/logging-to-file/verify_harness_catches_regressions.py
+```
+
+13 checks hold, and **7 of 7** deliberate drifts are caught.
+
+#### The known limitations
+
+| | Limitation | What it means |
+|---|---|---|
+| Multi-process | `RotatingFileHandler` has no cross-process lock. | One log file per agent process. |
+| The size limit is soft | The live file can exceed the limit by one record. | A record is never cut in half. |
+| No compression | The generations are plain text. | The disk use is already bounded. |
+| The log is not redacted | It carries the prompts and the tool output. | The file is `0600` and stays in the home directory. |
+
+The report ends with **four open questions for the operator**: the name of
+the symlink, the default size, whether the file replaces the terminal or
+joins it, and whether the TUI should stop writing to stderr.
+
+### Latest change: the answer is in the debug log
+
+The operator asked: *"can you check is there another place in EventConsumer
+ChatMessage we can update output formating to make it human redable"*.
+
+**The answer was not in the log at all.**  `AgentOutput` has no `output`
+field — the answer is in `event.response` — and the handler read
+`event.output`, so the record said `output=None` **every single time**.
+The code looked right because the *dummy* `AgentOutput` in
+`event_consumer.py` — the one that exists for the case where LlamaIndex
+is not installed — has `self.output`.  The fallback masked the real API.
+
+The stop event carried the answer: `StopEvent.result` **is** the
+`AgentOutput`.  It was logged as the repr of the whole model, with the
+answer buried inside it.
+
+| | Before | After |
+|---|---|---|
+| The answer | `output=None` — not logged | `assistant: The disk is 78% full: 12 GB of 16 GB are in use.` |
+| The tool calls | inside the model repr | `tool call: execute_shell_command(command=df -h /)` |
+| The stop event | `result=AgentOutput(response=ChatMessage(role=<MessageRole.ASSISTANT: ...` | the same rendering, one thing per line |
+
+`to_output_string()` in `components/chat_message.py` renders the answer
+event: the text, the tool calls, the structured response and the retry
+messages — one thing per line, a call the answer already shows not
+shown twice.  The state holds the readable answer, not the repr.
+
+**What the harness found:** every `getattr` in the module now goes
+through `_safe_getattr()`.  `getattr` only swallows the `AttributeError`
+of a *missing* attribute, so a payload whose property *raises* would
+have taken the agent down — in the middle of a run, over a **debug
+log**.
+
+| | Invariant | Caught by |
+|---|---|---|
+| **O1** | The answer is in the log, and the record does not say `output=None`. | the handler reading the field the framework does not have again |
+| **O2** | The tool calls of the answer are in the log, each of them once. | the tool calls not being rendered |
+| **O3** | The structured response is in the log. | it not being rendered |
+| **O4** | The retry messages are in the log. | them not being rendered |
+| **O5** | No object syntax leaks into the log. | the stop event logging the repr of the model again |
+| **O6** | A payload that cannot be read does not break the run. | the renderer not being exception-proof |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python investigate/output-rendering/probe_output_rendering.py
+self-development/.venv/bin/python investigate/output-rendering/verify_output_rendering.py
+self-development/.venv/bin/python investigate/output-rendering/verify_harness_catches_regressions.py
+```
+
+8 checks hold, 6 of 6 drifts are caught, the 45 tests of
+`tests/test_chat_message.py` pass, and the CI gate reports 0 new
+failures.
+
+**What is left, on purpose.**  Six places in the consumer still log a
+plain string or a dict as a `repr` — the streamed token, the tool
+arguments, the question, the operator's answer, the human's answer and
+the workflow handler.  They are `%r` to `%s` away, and they are listed
+in the report.  The report also asks whether the **dummy event classes**
+should be made to match the framework, so that a mistake like the one
+above cannot be made silently.
+
+### The security findings of PR #63
+
+The Aikido PR checks reported three findings on the branch, all of them
+"low severity", all of them in the new `investigate/` proofs.
+
+**Two of them were real.**  `replay_the_operator_log.py` used `assert`
+for its two checks.  Under `python -O` the assert statements are
+removed, and the script printed **"OK — no trailing empty lines, no run
+of empty lines."** and exited **0** for a rendering that was broken — a
+proof that lies about its own result.  The checks are explicit now, and
+they fail with exit 1 under `-O` as well.
+
+**The third one was a real hardening.**  `verify_context_window.py`
+asked the server with `urllib.request.urlopen`, which follows a
+redirect to any host.  The request now stays on the server it was aimed
+at, refuses the link-local range where the cloud metadata service
+lives, and caps the read at 1 MiB.  The URL is the operator's own
+configuration — `TORVALDS_OLLAMA_HOST` — and not input that arrives
+over a network, so this is not an SSRF in the sense the scanner means
+it; it is the one path by which a request could have been steered at a
+service the operator never named.
+
+The rules are pinned by `tests/test_context_window_request_safety.py` —
+15 checks that run in the CI, and that fail when the hardening is
+taken away.  Two of the four drifts were **not** caught by the first
+version of the tests: a redirect to an address that is not there fails
+either way, and a body that is not valid JSON fails to parse either
+way.  Both tests were wrong for the same reason — they could not tell
+"refused" from "attempted and failed".
+
+**What was left alone, and why.**  The agent's own call to `/api/ps`
+in `components/ollama_config.py` has the same shape.  It is left as it
+is: the URL is the operator's configuration, the answer is parsed for a
+single integer and thrown away, and a strict redirect rule there could
+cost the *agent* the server's window — silently, because the function
+answers `None` and the agent would report the advertised maximum
+instead.  A proof that says it failed is worth more than a feature that
+quietly degrades.
+
+### Previous change: the prompt in the debug log is readable
+
+**The operator asked for it on 2026-10-27**: *"I want to improve debug
+message for context window… I need human readable ChatMessage in
+`EventConsumer._on_agent_input` on debug mode."*
+
+The prompt was logged as a Python repr — the system prompt, the whole
+chat history and the run's scratchpad, escaped and wrapped in object
+syntax, spread over dozens of lines.  It now reads as the messages
+themselves:
+
+```
+EventConsumer._on_agent_input: prompt: 5 messages
+EventConsumer._on_agent_input:   [0] system: You are Torvalds, a technical AI assistant that interacts with the operating system.
+EventConsumer._on_agent_input:   [1] user: I want to improve debug message for context window
+EventConsumer._on_agent_input:   [3] assistant: thinking: The user asks for a better debug message. | tool call: pwd(path=/)
+EventConsumer._on_agent_input:   [4] tool: output: /home/kbush
+```
+
+| Path | Change |
+|---|---|
+| `components/chat_message.py` | **New.** `to_string()` renders one message, `to_strings()` renders a prompt. The text, the thinking and the tool calls — in both shapes a chat history can carry a tool call in. |
+| `components/event_consumer.py` | `_on_agent_input()` logs one line per message; the state handler holds the same readable text. |
+| `tests/test_chat_message.py` | **New.** 26 tests. |
+| `investigate/chat-message-debug/verify_chat_message.py` | **New.** The harness: four invariants. |
+| `investigate/chat-message-debug/verify_harness_catches_regressions.py` | **New.** The proof that the harness catches four deliberate drifts. |
+| `investigate/chat-message-debug/IMPLEMENTATION_REPORT.md` | **New.** What was implemented and why. |
+| `README.md`, `CHANGELOG.md` | The documentation. |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/tests/test_chat_message.py -q
+self-development/.venv/bin/python self-development/investigate/chat-message-debug/verify_chat_message.py
+self-development/.venv/bin/python self-development/investigate/chat-message-debug/verify_harness_catches_regressions.py
+```
+
+26 tests pass, the four invariants hold, and all four deliberate drifts
+are caught.
+
+**Two things this change is worth knowing about.**
+
+*It is much smaller than the first attempt.*  The first implementation
+was a **context report**: a token count, a percentage of the context
+window, a budget, a per-message breakdown, a detail limit, an escape
+hatch for the raw payload and a resolver for the window the server
+really uses — a new module of 600 lines, 65 tests and a seven-invariant
+harness.  The operator's answer to it was that it was too complex: *"I
+do not think we need such a complex solution — my idea was just to
+print ChatMessage in human readable way, something like ChatMessage has
+a `to_string` method."*  All of it was removed.  What is left is **one
+function** (`to_string()`), **one helper** (`to_strings()`) and **one
+call site**.
+
+*The tool call is in the rendering, and that is the part worth keeping.*
+A chat history carries a tool call in two places: as a `ToolCallBlock`
+in `message.blocks`, and in the OpenAI-shaped
+`additional_kwargs["tool_calls"]` — the shape the Ollama adapter still
+writes for histories that predate the blocks.  A rendering that showed
+the text of an assistant turn and none of the tools it asked for would
+be misleading, and the first implementation had that defect: the tool
+call in `additional_kwargs` was **invisible**.  The rendering reads
+both, and a call that is present in both is shown once.
+
+### Previous change: the context guard is optional
 
 **The operator asked for it on 2026-10-27**: make the context guard
 optional — off by default, turned on by the command line argument

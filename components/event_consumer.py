@@ -47,6 +47,7 @@ from components.console_markdown import (
 )
 from components.hitl_question import strip_marker
 from components.hitl_timeout import NO_TIMEOUT, describe_timeout
+from components.chat_message import to_output_string, to_strings
 
 logger = logging.getLogger(__name__)
 
@@ -447,9 +448,32 @@ class EventConsumer:
         """Handle agent input event."""
         logger.debug("EventConsumer._on_agent_input: received agent input")
         input_val = getattr(event, 'input', None)
-        logger.debug("EventConsumer._on_agent_input: input=%r", input_val)
+
+        # The prompt, rendered the way a person reads it.  It used to be
+        # logged as a Python repr: one enormous record of escaped object
+        # syntax, spread over dozens of lines, that answered none of the
+        # questions an operator has about the prompt.
+        lines = to_strings(input_val)
+        if lines:
+            logger.debug(
+                "EventConsumer._on_agent_input: prompt: %d messages", len(lines)
+            )
+            for index, line in enumerate(lines):
+                logger.debug(
+                    "EventConsumer._on_agent_input:   [%d] %s", index, line
+                )
+        elif input_val is not None:
+            # Not a prompt - show the payload as it is.
+            logger.debug("EventConsumer._on_agent_input: input=%r", input_val)
+
         if input_val is not None:
-            self.state.set("agent_input", str(input_val))
+            # The readable text, not the repr of the whole conversation:
+            # the state is a debugging aid, and the repr of a long run is
+            # megabytes of escaped object syntax.
+            self.state.set(
+                "agent_input",
+                "\n".join(lines) if lines else str(input_val),
+            )
 
     async def _on_agent_setup(self, event: AgentSetup) -> None:
         """Handle agent setup event."""
@@ -559,15 +583,52 @@ class EventConsumer:
             logger.warning("EventConsumer._on_tool_call_result: error in tool=%s", tool_name)
 
     async def _on_stop_event(self, event: StopEvent) -> None:
-        """Handle workflow completion event."""
-        logger.debug("EventConsumer._on_stop_event: workflow stopping, result=%r", event.result)
+        """Handle workflow completion event.
+
+        The result of the stop event is the answer event itself, so the
+        same rendering serves both.  It used to be logged as a Python
+        repr: the whole ``AgentOutput`` model, with the answer buried
+        inside it, wrapped in object syntax and spread over lines.
+        """
+        result = getattr(event, "result", None)
+        answer = to_output_string(result)
+        if answer:
+            for line in answer.splitlines():
+                logger.debug("EventConsumer._on_stop_event: %s", line)
+        else:
+            logger.debug(
+                "EventConsumer._on_stop_event: workflow stopping, result=%r", result
+            )
         self.state.set("workflow_running", False)
 
     async def _on_agent_output(self, event: AgentOutput) -> None:
-        """Handle agent output event."""
+        """Handle agent output event.
+
+        The answer is the one thing an operator looks for in the log
+        after a run, and it used to be missing: the handler read
+        ``event.output`` - a field the framework's ``AgentOutput`` does
+        not have.  The answer is in ``event.response``, so the record
+        said ``output=None`` every single time, and the answer was only
+        to be found inside the repr of the stop event.
+
+        It is rendered the way the prompt is rendered: the text, the
+        thinking and the tool calls, one thing per line.
+        """
         logger.debug("EventConsumer._on_agent_output: received agent output")
-        output_val = getattr(event, 'output', None)
-        logger.debug("EventConsumer._on_agent_output: output=%r", output_val)
+
+        answer = to_output_string(event)
+        if answer:
+            for line in answer.splitlines():
+                logger.debug("EventConsumer._on_agent_output: %s", line)
+            # The readable answer, not the repr of the model: the state
+            # is a debugging aid, and the repr of a long answer is a
+            # wall of object syntax.
+            self.state.set("agent_output", answer)
+        else:
+            output_val = getattr(event, "output", None)
+            logger.debug(
+                "EventConsumer._on_agent_output: output=%r", output_val
+            )
 
     # ------------------------------------------------------------------
     # HITL Event Handlers

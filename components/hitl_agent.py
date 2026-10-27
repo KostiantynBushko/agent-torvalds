@@ -382,6 +382,20 @@ class HITLFunctionAgent(FunctionAgent):
                     exc,
                 )
                 self._context_window_cache = 0
+            else:
+                # The window the guard sizes the prompt against, and how
+                # much of it the prompt may take.  The value was set on
+                # the LLM by ``apply_context_window()``, so it is the
+                # window the server really uses — not the maximum the
+                # model advertises.
+                from components.context_guard import context_budget
+
+                logger.info(
+                    "Context guard: the context window is %d tokens — the "
+                    "prompt may use %d of them.",
+                    self._context_window_cache,
+                    context_budget(self._context_window_cache),
+                )
 
         if self._context_window_cache <= 0:
             return 0

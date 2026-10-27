@@ -1,5 +1,85 @@
 # Changelog
 
+## [Unreleased] - The prompt in the debug log is readable
+
+### Added
+- **The context window is logged at the `INFO` level.**  The size of
+  the model's context window is written to the log when the agent
+  starts, together with the place the number came from:
+
+  ```console
+  2026-10-27 21:24:03,517 [INFO] components.ollama_config: Context window: 8192 tokens — the running model (/api/ps)
+  ```
+
+  The number is the window the **server** uses — not the maximum the
+  model advertises.  The two are often very different: the agent's
+  model advertises 262144 tokens, and the server runs it with 8192.  A
+  prompt that exceeds the real window is truncated from the front by
+  the server, which drops the user request and makes the model
+  template fail with "No user query found in messages.".
+
+  The source is named in the log line, because a number on its own
+  does not say whether it is the window the server really uses.  The
+  sources are tried in this order: `TORVALDS_CONTEXT_LENGTH`, the
+  running model (`/api/ps`), `PARAMETER num_ctx` in the Modelfile,
+  and finally the maximum the model advertises.
+
+- **The context guard logs the budget it works with.**  With
+  `--context-guard-on` the agent writes the window and the part of it
+  the prompt may take:
+
+  ```console
+  2026-10-27 21:24:03,601 [INFO] components.hitl_agent: Context guard: the context window is 8192 tokens — the prompt may use 6554 of them.
+  ```
+
+- **`investigate/context-window-proof/`** — the proof that the reported
+  window is the server's and not the model's advertisement: four
+  invariants, and a second script that proves the harness catches four
+  deliberate drifts.
+
+### Changed
+- **The empty lines are gone from the log.**  A system prompt that
+  ends with a few newlines, or a document that separates its
+  paragraphs with a run of blank lines, filled the log with empty
+  records.  One empty line is kept — it is a paragraph break and it
+  carries meaning — and a run of them is reduced to one.  A message
+  that carries nothing but whitespace reads as `(empty)`.
+
+- **The prompt in the debug log is readable, not a repr.**  The event
+  consumer used to log the whole conversation as a Python repr - one
+  enormous record of escaped object syntax, spread over dozens of
+  lines.  It now logs the messages the way a person reads them: the
+  role, and what the message carries.
+
+  ```console
+  EventConsumer._on_agent_input: prompt: 5 messages
+  EventConsumer._on_agent_input:   [0] system: You are Torvalds, a technical AI assistant that interacts with the operating system.
+  EventConsumer._on_agent_input:   [1] user: I want to improve debug message for context window
+  EventConsumer._on_agent_input:   [3] assistant: thinking: The user asks for a better debug message. | tool call: pwd(path=/)
+  EventConsumer._on_agent_input:   [4] tool: output: /home/kbush
+  ```
+
+  A message shows its **text**, its **thinking** and the **tool calls**
+  it requests.  A tool call carried in the OpenAI shape
+  (`additional_kwargs["tool_calls"]`) is shown as well, so the log
+  shows the same tools the model is shown.
+
+- **The state handler holds the readable text.**  It used to hold
+  `str(input)` - the repr of the whole conversation, megabytes of
+  escaped object syntax for a long run.  It now holds the rendered
+  messages.
+
+### Added
+- **`components/chat_message.py`** - the rendering: `to_string()` for
+  one message, `to_strings()` for a whole prompt.  `ChatMessage` is a
+  class of the LlamaIndex framework, so the rendering is a function of
+  this project rather than a method of the framework's class.
+- **`tests/test_chat_message.py`** - 26 tests.
+- **`investigate/chat-message-debug/verify_chat_message.py`** - the
+  verification harness: four invariants, written against the public
+  behaviour (the log records and the state).  The second script in that
+  folder proves the harness catches four deliberate drifts.
+
 ## [Unreleased] - The context guard is optional
 
 ### Changed

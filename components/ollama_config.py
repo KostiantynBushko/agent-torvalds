@@ -25,7 +25,10 @@ full URL including the scheme, so a bare ``host:port`` is rewritten to
 Example:
     TORVALDS_OLLAMA_HOST=http://192.168.1.10:11434 python agent-torvalds.py
 """
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 #: Endpoint used when nothing is configured.
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
@@ -68,6 +71,16 @@ def get_ollama_base_url() -> str:
 
 #: Environment variable that overrides the detected context window.
 CONTEXT_LENGTH_ENV_VAR = "TORVALDS_CONTEXT_LENGTH"
+
+#: Where a context window was found.  The name is written into the log,
+#: because a number on its own says nothing about whether it is the
+#: number the server really uses.
+SOURCE_ENVIRONMENT = "the TORVALDS_CONTEXT_LENGTH override"
+SOURCE_RUNNING_MODEL = "the running model (/api/ps)"
+SOURCE_MODELFILE = "the model's Modelfile (PARAMETER num_ctx)"
+SOURCE_MODEL_MAXIMUM = "the model's advertised maximum"
+SOURCE_DEFAULT = "the configured default"
+SOURCE_UNKNOWN = "unknown"
 
 
 def _context_length_from_modelfile(llm) -> int | None:
@@ -125,8 +138,11 @@ def _context_length_from_running_model(llm) -> int | None:
     return None
 
 
-def resolve_context_window(llm, default: int | None = None) -> int | None:
-    """Return the context window the Ollama server really uses.
+def resolve_context_window_with_source(
+    llm, default: int | None = None
+) -> tuple[int | None, str]:
+    """Return the context window the Ollama server really uses, and where
+    it was found.
 
     ``llm.metadata.context_window`` reports the *model's maximum*
     context length.  The server usually runs with a much smaller window
@@ -147,28 +163,49 @@ def resolve_context_window(llm, default: int | None = None) -> int | None:
         default: Returned when nothing could be determined.
 
     Returns:
-        The context window in tokens, or *default*.
+        A tuple of the context window in tokens (or *default*) and the
+        name of the source it came from.
     """
     override = os.environ.get(CONTEXT_LENGTH_ENV_VAR)
     if override and override.strip().isdigit():
-        return int(override.strip())
+        return int(override.strip()), SOURCE_ENVIRONMENT
 
-    for probe in (
-        _context_length_from_running_model,
-        _context_length_from_modelfile,
+    for probe, source in (
+        (_context_length_from_running_model, SOURCE_RUNNING_MODEL),
+        (_context_length_from_modelfile, SOURCE_MODELFILE),
     ):
         length = probe(llm)
         if length and length > 0:
-            return length
+            return int(length), source
 
     try:
         length = int(llm.metadata.context_window)
         if length > 0:
-            return length
+            return length, SOURCE_MODEL_MAXIMUM
     except Exception:  # noqa: BLE001 - metadata may be unavailable
         pass
 
-    return default
+    if default is not None:
+        return default, SOURCE_DEFAULT
+
+    return None, SOURCE_UNKNOWN
+
+
+def resolve_context_window(llm, default: int | None = None) -> int | None:
+    """Return the context window the Ollama server really uses.
+
+    See :func:`resolve_context_window_with_source` for the order the
+    sources are tried in.
+
+    Args:
+        llm: The Ollama LLM instance.
+        default: Returned when nothing could be determined.
+
+    Returns:
+        The context window in tokens, or *default*.
+    """
+    length, _ = resolve_context_window_with_source(llm, default)
+    return length
 
 
 def apply_context_window(llm, default: int | None = None) -> int | None:
@@ -177,12 +214,37 @@ def apply_context_window(llm, default: int | None = None) -> int | None:
     Setting it on the LLM has two effects: ``llm.metadata.context_window``
     reports the truth, and the ``num_ctx`` option sent with every request
     matches the server instead of asking for an impossible window.
+
+    The window is written to the log at the ``INFO`` level, together with
+    the source it came from.  The number alone does not say whether it is
+    the window the server really uses or merely the maximum the model
+    advertises — and the difference between the two is the difference
+    between a prompt that fits and one the server truncates from the
+    front.
+
+    Args:
+        llm: The Ollama LLM instance.
+        default: Used when the window cannot be determined.
+
+    Returns:
+        The context window in tokens, or ``None`` when it could not be
+        determined or the LLM did not accept it.
     """
-    length = resolve_context_window(llm, default=default)
+    length, source = resolve_context_window_with_source(llm, default=default)
     if not length or length <= 0:
+        logger.info(
+            "Context window: unknown — the server did not report one, so "
+            "the context guard cannot size the prompt."
+        )
         return None
     try:
         llm.context_window = int(length)
     except Exception:  # noqa: BLE001 - the LLM may not be an Ollama instance
+        logger.info(
+            "Context window: %d tokens — %s (the LLM did not accept it)",
+            length,
+            source,
+        )
         return None
+    logger.info("Context window: %d tokens — %s", length, source)
     return length

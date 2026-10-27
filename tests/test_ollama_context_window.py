@@ -10,6 +10,7 @@ makes the model template fail with "No user query found in messages.".
 Category: Infrastructure
 """
 
+import logging
 import os
 from unittest.mock import patch
 
@@ -17,8 +18,13 @@ import pytest
 
 from components.ollama_config import (
     CONTEXT_LENGTH_ENV_VAR,
+    SOURCE_ENVIRONMENT,
+    SOURCE_MODELFILE,
+    SOURCE_MODEL_MAXIMUM,
+    SOURCE_RUNNING_MODEL,
     apply_context_window,
     resolve_context_window,
+    resolve_context_window_with_source,
 )
 
 
@@ -116,3 +122,93 @@ def test_apply_context_window_of_an_unknown_model_is_harmless():
         base_url = ""
 
     assert apply_context_window(NoContext()) is None
+
+
+# ---------------------------------------------------------------------------
+# The source of the window
+# ---------------------------------------------------------------------------
+
+
+class TestSources:
+    """Where the number came from — a number alone says nothing."""
+
+    def test_the_running_model_is_named_as_the_source(self):
+        llm = FakeOllama(modelfile=MODELFILE_8K)
+        payload = {
+            "models": [
+                {"model": "some/model:Q4_K_M", "context_length": 4096},
+            ]
+        }
+        with patch("urllib.request.urlopen", return_value=FakeResponse(payload)):
+            length, source = resolve_context_window_with_source(llm)
+        assert length == 4096
+        assert source == SOURCE_RUNNING_MODEL
+
+    def test_the_modelfile_is_named_as_the_source(self):
+        llm = FakeOllama(modelfile=MODELFILE_8K)
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            length, source = resolve_context_window_with_source(llm)
+        assert length == 8192
+        assert source == SOURCE_MODELFILE
+
+    def test_the_advertised_maximum_is_named_as_the_source(self):
+        llm = FakeOllama(modelfile=MODELFILE_NO_PARAM)
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            length, source = resolve_context_window_with_source(llm)
+        assert length == 262144
+        assert source == SOURCE_MODEL_MAXIMUM
+
+    def test_the_override_is_named_as_the_source(self):
+        llm = FakeOllama(modelfile=MODELFILE_8K)
+        with patch.dict(os.environ, {CONTEXT_LENGTH_ENV_VAR: "12345"}):
+            length, source = resolve_context_window_with_source(llm)
+        assert length == 12345
+        assert source == SOURCE_ENVIRONMENT
+
+    def test_the_resolution_still_returns_the_length(self):
+        llm = FakeOllama(modelfile=MODELFILE_8K)
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            assert resolve_context_window(llm) == 8192
+
+
+# ---------------------------------------------------------------------------
+# The log
+# ---------------------------------------------------------------------------
+
+
+class TestInfoLog:
+    """The window is written to the log at the INFO level."""
+
+    def test_the_log_carries_the_size_and_the_source(self, caplog):
+        llm = FakeOllama(modelfile=MODELFILE_8K)
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            with caplog.at_level(
+                logging.INFO, logger="components.ollama_config"
+            ):
+                apply_context_window(llm)
+
+        text = "\n".join(record.getMessage() for record in caplog.records)
+        assert "Context window: 8192 tokens" in text
+        assert SOURCE_MODELFILE in text
+
+    def test_nothing_is_logged_below_the_info_level(self, caplog):
+        llm = FakeOllama(modelfile=MODELFILE_8K)
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            with caplog.at_level(
+                logging.WARNING, logger="components.ollama_config"
+            ):
+                apply_context_window(llm)
+
+        text = "\n".join(record.getMessage() for record in caplog.records)
+        assert "Context window" not in text
+
+    def test_an_unknown_window_is_reported_as_unknown(self, caplog):
+        class NoContext:
+            model = "x"
+            base_url = ""
+
+        with caplog.at_level(logging.INFO, logger="components.ollama_config"):
+            assert apply_context_window(NoContext()) is None
+
+        text = "\n".join(record.getMessage() for record in caplog.records)
+        assert "Context window: unknown" in text
