@@ -207,7 +207,33 @@ toolkit had no known failures of its own.
 
 ---
 
-## 8. What is left
+## 8. One CI run was red, and it was a flake
+
+The first CI run of the branch failed with **one** new failure:
+
+```
+tests/test_tui_input_reader.py::TestInputReaderInPseudoTerminal::test_burst_of_keystrokes_is_fully_captured
+```
+
+That test is **timing-dependent**: it forks a pseudo-terminal, sleeps 1.5
+seconds, writes nine characters, sleeps another 0.5 seconds, writes ENTER,
+and then requires every one of the ten keys to have been captured by a
+child process that polls the terminal every 20 milliseconds.  Under load,
+the child may not be scheduled in time.
+
+It is also **untouched by this change** — it drives
+`components/tui.input_reader`, and nothing in `components/` or in the TUI
+is part of this diff.  It passed ten times out of ten locally, and the
+**re-run of the very same commit passed**.
+
+The baseline was deliberately **not** rewritten to include it.  The
+baseline is a list of failures that are *known* — a test that fails
+intermittently is not one, and putting it there would mask a real
+regression the next time it fails for a different reason.
+
+---
+
+## 9. What is left
 
 Nothing.  Every toolkit is a module under `toolkits/`, and the project root
 holds no loose toolkit any more: `agent_cache_system.py` is a component, not
