@@ -36,6 +36,7 @@ Each module has its own README with the full reference:
 | Windows Toolkit | [toolkits/windows-toolkit/README.md](toolkits/windows-toolkit/README.md) |
 | Database Toolkit | [toolkits/db-toolkit/README.md](toolkits/db-toolkit/README.md) |
 | Excel Toolkit | [toolkits/xlsx-toolkit/README.md](toolkits/xlsx-toolkit/README.md) |
+| Data Analysis Toolkit | [toolkits/data-analysis-toolkit/README.md](toolkits/data-analysis-toolkit/README.md) |
 
 The project documentation:
 
@@ -129,6 +130,20 @@ The project documentation:
   LlamaIndex imports, so it also works as a plain library
 - See the
   [Excel Toolkit README](toolkits/xlsx-toolkit/README.md)
+
+### 6b. Data Analysis Toolkit (`toolkits/data-analysis-toolkit/`)
+- Read an `.xlsx` or a `.csv` file as a list of dictionaries
+- Summarise the data: descriptive statistics, the DataFrame's shape,
+  columns and dtypes, and the statistics of a single column
+- Select and reshape it: filter by a condition, sort by a column, and
+  list the distinct values of a column
+- Aggregate it: group and aggregate, pivot into a cross-tab, compute the
+  correlation matrix, and detect the missing values
+- Export a list of dictionaries to a new `.xlsx` or `.csv` file
+- The reusable core package in `toolkits/data-analysis-toolkit/` has
+  **no** LlamaIndex imports, so it also works as a plain library
+- See the
+  [Data Analysis Toolkit README](toolkits/data-analysis-toolkit/README.md)
 
 ### 7. Chat Memory (`chat_manager/`)
 - The chat memory is provided by the **Chat History Manager** — see § 17
