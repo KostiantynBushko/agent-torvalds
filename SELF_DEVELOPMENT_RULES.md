@@ -141,6 +141,7 @@ question was not answered; act on your own judgement."*
 | Scope | Make the **prompt in the debug log readable** — and, on the operator's second request on the same branch, **reduce the empty lines** in it, **log the context window at the `INFO` level**, and **prove that the number is the window the server really uses**. |
 | Status | Implemented and **verified**. `components/chat_message.py` renders a message (`to_string()`) and a prompt (`to_strings()`); the event consumer logs one line per message and the state handler holds the same text. The rendering covers the **text**, the **thinking** and the **tool calls** — in both shapes a chat history can carry a tool call in: as a `ToolCallBlock`, and in the OpenAI-shaped `additional_kwargs["tool_calls"]`. The **empty lines** are reduced: one paragraph break is kept, a run of them is reduced to one, and the leading and trailing ones are dropped. The **context window** is logged at the `INFO` level with the source it came from, and the **proof** in `investigate/context-window-proof/` shows that the number is the server's and not the model's advertisement. |
 | Policy | **Simple, and only that.** The operator's own idea was *"just to print ChatMessage in human readable way, something like ChatMessage has a to_string method"*, and the first implementation went far past it — a token-counting report, a context-window resolver, a budget, a detail limit and an escape hatch. All of it was **removed**; what is left is one function and one call site. The rendering is a **function** and not a method because `ChatMessage` is a class of the LlamaIndex framework, and a method on it would have to be monkey-patched onto the framework. |
+| Investigation | **Logging into a file** — the operator asked for the logging to be redirectable into a file, rotated at a predefined size, with a symlink to the current log file in the directory. The investigation is in `investigate/logging-to-file/`: the report, a **working prototype**, the harness (seven invariants) and the drift proof (seven deliberate breaks, all caught). **No source file of the agent was modified** — the investigation folder only. |
 | State | **Verified, not yet committed.** `tests/test_chat_message.py` — 34 tests. `tests/test_ollama_context_window.py` — 14 tests. `investigate/chat-message-debug/verify_chat_message.py` — four invariants, written against the public behaviour (the log records and the state). `investigate/chat-message-debug/verify_harness_catches_regressions.py` — the proof that the harness catches four deliberate drifts. `investigate/context-window-proof/verify_context_window.py` — four invariants, checked against a **live** Ollama server. `investigate/context-window-proof/verify_harness_catches_regressions.py` — the proof that the harness catches four deliberate drifts. The CI gate reports **0 new failures**. Rule 4: the commit and the push need the operator's explicit approval. |
 
 ### Latest change: the empty lines are gone, and the context window is logged
@@ -223,6 +224,96 @@ self-development/.venv/bin/python self-development/investigate/context-window-pr
 
 48 tests pass, the eight invariants hold, and every deliberate drift is
 caught.
+
+### Investigation: the logging into a file, with a rotation and a symlink
+
+The operator asked for it on 2026-10-27:
+*"I want be able to redirect logging into file, this solution must have a
+posibility to rotare log when reaching current log file predefined size.
+Inside directory we must have soft link to current log file the files"*.
+
+**No source file of the agent was modified.**  The investigation folder
+`investigate/logging-to-file/` was added: the report, a **working
+prototype**, the verification harness and the drift proof.
+
+#### The current state — half the feature is in the tree, and unreachable
+
+`agent-torvalds-mw.py` has had a `to_file` parameter on
+`configure_logging()` since the multi-window work, and **no caller ever
+passes it** — the parameter is dead code.  The classic orchestrator has
+no file support at all.  A plain `logging.FileHandler` never rotates:
+the file grows until the disk is full.
+
+#### The design
+
+| | |
+|---|---|
+| The directory | `~/.torvalds/logs/` — the convention the project already uses (`~/.torvalds/chat_manager.db`, `~/.cache/torvalds/agent_cache.json`).  Not the working tree. |
+| The files | `agent.log` (the current log, a **real** file), `agent-current.log -> agent.log` (the symlink), `agent.log.1` … `agent.log.N` (the generations). |
+| The symlink | It points at the **path** of the live file, not at its inode.  `doRollover()` renames the file away and reopens the same path, so the link is valid before and after every rotation and never has to be re-pointed.  It is created atomically (`os.replace`) and re-asserted after a rollover, so it heals itself. |
+| The rotation | `logging.handlers.RotatingFileHandler` — the **standard library**.  The subclass adds the symlink and the file mode.  The size limit is **soft**: the file can exceed it by the record that crossed it.  `backupCount = 0` disables the rotation, and is refused. |
+| The size | `--log-max-size 10MB` — `B`, `KB`, `MB`, `GB`.  An unknown unit is a **typo that is reported**, because a log that never rotates is the failure this feature exists to prevent. |
+| The tee | The stderr handler stays.  The file is a tee, not a replacement. |
+| Off by default | The agent's behaviour does not change until the operator asks for it. |
+
+| Flag | Environment variable | Default |
+|---|---|---|
+| `--log-file PATH` | `TORVALDS_LOG_FILE` | *off* |
+| `--log-dir DIR` | `TORVALDS_LOG_DIR` | `~/.torvalds/logs` |
+| `--log-max-size SIZE` | `TORVALDS_LOG_MAX_SIZE` | `10MB` |
+| `--log-max-files N` | `TORVALDS_LOG_MAX_FILES` | `5` |
+| `--log-symlink NAME` | `TORVALDS_LOG_SYMLINK` | `<stem>-current.log` |
+
+#### What the harness found
+
+**The file mode was wrong, and only the harness noticed.**  The stdlib
+handler creates the file with `0666 & ~umask` — `0664` on this machine,
+so a log carrying the prompts was readable by every account on the box.
+The first run failed on it: `[FAIL] L6  the file mode is 0o664`.
+
+**The symlink needs no maintenance at all — and that was a surprise.**
+The first drift removed the "refresh the symlink after a rollover" call
+and **the harness passed**.  The drift was not a defect: the symlink
+points at a *path*, and the path does not change when the file is
+rotated.  The refresh is only load-bearing for a symlink somebody
+deleted while the agent runs, and that case is now a check of its own.
+
+*"A check that has never failed proves nothing."*
+
+#### The invariants
+
+| | Invariant | Caught by |
+|---|---|---|
+| **L1** | Every record reaches the log file. | a record that is swallowed |
+| **L2** | The log file is rotated when it reaches the size limit. | the rotation being disabled |
+| **L3** | The symlink points at the file being written *now*, and it comes back after it was deleted. | the symlink pointing at the rotated file, or not being refreshed |
+| **L4** | The number of retained generations is bounded. | the retention being ignored |
+| **L5** | A symlink that cannot be created degrades the pointer, never the logging. | the failure being raised |
+| **L6** | The log file is appended to, is private (`0600`), and is not truncated when the logging is reconfigured. | the truncation, and the missing mode |
+| **L7** | The size limit is written the way an operator writes it, and an unknown unit is reported. | the typo being ignored |
+
+**Verifying the investigation**
+
+```bash
+self-development/.venv/bin/python investigate/logging-to-file/prototype_file_logging.py
+self-development/.venv/bin/python investigate/logging-to-file/verify_logging_to_file.py
+self-development/.venv/bin/python investigate/logging-to-file/verify_harness_catches_regressions.py
+```
+
+13 checks hold, and **7 of 7** deliberate drifts are caught.
+
+#### The known limitations
+
+| | Limitation | What it means |
+|---|---|---|
+| Multi-process | `RotatingFileHandler` has no cross-process lock. | One log file per agent process. |
+| The size limit is soft | The live file can exceed the limit by one record. | A record is never cut in half. |
+| No compression | The generations are plain text. | The disk use is already bounded. |
+| The log is not redacted | It carries the prompts and the tool output. | The file is `0600` and stays in the home directory. |
+
+The report ends with **four open questions for the operator**: the name of
+the symlink, the default size, whether the file replaces the terminal or
+joins it, and whether the TUI should stop writing to stderr.
 
 ### Previous change: the prompt in the debug log is readable
 
