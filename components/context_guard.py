@@ -37,6 +37,12 @@ Two independent defects can produce such a conversation:
 without a user query, and it never returns a conversation larger than the
 budget it is given.
 
+The guard is **opt-in**.  It changes what the model is shown — it drops the
+oldest turns and shortens the ones that do not fit — so the operator turns
+it on explicitly with ``--context-guard-on`` (or
+``TORVALDS_CONTEXT_GUARD=true``).  This module holds the trimming itself;
+the switch lives in ``components/hitl_agent.py``.
+
 Category: Infrastructure
 """
 
