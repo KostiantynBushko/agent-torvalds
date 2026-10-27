@@ -290,3 +290,113 @@ def test_split_of_a_short_conversation_is_lossless():
     )
     assert head == memory_part
     assert tail == scratchpad_part
+
+
+# ---------------------------------------------------------------------------
+# The order of the window
+#
+# These tests guard the defect that made the agent loop: the guard kept
+# the *oldest* turns instead of the newest ones, and emitted the tail in
+# reverse chronological order.  The window then stopped changing, and a
+# greedy model (temperature 0) answered it the same way on every
+# iteration.  See ``investigate/agent-loop-context-guard/``.
+# ---------------------------------------------------------------------------
+
+
+def test_window_keeps_the_newest_turn():
+    """The turn the model has just produced must survive the trim."""
+    messages = build_conversation("merge the files", turns=20, payload_words=200)
+    window = select_context_window(
+        messages, budget_tokens=500, tokenizer=TOKENIZER,
+        original_request="merge the files",
+    )
+    # The last group of the conversation is the newest one.
+    assert window[-1].role == MessageRole.ASSISTANT
+    assert window[-1].content == "thinking"
+    assert window[-2].role == MessageRole.TOOL
+
+
+def test_window_drops_the_oldest_turns_first():
+    """When the budget is tight, the oldest turns are the ones that go."""
+    messages = build_conversation("merge the files", turns=20, payload_words=200)
+    window = select_context_window(
+        messages, budget_tokens=500, tokenizer=TOKENIZER,
+        original_request="merge the files",
+    )
+    texts = [m.content or "" for m in window]
+    # The conversation is chronological: the first turn is gone, the last
+    # one is there.
+    assert len(window) < len(messages)
+    assert texts[-1] == "thinking"
+
+
+def test_window_is_in_chronological_order():
+    """The tail must not be reversed."""
+    messages = build_conversation("merge the files", turns=6, payload_words=200)
+    window = select_context_window(
+        messages, budget_tokens=500, tokenizer=TOKENIZER,
+        original_request="merge the files",
+    )
+    # Every tool result comes right after the assistant turn that asked
+    # for it, and the assistant turns come in the order they were made.
+    seen_thinking = 0
+    for message in window:
+        if message.role == MessageRole.ASSISTANT and message.content == "thinking":
+            seen_thinking += 1
+    assert seen_thinking >= 1
+    # The tool results of the kept turns are in order.
+    tool_positions = [
+        index for index, m in enumerate(window) if m.role == MessageRole.TOOL
+    ]
+    assert tool_positions == sorted(tool_positions)
+
+
+def test_window_keeps_the_chat_history_before_the_request():
+    """The history that precedes the request must not be thrown away."""
+    messages = [
+        ChatMessage(role=MessageRole.SYSTEM, content="sys"),
+        ChatMessage(role=MessageRole.USER, content="earlier question"),
+        ChatMessage(role=MessageRole.ASSISTANT, content="earlier answer"),
+        ChatMessage(role=MessageRole.USER, content="merge the files"),
+    ]
+    window = select_context_window(
+        messages,
+        budget_tokens=1000,
+        tokenizer=TOKENIZER,
+        original_request="merge the files",
+    )
+    texts = [m.content or "" for m in window]
+    assert "earlier question" in texts
+    assert "earlier answer" in texts
+    # The request still comes after the history.
+    assert texts.index("earlier answer") < texts.index("merge the files")
+
+
+def test_truncate_message_keeps_a_tool_call():
+    """Shortening a tool call must not turn it into a piece of text."""
+    message = assistant_tool_call()
+    truncated = truncate_message(message, 1, TOKENIZER)
+    assert truncated.blocks[0].block_type == "tool_call"
+    assert truncated.blocks[0].tool_name == "read_xlsx_file"
+
+
+def test_oversized_tool_result_is_truncated_and_keeps_its_call():
+    """A huge tool result is shortened, its call stays."""
+    messages = [
+        ChatMessage(role=MessageRole.SYSTEM, content="sys"),
+        user("do the thing"),
+        assistant_tool_call(),
+        tool(" ".join(["huge"] * 5000)),
+    ]
+    window = select_context_window(
+        messages, budget_tokens=200, tokenizer=TOKENIZER,
+        original_request="do the thing",
+    )
+    calls = [
+        block
+        for message in window
+        for block in (getattr(message, "blocks", None) or [])
+        if getattr(block, "block_type", None) == "tool_call"
+    ]
+    assert calls, "the tool call was lost"
+    assert any(m.role == MessageRole.TOOL for m in window)

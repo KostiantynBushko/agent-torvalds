@@ -55,6 +55,8 @@ Flow
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import re
 import uuid
@@ -66,7 +68,7 @@ from llama_index.core.agent.workflow import (
     FunctionAgent,
     ToolCall,
 )
-from llama_index.core.base.llms.types import ChatMessage
+from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from workflows import Context, step
 from workflows.events import StopEvent
 
@@ -104,6 +106,62 @@ _PENDING_QUESTION_KEY = "hitl_pending_question"
 # Key used to remember which questions were already answered, so the agent
 # never asks the same question twice in one run.
 _ANSWERED_QUESTIONS_KEY = "hitl_answered_questions"
+
+# Key used to remember what the tools returned, so that a repetition can
+# be spotted.
+_TOOL_RESULTS_KEY = "hitl_tool_results"
+
+#: The smallest prompt budget the context guard is willing to work with.
+#: Below it the window cannot hold the request *and* a usable turn, and
+#: the guard would have to cut into the user request — the very failure
+#: it exists to prevent.  The guard is switched off instead.
+MIN_PROMPT_BUDGET = 256
+
+#: How many identical tool results in a row end the run.  Every iteration
+#: of a loop costs a full model round-trip — on a local model that is
+#: minutes — and the result of the repeated call does not change, so the
+#: repetition cannot lead anywhere.
+REPEAT_CALL_THRESHOLD = 3
+
+#: How many tool results are remembered for the repetition check.
+REPEAT_CALL_HISTORY = 8
+
+
+def _stable_kwargs(kwargs: Any) -> str:
+    """Return a stable, comparable representation of tool call arguments.
+
+    The arguments decide whether two tool calls are *the same* call, so
+    they have to be compared by value and not by insertion order.
+    """
+    try:
+        return json.dumps(kwargs, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return str(kwargs)
+
+
+def _tool_result_fingerprint(result: Any) -> str:
+    """Return a fingerprint of a tool call and its result.
+
+    Two tool calls have the same fingerprint when they call the same tool
+    with the same arguments and get the same answer back.  A run in which
+    the same fingerprint comes back several times in a row is a loop.
+    """
+    name = str(getattr(result, "tool_name", "") or "")
+    kwargs = _stable_kwargs(getattr(result, "tool_kwargs", None))
+
+    output = getattr(result, "tool_output", None)
+    content = getattr(output, "content", None)
+    if content is None:
+        content = str(output)
+    try:
+        content = json.dumps(content, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        content = str(content)
+
+    digest = hashlib.sha256(
+        f"{name}|{kwargs}|{content}".encode("utf-8", errors="replace")
+    ).hexdigest()
+    return f"{name}|{digest}"
 
 
 def extract_text(obj: Any) -> str:
@@ -241,7 +299,20 @@ class HITLFunctionAgent(FunctionAgent):
         # The tool schemas are sent with every request and take up prompt
         # space as well, so they have to be part of the budget.
         budget -= self._tool_schema_tokens(tools)
-        if budget <= 0:
+        if budget < MIN_PROMPT_BUDGET:
+            # The tool schemas leave so little room that the window could
+            # not hold the request and a usable turn.  Cutting into the
+            # request would bring back the "No user query found in
+            # messages." failure the guard exists to prevent, so the
+            # guard stands down.
+            logger.warning(
+                "Context guard: the prompt budget of %d tokens is too small "
+                "(the tool schemas use %d of %d) — the guard is disabled "
+                "for this run.",
+                budget,
+                self._tool_schema_tokens(tools),
+                self._context_budget(),
+            )
             return await super().take_step(ctx, llm_input, tools, memory)
 
         original_request = await ctx.store.get("user_msg_str")
@@ -256,9 +327,19 @@ class HITLFunctionAgent(FunctionAgent):
         )
 
         if (head, tail) != (list(llm_input), list(scratchpad)):
-            # Keep the scratchpad in sync with what was actually sent, so the
-            # next iteration starts from the trimmed conversation instead of
-            # re-growing the prompt.
+            # The base class assembles the prompt as
+            # ``[*llm_input, *scratchpad]``, so the scratchpad has to hold
+            # exactly what is sent — otherwise the prompt would grow
+            # without bound and the server would truncate it.
+            #
+            # The window that is written back always ends with the *newest*
+            # turn (the context guard keeps the newest turns and drops the
+            # oldest ones), so the prompt changes with every iteration.
+            # That is what keeps the agent moving: a window that kept the
+            # same old turn would hand the model the same prompt over and
+            # over, and a greedy model would answer it the same way —
+            # the loop reported in
+            # ``investigate/agent-loop-context-guard/``.
             await ctx.store.set(self.scratchpad_key, tail)
 
         return await super().take_step(ctx, head, tools, memory)
@@ -381,6 +462,12 @@ class HITLFunctionAgent(FunctionAgent):
         """
         # Tool calls take priority: the agent wants to act, not to ask.
         if ev.tool_calls:
+            # An agent that repeats the same action cannot make progress.
+            # The run is stopped instead of burning the whole iteration
+            # budget on it.
+            repetition = await self._detect_repetition(ctx)
+            if repetition is not None:
+                return await self._stop_for_repetition(ctx, ev, repetition)
             return await super().parse_agent_output(ctx, ev)
 
         if not self.hitl_enabled:
@@ -504,6 +591,85 @@ class HITLFunctionAgent(FunctionAgent):
             input=await memory.aget(),
             current_agent_name=self.name,
         )
+
+    # ------------------------------------------------------------------
+    # Loop detection
+    # ------------------------------------------------------------------
+
+    async def handle_tool_call_results(self, ctx: Context, results, memory) -> None:
+        """Remember what the tools returned, then let the base class work.
+
+        The results are the fingerprint of an action: the same call with
+        the same arguments that returns the same thing is a repetition,
+        and a repetition in a row is a loop.  See
+        ``investigate/agent-loop-context-guard/``.
+        """
+        await super().handle_tool_call_results(ctx, results, memory)
+
+        history = await ctx.store.get(_TOOL_RESULTS_KEY, default=[])
+        if not isinstance(history, list):
+            history = []
+
+        for result in results:
+            history.append(_tool_result_fingerprint(result))
+
+        await ctx.store.set(_TOOL_RESULTS_KEY, history[-REPEAT_CALL_HISTORY:])
+
+    async def _detect_repetition(self, ctx: Context) -> Optional[str]:
+        """Return the name of the tool that is being repeated, if any.
+
+        A repetition is *the same call with the same arguments that
+        returned the same result*, several times in a row.  The result
+        matters: the same read-only call repeated on purpose (checking
+        whether a file appeared, for instance) is legitimate, as long as
+        the answer changes.
+        """
+        history = await ctx.store.get(_TOOL_RESULTS_KEY, default=[])
+        if not isinstance(history, list) or len(history) < REPEAT_CALL_THRESHOLD:
+            return None
+
+        recent = history[-REPEAT_CALL_THRESHOLD:]
+        if len(set(recent)) != 1:
+            return None
+
+        return recent[-1].split("|", 1)[0]
+
+    async def _stop_for_repetition(
+        self, ctx: Context, ev: AgentOutput, tool_name: str
+    ) -> StopEvent:
+        """End the run: the agent is repeating itself and cannot progress.
+
+        The run is stopped instead of being left to burn the whole
+        iteration budget: every iteration costs a full model round-trip,
+        and on a local model that is minutes.  The operator gets a report
+        of what the agent did and why it stopped.
+        """
+        memory = await ctx.store.get("memory")
+        output = await self.finalize(ctx, ev, memory)
+
+        cur_tool_calls = await ctx.store.get("current_tool_calls", default=[])
+        output.tool_calls.extend(cur_tool_calls)
+        await ctx.store.set("current_tool_calls", [])
+
+        output.response = ChatMessage(
+            role=MessageRole.ASSISTANT,
+            content=(
+                f"[Stopped] The agent called `{tool_name}` with the same "
+                f"arguments {REPEAT_CALL_THRESHOLD} times in a row and got "
+                f"the same result every time. Repeating the call cannot "
+                f"make progress, so the run was stopped. Please tell the "
+                f"agent how to continue, or run the task with a hint of "
+                f"what to do instead."
+            ),
+        )
+
+        logger.warning(
+            "The agent repeated `%s` with the same arguments %d times in a "
+            "row and got the same result — the run was stopped.",
+            tool_name,
+            REPEAT_CALL_THRESHOLD,
+        )
+        return StopEvent(result=output)
 
     # ------------------------------------------------------------------
     # Helpers

@@ -10,7 +10,12 @@ Category: Infrastructure
 import json
 
 import pytest
-from llama_index.core.base.llms.types import ChatMessage, ChatResponse, MessageRole
+from llama_index.core.base.llms.types import (
+    ChatMessage,
+    ChatResponse,
+    MessageRole,
+    ToolCallBlock,
+)
 from llama_index.core.bridge.pydantic import PrivateAttr
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.core.tools import FunctionTool
@@ -51,6 +56,19 @@ class FakeOllama(Ollama):
                 message=ChatMessage(role=MessageRole.ASSISTANT, content="Done.")
             )
         step = self._script.pop(0)
+        if isinstance(step, tuple) and step and step[0] == "call":
+            # A tool call: ("call", tool_name, tool_kwargs)
+            _, tool_name, tool_kwargs = step
+            return ChatResponse(
+                message=ChatMessage(
+                    role=MessageRole.ASSISTANT,
+                    blocks=[
+                        ToolCallBlock(
+                            tool_name=tool_name, tool_kwargs=tool_kwargs
+                        )
+                    ],
+                )
+            )
         return ChatResponse(
             message=ChatMessage(role=MessageRole.ASSISTANT, content=step)
         )
@@ -169,3 +187,85 @@ def test_agent_restores_the_request_when_the_memory_dropped_it(agent_and_llm):
         assert any(request in text for text in texts), (
             f"call {index} did not restore the user request"
         )
+
+
+# ---------------------------------------------------------------------------
+# The agent must not get stuck
+#
+# The defect these tests guard against made the agent repeat the same
+# tool call for hours: the context guard handed the model the same
+# prompt on every iteration, and the agent decodes greedily
+# (temperature 0), so the same prompt produced the same answer.
+# See ``investigate/agent-loop-context-guard/``.
+# ---------------------------------------------------------------------------
+
+
+def _fingerprint(messages) -> str:
+    return json.dumps(
+        [m.model_dump() for m in messages], sort_keys=True, default=str
+    )
+
+
+def test_the_prompt_contains_the_newest_turn(agent_and_llm):
+    """The window must end with the turn the model has just produced.
+
+    A window that keeps the *oldest* turns instead blinds the model: it
+    cannot see the result of its last action, so it repeats the action.
+    With a greedy model (temperature 0) the prompt then stops changing
+    and the agent loops forever.
+    """
+    agent, llm, memory = agent_and_llm
+    request = "merge the entities of column D into shtab.xlsx"
+
+    script = [("call", "read_xlsx_file", {"path": "a.xlsx"})] * 6
+    requests = _run(agent, llm, memory, request, script)
+
+    assert len(requests) > 1, "the agent never called the model"
+    for index, messages in enumerate(requests):
+        if index == 0:
+            # The first prompt has no turn of its own yet.
+            continue
+        # The window ends with the turn the model has just produced: the
+        # assistant turn that requested the tool call, and its result.
+        assert messages[-2].role == MessageRole.ASSISTANT
+        assert messages[-2].blocks[0].block_type == "tool_call"
+        assert messages[-1].role == MessageRole.TOOL
+
+
+def test_the_agent_stops_when_it_repeats_the_same_call(agent_and_llm):
+    """A model that repeats itself must not burn the whole run.
+
+    The tool returns the same result every time, so the repetition
+    cannot lead anywhere.  The agent has to stop instead of asking the
+    model the same question 50 times.
+    """
+    agent, llm, memory = agent_and_llm
+    request = "merge the entities of column D into shtab.xlsx"
+
+    script = [("call", "read_xlsx_file", {"path": "a.xlsx"})] * 40
+    requests = _run(agent, llm, memory, request, script)
+
+    assert len(requests) < 40, (
+        "the agent kept calling the same tool with the same arguments and "
+        "the same result — the run was not stopped"
+    )
+    assert len(requests) >= 3
+
+
+def test_a_repeated_call_with_a_different_result_is_not_a_loop(agent_and_llm):
+    """The same call is fine as long as the result changes."""
+    agent, llm, memory = agent_and_llm
+    request = "merge the entities of column D into shtab.xlsx"
+
+    # A different result every time: the agent is polling, not looping.
+    script = [
+        ("call", "read_xlsx_file", {"path": "a{0}.xlsx".format(index)})
+        for index in range(10)
+    ]
+    requests = _run(agent, llm, memory, request, script)
+
+    # Every scripted call was made, plus the final answer that ended the
+    # run.  The run was not stopped.
+    assert len(requests) == len(script) + 1, (
+        "the run was stopped although every call used different arguments"
+    )
