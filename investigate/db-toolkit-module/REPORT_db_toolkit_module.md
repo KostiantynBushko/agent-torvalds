@@ -1,7 +1,7 @@
 # The database toolkit is a module
 
 **Status:** implemented and verified on `refactor/db-toolkit-module`,
-based on `master` (`513988a`).
+based on `master` (`eb4e479`).
 
 The database toolkit was a single loose module at the project root,
 `agent_db_toolkit.py`, while the toolkits that had already moved live in

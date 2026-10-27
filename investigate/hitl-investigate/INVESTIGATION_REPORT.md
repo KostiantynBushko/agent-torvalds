@@ -6,7 +6,7 @@
 **Affected components**: `components/human_loop_handler.py`, `components/event_consumer.py`, `components/hitl_events.py`
 **Entry points**: `agent-torvalds.py`, `agent-torvalds-mw.py`
 **Environment**: llama-index-core 0.14.25, llama-index-llms-ollama 0.11.x, `workflows` (bundled), Python 3.12
-**Base commit**: `4d992b6` (master)
+**Base commit**: `17af7f3` (master)
 
 ---
 
@@ -588,7 +588,7 @@ behave consistently.
 ## 8. Implementation Status
 
 **RESOLVED** — the investigation was implemented on branch
-`fix/hitl-roundtrip` (based on `master` @ `4d992b6`).
+`fix/hitl-roundtrip` (based on `master` @ `17af7f3`).
 
 All six defects are fixed and verified:
 

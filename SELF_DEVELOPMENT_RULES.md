@@ -10,35 +10,35 @@ module" refactoring, and the one that emptied the project root of loose
 toolkits; the **Excel** toolkit
 became a module
 under `toolkits/` and was **squash-merged into `master` as PR #54**,
-commit `1f44d7e` (head `c8487dd`, based on `master` at `65a11db`) — the
+commit `1fd2063` (head `c3886bc`, based on `master` at `9a33678`) — the
 **ninth** PR of the "every toolkit is a module" refactoring, and the
 **last** of the two loose toolkits left at the project root apart from
 the data-analysis one; the **database** toolkit
 became a module
 under `toolkits/` and was **squash-merged into `master` as PR #52**,
-commit `be91e90` — the **eighth** PR of the "every toolkit is a module"
+commit `41608e5` — the **eighth** PR of the "every toolkit is a module"
 refactoring, and the first whose library half is pinned to a **database
 driver** (`psycopg2` and `mysql-connector-python`); the **Windows**
 toolkit became a module under `toolkits/` and was **squash-merged into
 `master` as PR #50**,
-commit `9c48625` — the **seventh** PR of the "every toolkit is a module"
+commit `deb75aa` — the **seventh** PR of the "every toolkit is a module"
 refactoring, and the **last** of the *Linux/Windows* pair to move; the
 **APT** toolkit became a module under
 `toolkits/` and was **squash-merged into `master` as PR #48**, commit
-`5eb5151` — the **sixth** PR of the "every toolkit is a module"
+`ce75ade` — the **sixth** PR of the "every toolkit is a module"
 refactoring, and the first one whose library half is **not**
 dependency-free; the **Linux** toolkit became a module under
 `toolkits/` and was **squash-merged into `master` as PR #46**, commit
-`94fb513` — the **fifth** PR of the series, and the **last** of the six
+`c9fa14f` — the **fifth** PR of the series, and the **last** of the six
 *Linux/Windows* pair to move;
 the **OS** toolkit became a module under `toolkits/` and was
 **squash-merged into `master` as PR #45**, commit
-`899f9b2` — the **fourth** PR of the series, and the last toolkit that
+`e6af6ac` — the **fourth** PR of the series, and the last toolkit that
 was still **mandatory**; the
 GitHub toolkit was squash-merged into `master` as PR #43, commit
-`83456a7`; the Git toolkit was squash-merged into `master` as PR #41,
-commit `7d0e56a`; the math toolkit was merged into `master` as PR #39,
-merge commit `e2fce1a`)
+`253bb20`; the Git toolkit was squash-merged into `master` as PR #41,
+commit `7852f01`; the math toolkit was merged into `master` as PR #39,
+merge commit `243b291`)
 
 ---
 
@@ -124,16 +124,16 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/data-analysis-toolkit-module` — **committed** (`e6028f7`), **pushed**, and **opened as PR #57** against `master` (based on `master` at `1f44d7e`). CI green. **Not merged** — the merge is the operator's. |
+| Branch | `refactor/data-analysis-toolkit-module` — **committed** (`340dd8b`), **pushed**, and **opened as PR #57** against `master` (based on `master` at `1fd2063`). CI green. **Not merged** — the merge is the operator's. |
 | Scope | The **tenth** and **last** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_data_analysis_toolkit.py` leaves the project root and becomes `toolkits/data-analysis-toolkit/`. Its library half is pinned to **pandas** and **numpy** — the DataFrame is the data model — rather than to the standard library alone. |
 | Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the thirteen analysis operations and the module-level logger, no LlamaIndex import) and the adapter (`agent_data_analysis_toolkit.py` — the only LlamaIndex-dependent module), with an `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.data_analysis_toolkit`, which `toolkits/__init__.py` registers next to the other eleven toolkits. The **two** call sites (the retriever and the selection menu) were updated; both imported the toolkit unguarded and now import it **behind a guard**, so the data analysis toolkit goes from mandatory to optional. The suite that used to live at `tests/test_data_analysis_toolkit.py` moved with the toolkit and grew from 39 to 44 tests — what was added is the **error contract** of every operation, which nothing pinned before. The module-local suite is 94 tests, the alias contract is green (28 passed, 47 subtests), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — `tests/ci_baseline.txt` did **not** need rewriting, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical (155 tools, the same MD5). The report is `investigate/data-analysis-toolkit-module/REPORT_data_analysis_toolkit_module.md`. |
 | Policy | The **behaviour of the tools did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with fourteen deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. Three things are specific to this toolkit. The **guard at the call sites is the ordinary one** — `except ImportError`, not the database toolkit's wider `except Exception` — because the data analysis toolkit has **no import-time state**: its only import-time failure is a missing `pandas` or `numpy`, which is an `ImportError`; `openpyxl` is needed at *run* time, when pandas actually reads a workbook, and it is caught by the operation like every other failure. The **two data imports are pinned separately** from the dependency set: dropping *both* loses the dependencies, dropping *one* loses the statement, and the check has a rule for each. And the **one import that did not move is documented rather than ignored**: the original imported `json` and never used it, so the library half drops it — and the check pins the *exact* difference between the two dependency sets (`{"json", "llama_index"}`), so no other difference can slip in. One PR per toolkit, as the operator asked. **No loose toolkit is left at the project root.** |
-| State | **Committed, pushed, PR #57 opened — not merged.** Committed as `e6028f7`, pushed to `origin/refactor/data-analysis-toolkit-module`, opened as PR #57 against `master` (https://github.com/KostiantynBushko/agent-torvalds/pull/57), CI green.  The **first** CI run was red with **one** new failure — `tests/test_tui_input_reader.py::TestInputReaderInPseudoTerminal::test_burst_of_keystrokes_is_fully_captured` — a timing-dependent pseudo-terminal test that this change does not touch; it passed ten times out of ten locally, and the **re-run of the very same commit passed**.  The baseline was deliberately **not** rewritten to include it: a test that fails intermittently is not a *known* failure, and listing it would mask a real regression next time.  The operator does the merge. |
+| State | **Committed, pushed, PR #57 opened — not merged.** Committed as `340dd8b`, pushed to `origin/refactor/data-analysis-toolkit-module`, opened as PR #57 against `master` (https://github.com/KostiantynBushko/agent-torvalds/pull/57), CI green.  The **first** CI run was red with **one** new failure — `tests/test_tui_input_reader.py::TestInputReaderInPseudoTerminal::test_burst_of_keystrokes_is_fully_captured` — a timing-dependent pseudo-terminal test that this change does not touch; it passed ten times out of ten locally, and the **re-run of the very same commit passed**.  The baseline was deliberately **not** rewritten to include it: a test that fails intermittently is not a *known* failure, and listing it would mask a real regression next time.  The operator does the merge. |
 
 ### Latest change: the data analysis toolkit is a module
 
 **Committed, pushed, opened as PR #57 — not merged.**  The branch is
-based on `master` at `1f44d7e`, and the commit is `e6028f7`.
+based on `master` at `1fd2063`, and the commit is `340dd8b`.
 
 The **tenth** and **last** toolkit of the "every toolkit is a module"
 series, and the one that **emptied the project root of loose toolkits**.
@@ -206,17 +206,17 @@ the Windows toolkit dropped its unused `os` — and the check pins the
 
 ### Previous change: the Excel toolkit is a module
 
-**Squash-merged into `master` as PR #54** (commit `1f44d7e`, head
-`c8487dd`).  The PR is based on `master` — not on `main`.
+**Squash-merged into `master` as PR #54** (commit `1fd2063`, head
+`c3886bc`).  The PR is based on `master` — not on `main`.
 
 The squash departs from the standing convention of a merge commit, as
 PR #52, PR #50, PR #48, PR #46, PR #43 and PR #41 did before it, and
 for the same reason: the convention exists for the *stacked* PR chain,
-and this PR is based directly on the tip of `master` (`65a11db`), so the
-next PR's merge base is `1f44d7e` and its diff does not balloon.  The
+and this PR is based directly on the tip of `master` (`9a33678`), so the
+next PR's merge base is `1fd2063` and its diff does not balloon.  The
 tree check the convention exists for holds as well — `master`'s tree
 after the merge (`0b2045b`) is byte-identical to the head tree of
-`c8487dd` that CI ran green.
+`c3886bc` that CI ran green.
 
 The **ninth** toolkit of the "every toolkit is a module" series, and the
 **first** of the two that were still loose at the project root.  The
@@ -283,16 +283,16 @@ real problem.
 
 ### Previous change: the database toolkit is a module
 
-**Squash-merged into `master` as PR #52** (commit `be91e90`, head
-`aa576af`).  The PR is based on `master` — not on `main`.
+**Squash-merged into `master` as PR #52** (commit `41608e5`, head
+`84f9fa7`).  The PR is based on `master` — not on `main`.
 
 The squash departs from the standing convention of a merge commit, as
 PR #50, PR #48, PR #46, PR #43 and PR #41 did before it, and for the
 same reason: the convention exists for the *stacked* PR chain, and this
-PR is based directly on the tip of `master` (`513988a`), so the next
-PR's merge base is `be91e90` and its diff does not balloon.  The tree
+PR is based directly on the tip of `master` (`eb4e479`), so the next
+PR's merge base is `41608e5` and its diff does not balloon.  The tree
 check the convention exists for holds as well — `master`'s tree after
-the merge (`ab2dac5`) is byte-identical to the head tree of `aa576af`
+the merge (`ab2dac5`) is byte-identical to the head tree of `84f9fa7`
 that CI ran green.
 
 The **eighth** toolkit of the "every toolkit is a module" series, and
@@ -362,16 +362,16 @@ Windows one: the contract is now complete for all ten toolkits.
 
 ### Previous change: the Windows toolkit is a module
 
-**Squash-merged into `master` as PR #50** (commit `9c48625`, head
-`0b5f2af`).  The PR is based on `master` — not on `main`.
+**Squash-merged into `master` as PR #50** (commit `deb75aa`, head
+`966fedb`).  The PR is based on `master` — not on `main`.
 
 The squash departs from the standing convention of a merge commit, as
 PR #48, PR #46, PR #43 and PR #41 did before it, and for the same reason:
 the convention exists for the *stacked* PR chain, and this PR is based
-directly on the tip of `master` (`02270ed`), so the next PR's merge base
-is `9c48625` and its diff does not balloon.  The tree check the
+directly on the tip of `master` (`f20fb34`), so the next PR's merge base
+is `deb75aa` and its diff does not balloon.  The tree check the
 convention exists for holds as well — `master`'s tree after the merge
-(`7a49b8a`) is byte-identical to the head tree of `0b5f2af` that CI ran
+(`7a49b8a`) is byte-identical to the head tree of `966fedb` that CI ran
 green.
 
 The **seventh** toolkit of the "every toolkit is a module" series, and
@@ -440,16 +440,16 @@ and the library half, apart from the module header itself.
 
 ### Previous change: the APT toolkit is a module
 
-**Squash-merged into `master` as PR #48** (commit `5eb5151`, head
-`4c2b941`).  The PR is based on `master` — not on `main`.
+**Squash-merged into `master` as PR #48** (commit `ce75ade`, head
+`a4b46ec`).  The PR is based on `master` — not on `main`.
 
 The squash departs from the standing convention of a merge commit, as
 PR #46, PR #43 and PR #41 did before it, and for the same reason: the
 convention exists for the *stacked* PR chain, and this PR is based
-directly on the tip of `master` (`d7cb132`), so the next PR's merge base
-is `5eb5151` and its diff does not balloon.  The tree check the
+directly on the tip of `master` (`b55f9c1`), so the next PR's merge base
+is `ce75ade` and its diff does not balloon.  The tree check the
 convention exists for holds as well — `master`'s tree after the merge
-(`0af67be`) is byte-identical to the head tree of `4c2b941` that CI ran
+(`0af67be`) is byte-identical to the head tree of `a4b46ec` that CI ran
 green.
 
 The **sixth** toolkit of the "every toolkit is a module" series, and the
@@ -557,16 +557,16 @@ failure** (40 known failures, 0 new, 0 fixed).
 
 ### Previous change: the Linux toolkit is a module
 
-**Squash-merged into `master` as PR #46** (commit `94fb513`, head
-`772f819`).  The PR is based on `master` — not on `main`.
+**Squash-merged into `master` as PR #46** (commit `c9fa14f`, head
+`9439f3e`).  The PR is based on `master` — not on `main`.
 
 The squash departs from the standing convention of a merge commit, as
 PR #43 and PR #41 did before it, and for the same reason: the
 convention exists for the *stacked* PR chain, and this PR is based
-directly on the tip of `master` (`dead333`), so the next PR's merge
-base is `94fb513` and its diff does not balloon.  The tree check the
+directly on the tip of `master` (`64a8061`), so the next PR's merge
+base is `c9fa14f` and its diff does not balloon.  The tree check the
 convention exists for holds as well — `master`'s tree after the merge
-(`395a8f0f`) is byte-identical to the head tree of `772f819` that CI ran
+(`395a8f0f`) is byte-identical to the head tree of `9439f3e` that CI ran
 green.
 
 The **fifth** toolkit of the "every toolkit is a module" series, and the
@@ -659,17 +659,17 @@ and the move neither created nor changed it.
 
 ### Previous change: the OS toolkit is a module
 
-**Squash-merged into `master` as PR #45** (commit `899f9b2`, head
-`7120bb9`).  The PR is based on `master` — not on `main`.
+**Squash-merged into `master` as PR #45** (commit `e6af6ac`, head
+`070f2dc`).  The PR is based on `master` — not on `main`.
 
 The operator asked for a **squash**, as for PR #43 and PR #41.  The
 departure from the standing convention of a merge commit is safe here,
 for the reason recorded under the Git toolkit: the convention exists for
 the *stacked* PR chain, and this PR is based directly on the tip of
-`master`, so the next PR's merge base is `899f9b2` and its diff does not
+`master`, so the next PR's merge base is `e6af6ac` and its diff does not
 balloon.  The tree check the convention exists for holds as well —
 `master`'s tree after the merge (`0688c763`) is byte-identical to the
-head tree of `7120bb9` that CI ran green.
+head tree of `070f2dc` that CI ran green.
 
 The **fourth** toolkit of the series, and the **last** one that was still
 mandatory.  Every other toolkit had already moved under `toolkits/`,
@@ -730,17 +730,17 @@ through one logger, as the single module did.
 
 ### Previous change: the GitHub toolkit is a module
 
-**Squash-merged into `master` as PR #43** (commit `83456a7`, head
-`0533206`).  The PR is based on `master` — not on `main`.
+**Squash-merged into `master` as PR #43** (commit `253bb20`, head
+`f32ffe0`).  The PR is based on `master` — not on `main`.
 
 The operator asked for a **squash**, as for PR #41.  The departure from
 the standing convention of a merge commit is safe here, for the reason
 recorded under the Git toolkit: the convention exists for the *stacked*
 PR chain, and this PR is based directly on the tip of `master`, so the
-next PR's merge base is `83456a7` and its diff does not balloon.  The
+next PR's merge base is `253bb20` and its diff does not balloon.  The
 tree check the convention exists for holds as well — `master`'s tree
 after the merge (`74a5f5b`) is byte-identical to the head tree of
-`0533206` that CI ran green.
+`f32ffe0` that CI ran green.
 
 The **third** toolkit of the series, and the first one of them that
 arrived **without a test suite**.  That changed what the work was.
@@ -835,8 +835,8 @@ belongs in its own PR, where the change is the change.
 
 ### Previous change: the Git toolkit is a module
 
-**Squash-merged into `master` as PR #41** (commit `7d0e56a`, head
-`79c69d8`).  The PR is based on `master` — not on `main`.
+**Squash-merged into `master` as PR #41** (commit `7852f01`, head
+`35d489f`).  The PR is based on `master` — not on `main`.
 
 The operator asked for a **squash** here, which departs from the standing
 convention of this file (a **merge commit**).  The departure is safe for
@@ -846,16 +846,16 @@ this PR, and the reason is worth recording:
   chain — "squashing drops the original SHAs from `master`'s history and
   the next PR's diff balloons to include every layer below it".  This
   PR is **not** stacked: it is based directly on the tip of `master`
-  (`10fc1f0`), so the next PR's merge base is `7d0e56a` and its diff is
+  (`5f0302a`), so the next PR's merge base is `7852f01` and its diff is
   computed against that.  Nothing balloons.
 * the second reason for the merge commit — "the merge result tree must
   equal the tree the CI gate already validated" — **does** hold for a
   squash, and it was checked: `master`'s tree after the merge
-  (`d3242f5`) is byte-identical to the head tree of `79c69d8` that CI
+  (`d3242f5`) is byte-identical to the head tree of `35d489f` that CI
   ran green.  The merge introduced no untested content.
 
 The one thing a squash does drop is the branch's own commit from
-`master`'s history: `79c69d8` is reachable only through the branch
+`master`'s history: `35d489f` is reachable only through the branch
 `refactor/git-toolkit-module`, not through `master`.  The content is
 identical, so nothing is lost that the tests or the tree check would
 have caught.
@@ -905,7 +905,7 @@ the refactoring was behaviour-neutral.
 
 ### Previous change: the math toolkit is a module
 
-**Merged into `master` as PR #39** (merge commit `e2fce1a`, head `04ce149`).
+**Merged into `master` as PR #39** (merge commit `243b291`, head `8a3fe31`).
 The PR is based on `master` — not on `main` — and the merge used a **merge
 commit**, never a squash, for the reason the rules below give: squashing
 drops the original SHAs from `master`'s history and the next PR's diff
@@ -968,7 +968,7 @@ with the sessions intact instead of as one flat key. Keeping both meant two
 implementations of the same idea, and the second one was the one the agent actually used
 during an outage.
 
-**Merged.** PR #37, merge commit `4e06b4e` — the top of the chat-manager stack.
+**Merged.** PR #37, merge commit `592b133` — the top of the chat-manager stack.
 
 ### Previous work: the chat history survives a database outage
 
@@ -1043,9 +1043,9 @@ in place, `User.token_limit` survives as a deprecated property, and `\chat-user 
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/shodan-toolkit-flat-layout` — **implemented, committed** (`6920d03`) and **merged into `master`** as PR #33 |
+| Branch | `refactor/shodan-toolkit-flat-layout` — **implemented, committed** (`048c2fb`) and **merged into `master`** as PR #33 |
 | Scope | The Shodan toolkit's layout: the toolkit directory **is** the package. The `src/` level and the nested `shodan_toolkit/` directory are gone — every source file sits directly in `toolkits/shodan-toolkit/`, next to `tests/` and `examples/`, the same shape as the MikroTik toolkit. The import name is unchanged (`toolkits.shodan_toolkit` through the alias, `shodan_toolkit` in a standalone install). |
-| Status | Implemented: the modules moved, the tests use relative imports, the alias shim points at the new path, the distribution maps the package explicitly, and a new layout contract test (`toolkits/shodan-toolkit/tests/test_package_layout.py`, 11 checks) guards the rule. The toolkit suite is green (162 passed, 2 skipped), the alias contract is green (23/23), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new). Committed as `6920d03` ("refactor: make the Shodan toolkit a flat package") and pushed to `origin/refactor/shodan-toolkit-flat-layout` — the operator approved both the commit and the push (rule 4). Merged into `master` as PR #33 (merge commit `e3d1511`), after PR #31 (`6986111`) and PR #32 (`1fef7d3`) were merged first: the stack had to go bottom-up. |
+| Status | Implemented: the modules moved, the tests use relative imports, the alias shim points at the new path, the distribution maps the package explicitly, and a new layout contract test (`toolkits/shodan-toolkit/tests/test_package_layout.py`, 11 checks) guards the rule. The toolkit suite is green (162 passed, 2 skipped), the alias contract is green (23/23), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new). Committed as `048c2fb` ("refactor: make the Shodan toolkit a flat package") and pushed to `origin/refactor/shodan-toolkit-flat-layout` — the operator approved both the commit and the push (rule 4). Merged into `master` as PR #33 (merge commit `d46ceb4`), after PR #31 (`7df8119`) and PR #32 (`01a393f`) were merged first: the stack had to go bottom-up. |
 | Policy | The `toolkits` package must be imported **before** pytest imports a module from inside a hyphenated toolkit package, or pytest's "importlib" mode loads the package twice and the import alias goes stale. `consider_namespace_packages = true` in `pytest.ini` and in the toolkit's `pyproject.toml` makes pytest resolve the name through the normal import machinery, so there is exactly one copy of the package. |
 
 ### Investigation: the chat manager's user settings and the legacy implementation
@@ -1073,13 +1073,13 @@ whole test suite does.
 
 | Phase | Scope | State |
 |-------|-------|-------|
-| **A** | The user-settings API and the `\chat-user` command | **implemented and merged** — PR #35, merge commit `eaeb20e` |
-| **B** | The SQLite fallback in `CustomDBConnector` | **implemented and merged** — PR #36, merge commit `fc86a48` |
-| **C** | The removal of the legacy implementation | **implemented and merged** — PR #37, merge commit `4e06b4e` |
+| **A** | The user-settings API and the `\chat-user` command | **implemented and merged** — PR #35, merge commit `5af9371` |
+| **B** | The SQLite fallback in `CustomDBConnector` | **implemented and merged** — PR #36, merge commit `be60328` |
+| **C** | The removal of the legacy implementation | **implemented and merged** — PR #37, merge commit `592b133` |
 
 > **Update — the stack is merged.** The paragraph above is the investigation's conclusion
 > *at the time*; it no longer holds. The legacy implementation **has** been removed, and
-> the removal was safe because Phase B's fallback shipped first. `master` is `4e06b4e`.
+> the removal was safe because Phase B's fallback shipped first. `master` is `592b133`.
 
 **Phase A closed four of the nine defects:** C1 (no public API), C2 (the changed limit never
 reached the live buffer), C3 (the `get_memory_buffer()` override was silently dropped) and C4
@@ -1111,10 +1111,10 @@ is green (104 passed) and is the regression baseline for the work that follows.
 
 ### Latest change: the Shodan toolkit is a flat package
 
-Committed as `6920d03` ("refactor: make the Shodan toolkit a flat package")
+Committed as `048c2fb` ("refactor: make the Shodan toolkit a flat package")
 on the branch `refactor/shodan-toolkit-flat-layout`, pushed to
 `origin/refactor/shodan-toolkit-flat-layout`, and merged into `master` as
-PR #33 (merge commit `e3d1511`).
+PR #33 (merge commit `d46ceb4`).
 
 ### Merge order for the chat-manager stack
 
@@ -1122,12 +1122,12 @@ The chat-manager work is a **stacked PR** chain too, and the order is forced:
 
 | # | Branch | Base | Merge commit |
 |---|---|---|---|
-| #35 | `feature/chat-user-settings` | `master` | `eaeb20e` |
-| #36 | `feature/chat-manager-sqlite-fallback` | `feature/chat-user-settings` | `fc86a48` |
-| #37 | `feature/chat-manager-remove-legacy-memory` | `feature/chat-manager-sqlite-fallback` | `4e06b4e` |
+| #35 | `feature/chat-user-settings` | `master` | `5af9371` |
+| #36 | `feature/chat-manager-sqlite-fallback` | `feature/chat-user-settings` | `be60328` |
+| #37 | `feature/chat-manager-remove-legacy-memory` | `feature/chat-manager-sqlite-fallback` | `592b133` |
 
-**Status: merged.** The stack landed in `master` bottom-up: `eaeb20e` (#35), `fc86a48`
-(#36), `4e06b4e` (#37). The **Base** column records the branch each PR was *opened
+**Status: merged.** The stack landed in `master` bottom-up: `5af9371` (#35), `be60328`
+(#36), `592b133` (#37). The **Base** column records the branch each PR was *opened
 against*; every PR was retargeted to `master` before it was merged, so each merge commit
 brought in one layer only. Each merge result tree is byte-identical to the CI-validated
 head tree of the branch it merged — the merge introduced no untested content.
@@ -1150,21 +1150,21 @@ The toolkit refactor is a **stacked PR** chain, and the order is forced:
 
 | # | Branch | Base | Merge commit |
 |---|---|---|---|
-| #31 | `fix/toolkit-alias-reference` | `master` | `6986111` |
-| #32 | `refactor/toolkit-adapter-location` | `fix/toolkit-alias-reference` | `1fef7d3` |
-| #33 | `refactor/shodan-toolkit-flat-layout` | `refactor/toolkit-adapter-location` | `e3d1511` |
+| #31 | `fix/toolkit-alias-reference` | `master` | `7df8119` |
+| #32 | `refactor/toolkit-adapter-location` | `fix/toolkit-alias-reference` | `01a393f` |
+| #33 | `refactor/shodan-toolkit-flat-layout` | `refactor/toolkit-adapter-location` | `d46ceb4` |
 
 **Bottom-up: 31, then 32, then 33.** Merging #33 first would drag #31 and
 #32's commits into `master`, leave those two PRs empty, and break #32's base
 branch. To land them all in `master`, each PR's base is retargeted to
 `master` **after** the PR below it has been merged, then merged with a
 **merge commit** (never squash: squashing drops the original SHAs from
-`master`'s history, the next PR's merge base moves back to `ca17d8a`, and its
+`master`'s history, the next PR's merge base moves back to `080e876`, and its
 diff balloons to include all three layers).
 
 Merge commits were used for a second reason: the merge result tree must equal
 the tree the CI gate already validated. With merge commits, `master`'s tree
-after #33 (`37bde2d`) is byte-identical to the head tree of `26a7f0e` that
+after #33 (`37bde2d`) is byte-identical to the head tree of `d831346` that
 CI ran green — the merge introduces no untested content.
 
 The toolkit used to be a project folder that held the package one level
@@ -1179,7 +1179,7 @@ script and the same `python -m shodan_toolkit` entry point.
 
 ### Latest change: a timeout the model can see
 
-Committed as `2acce6d` ("fix: a timeout the model can see") and pushed to
+Committed as `6d64cba` ("fix: a timeout the model can see") and pushed to
 `origin/fix/hitl-question-detection`.
 
 The operator stated the timeout policy: *"-1 means stop and wait; a finite
@@ -1211,7 +1211,7 @@ label kept the "which" out of the head of the question, so the "should I"
 | `investigate/hitl-questions-issue/IMPLEMENTATION_REPORT_question_prompt.md` | Section 9 — the third round. |
 | `CHANGELOG.md` | The entry. |
 
-Committed as `ab3fbb9` ("fix: a decorated question is asked as the question it
+Committed as `e81672a` ("fix: a decorated question is asked as the question it
 is") and pushed to `origin/fix/hitl-question-detection`.
 
 **Verifying the change**
@@ -1241,12 +1241,12 @@ into this one and turned into a first-class toolkit.
 history is preserved rather than squashed:
 
 ```
-*   Add 'toolkits/shodan-toolkit/' from commit '26b1fb2...'
+*   Add 'toolkits/shodan-toolkit/' from commit 'db3fbc8...'
 |\
-| * 26b1fb2 chore: remove project-root RULES.md
-| * 72b3239 fix: correct Shodan CLI argument vectors and harden library packaging
-| * 6d33069 Initial commit: shodan-toolkit
-* b068337 fix: make the HITL timeout default to "no timeout" (wait for the user) (#23)
+| * db3fbc8 chore: remove project-root RULES.md
+| * b18ab77 fix: correct Shodan CLI argument vectors and harden library packaging
+| * 759ba0b Initial commit: shodan-toolkit
+* c069e91 fix: make the HITL timeout default to "no timeout" (wait for the user) (#23)
 ```
 
 Every file under `toolkits/shodan-toolkit/` has the same blob hash as in the
@@ -1322,7 +1322,7 @@ self-development/.venv/bin/python -m pytest self-development/toolkits/shodan-too
 
 ### Previous work: the HITL timeout is now "no timeout" by default
 
-| Branch | `feature/docs/ollama-local-setup` (off `master`, `b068337`) |
+| Branch | `feature/docs/ollama-local-setup` (off `master`, `c069e91`) |
 | Scope | Document and enable the local Ollama setup: install Ollama, pull the models, run the agent |
 | Status | Implemented, verified against a live Ollama server, **committed** (`3398cdb`) and pushed to `origin/feature/docs/ollama-local-setup` |
 
@@ -1365,7 +1365,7 @@ Both answer, and the agent's own client returns `OK` for the chat model and a
 
 | Item | Status |
 |---|---|
-| Branch | `feature/hitl-no-timeout` (off `master`, `1736839`) |
+| Branch | `feature/hitl-no-timeout` (off `master`, `35600f7`) |
 | Scope | HITL: no timeout by default — the agent waits for the user |
 | Status | Implemented, tests green, **committed** and pushed to `origin/feature/hitl-no-timeout` |
 
@@ -1412,14 +1412,14 @@ self-development/.venv/bin/python -m pytest self-development/tests/test_hitl_no_
 `investigate/hitl-investigate/verify_hitl_no_timeout.py` reports 12/12.
 
 The full suite shows **no new failures** against the baseline: the failure
-set at `HEAD` (`1736839`) and after the change is byte-identical —
+set at `HEAD` (`35600f7`) and after the change is byte-identical —
 77 pre-existing failures, unchanged (76 failed + 1 error).
 
 ### Earlier work: the MikroTik RouterOS toolkit
 
 | Item | Status |
 |---|---|
-| Branch | `feature/mikrotik-routeros-toolkit` (off `master`, `b1ec326`) |
+| Branch | `feature/mikrotik-routeros-toolkit` (off `master`, `de3bfaf`) |
 | Scope | MikroTik RouterOS toolkit implementation |
 | Plan | `investigate/MikroTik-RouterOS/IMPLEMENTATION_PLAN.md` |
 | Proposal | `investigate/MikroTik-RouterOS/PROPOSAL_mikrotik_toolkit.md` |

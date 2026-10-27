@@ -1,7 +1,7 @@
 # The APT toolkit is a module
 
 **Branch:** `refactor/apt-toolkit-module`
-**Base:** `master` (`d7cb132`)
+**Base:** `master` (`b55f9c1`)
 
 The APT toolkit was a single loose module at the project root,
 `agent_apt_toolkit.py`, next to the other `agent_*.py` files, while the

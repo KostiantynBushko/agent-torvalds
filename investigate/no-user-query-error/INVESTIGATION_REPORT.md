@@ -280,7 +280,7 @@ The full suite was run on the branch and on a clean worktree at the base commit:
 
 | | failed | passed |
 |---|---|---|
-| base (`2684e26`) | 76 | 1275 |
+| base (`3a7191c`) | 76 | 1275 |
 | branch | 76 | 1299 |
 
 The 76 failures are pre-existing and unrelated (git toolkit, HITL runtime toggle, math

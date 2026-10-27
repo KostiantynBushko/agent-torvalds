@@ -350,12 +350,12 @@ history** of the `feature/shodan-toolkit` branch, grafted under the
 `toolkits/shodan-toolkit/` prefix:
 
 ```
-*   Add 'toolkits/shodan-toolkit/' from commit '26b1fb2...'
+*   Add 'toolkits/shodan-toolkit/' from commit 'db3fbc8...'
 |\
-| * 26b1fb2 chore: remove project-root RULES.md
-| * 72b3239 fix: correct Shodan CLI argument vectors and harden library packaging
-| * 6d33069 Initial commit: shodan-toolkit
-* b068337 fix: make the HITL timeout default to "no timeout" (wait for the user) (#23)
+| * db3fbc8 chore: remove project-root RULES.md
+| * b18ab77 fix: correct Shodan CLI argument vectors and harden library packaging
+| * 759ba0b Initial commit: shodan-toolkit
+* c069e91 fix: make the HITL timeout default to "no timeout" (wait for the user) (#23)
 ```
 
 The content was byte-identical to the upstream project - every file had the

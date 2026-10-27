@@ -1,7 +1,7 @@
 # Implementation report — the user-settings API and the `\chat-user` command
 
 **Date:** 2026-10-25
-**Branch:** `feature/chat-user-settings` (off `master`, `2c5bf2e`)
+**Branch:** `feature/chat-user-settings` (off `master`, `5468e3b`)
 **Scope:** Phase A of the investigation's proposed order of work
 (`INVESTIGATION_REPORT.md` §5.3).
 **Status:** implemented, verified.
@@ -12,7 +12,7 @@
 
 | Ask | Answer |
 |-----|--------|
-| Open the branch and start the implementation | `feature/chat-user-settings`, off `master` (`2c5bf2e`). |
+| Open the branch and start the implementation | `feature/chat-user-settings`, off `master` (`5468e3b`). |
 | The name `token_limit` is wrong — it is applied to *chat* tokens. Propose a better name. | **`chat_token_limit`** — the proposal is in `PROPOSAL_chat_token_limit.md`, with six candidates weighed and the rejected ones explained. Implemented, with the old name kept as a working alias. |
 | A command to manipulate the user configuration. The API must be exposed by the `chat_manager` module and integrated into the agent through the defined interface, like every other command. | `chat_manager.settings` (the API) + `ChatHistoryManager.get_user_settings()` / `update_user_settings()`, and the `\chat-user` command — registered in `components/command_registry.py`, dispatched by `chat_manager.commands.handler`, rendered by the TUI, and advertised by both orchestrators. |
 

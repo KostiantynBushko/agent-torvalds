@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-25
 **Branch:** `feature/chat-manager-remove-legacy-memory` (off
-`feature/chat-manager-sqlite-fallback`, `f5b867c`)
+`feature/chat-manager-sqlite-fallback`, `e78fe68`)
 **Scope:** Phase C of the chat-manager investigation
 (`investigate/chat-manager-user-settings/INVESTIGATION_REPORT.md` §5.2 and §5.3).
 **Status:** implemented, verified.
@@ -133,8 +133,8 @@ Merge the stack, bottom-up:
 
 | # | Branch | Base | Merge commit |
 |---|--------|------|--------------|
-| #35 | `feature/chat-user-settings` | `master` | `29d794a` (already on `origin`) |
-| #36 | `feature/chat-manager-sqlite-fallback` | `feature/chat-user-settings` | `f5b867c` (already pushed) |
+| #35 | `feature/chat-user-settings` | `master` | `05fb22b` (already on `origin`) |
+| #36 | `feature/chat-manager-sqlite-fallback` | `feature/chat-user-settings` | `e78fe68` (already pushed) |
 | #37 | `feature/chat-manager-remove-legacy-memory` | `feature/chat-manager-sqlite-fallback` | this branch |
 
 **Bottom-up: 35, then 36, then 37.** Each base is retargeted to `master` *after* the PR

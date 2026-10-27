@@ -1,7 +1,7 @@
 # The Windows toolkit is a module
 
 **Status:** implemented and verified on `refactor/windows-toolkit-module`,
-based on `master` (`02270ed`).
+based on `master` (`f20fb34`).
 
 The Windows PowerShell toolkit was a single loose module at the project
 root, `agent_windows_toolkit.py`, while the toolkits that had already
