@@ -51,7 +51,24 @@ from __future__ import annotations
 
 from typing import Any, List
 
-__all__ = ["to_string", "to_strings"]
+__all__ = ["to_string", "to_strings", "to_output_string"]
+
+
+def _safe_getattr(obj: Any, name: str, default: Any = None) -> Any:
+    """Return the attribute *name* of *obj*, or *default*.
+
+    A debugging aid must not be able to break a run.  ``getattr`` only
+    swallows the ``AttributeError`` of a missing attribute, so a payload
+    whose property *raises* would take the agent down with it - and the
+    payload is not ours: it comes from the framework, from a tool, or
+    from a chat history written by an older version.
+
+    Anything that goes wrong is treated as "not there".
+    """
+    try:
+        return getattr(obj, name, default)
+    except Exception:  # noqa: BLE001 — a payload must not break the log
+        return default
 
 
 def _tidy(text: str) -> str:
@@ -93,10 +110,10 @@ def _tidy(text: str) -> str:
 
 def _role(message: Any) -> str:
     """Return the role of *message* as a short lower-case name."""
-    role = getattr(message, "role", None)
+    role = _safe_getattr(message, "role", None)
     if role is None:
         return "?"
-    return str(getattr(role, "value", role)).lower()
+    return str(_safe_getattr(role, "value", role)).lower()
 
 
 def _arguments(arguments: Any) -> str:
@@ -122,18 +139,18 @@ def _tool_call(name: str, arguments: Any) -> str:
 
 def _block(block: Any) -> str:
     """Return what a single content block carries, as text."""
-    block_type = str(getattr(block, "block_type", "") or "")
+    block_type = str(_safe_getattr(block, "block_type", "") or "")
 
     if block_type == "text":
-        return _tidy(str(getattr(block, "text", "") or ""))
+        return _tidy(str(_safe_getattr(block, "text", "") or ""))
 
     if block_type == "thinking":
-        content = _tidy(str(getattr(block, "content", "") or ""))
+        content = _tidy(str(_safe_getattr(block, "content", "") or ""))
         return f"thinking: {content}" if content else "thinking"
 
     if block_type == "tool_call":
-        name = str(getattr(block, "tool_name", "") or "")
-        return _tool_call(name, getattr(block, "tool_kwargs", None))
+        name = str(_safe_getattr(block, "tool_name", "") or "")
+        return _tool_call(name, _safe_getattr(block, "tool_kwargs", None))
 
     if block_type:
         # An image, an audio clip, a document - nothing to read, but the
@@ -154,7 +171,7 @@ def _legacy_tool_calls(message: Any) -> List[str]:
         One rendered tool call per call.  Empty when the message carries
         none.
     """
-    kwargs = getattr(message, "additional_kwargs", None) or {}
+    kwargs = _safe_getattr(message, "additional_kwargs", None) or {}
     try:
         calls = kwargs.get("tool_calls") or []
     except AttributeError:
@@ -171,8 +188,8 @@ def _legacy_tool_calls(message: Any) -> List[str]:
                 name = str(call.get("name", "") or "")
                 arguments = call.get("arguments")
         else:
-            name = str(getattr(call, "name", "") or "")
-            arguments = getattr(call, "arguments", None)
+            name = str(_safe_getattr(call, "name", "") or "")
+            arguments = _safe_getattr(call, "arguments", None)
 
         if name or arguments:
             found.append(_tool_call(name, arguments))
@@ -202,12 +219,12 @@ def to_string(message: Any) -> str:
     parts: List[str] = []
     block_calls: List[str] = []
 
-    for block in getattr(message, "blocks", None) or []:
+    for block in _safe_getattr(message, "blocks", None) or []:
         rendered = _block(block)
         if not rendered:
             continue
         parts.append(rendered)
-        if str(getattr(block, "block_type", "") or "") == "tool_call":
+        if str(_safe_getattr(block, "block_type", "") or "") == "tool_call":
             block_calls.append(rendered)
 
     # The tool calls the message carries in the OpenAI shape.  A call
@@ -221,7 +238,7 @@ def to_string(message: Any) -> str:
     if not parts:
         # No blocks (or none of them carries anything): the content is
         # the message.
-        content = getattr(message, "content", None)
+        content = _safe_getattr(message, "content", None)
         if content:
             content = _tidy(str(content))
         if content:
@@ -247,3 +264,120 @@ def to_strings(messages: Any) -> List[str]:
     if not isinstance(messages, (list, tuple)):
         return []
     return [to_string(message) for message in messages]
+
+
+# ---------------------------------------------------------------------------
+# The answer
+# ---------------------------------------------------------------------------
+
+def _rendered_tool_calls(message: Any) -> set:
+    """Return the tool calls *message* already shows.
+
+    A call can be carried twice - as a block and in the OpenAI shape -
+    and the reader has to see it once.
+    """
+    found = set()
+
+    for block in _safe_getattr(message, "blocks", None) or []:
+        if str(_safe_getattr(block, "block_type", "") or "") == "tool_call":
+            rendered = _block(block)
+            if rendered:
+                found.add(rendered)
+
+    for rendered in _legacy_tool_calls(message):
+        found.add(rendered)
+
+    return found
+
+
+def _output_tool_call(call: Any) -> str:
+    """Return one tool call or tool result of the answer event.
+
+    The event carries both: a *call* is what the agent asked for, and a
+    *result* is what the tool answered.  A result arrives wrapped in a
+    ``ToolOutput``, and the wrapped text is what is worth reading.
+    """
+    name = str(_safe_getattr(call, "tool_name", "") or "")
+
+    output = _safe_getattr(call, "tool_output", None)
+    if output is not None:
+        content = _safe_getattr(output, "content", None)
+        if content is None:
+            content = _safe_getattr(output, "raw_output", None)
+        if content is None:
+            content = str(output)
+        text = _tidy(str(content))
+        if name:
+            return f"tool result: {name}: {text}" if text else f"tool result: {name}"
+        return f"tool result: {text}" if text else "tool result"
+
+    kwargs = _safe_getattr(call, "tool_kwargs", None)
+    if kwargs is not None:
+        return _tool_call(name, kwargs)
+
+    content = _safe_getattr(call, "content", None)
+    if content is not None:
+        text = _tidy(str(content))
+        if name:
+            return f"tool result: {name}: {text}" if text else f"tool result: {name}"
+        return f"tool result: {text}" if text else "tool result"
+
+    if name:
+        return f"tool call: {name}"
+
+    return ""
+
+
+def to_output_string(output: Any) -> str:
+    """Return the agent's answer, rendered the way a person reads it.
+
+    The result reads as the answer, one thing per line::
+
+        assistant: The disk is 78% full.
+        tool call: execute_shell_command(command=df -h /)
+        structured: {'answer': '42'}
+
+    Args:
+        output: The answer - an ``AgentOutput`` event, or the result of
+            a stop event, which is the same object.
+
+    Returns:
+        The readable rendering of the answer.  An empty string when the
+        object carries nothing that can be read, so the caller can tell
+        an answer from another payload.  Never raises: a debugging aid
+        must not be able to break a run.
+    """
+    if output is None:
+        return ""
+
+    # The answer is in ``response``.  ``output`` is the name the
+    # framework's fallback event uses, and the one the old handler read -
+    # which is why the answer was never logged.
+    response = _safe_getattr(output, "response", None)
+    if response is None:
+        response = _safe_getattr(output, "output", None)
+
+    lines = []
+    shown = set()
+
+    if response is not None:
+        rendered = to_string(response)
+        if rendered:
+            lines.append(rendered)
+        shown = _rendered_tool_calls(response)
+
+    # The tool calls of the event that the answer does not already show.
+    for call in _safe_getattr(output, "tool_calls", None) or []:
+        rendered = _output_tool_call(call)
+        if rendered and rendered not in shown:
+            lines.append(rendered)
+
+    structured = _safe_getattr(output, "structured_response", None)
+    if structured:
+        lines.append(f"structured: {structured}")
+
+    # The messages the agent was asked to retry with.
+    for index, message in enumerate(_safe_getattr(output, "retry_messages", None) or []):
+        lines.append(f"retry {index + 1}: {to_string(message)}")
+
+    return "\n".join(lines)

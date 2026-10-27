@@ -6,9 +6,14 @@ Tests:
   thinking, a tool call as a block, a tool call in additional_kwargs,
   an image, an empty message).
 - to_strings() — a prompt, one line per message.
+- to_output_string() — the answer, in every shape it can take (the
+  text, a tool call, a structured response, the retry messages).
 - EventConsumer._on_agent_input() — the integration: the debug log
   carries the readable prompt and not the repr, and the state holds
   the readable text.
+- EventConsumer._on_agent_output() — the integration for the answer:
+  the debug log carries the answer, and the record does not say
+  "output=None".
 
 Run with:
     pytest tests/test_chat_message.py -v
@@ -26,11 +31,12 @@ from llama_index.core.base.llms.types import (
     ChatMessage,
     ImageBlock,
     MessageRole,
+    TextBlock,
     ThinkingBlock,
     ToolCallBlock,
 )
 
-from components.chat_message import to_string, to_strings
+from components.chat_message import to_output_string, to_string, to_strings
 from components.event_consumer import EventConsumer
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
@@ -402,3 +408,158 @@ class TestEventConsumerAgentInput:
             for record in caplog.records
             if "prompt:" in record.getMessage()
         ]
+
+
+# ---------------------------------------------------------------------------
+# to_output_string
+# ---------------------------------------------------------------------------
+
+
+def agent_output_event(response=None, tool_calls=None, **extra):
+    """Build the AgentOutput event the workflow writes to the stream."""
+    from llama_index.core.agent.workflow import AgentOutput
+
+    if response is None:
+        response = ChatMessage(
+            role=MessageRole.ASSISTANT, content="The disk is 78% full."
+        )
+
+    return AgentOutput(
+        response=response,
+        tool_calls=tool_calls or [],
+        current_agent_name="torvalds",
+        **extra,
+    )
+
+
+class TestToOutputString:
+    """``to_output_string`` — the answer, rendered."""
+
+    def test_the_answer_alone(self):
+        rendered = to_output_string(agent_output_event())
+        assert "assistant: The disk is 78% full." in rendered
+
+    def test_the_tool_calls_are_rendered(self):
+        from llama_index.core.tools import ToolSelection
+
+        output = agent_output_event(
+            tool_calls=[
+                ToolSelection(
+                    tool_id="call-1",
+                    tool_name="execute_shell_command",
+                    tool_kwargs={"command": "df -h /"},
+                )
+            ]
+        )
+        rendered = to_output_string(output)
+        assert "tool call: execute_shell_command(command=df -h /)" in rendered
+
+    def test_the_structured_response_is_rendered(self):
+        output = agent_output_event(structured_response={"answer": "78%"})
+        rendered = to_output_string(output)
+        assert "structured:" in rendered
+        assert "78%" in rendered
+
+    def test_the_retry_messages_are_rendered(self):
+        output = agent_output_event(
+            retry_messages=[
+                ChatMessage(role=MessageRole.ASSISTANT, content="I was not sure.")
+            ]
+        )
+        rendered = to_output_string(output)
+        assert "retry 1:" in rendered
+        assert "I was not sure." in rendered
+
+    def test_a_call_the_answer_already_shows_is_not_shown_twice(self):
+        from llama_index.core.tools import ToolSelection
+
+        # The answer carries the call as a block, and the event carries
+        # the same call: the reader has to see it once.
+        response = ChatMessage(
+            role=MessageRole.ASSISTANT,
+            blocks=[
+                TextBlock(block_type="text", text="Let me look."),
+                ToolCallBlock(
+                    block_type="tool_call",
+                    tool_name="execute_shell_command",
+                    tool_kwargs={"command": "df -h /"},
+                ),
+            ],
+        )
+        output = agent_output_event(
+            response=response,
+            tool_calls=[
+                ToolSelection(
+                    tool_id="call-1",
+                    tool_name="execute_shell_command",
+                    tool_kwargs={"command": "df -h /"},
+                )
+            ],
+        )
+        rendered = to_output_string(output)
+        assert rendered.count("execute_shell_command") == 1
+
+    def test_an_object_with_nothing_to_read_is_empty(self):
+        assert to_output_string(None) == ""
+        assert to_output_string(object()) == ""
+
+    def test_a_payload_that_raises_does_not_break_the_rendering(self):
+        class Broken:
+            @property
+            def response(self):
+                raise RuntimeError("the payload is broken")
+
+        # A debugging aid must not be able to break a run.
+        assert to_output_string(Broken()) == ""
+
+
+# ---------------------------------------------------------------------------
+# The integration
+# ---------------------------------------------------------------------------
+
+
+class TestEventConsumerAgentOutput:
+    """``EventConsumer._on_agent_output`` — the answer in the debug log."""
+
+    @pytest.mark.asyncio
+    async def test_the_debug_log_carries_the_answer(self, consumer, caplog):
+        with caplog.at_level(logging.DEBUG, logger="components.event_consumer"):
+            await consumer._on_agent_output(agent_output_event())
+
+        text = "\n".join(record.getMessage() for record in caplog.records)
+        assert "assistant: The disk is 78% full." in text
+
+    @pytest.mark.asyncio
+    async def test_the_record_does_not_say_output_none(self, consumer, caplog):
+        """The answer is in ``event.response``, not in ``event.output``.
+
+        The handler used to read ``event.output`` - a field the
+        framework's ``AgentOutput`` does not have - so the record said
+        ``output=None`` every single time and the answer was nowhere.
+        """
+        with caplog.at_level(logging.DEBUG, logger="components.event_consumer"):
+            await consumer._on_agent_output(agent_output_event())
+
+        text = "\n".join(record.getMessage() for record in caplog.records)
+        assert "output=None" not in text
+
+    @pytest.mark.asyncio
+    async def test_the_debug_log_does_not_carry_the_repr(self, consumer, caplog):
+        with caplog.at_level(logging.DEBUG, logger="components.event_consumer"):
+            await consumer._on_agent_output(agent_output_event())
+
+        text = "\n".join(record.getMessage() for record in caplog.records)
+        assert "ChatMessage(role=" not in text
+        assert "MessageRole.ASSISTANT" not in text
+        assert "AgentOutput(" not in text
+        assert "blocks=[" not in text
+
+    @pytest.mark.asyncio
+    async def test_the_state_holds_the_readable_answer(self, consumer, caplog):
+        with caplog.at_level(logging.DEBUG, logger="components.event_consumer"):
+            await consumer._on_agent_output(agent_output_event())
+
+        answer = consumer.state.get("agent_output")
+        assert answer is not None
+        assert "The disk is 78% full." in answer
+        assert "ChatMessage(" not in answer

@@ -315,6 +315,68 @@ The report ends with **four open questions for the operator**: the name of
 the symlink, the default size, whether the file replaces the terminal or
 joins it, and whether the TUI should stop writing to stderr.
 
+### Latest change: the answer is in the debug log
+
+The operator asked: *"can you check is there another place in EventConsumer
+ChatMessage we can update output formating to make it human redable"*.
+
+**The answer was not in the log at all.**  `AgentOutput` has no `output`
+field — the answer is in `event.response` — and the handler read
+`event.output`, so the record said `output=None` **every single time**.
+The code looked right because the *dummy* `AgentOutput` in
+`event_consumer.py` — the one that exists for the case where LlamaIndex
+is not installed — has `self.output`.  The fallback masked the real API.
+
+The stop event carried the answer: `StopEvent.result` **is** the
+`AgentOutput`.  It was logged as the repr of the whole model, with the
+answer buried inside it.
+
+| | Before | After |
+|---|---|---|
+| The answer | `output=None` — not logged | `assistant: The disk is 78% full: 12 GB of 16 GB are in use.` |
+| The tool calls | inside the model repr | `tool call: execute_shell_command(command=df -h /)` |
+| The stop event | `result=AgentOutput(response=ChatMessage(role=<MessageRole.ASSISTANT: ...` | the same rendering, one thing per line |
+
+`to_output_string()` in `components/chat_message.py` renders the answer
+event: the text, the tool calls, the structured response and the retry
+messages — one thing per line, a call the answer already shows not
+shown twice.  The state holds the readable answer, not the repr.
+
+**What the harness found:** every `getattr` in the module now goes
+through `_safe_getattr()`.  `getattr` only swallows the `AttributeError`
+of a *missing* attribute, so a payload whose property *raises* would
+have taken the agent down — in the middle of a run, over a **debug
+log**.
+
+| | Invariant | Caught by |
+|---|---|---|
+| **O1** | The answer is in the log, and the record does not say `output=None`. | the handler reading the field the framework does not have again |
+| **O2** | The tool calls of the answer are in the log, each of them once. | the tool calls not being rendered |
+| **O3** | The structured response is in the log. | it not being rendered |
+| **O4** | The retry messages are in the log. | them not being rendered |
+| **O5** | No object syntax leaks into the log. | the stop event logging the repr of the model again |
+| **O6** | A payload that cannot be read does not break the run. | the renderer not being exception-proof |
+
+**Verifying the change**
+
+```bash
+self-development/.venv/bin/python investigate/output-rendering/probe_output_rendering.py
+self-development/.venv/bin/python investigate/output-rendering/verify_output_rendering.py
+self-development/.venv/bin/python investigate/output-rendering/verify_harness_catches_regressions.py
+```
+
+8 checks hold, 6 of 6 drifts are caught, the 45 tests of
+`tests/test_chat_message.py` pass, and the CI gate reports 0 new
+failures.
+
+**What is left, on purpose.**  Six places in the consumer still log a
+plain string or a dict as a `repr` — the streamed token, the tool
+arguments, the question, the operator's answer, the human's answer and
+the workflow handler.  They are `%r` to `%s` away, and they are listed
+in the report.  The report also asks whether the **dummy event classes**
+should be made to match the framework, so that a mistake like the one
+above cannot be made silently.
+
 ### Previous change: the prompt in the debug log is readable
 
 **The operator asked for it on 2026-10-27**: *"I want to improve debug
