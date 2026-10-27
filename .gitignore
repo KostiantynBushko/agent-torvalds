@@ -137,3 +137,10 @@ self-development/
 # Only the annotated example (mikrotik_targets.yaml.example) is tracked.
 mikrotik_targets.yaml
 mikrotik_targets.local.yaml
+
+# The PR-body backup from 2026-10-27.
+# It holds the pull-request bodies **as they were before** the Claude Code
+# footer was removed, so it contains the very text this repository is being
+# cleaned of.  It is a local safety net for the footer normalisation and
+# must not be committed to a repository the operator wants Claude-free.
+pr-body-backup-2026-10-27/
