@@ -4,10 +4,15 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-26 (the **data analysis** toolkit became a module
+**Last updated:** 2026-10-27 (the **Claude co-author contributor** was purged
+from the history, and the tooling that keeps it out was **squash-merged into
+`master` as PR #58**, commit `f58eb56`; the **commit SHAs** that the rewrite
+made stale were refreshed and **squash-merged into `master` as PR #59**,
+commit `911a5cc`; the **data analysis** toolkit became a module
 under `toolkits/` — the **tenth** and **last** PR of the "every toolkit is a
 module" refactoring, and the one that emptied the project root of loose
-toolkits; the **Excel** toolkit
+toolkits, **squash-merged into `master` as PR #57**, commit `0779228` —;
+the **Excel** toolkit
 became a module
 under `toolkits/` and was **squash-merged into `master` as PR #54**,
 commit `1fd2063` (head `c3886bc`, based on `master` at `9a33678`) — the
@@ -124,16 +129,119 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `refactor/data-analysis-toolkit-module` — **committed** (`340dd8b`), **pushed**, and **opened as PR #57** against `master` (based on `master` at `1fd2063`). CI green. **Not merged** — the merge is the operator's. |
-| Scope | The **tenth** and **last** toolkit of the "every toolkit is a module under `toolkits/`" refactoring: `agent_data_analysis_toolkit.py` leaves the project root and becomes `toolkits/data-analysis-toolkit/`. Its library half is pinned to **pandas** and **numpy** — the DataFrame is the data model — rather than to the standard library alone. |
-| Status | Implemented and verified. The loose root module is **split** into the library half (`operations.py` — the thirteen analysis operations and the module-level logger, no LlamaIndex import) and the adapter (`agent_data_analysis_toolkit.py` — the only LlamaIndex-dependent module), with an `__init__.py`, a `py.typed` marker, a `README.md`, a `pyproject.toml` and the module-local tests. The hyphenated directory is reachable through the alias `toolkits.data_analysis_toolkit`, which `toolkits/__init__.py` registers next to the other eleven toolkits. The **two** call sites (the retriever and the selection menu) were updated; both imported the toolkit unguarded and now import it **behind a guard**, so the data analysis toolkit goes from mandatory to optional. The suite that used to live at `tests/test_data_analysis_toolkit.py` moved with the toolkit and grew from 39 to 44 tests — what was added is the **error contract** of every operation, which nothing pinned before. The module-local suite is 94 tests, the alias contract is green (28 passed, 47 subtests), and the full suite reports **no new failure** (the CI gate: 40 known failures, 0 new, 0 fixed) — `tests/ci_baseline.txt` did **not** need rewriting, because the toolkit had no known failures of its own. The tool menu is **unchanged**: it was dumped from `master` and from the branch and the two are byte-identical (155 tools, the same MD5). The report is `investigate/data-analysis-toolkit-module/REPORT_data_analysis_toolkit_module.md`. |
-| Policy | The **behaviour of the tools did not change** — every function, every docstring, every tool description and the error contract (a failure is reported, never raised) were moved verbatim; the split was checked mechanically against the committed original, not by eye, and **the check itself is now a test**, driven with fourteen deliberate drifts. What changed is the *shape*: a toolkit is one folder, and the file inside it is split so that the reusable half carries no LlamaIndex import and the adapter is the single named exception. Three things are specific to this toolkit. The **guard at the call sites is the ordinary one** — `except ImportError`, not the database toolkit's wider `except Exception` — because the data analysis toolkit has **no import-time state**: its only import-time failure is a missing `pandas` or `numpy`, which is an `ImportError`; `openpyxl` is needed at *run* time, when pandas actually reads a workbook, and it is caught by the operation like every other failure. The **two data imports are pinned separately** from the dependency set: dropping *both* loses the dependencies, dropping *one* loses the statement, and the check has a rule for each. And the **one import that did not move is documented rather than ignored**: the original imported `json` and never used it, so the library half drops it — and the check pins the *exact* difference between the two dependency sets (`{"json", "llama_index"}`), so no other difference can slip in. One PR per toolkit, as the operator asked. **No loose toolkit is left at the project root.** |
-| State | **Committed, pushed, PR #57 opened — not merged.** Committed as `340dd8b`, pushed to `origin/refactor/data-analysis-toolkit-module`, opened as PR #57 against `master` (https://github.com/KostiantynBushko/agent-torvalds/pull/57), CI green.  The **first** CI run was red with **one** new failure — `tests/test_tui_input_reader.py::TestInputReaderInPseudoTerminal::test_burst_of_keystrokes_is_fully_captured` — a timing-dependent pseudo-terminal test that this change does not touch; it passed ten times out of ten locally, and the **re-run of the very same commit passed**.  The baseline was deliberately **not** rewritten to include it: a test that fails intermittently is not a *known* failure, and listing it would mask a real regression next time.  The operator does the merge. |
+| Branch | `docs/record-claude-purge-and-sha-refresh` — **committed**, **pushed**, and **opened as PR #60** against `master` (based on `master` at `911a5cc`). CI green. **Not merged** — the merge is the operator's. |
+| Scope | Record the two merges that closed the **Claude co-author** work — **PR #58** (the purge tooling) and **PR #59** (the SHA refresh) — in this file, which is the persistence mechanism (Rule 3), and hand over the piece of work PR #59 deliberately left behind. |
+| Status | The **Claude co-author contributor** is **gone**. Exactly **one** commit carried a `Co-Authored-By:` trailer naming Claude — `6d33069` ("Initial commit: shodan-toolkit") — and it entered `master` through the `git subtree` merge `3e4eab8`. Removing it meant **rewriting the history**: every descendant changed SHA, and the 29 branches carrying it were force-pushed. **No file in the repository changed** — every tree before the rewrite is byte-identical to its tree after it. The **pull requests** were already clean: all 57 PR bodies, all titles, all comments and all review comments were checked through the API, and none carried a Claude Code footer; the footer had been on PR #20 and PR #22 only, and it was removed on 2026-10-27. The check now reports **PASS** on both sides. |
+| Policy | The **tooling** is what stays in the repository, not the rewrite: the `git filter-repo` message callback that removes the trailer line-wise, its 7-case test, the driver that builds a scratch mirror clone and only force-pushes under `--apply`, and the check that keeps the trace out. The **SHA refresh** that followed was **mechanical** and **guarded**: a substitution is made only when the replacement SHA **resolves to a commit in this repository** — 161 of the 264 mapped pairs qualify, and the 103 that do not are left alone, because those commits did not move. The refresh changed only hexadecimal tokens — 104 references in 15 files, the words around them untouched. |
+| State | **Squash-merged into `master`**: the purge tooling as **PR #58**, commit `f58eb56` (head `f50b79e`, based on `master` at `0779228`); the SHA refresh as **PR #59**, commit `911a5cc` (head `4a8d732`, based on `master` at `0779228`). Both CI green, and the merged tree is byte-identical to a local trial merge whose CI gate reported **no new failure** (40 known, 0 new, 0 fixed). The **next** piece of work is the **18 references that resolve to nothing** — they were stale before the rewrite too, and PR #59 deliberately left them alone; working out what they were meant to be is separate work. |
 
-### Latest change: the data analysis toolkit is a module
+### Latest change: the Claude co-author contributor is gone
 
-**Committed, pushed, opened as PR #57 — not merged.**  The branch is
-based on `master` at `1fd2063`, and the commit is `340dd8b`.
+**Squash-merged into `master` as PR #58** (commit `f58eb56`, head `f50b79e`,
+based on `master` at `0779228`), with the **SHA refresh** that followed it as
+**PR #59** (commit `911a5cc`, head `4a8d732`, based on `master` at `0779228`).
+Both CI green; the merged tree is byte-identical to a local trial merge whose
+CI gate reported **no new failure** (40 known, 0 new, 0 fixed).
+
+**The finding.** The contributor was **not** made by a pull-request footer.
+GitHub builds its contributor list from the `Co-Authored-By:` trailers of the
+**commit messages**, and renders an unlinked trailer as a contributor with
+`login: "claude"` and a display name taken from the trailer — which is why
+the entry read "claude" / "Claude Opus 4.8 (1M context)".
+
+Exactly **one** commit carried such a trailer:
+
+```
+6d330699c545fef9c97d5439632beeaf84f44f11  Initial commit: shodan-toolkit
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+```
+
+It entered `master` through the `git subtree` merge `3e4eab8`, so removing it
+meant **rewriting the history**: every descendant changed SHA and the 29
+branches carrying it were force-pushed. **No file in the repository changed** —
+every tree before the rewrite is byte-identical to its tree after it.
+
+**The pull requests were already clean.** All 57 PR bodies, all titles, all
+comments and all review comments were checked through the API; none carried a
+Claude Code footer. The footer had been on PR #20 and PR #22 only, and it was
+removed on 2026-10-27.
+
+| Path | Change |
+|---|---|
+| `investigate/claude-contributor-purge/verify_no_claude.py` | The check. Walks the GitHub side (every PR title and body, every comment, every review comment) and the Git side (every commit message of every ref). Grades a **co-author trailer** and a **Claude Code footer** as FAIL, and a bare mention as informational. |
+| `investigate/claude-contributor-purge/strip_claude_trailer.py` | The `git filter-repo` message callback. Removes the trailer and the footer, line-wise, and nothing else. |
+| `investigate/claude-contributor-purge/test_strip_claude_trailer.py` | The test of that callback — 7 cases, driven the way filter-repo drives it. |
+| `investigate/claude-contributor-purge/purge_claude_contributor.sh` | The driver: baseline, scratch mirror clone, rewrite, verify, and — only with `--apply` — the force-push. |
+| `investigate/claude-contributor-purge/refresh_commit_shas.py` | The SHA refresh. It arrived with PR #58 and was used by PR #59. |
+| `investigate/claude-contributor-purge/REPORT_claude_contributor_purge.md` | The report. |
+| `.gitignore` | The PR-body backup from 2026-10-27 is now ignored: it holds the bodies as they were *before* the footer normalisation, so it contains the very text the repository is being cleaned of. |
+| `SELF_DEVELOPMENT_RULES.md`, `docs/shodan-toolkit.md`, ten investigation reports | The **104** stale SHA references, refreshed (PR #59). |
+
+**Verifying the change**
+
+```bash
+python3 self-development/investigate/claude-contributor-purge/verify_no_claude.py
+python3 self-development/investigate/claude-contributor-purge/test_strip_claude_trailer.py
+```
+
+The check reports **PASS** on both sides: no commit message of any ref carries
+a co-author trailer or a Claude Code footer, and no PR title, body, comment or
+review comment carries one either. The callback test reports 7/7.
+
+### Previous change: the commit SHAs the rewrite made stale
+
+**Squash-merged into `master` as PR #59** (commit `911a5cc`, head `4a8d732`,
+based on `master` at `0779228`).
+
+**104 lines, in 15 files.** Every one of them differs from its original by
+exactly the hexadecimal tokens and nothing else — the words around them are
+untouched.
+
+| File | References |
+|---|---|
+| `SELF_DEVELOPMENT_RULES.md` | 43 |
+| `docs/shodan-toolkit.md` | 4 |
+| `investigate/ChatHistoryManager/STEP_AUDIT.md` | 11 |
+| the ten investigation reports | the rest |
+
+Tree hashes are **not** touched: a rewrite does not change a tree, so the tree
+IDs the documentation records are still correct.
+
+**The guard that matters.** The refresh is mechanical — `git filter-repo`
+leaves the old→new mapping in `filter-repo/commit-map` — but the mapping
+alone is not enough, and a naive substitution would have been wrong.
+
+The rewrite changed **29** branches and left **26** alone: the ones that never
+carried the offending commit. `filter-repo`, working in a scratch clone,
+rewrote *every* commit there, so its map names a new SHA for the commits of
+the branches that were never pushed — and **those SHAs do not exist in this
+repository**.
+
+So a substitution is made only when the new SHA **resolves to a commit here**.
+161 of the 264 mapped pairs qualify; 103 do not, and the references to those
+commits are left untouched — correctly, because those commits did not move.
+
+A token that matches no old SHA is left alone, and a token that matches more
+than one is reported and left alone. There were no ambiguous tokens.
+
+**Verifying the change.** Every hexadecimal token in the changed files was
+checked against the rewritten history:
+
+* **115** resolve to a commit;
+* **9** are tree hashes — still correct;
+* **18** resolve to nothing — and they did not resolve before the rewrite
+  either. They are pre-existing stale references, and this change does not
+  touch them. **Working out what they were meant to be is the next piece of
+  work.**
+
+The tool that does the refresh is `investigate/claude-contributor-purge/refresh_commit_shas.py`,
+which arrived with the purge tooling in #58.
+
+### Previous change: the data analysis toolkit is a module
+
+**Squash-merged into `master` as PR #57** (commit `0779228`, head `bac2013`,
+based on `master` at `1fd2063`).  The branch carried two commits: `340dd8b`
+(the refactor) and `bac2013` (the record of this very work).
 
 The **tenth** and **last** toolkit of the "every toolkit is a module"
 series, and the one that **emptied the project root of loose toolkits**.
