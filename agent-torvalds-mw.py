@@ -27,6 +27,7 @@ Usage:
     python agent-torvalds-mw.py --tui-fps 20   # Custom TUI render refresh rate
     python agent-torvalds-mw.py --auto-scan   # Auto-scan and configure projects on startup
     python agent-torvalds-mw.py --project-path /path/to/project  # Load a specific project
+    python agent-torvalds-mw.py --context-guard-on  # Trim the prompt to the context window
 
 TUI slash commands:
     \\tools              Open the interactive tool category selection menu
@@ -53,6 +54,7 @@ Environment Variables:
     TORVALDS_PROMPT_INJECTION   Enable/disable runtime prompt injection (default: true)
     TORVALDS_PROMPT_TEMPLATE    Path to custom prompt template file
     TORVALDS_INCLUDE_RECOMMENDATIONS  Include tool recommendations in prompt (default: true)
+    TORVALDS_CONTEXT_GUARD   Enable/disable the context guard (default: false)
 """
 import asyncio
 import argparse
@@ -314,6 +316,19 @@ HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
 HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").lower() == "true"
 
 # ---------------------------------------------------------------------------
+# Context Guard Configuration
+# ---------------------------------------------------------------------------
+# The context guard trims the prompt to the model's context window, so that
+# a long tool-using run does not overflow it (the server truncates the
+# prompt from the front and drops the user request, which makes the model
+# template fail with "No user query found in messages.").  It is **off by
+# default**: the guard changes what the model is shown, and the operator
+# asks for it explicitly with --context-guard-on.
+CONTEXT_GUARD_ENABLED = os.environ.get(
+    "TORVALDS_CONTEXT_GUARD", "false"
+).lower() in ("true", "1", "yes")
+
+# ---------------------------------------------------------------------------
 # Active HITL configuration (mutated by the CLI flags in main())
 # ---------------------------------------------------------------------------
 # Module-level so the agent factory and the runtime loop see the effective
@@ -322,6 +337,13 @@ hitl_enabled: bool = HITL_ENABLED
 hitl_method: str = HITL_METHOD
 hitl_timeout: int = HITL_TIMEOUT
 hitl_default_answer: str = HITL_DEFAULT_ANSWER
+
+# ---------------------------------------------------------------------------
+# Active context guard configuration (mutated by the CLI flag in main())
+# ---------------------------------------------------------------------------
+# Module-level so the agent factory and the runtime loop see the effective
+# configuration.  The CLI flag overrides the environment variable.
+context_guard_enabled: bool = CONTEXT_GUARD_ENABLED
 
 # TUI Configuration
 TUI_ENABLED_DEFAULT = os.environ.get("TORVALDS_TUI_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -685,25 +707,30 @@ def create_agent(
             callback_manager=callback_manager,
         )
 
-    # The HITL agent needs to know the HITL configuration.  It is applied
-    # here (and re-applied per request) so the agent asks the human and
-    # waits for the answer.
-    _apply_hitl_config_to_agent(agent)
+    # The agent needs to know the HITL and the context guard configuration.
+    # It is applied here (and re-applied per request) so the agent asks the
+    # human and waits for the answer, and so the guard trims the prompt
+    # only when it was asked for.
+    _apply_agent_config(agent)
 
     return agent
 
 
-def _apply_hitl_config_to_agent(agent) -> None:
-    """Apply the current HITL configuration to *agent*.
+def _apply_agent_config(agent) -> None:
+    """Apply the current HITL and context guard configuration to *agent*.
 
     The agent raises the question and waits for the answer; the
     ``EventConsumer`` prompts the user.
+
+    The context guard is configured the same way: it trims the prompt only
+    when it is enabled (``--context-guard-on``), and stands down otherwise.
     """
     if not isinstance(agent, HITLFunctionAgent):
         return
     agent.hitl_enabled = hitl_enabled
     agent.hitl_default_timeout = hitl_timeout
     agent.hitl_default_answer = hitl_default_answer
+    agent.context_guard_enabled = context_guard_enabled
 
 
 # ---------------------------------------------------------------------------
@@ -785,6 +812,14 @@ def parse_args():
         "--hitl-no-runtime-toggle",
         action="store_true",
         help="Disable runtime HITL toggle commands",
+    )
+    parser.add_argument(
+        "--context-guard-on",
+        action="store_true",
+        help=(
+            "Enable the context guard: trim the prompt to the model's context "
+            "window, keeping the user request. Off by default."
+        ),
     )
     # ------------------------------------------------------------------
     # Project Management CLI flags
@@ -919,7 +954,7 @@ async def prompt_handler(
 
     # Keep the agent's HITL configuration in sync with the runtime toggle so
     # the agent only asks when HITL is enabled.
-    _apply_hitl_config_to_agent(agent)
+    _apply_agent_config(agent)
     agent.hitl_enabled = human_loop_handler._is_hitl_enabled()
 
     try:
@@ -1226,6 +1261,12 @@ async def main():
     hitl_timeout = args.hitl_timeout
     hitl_default_answer = args.hitl_default_answer
     runtime_toggle_enabled = HITL_RUNTIME_TOGGLE and not args.hitl_no_runtime_toggle
+
+    # Context guard configuration (the CLI flag enables it, the environment
+    # variable can do the same).  The guard is off by default.
+    global context_guard_enabled
+
+    context_guard_enabled = CONTEXT_GUARD_ENABLED or args.context_guard_on
 
     # Chat History Manager enabled
     chat_history_enabled = not args.no_chat_history

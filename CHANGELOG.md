@@ -1,5 +1,51 @@
 # Changelog
 
+## [Unreleased] - The context guard is optional
+
+### Changed
+- **The context guard is now opt-in.**  It used to be always on: every
+  request was trimmed to the model's context window, and the user request
+  was restored when the chat memory had trimmed it away.  The guard is
+  **off by default** now, and the operator turns it on with
+  `--context-guard-on` (or `TORVALDS_CONTEXT_GUARD=true`).
+
+  The guard changes what the model is shown — it drops the oldest turns and
+  shortens the ones that do not fit — so the decision belongs to the
+  operator, not to the agent.
+
+  | | Before | Now |
+  |---|---|---|
+  | The prompt | always trimmed to the context window | trimmed only with `--context-guard-on` |
+  | `TORVALDS_CONTEXT_GUARD` | — | `true` turns the guard on, `false` (the default) leaves it off |
+  | `HITLFunctionAgent.context_guard_enabled` | — | `False` (the default) |
+
+  The guard itself did not change: `components/context_guard.py` is the same
+  code, and so is the trimming in `components/hitl_agent.py`.  What changed
+  is the switch around it — `take_step()` returns to the base implementation
+  untouched when the guard stands down.
+
+  **The trade-off is the price of the switch.**  With the guard off, a long
+  tool-using run grows the prompt without bound; the Ollama server then
+  truncates it from the front, which drops the user request, and the model
+  template refuses to render a conversation without one ("No user query
+  found in messages.").  The guard exists to prevent exactly that, so a
+  run that reads a large file should be started with `--context-guard-on`.
+
+### Added
+- **`--context-guard-on`** — the command line switch, in `agent-torvalds.py`
+  and in `agent-torvalds-mw.py`.  The startup banner reports the effective
+  state ("Context guard: enabled" / "disabled").
+
+- **`TORVALDS_CONTEXT_GUARD`** — the environment variable, for the runs
+  that are started by something else (a service, a script).  It accepts
+  `true`, `1` and `yes`, like the other feature flags.
+
+- **`tests/test_context_guard_toggle.py`** — the tests that pin the switch:
+  the guard stands down by default, the prompt grows past the context
+  window when it does, the prompt is trimmed and keeps the user request
+  when the guard is on, and the flag and the environment variable turn it
+  on.
+
 ## [Unreleased] - The data analysis toolkit is a module
 
 ### Changed

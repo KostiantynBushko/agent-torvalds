@@ -248,12 +248,22 @@ class HITLFunctionAgent(FunctionAgent):
         hitl_default_answer: Fallback answer used on timeout.
         hitl_question_patterns: Optional list of regex strings overriding
             the built-in question detection patterns.
+        context_guard_enabled: Master switch for the context guard.  When
+            ``False`` (the default) the prompt is sent to the model exactly
+            as the agent assembled it, and nothing is trimmed.  The guard
+            is opt-in, because turning it on changes what the model sees.
     """
 
     hitl_enabled: bool = True
     hitl_default_timeout: int = NO_TIMEOUT
     hitl_default_answer: str = ""
     hitl_question_patterns: Optional[List[str]] = None
+
+    #: Whether the context guard trims the prompt to the model's context
+    #: window.  Off by default: the guard is opt-in
+    #: (``--context-guard-on``), because turning it on changes what the
+    #: model is shown, and that decision belongs to the operator.
+    context_guard_enabled: bool = False
 
     # Cached context-window information for the context guard.  Reading the
     # LLM metadata costs a round-trip to the Ollama server, so it is done
@@ -285,7 +295,16 @@ class HITLFunctionAgent(FunctionAgent):
         The guard keeps the request the user made and the most recent turns
         that still fit.  It also restores the request when the chat memory
         trimmed it away.
+
+        The guard is **off by default** (``context_guard_enabled`` is
+        ``False``): the prompt is then sent to the model exactly as the
+        agent assembled it, and nothing is trimmed.  The operator turns it
+        on with ``--context-guard-on`` (or ``TORVALDS_CONTEXT_GUARD=true``).
         """
+        if not self.context_guard_enabled:
+            # The guard stands down: the prompt goes to the model untouched.
+            return await super().take_step(ctx, llm_input, tools, memory)
+
         from components.context_guard import select_context_window_split
 
         scratchpad: List[ChatMessage] = await ctx.store.get(

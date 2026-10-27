@@ -109,6 +109,10 @@ def agent_and_llm():
         system_prompt="You are Torvalds.",
     )
     agent.hitl_enabled = False
+    # The context guard is opt-in (``--context-guard-on``), so the tests
+    # that exercise it have to turn it on explicitly.  The default is
+    # covered by ``tests/test_context_guard_toggle.py``.
+    agent.context_guard_enabled = True
     return agent, llm, memory
 
 

@@ -4,7 +4,9 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-27 (the **Claude co-author contributor** was purged
+**Last updated:** 2026-10-27 (the **context guard** became **optional** — off
+by default, turned on by `--context-guard-on`; the **Claude co-author
+contributor** was purged
 from the history, and the tooling that keeps it out was **squash-merged into
 `master` as PR #58**, commit `f58eb56`; the **commit SHAs** that the rewrite
 made stale were refreshed and **squash-merged into `master` as PR #59**,
@@ -129,13 +131,71 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `docs/record-claude-purge-and-sha-refresh` — **committed**, **pushed**, and **opened as PR #60** against `master` (based on `master` at `911a5cc`). CI green. **Not merged** — the merge is the operator's. |
-| Scope | Record the two merges that closed the **Claude co-author** work — **PR #58** (the purge tooling) and **PR #59** (the SHA refresh) — in this file, which is the persistence mechanism (Rule 3), and hand over the piece of work PR #59 deliberately left behind. |
-| Status | The **Claude co-author contributor** is **gone**. Exactly **one** commit carried a `Co-Authored-By:` trailer naming Claude — `6d33069` ("Initial commit: shodan-toolkit") — and it entered `master` through the `git subtree` merge `3e4eab8`. Removing it meant **rewriting the history**: every descendant changed SHA, and the 29 branches carrying it were force-pushed. **No file in the repository changed** — every tree before the rewrite is byte-identical to its tree after it. The **pull requests** were already clean: all 57 PR bodies, all titles, all comments and all review comments were checked through the API, and none carried a Claude Code footer; the footer had been on PR #20 and PR #22 only, and it was removed on 2026-10-27. The check now reports **PASS** on both sides. |
-| Policy | The **tooling** is what stays in the repository, not the rewrite: the `git filter-repo` message callback that removes the trailer line-wise, its 7-case test, the driver that builds a scratch mirror clone and only force-pushes under `--apply`, and the check that keeps the trace out. The **SHA refresh** that followed was **mechanical** and **guarded**: a substitution is made only when the replacement SHA **resolves to a commit in this repository** — 161 of the 264 mapped pairs qualify, and the 103 that do not are left alone, because those commits did not move. The refresh changed only hexadecimal tokens — 104 references in 15 files, the words around them untouched. |
-| State | **Squash-merged into `master`**: the purge tooling as **PR #58**, commit `f58eb56` (head `f50b79e`, based on `master` at `0779228`); the SHA refresh as **PR #59**, commit `911a5cc` (head `4a8d732`, based on `master` at `0779228`). Both CI green, and the merged tree is byte-identical to a local trial merge whose CI gate reported **no new failure** (40 known, 0 new, 0 fixed). The **next** piece of work is the **18 references that resolve to nothing** — they were stale before the rewrite too, and PR #59 deliberately left them alone; working out what they were meant to be is separate work. |
+| Branch | `feature/context-guard-optional` — **the reviewable branch**, carrying **PR #62** (<https://github.com/KostiantynBushko/agent-torvalds/pull/62>). It was rebased onto `master` after the operator merged PR #61, so it now carries the **on/off switch alone**. The PR is **open, waiting for the operator's review**; the merge is the operator's call. `fix/context-guard-agent-loop` on `origin` is the **stale pre-squash** branch — the loop fix it carried is in `master` now. |
+| Scope | Make the **context guard** opt-in: off by default, turned on by `--context-guard-on` (or `TORVALDS_CONTEXT_GUARD=true`). The guard trims the prompt to the model's context window, and it changes what the model is shown — so the decision belongs to the operator. |
+| Status | The guard stands down by default. `HITLFunctionAgent.context_guard_enabled` is `False` out of the box, and `take_step()` returns to the base implementation untouched when it is. `--context-guard-on` (in `agent-torvalds.py` **and** `agent-torvalds-mw.py`) and `TORVALDS_CONTEXT_GUARD=true` turn it on; the startup banner reports the effective state. The trimming itself did not change — `components/context_guard.py` is the same code. |
+| Policy | The switch is **off** by default, and that is the point: the guard drops the oldest turns and shortens the ones that do not fit, so the operator decides whether the model sees the trimmed conversation or the full one. The **price of the switch** is stated in the CHANGELOG and in the README: with the guard off, a long tool-using run grows the prompt without bound, the Ollama server truncates it from the front, and the user request is dropped — the "No user query found in messages." failure the guard was written to prevent. |
+| State | The change is **committed** (`42f4640`, "feat: make the context guard optional, off by default") and **verified**: `tests/test_context_guard_toggle.py` (8 tests) pins the switch, `tests/test_context_guard_agent.py` now turns the guard on explicitly, and the CI gate reports **no new failure** (40 known, 0 new, 0 fixed). The branch was **rebased onto `master`** (`0147443`, the squash-merge of PR #61); the rebase **dropped the loop-fix commit as already applied**, leaving the switch on its own. The branch is **pushed** and **PR #62 is open** against `master` — Rule 4: the merge needs the operator's explicit approval. |
 
-### Latest change: the Claude co-author contributor is gone
+### Latest change: the context guard is optional
+
+**The operator asked for it on 2026-10-27**: make the context guard
+optional — off by default, turned on by the command line argument
+`--context-guard-on`.  It is implemented, tested, documented and
+**committed** (`42f4640`).
+
+**One branch for both context guard changes.**  The operator decided that
+the loop fix and the on/off switch belong to **one** branch, so the
+switch was committed on top of the loop fix on
+`fix/context-guard-agent-loop`.
+
+**Then the operator merged PR #61.**  It squash-merged the loop fix
+into `master` as `0147443`, so the loop fix is in `master` while the
+switch was still only on the branch.  The operator then asked for the
+branch to be rebased onto `master` and for a PR to be opened for
+review.  The rebase **dropped the loop-fix commit as already applied**
+(its patch is byte-identical to `0147443`), leaving the switch alone on
+`feature/context-guard-optional`.  The two touch the same two modules
+(`components/context_guard.py`, `components/hitl_agent.py`).
+
+**PR #62 is open** for the switch: <https://github.com/KostiantynBushko/agent-torvalds/pull/62>.
+It is the operator's to review and merge.
+
+**What the guard is.**  `components/context_guard.py` keeps the LLM prompt
+inside the model's context window while always preserving the user query.
+Without it, a long tool-using run grows the prompt without bound; the
+Ollama server then truncates it from the front, which drops the user
+request, and the model template refuses to render a conversation without
+one ("No user query found in messages.").
+
+**The switch.**
+
+| Where | What |
+|---|---|
+| `components/hitl_agent.py` | `HITLFunctionAgent.context_guard_enabled` — `False` by default; `take_step()` stands down when it is `False` |
+| `agent-torvalds.py` | `--context-guard-on`, and `TORVALDS_CONTEXT_GUARD` |
+| `agent-torvalds-mw.py` | the same flag and the same environment variable |
+
+The flag and the environment variable are folded together into one
+effective value in `main()`, the same way the HITL flags are, and the
+startup banner reports it: "Context guard: enabled" / "disabled".
+
+**The trade-off is the price of the switch, and it is stated in the
+CHANGELOG and in the README.**  With the guard off the prompt reaches the
+model exactly as the agent assembled it — which is what the operator asked
+for — and a run that reads a large file can overflow the window again.
+The guard is one flag away.
+
+**The tests.**  `tests/test_context_guard_toggle.py` (8 tests) pins the
+contract: the guard stands down by default, the prompt grows past the
+context window when it does, the prompt is trimmed and keeps the user
+request when the guard is on, and the flag, the environment variable and
+the multi-window variant all behave.  `tests/test_context_guard_agent.py`
+(the pre-existing integration suite) now turns the guard on **explicitly**,
+because the default is now off.  The CI gate reports **no new failure**
+(40 known, 0 new, 0 fixed).
+
+### Previous change: the Claude co-author contributor is gone
 
 **Squash-merged into `master` as PR #58** (commit `f58eb56`, head `f50b79e`,
 based on `master` at `0779228`), with the **SHA refresh** that followed it as

@@ -177,6 +177,13 @@ The project documentation:
 - Handles request routing and response aggregation
 - Integrated stats rendering and caching
 - Interactive console with command processing
+- **Optional context guard** (`--context-guard-on`, or `TORVALDS_CONTEXT_GUARD=true`):
+  trims the prompt to the model's context window and keeps the user request,
+  so that a long tool-using run cannot overflow the window (the Ollama server
+  truncates the prompt from the front, which drops the user request and makes
+  the model template fail with "No user query found in messages.").  It is
+  **off by default** — the guard changes what the model is shown, so the
+  operator asks for it.
 
 ### 12. Spinner Manager (`spinner_manager.py`)
 - Global singleton for console spinner management
@@ -469,6 +476,7 @@ The project documentation:
 | **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
 | **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
 | **On-Demand Tool Loading** | Semantic tool retrieval to reduce context window pollution |
+| **Optional Context Guard** | `--context-guard-on` trims the prompt to the model's context window, keeping the user request; **off by default** |
 | **Local-First LLM** | Chat and embedding models served by a local Ollama instance - no cloud API, nothing leaves the machine |
 | **Project Path Loading** | `--project-path` flag to load, scan, and register a specific project on startup |
 | **Human-in-the-Loop** | Interactive questioning with runtime toggle; by default there is **no timeout** — the agent waits for the user |
