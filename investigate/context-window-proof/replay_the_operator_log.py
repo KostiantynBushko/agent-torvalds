@@ -58,6 +58,18 @@ print("--- the whole rendered message, as it goes into the log ---")
 print(rendered)
 print("=" * 70)
 
-assert not rendered.endswith("\n"), "the message still ends with a newline"
-assert "\n\n\n" not in rendered, "the message still holds a run of empty lines"
+# The checks are not asserts.  Under ``python -O`` the assert
+# statements are removed, and the script would print "OK" for a
+# rendering that is broken — a proof that lies about its own result.
+problems = []
+if rendered.endswith("\n"):
+    problems.append("the message still ends with a newline")
+if "\n\n\n" in rendered:
+    problems.append("the message still holds a run of empty lines")
+
+if problems:
+    for problem in problems:
+        print(f"FAIL — {problem}")
+    sys.exit(1)
+
 print("OK — no trailing empty lines, no run of empty lines.")

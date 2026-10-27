@@ -377,6 +377,45 @@ in the report.  The report also asks whether the **dummy event classes**
 should be made to match the framework, so that a mistake like the one
 above cannot be made silently.
 
+### The security findings of PR #63
+
+The Aikido PR checks reported three findings on the branch, all of them
+"low severity", all of them in the new `investigate/` proofs.
+
+**Two of them were real.**  `replay_the_operator_log.py` used `assert`
+for its two checks.  Under `python -O` the assert statements are
+removed, and the script printed **"OK — no trailing empty lines, no run
+of empty lines."** and exited **0** for a rendering that was broken — a
+proof that lies about its own result.  The checks are explicit now, and
+they fail with exit 1 under `-O` as well.
+
+**The third one was a real hardening.**  `verify_context_window.py`
+asked the server with `urllib.request.urlopen`, which follows a
+redirect to any host.  The request now stays on the server it was aimed
+at, refuses the link-local range where the cloud metadata service
+lives, and caps the read at 1 MiB.  The URL is the operator's own
+configuration — `TORVALDS_OLLAMA_HOST` — and not input that arrives
+over a network, so this is not an SSRF in the sense the scanner means
+it; it is the one path by which a request could have been steered at a
+service the operator never named.
+
+The rules are pinned by `tests/test_context_window_request_safety.py` —
+15 checks that run in the CI, and that fail when the hardening is
+taken away.  Two of the four drifts were **not** caught by the first
+version of the tests: a redirect to an address that is not there fails
+either way, and a body that is not valid JSON fails to parse either
+way.  Both tests were wrong for the same reason — they could not tell
+"refused" from "attempted and failed".
+
+**What was left alone, and why.**  The agent's own call to `/api/ps`
+in `components/ollama_config.py` has the same shape.  It is left as it
+is: the URL is the operator's configuration, the answer is parsed for a
+single integer and thrown away, and a strict redirect rule there could
+cost the *agent* the server's window — silently, because the function
+answers `None` and the agent would report the advertised maximum
+instead.  A proof that says it failed is worth more than a feature that
+quietly degrades.
+
 ### Previous change: the prompt in the debug log is readable
 
 **The operator asked for it on 2026-10-27**: *"I want to improve debug

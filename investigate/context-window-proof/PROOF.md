@@ -128,6 +128,47 @@ and, when the context guard is on, the budget it derives from it:
 2026-10-27 21:24:03,601 [INFO] components.hitl_agent: Context guard: the context window is 8192 tokens — the prompt may use 6554 of them.
 ```
 
+## The request the proof makes
+
+The proof asks the server three questions: `/api/show`, `/api/tags` and
+`/api/ps`.  The server is named by the operator, through
+`TORVALDS_OLLAMA_HOST` — it is the operator's own configuration, not
+input that arrives over a network.
+
+Three things are still refused, because they are the way a request
+reaches a service nobody named:
+
+- **a redirect to another host** — the request stays on the server it
+  was aimed at.  A redirect to the *same* host and port is followed:
+  a server behind a proxy that redirects `/api/tags` to `/v1/api/tags`
+  is the operator's own server, and a rule that refused it would
+  silently cost the proof its answer.
+- **the link-local range** — `169.254.0.0/16` and `fe80::/10`, where
+  the metadata service of a cloud provider lives, and the names of a
+  few of them (`metadata.google.internal`).  A server there is not the
+  Ollama server the operator configured.
+- **a body of any size** — the read is capped at 1 MiB.  An Ollama
+  server answers the three calls with a few kilobytes.
+
+The rules are pinned by `tests/test_context_window_request_safety.py`
+— 15 checks that run in the CI, and that fail when the hardening is
+taken away:
+
+| The drift | What the test sees |
+|---|---|
+| the redirect rule is gone | the other host is asked |
+| the link-local range is not refused | the URL is accepted |
+| the body is read without a cap | the oversized body is parsed |
+| a redirect to another host is followed on purpose | the other host is asked |
+
+The **agent's own** call to `/api/ps` (`components/ollama_config.py`)
+has the same shape, and it is left as it is: the URL is the operator's
+configuration, the answer is parsed for a single integer and thrown
+away, and a strict redirect rule there could cost the *agent* the
+server's window — silently, because the function answers `None` and
+the agent would report the advertised maximum instead.  A proof that
+says it failed is worth more than a feature that quietly degrades.
+
 ## A note on the model in use
 
 The proof runs against the model the agent uses **by default** —

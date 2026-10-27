@@ -29,14 +29,30 @@ P2  The number the agent reports is **not** the model's advertised
     maximum — the number a naive implementation would report.
 P3  The ``INFO`` log names the size **and** the source it came from.
 P4  The number is **read** from the server, not baked into the code.
+
+Who the script talks to
+-----------------------
+The server is named by the operator, through ``TORVALDS_OLLAMA_HOST`` —
+it is the operator's own configuration, not input that arrives over a
+network.  Three things are still refused, because they are the way a
+request reaches a service the operator never named:
+
+* a **redirect to another host** — the request stays on the server it
+  was aimed at;
+* the **link-local range**, where the metadata service of a cloud
+  provider lives;
+* a **body of any size** — the answer of an Ollama server is a few
+  kilobytes, and the read is capped.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import os
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
@@ -73,6 +89,90 @@ BASE_URL = os.environ.get(
 
 LOGGER_NAME = "components.ollama_config"
 
+#: The largest answer the script reads.  An Ollama server answers the
+#: three calls below with a few kilobytes; anything larger is not the
+#: answer that was asked for.
+MAX_RESPONSE_BYTES = 1 << 20  # 1 MiB
+
+
+def _same_origin(first: str, second: str) -> bool:
+    """Return ``True`` when both URLs name the same scheme, host and port."""
+    try:
+        one = urllib.parse.urlparse(first)
+        two = urllib.parse.urlparse(second)
+    except ValueError:
+        return False
+    return (one.scheme, one.hostname, one.port) == (
+        two.scheme,
+        two.hostname,
+        two.port,
+    )
+
+
+class _SameHostRedirect(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only when it stays on the same host.
+
+    A redirect to another host is how a request would be steered at a
+    service the operator never named.  Such a redirect is refused, not
+    followed.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _same_origin(req.full_url, newurl):
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+#: The opener the script asks through.  It replaces the default one, so
+#: that the redirect rule above holds for every call.
+_OPENER = urllib.request.build_opener(_SameHostRedirect)
+
+
+def _host_is_blocked(host: str) -> bool:
+    """Return ``True`` for a host the script must not ask.
+
+    The link-local range holds the metadata service of a cloud
+    provider, and a few of them answer to a name.  A server there is
+    not the Ollama server the operator configured.
+    """
+    if not host:
+        return True
+
+    name = host.lower()
+    if name in {"metadata", "metadata.google.internal"}:
+        return True
+
+    try:
+        address = ipaddress.ip_address(name)
+    except ValueError:
+        # A name and not an address: "localhost" and the names of the
+        # operator's own machines are allowed.
+        return False
+
+    return address.is_link_local or address.is_multicast or address.is_unspecified
+
+
+def _validate_base_url(url: str) -> str:
+    """Return *url* if the script may ask it, or raise ``ValueError``."""
+    parsed = urllib.parse.urlparse(url)
+
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"the Ollama URL must be http or https: {url!r}")
+
+    if _host_is_blocked(parsed.hostname or ""):
+        raise ValueError(
+            f"the script does not ask the link-local range: {url!r}"
+        )
+
+    return url
+
+
+try:
+    BASE_URL = _validate_base_url(BASE_URL)
+except ValueError as exc:
+    print(f"REFUSED — {exc}")
+    sys.exit(2)
+
 
 # ---------------------------------------------------------------------------
 # The server, asked directly
@@ -80,7 +180,13 @@ LOGGER_NAME = "components.ollama_config"
 
 
 def _get(path: str, payload: Optional[dict] = None, timeout: int = 10) -> Any:
-    """Return the JSON the server answers with, or ``None``."""
+    """Return the JSON the server answers with, or ``None``.
+
+    The request goes to the server the operator named, a redirect to
+    another host is refused, and the body is capped: the answer of an
+    Ollama server is a few kilobytes, and a body of any size is not
+    read into memory.
+    """
     data = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(
         f"{BASE_URL}{path}",
@@ -88,8 +194,11 @@ def _get(path: str, payload: Optional[dict] = None, timeout: int = 10) -> Any:
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode())
+        with _OPENER.open(request, timeout=timeout) as response:
+            body = response.read(MAX_RESPONSE_BYTES + 1)
+        if len(body) > MAX_RESPONSE_BYTES:
+            return None
+        return json.loads(body.decode())
     except Exception:  # noqa: BLE001 - the server may be unreachable
         return None
 
