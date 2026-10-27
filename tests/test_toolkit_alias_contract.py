@@ -16,6 +16,7 @@ each of them::
     toolkits.windows-toolkit     ->  toolkits.windows_toolkit
     toolkits.db-toolkit          ->  toolkits.db_toolkit
     toolkits.xlsx-toolkit        ->  toolkits.xlsx_toolkit
+    toolkits.data-analysis-toolkit  ->  toolkits.data_analysis_toolkit
 
 This module pins down the two properties that alias has to have.
 
@@ -87,6 +88,9 @@ DB_REAL = "toolkits.db-toolkit"
 XLSX_ALIAS = "xlsx_toolkit"
 XLSX_REAL = "toolkits.xlsx-toolkit"
 
+DATA_ANALYSIS_ALIAS = "data_analysis_toolkit"
+DATA_ANALYSIS_REAL = "toolkits.data-analysis-toolkit"
+
 #: The alias of each toolkit and the ``__init__.py`` that must carry a
 #: code-level reference to it.
 TOOLKITS = (
@@ -101,6 +105,11 @@ TOOLKITS = (
     (WINDOWS_ALIAS, WINDOWS_REAL, REPO_ROOT / "toolkits" / "windows-toolkit" / "__init__.py"),
     (DB_ALIAS, DB_REAL, REPO_ROOT / "toolkits" / "db-toolkit" / "__init__.py"),
     (XLSX_ALIAS, XLSX_REAL, REPO_ROOT / "toolkits" / "xlsx-toolkit" / "__init__.py"),
+    (
+        DATA_ANALYSIS_ALIAS,
+        DATA_ANALYSIS_REAL,
+        REPO_ROOT / "toolkits" / "data-analysis-toolkit" / "__init__.py",
+    ),
 )
 
 #: The agent adapter of each toolkit: the alias of its package, the module
@@ -164,6 +173,14 @@ ADAPTERS = (
         XLSX_ALIAS,
         "agent_xlsx_toolkit",
         REPO_ROOT / "toolkits" / "xlsx-toolkit" / "agent_xlsx_toolkit.py",
+    ),
+    (
+        DATA_ANALYSIS_ALIAS,
+        "agent_data_analysis_toolkit",
+        REPO_ROOT
+        / "toolkits"
+        / "data-analysis-toolkit"
+        / "agent_data_analysis_toolkit.py",
     ),
 )
 
@@ -236,6 +253,7 @@ class TestStaticReference:
             f"toolkits.{WINDOWS_ALIAS}",
             f"toolkits.{DB_ALIAS}",
             f"toolkits.{XLSX_ALIAS}",
+            f"toolkits.{DATA_ANALYSIS_ALIAS}",
         ],
     )
     def test_the_canonical_dotted_path_is_a_literal(self, dotted):
@@ -260,6 +278,7 @@ class TestStaticReference:
             WINDOWS_ALIAS,
             DB_ALIAS,
             XLSX_ALIAS,
+            DATA_ANALYSIS_ALIAS,
         ],
     )
     def test_the_bare_alias_name_is_a_literal(self, alias):
@@ -288,6 +307,7 @@ class TestStaticReference:
             ("_WINDOWS_ALIAS", f"toolkits.{WINDOWS_ALIAS}"),
             ("_DB_ALIAS", f"toolkits.{DB_ALIAS}"),
             ("_XLSX_ALIAS", f"toolkits.{XLSX_ALIAS}"),
+            ("_DATA_ANALYSIS_ALIAS", f"toolkits.{DATA_ANALYSIS_ALIAS}"),
         ],
     )
     def test_the_alias_is_not_computed(self, constant, expected):

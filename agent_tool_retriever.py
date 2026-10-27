@@ -184,8 +184,18 @@ def build_tool_retriever(
             pass
 
     if include_data_analysis_tools:
-        from agent_data_analysis_toolkit import get_all_tools as _get_analysis
-        all_tools.extend(_get_analysis())
+        # The data analysis toolkit lives in ``toolkits/`` and is optional.
+        # It can fail to import for one reason: ``pandas`` - and the
+        # ``numpy`` it is built on - is not installed.  That must never
+        # break the retriever.
+        try:
+            from toolkits.data_analysis_toolkit.agent_data_analysis_toolkit import (
+                get_all_tools as _get_analysis,
+            )
+            all_tools.extend(_get_analysis())
+        except ImportError:
+            # The data analysis toolkit is optional - skip it when it is not installed.
+            pass
 
     # -----------------------------------------------------------------------
     # 3. Project Manager toolkit (Step 05)
