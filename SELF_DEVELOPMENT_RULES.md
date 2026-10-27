@@ -131,11 +131,11 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `feature/context-guard-optional` — **the reviewable branch**. It was rebased onto `master` after the operator merged PR #61, so it now carries the **on/off switch alone**. Its PR is **open, waiting for the operator's review**; the merge is the operator's call. `fix/context-guard-agent-loop` on `origin` is the **stale pre-squash** branch — the loop fix it carried is in `master` now. |
+| Branch | `feature/context-guard-optional` — **the reviewable branch**, carrying **PR #62** (<https://github.com/KostiantynBushko/agent-torvalds/pull/62>). It was rebased onto `master` after the operator merged PR #61, so it now carries the **on/off switch alone**. The PR is **open, waiting for the operator's review**; the merge is the operator's call. `fix/context-guard-agent-loop` on `origin` is the **stale pre-squash** branch — the loop fix it carried is in `master` now. |
 | Scope | Make the **context guard** opt-in: off by default, turned on by `--context-guard-on` (or `TORVALDS_CONTEXT_GUARD=true`). The guard trims the prompt to the model's context window, and it changes what the model is shown — so the decision belongs to the operator. |
 | Status | The guard stands down by default. `HITLFunctionAgent.context_guard_enabled` is `False` out of the box, and `take_step()` returns to the base implementation untouched when it is. `--context-guard-on` (in `agent-torvalds.py` **and** `agent-torvalds-mw.py`) and `TORVALDS_CONTEXT_GUARD=true` turn it on; the startup banner reports the effective state. The trimming itself did not change — `components/context_guard.py` is the same code. |
 | Policy | The switch is **off** by default, and that is the point: the guard drops the oldest turns and shortens the ones that do not fit, so the operator decides whether the model sees the trimmed conversation or the full one. The **price of the switch** is stated in the CHANGELOG and in the README: with the guard off, a long tool-using run grows the prompt without bound, the Ollama server truncates it from the front, and the user request is dropped — the "No user query found in messages." failure the guard was written to prevent. |
-| State | The change is **committed** (`42f4640`, "feat: make the context guard optional, off by default") and **verified**: `tests/test_context_guard_toggle.py` (8 tests) pins the switch, `tests/test_context_guard_agent.py` now turns the guard on explicitly, and the CI gate reports **no new failure** (40 known, 0 new, 0 fixed). The branch was **rebased onto `master`** (`0147443`, the squash-merge of PR #61); the rebase **dropped the loop-fix commit as already applied**, leaving the switch on its own. The branch is **pushed** and its **PR is open** — Rule 4: the merge needs the operator's explicit approval. |
+| State | The change is **committed** (`42f4640`, "feat: make the context guard optional, off by default") and **verified**: `tests/test_context_guard_toggle.py` (8 tests) pins the switch, `tests/test_context_guard_agent.py` now turns the guard on explicitly, and the CI gate reports **no new failure** (40 known, 0 new, 0 fixed). The branch was **rebased onto `master`** (`0147443`, the squash-merge of PR #61); the rebase **dropped the loop-fix commit as already applied**, leaving the switch on its own. The branch is **pushed** and **PR #62 is open** against `master` — Rule 4: the merge needs the operator's explicit approval. |
 
 ### Latest change: the context guard is optional
 
@@ -157,6 +157,9 @@ review.  The rebase **dropped the loop-fix commit as already applied**
 (its patch is byte-identical to `0147443`), leaving the switch alone on
 `feature/context-guard-optional`.  The two touch the same two modules
 (`components/context_guard.py`, `components/hitl_agent.py`).
+
+**PR #62 is open** for the switch: <https://github.com/KostiantynBushko/agent-torvalds/pull/62>.
+It is the operator's to review and merge.
 
 **What the guard is.**  `components/context_guard.py` keeps the LLM prompt
 inside the model's context window while always preserving the user query.
