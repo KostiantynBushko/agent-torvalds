@@ -133,11 +133,14 @@ Thumbs.db
 # Self-development directory
 self-development/
 
-# The GitHub wiki clone. It is its own repository, with its own remote
-# (agent-torvalds.wiki.git) and its own history - the wiki pages are
-# published from there, not from this repository. Committing it here would
-# record a gitlink that no clone of this repository could resolve.
-wiki/
+# The GitHub wiki is a **submodule**, not a vendored copy.
+# It is its own repository, with its own remote (agent-torvalds.wiki.git)
+# and its own history - the wiki pages are published from there.  It is
+# recorded here as a gitlink, which a clone resolves with
+#     git clone --recurse-submodules
+# The submodule URL is public, so every clone can resolve it.  A plain
+# `git clone` leaves the directory empty, which is why
+# `git submodule update --init` is the fallback.
 
 # MikroTik RouterOS target configuration - it holds real credentials.
 # Only the annotated example (mikrotik_targets.yaml.example) is tracked.
