@@ -22,6 +22,7 @@ Complete reference for installing, configuring, and deploying the Torvalds AI ag
 14. [Optional Toolkit Configuration](#14-optional-toolkit-configuration)
 15. [Troubleshooting](#15-troubleshooting)
 16. [Housekeeping](#16-housekeeping)
+17. [Automated Deployment Script](#17-automated-deployment-script)
 
 ---
 
@@ -176,6 +177,13 @@ The agent needs **two** models:
 
 > The embedding model is **only** needed in the default (retriever) mode. With `--full` or `--select` the agent loads tools directly and never builds the vector index, so `nomic-embed-text` can be skipped.
 
+> **Check the model against your RAM before pulling it.** The 27B default needs
+> roughly 20 GB to run. On a smaller machine the Ollama server is killed by the
+> kernel while it loads the model, and the request fails with
+> `curl: (52) Empty reply from server` rather than with a clear error. Check
+> `free -g` and pick a model from the catalogue in section 10 that fits — the
+> 8B variant needs about 7 GB.
+
 ```bash
 # Chat model — the default the agent expects (~16 GB)
 ollama pull richardyoung/qwen3.6-27b-abliterated:Q4_K_M
@@ -205,6 +213,15 @@ ollama pull richardyoung/qwen2.5-coder-14b-instruct-abliterated:Q4_K_M      # ~9
 # 1. Clone the repository
 git clone git@github.com:KostiantynBushko/agent-torvalds.git
 cd agent-torvalds
+```
+
+The repository is public, so an account and an SSH key are not required — use
+the HTTPS URL instead when the machine has no GitHub key:
+
+```bash
+git clone https://github.com/KostiantynBushko/agent-torvalds.git
+cd agent-torvalds
+```
 
 # 2. Create a virtual environment
 python -m venv .venv
@@ -518,6 +535,98 @@ ollama list                # models installed on disk
 ```
 
 The agent's operational cache (`~/.cache/torvalds/agent_cache.json`, overridable with `TORVALDS_CACHE_PATH`) is unrelated to the Ollama models and is not affected by `ollama rm`.
+
+---
+
+## 17. Automated Deployment Script
+
+`deploy/deploy-torvalds.sh` performs the steps in sections 3, 5 and 6 in
+one pass: system packages, the Python virtual environment, Ollama with the
+models, and a starter `.env`.
+
+```bash
+cd agent-torvalds
+./deploy/deploy-torvalds.sh --non-interactive
+```
+
+**Run it from the project root** — it looks for `requirements.txt` and
+`setup_postgres_db.sql` in the current directory. Use `--deploy-dir` to
+point it somewhere else.
+
+The script needs no Python of its own: it installs one. A machine without
+a usable interpreter is exactly what it exists to fix.
+
+### Choosing a model that fits the machine
+
+The default chat model is the 27B one, which needs about 20 GB of RAM. Pass
+`--model` to select a smaller one:
+
+```bash
+./deploy/deploy-torvalds.sh \
+    --non-interactive \
+    --model richardyoung/qwen3-8b-abliterated:Q4_K_M
+```
+
+| Option | Purpose |
+|---|---|
+| `-n, --non-interactive` | Run without prompts, using every default |
+| `-m, --model MODEL` | Chat model to pull and to write into `.env` |
+| `-e, --embedding-model MODEL` | Embedding model to pull |
+| `-s, --skip-ollama` | Do not install or pull models |
+| `-p, --skip-pip` | Do not create the virtual environment |
+| `-w, --with-postgres` | Also install and configure PostgreSQL |
+| `-l, --log-file PATH` | Log file (default `/var/log/torvalds-deploy.log`) |
+| `-d, --deploy-dir PATH` | Where to deploy (default: the current directory) |
+
+### Unattended runs
+
+In `--non-interactive` mode the script cannot answer a `sudo` prompt, so it
+needs the password up front:
+
+```bash
+export SUDO_PASSWORD='...'
+./deploy/deploy-torvalds.sh --non-interactive
+```
+
+`SUDO_PASSWORD_FILE` points at a file that holds the password on its first
+line, which keeps the secret out of the environment. Alternatively, run the
+script as root, or prime the sudo cache with `sudo -v` first.
+
+> `sudo` keys its cached timestamp on the terminal, so a cache created by
+> the calling shell is **not** visible to the script. The script therefore
+> establishes its own timestamp, from `SUDO_PASSWORD` or
+> `SUDO_PASSWORD_FILE`, when it needs one.
+
+### The log file
+
+The log goes to `/var/log/torvalds-deploy.log`, which only root may create.
+A deployment run as an ordinary user therefore falls back to
+`~/.torvalds/logs/torvalds-deploy.log` and says so. Pass `--log-file` to
+choose the path yourself.
+
+Every message the script emits goes to **stderr**, so a run can be piped
+without the log lines ending up in the output. `--help` and `--version` are
+the exception: they are queries, and they write to **stdout**.
+
+### The generated `.env`
+
+The script writes a `.env` with the variables the agent actually reads:
+
+| Variable | Read by |
+|---|---|
+| `TORVALDS_MODEL` | `agent-torvalds.py` — the chat model |
+| `TORVALDS_OLLAMA_HOST` | `components/ollama_config.py` — the endpoint |
+| `TORVALDS_PG_*` | `chat_manager` — the PostgreSQL connection |
+
+Load it before starting the agent:
+
+```bash
+set -a; . ./.env; set +a
+python agent-torvalds.py
+```
+
+> The embedding model is **not** configurable through the environment: the
+> retriever hard-codes `nomic-embed-text` in `agent_tool_retriever.py`.
 
 ---
 

@@ -4,7 +4,12 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-27 (the **context window** is logged at the
+**Last updated:** 2026-10-28 (the **deployment scripts** moved into a
+dedicated `deploy/` folder, and the script was repaired: a
+non-interactive run can now obtain sudo by itself, the `.env` it writes
+names the variables the agent actually reads, and an unknown option
+fails instead of reporting success; before that, 2026-10-27 (the
+**context window** is logged at the
 `INFO` level and **proved** to be the window the *server* uses — the
 model advertises 262144 tokens, the server runs with 8192 — and the
 **empty lines** are gone from the prompt in the debug log; the **prompt
@@ -137,12 +142,112 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `feature/context-window-debug-report` — based on `master` at `a7cb2ee` (the squash-merge of PR #62). The changes are **in the working tree**: not committed, not pushed. |
-| Scope | Make the **prompt in the debug log readable** — and, on the operator's second request on the same branch, **reduce the empty lines** in it, **log the context window at the `INFO` level**, and **prove that the number is the window the server really uses**. |
-| Status | Implemented and **verified**. `components/chat_message.py` renders a message (`to_string()`) and a prompt (`to_strings()`); the event consumer logs one line per message and the state handler holds the same text. The rendering covers the **text**, the **thinking** and the **tool calls** — in both shapes a chat history can carry a tool call in: as a `ToolCallBlock`, and in the OpenAI-shaped `additional_kwargs["tool_calls"]`. The **empty lines** are reduced: one paragraph break is kept, a run of them is reduced to one, and the leading and trailing ones are dropped. The **context window** is logged at the `INFO` level with the source it came from, and the **proof** in `investigate/context-window-proof/` shows that the number is the server's and not the model's advertisement. |
-| Policy | **Simple, and only that.** The operator's own idea was *"just to print ChatMessage in human readable way, something like ChatMessage has a to_string method"*, and the first implementation went far past it — a token-counting report, a context-window resolver, a budget, a detail limit and an escape hatch. All of it was **removed**; what is left is one function and one call site. The rendering is a **function** and not a method because `ChatMessage` is a class of the LlamaIndex framework, and a method on it would have to be monkey-patched onto the framework. |
-| Investigation | **Logging into a file** — the operator asked for the logging to be redirectable into a file, rotated at a predefined size, with a symlink to the current log file in the directory. The investigation is in `investigate/logging-to-file/`: the report, a **working prototype**, the harness (seven invariants) and the drift proof (seven deliberate breaks, all caught). **No source file of the agent was modified** — the investigation folder only. |
-| State | **Verified, not yet committed.** `tests/test_chat_message.py` — 34 tests. `tests/test_ollama_context_window.py` — 14 tests. `investigate/chat-message-debug/verify_chat_message.py` — four invariants, written against the public behaviour (the log records and the state). `investigate/chat-message-debug/verify_harness_catches_regressions.py` — the proof that the harness catches four deliberate drifts. `investigate/context-window-proof/verify_context_window.py` — four invariants, checked against a **live** Ollama server. `investigate/context-window-proof/verify_harness_catches_regressions.py` — the proof that the harness catches four deliberate drifts. The CI gate reports **0 new failures**. Rule 4: the commit and the push need the operator's explicit approval. |
+| Branch | `fix/deploy-script-sudo-noninteractive` — based on `master` at `c6e92af` (the merge of PR #56, the deployment script). The changes are **in the working tree**: not committed, not pushed. The branch is **local only** — it has no upstream — so the move into `deploy/` and the repairs are folded into the same uncommitted change. |
+| Scope | Give the deployment scripts a **folder of their own**, and finish the repair of the script that was already in progress: a **non-interactive run must be able to obtain sudo by itself**. |
+| Status | Implemented and **verified**. The script and its example environment file moved from `investigate/deployment-script/` to `deploy/`, and the investigation documents stayed where they were — `investigate/` holds the *record* of a piece of work, and the implementations that came out of it live in their own place (the toolkits under `toolkits/`, the chat manager under `chat_manager/`). The script itself was repaired in nine places, and every repair is held by an invariant. |
+| Policy | **The folder is named for what it holds.** A folder called `investigate/deployment-script/` holds an investigation; the day the script shipped, the investigation had become its archive. The operator asked for *"a dedicated folder for deployment scripts"*, and the rule the rest of the repository already follows — the toolkits, the chat manager, the components — says what that folder is called: `deploy/`. |
+| Investigation | The **deployment script** itself: `investigate/deployment-script/` still holds the report, the requirements and the plan. The implementation is the deliverable and it lives in `deploy/`. |
+| State | **Verified, not yet committed.** `deploy/tests/verify_deploy_layout.py` — eleven invariants, over the folder *and* the behaviour of the script. `deploy/tests/verify_harness_catches_regressions.py` — the proof that the harness catches eleven deliberate drifts, one per invariant. `deploy/tests/test_deploy_layout.py` — the harness under pytest. Rule 4: the commit and the push need the operator's explicit approval. |
+
+### Latest change: the deployment scripts have a home of their own
+
+**The operator asked for it on 2026-10-28**: *"I think we must has a
+dedicated folder for deployment scripts"*, and — *"in self dev folder:
+please check the last request and continue work on it"*.
+
+Two things, and they were the same piece of work.  The **last request**
+was the repair of the deployment script — a non-interactive run that
+could not obtain sudo by itself — and it was **in the working tree**,
+uncommitted, on the local-only branch
+`fix/deploy-script-sudo-noninteractive`.  The **new request** was the
+folder.  The script now lives in it.
+
+#### The move
+
+| Path | Change |
+|---|---|
+| `deploy/deploy-torvalds.sh` | **Moved** from `investigate/deployment-script/`. Git tracked it as a rename, and the executable bit came with it. |
+| `deploy/deploy-torvalds.sh.example.env` | **Moved** from `investigate/deployment-script/`. |
+| `deploy/README.md` | **New.** What the folder holds, how to use it, and what the contract is. |
+| `deploy/tests/verify_deploy_layout.py` | **New.** The harness — eleven invariants. |
+| `deploy/tests/verify_harness_catches_regressions.py` | **New.** The proof that the harness catches eleven deliberate drifts. |
+| `deploy/tests/test_deploy_layout.py` | **New.** The harness, under pytest. |
+| `investigate/deployment-script/` | The report, the requirements and the plan — **they stay**. |
+| `pytest.ini` | `deploy/tests` added to `testpaths`. |
+| `DEPLOYMENT.md`, `README.md`, `CHANGELOG.md` | The documentation. |
+
+#### What the repair found
+
+**The script could not install Python on a machine without Python.**
+`check_python3()` returned 1 when the interpreter was missing or too
+old, and `set -e` turned that into an exit — so the script died before
+the phase that installs Python, on exactly the machine it exists to fix.
+It is a warning now, and the hard check (`resolve_python3()`) runs after
+the packages are in.
+
+**An unwritable log file would have silently skipped every pip and apt
+call.**  The default is `/var/log/torvalds-deploy.log`, which only root
+may create, and every `2>>"$LOG_FILE"` in the script is a
+*redirection*: a redirection that cannot be opened means the command
+does not run at all.  The file is now made writable before anything
+uses it, and it falls back to `~/.torvalds/logs/`.
+
+**The `.env` configured nothing.**  The script wrote
+`TORVALDS_CHAT_MODEL` and `TORVALDS_OLLAMA_BASE_URL`; the agent reads
+`TORVALDS_MODEL` and `TORVALDS_OLLAMA_HOST`.
+
+**`sudo DEBIAN_FRONTEND=noninteractive apt-get ...` may be refused
+outright.**  sudo only honours a variable set on the command line when
+the `setenv` option is set in sudoers, or when the variable survives
+`env_reset` — and `/etc/sudoers` is root-only and distro dependent.
+When the variable is refused, sudo aborts the whole command.  The form
+`sudo env DEBIAN_FRONTEND=noninteractive apt-get ...` always works,
+because `env` runs *as root*, after the environment has been reset.
+
+**`dpkg -l <name>` exits 0 for a package that is not installed.**  It
+reports the *state* of a package dpkg knows about, and "not installed"
+is a state, not an absence.  `dpkg-query -f '${Status}'` is the check.
+
+**Four more, found on the way:** an unknown option exited **0**;
+`python3.-venv` was requested when `PYTHON_MINOR` was empty; a
+half-built virtual environment was never repaired; and one bad
+requirement left the whole environment empty, because pip builds every
+wheel before it installs anything.
+
+#### The proof
+
+The harness has **eleven** invariants, and the drift proof breaks the
+contract **eleven** times — once per invariant.
+
+| | Invariant |
+|---|---|
+| **D1** | The script lives in `deploy/` and nowhere else. |
+| **D2** | It is executable, it is bash, and it parses. |
+| **D3** | `--help` is a query: stdout, exit 0, every option listed. |
+| **D4** | `--version` is a query: stdout, exit 0. |
+| **D5** | An unknown option fails instead of reporting success. |
+| **D6** | The script bootstraps its own sudo timestamp. |
+| **D7** | No `sudo VAR=value` form, which the sudoers policy may refuse. |
+| **D8** | The `.env` names the variables the agent actually reads. |
+| **D9** | No document still points at the old path. |
+| **D10** | The log file is made writable before anything is redirected to it. |
+| **D11** | A query is not reported as a deployment. |
+
+**The drift proof found a hole in the harness, and that is the point of
+it.**  The D7 check looked for `\bsudo\s+VAR=`, and the word boundary
+means it never matched inside `run_sudo` — which is the form the script
+actually uses.  The check was blind to the very thing it was written
+for, and it had never failed, because nothing had ever broken it.  It
+matches the word as a *command* now: anything that ends in `sudo` and
+is followed by an assignment.
+
+```bash
+python3 deploy/tests/verify_deploy_layout.py
+python3 deploy/tests/verify_harness_catches_regressions.py
+python3 -m pytest deploy/tests -q
+```
+
+Eleven invariants hold, and **11 of 11** deliberate drifts are caught.
 
 ### Latest change: the empty lines are gone, and the context window is logged
 
