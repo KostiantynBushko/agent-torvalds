@@ -126,6 +126,24 @@ REPEAT_CALL_THRESHOLD = 3
 #: How many tool results are remembered for the repetition check.
 REPEAT_CALL_HISTORY = 8
 
+#: How many times a run is given another turn when the model answers with
+#: nothing at all.  A run in which the model wrote no answer has no answer
+#: to give the operator, and the section under the "Agent Response" rule
+#: comes out empty — so the run is given one more turn before it is given
+#: up on.  One turn, not more: a model that answers nothing once will
+#: usually answer nothing again, and every turn is a full round-trip to a
+#: local model.
+EMPTY_ANSWER_RETRIES = 1
+
+#: What the model is told when its answer was empty.
+EMPTY_ANSWER_MESSAGE = (
+    "[Your previous reply was empty — it contained no text at all. "
+    "Answer the user's request again, in plain text.]"
+)
+
+#: Key used to count the empty answers of one run.
+_EMPTY_ANSWER_KEY = "hitl_empty_answers"
+
 
 def _stable_kwargs(kwargs: Any) -> str:
     """Return a stable, comparable representation of tool call arguments.
@@ -493,6 +511,13 @@ class HITLFunctionAgent(FunctionAgent):
         the consumer prompts the user and sends the answer back, which
         resumes this step with the answer in hand.
         """
+        # An answer that is not there is neither a question nor the end
+        # of the run: the model wrote nothing, so the run is given another
+        # turn before it is given up on.
+        retry = await self._retry_empty_answer(ctx, ev)
+        if retry is not None:
+            return retry
+
         # Tool calls take priority: the agent wants to act, not to ask.
         if ev.tool_calls:
             # An agent that repeats the same action cannot make progress.
@@ -628,6 +653,72 @@ class HITLFunctionAgent(FunctionAgent):
     # ------------------------------------------------------------------
     # Loop detection
     # ------------------------------------------------------------------
+
+    async def _retry_empty_answer(
+        self, ctx: Context, ev: AgentOutput
+    ) -> Optional[AgentInput]:
+        """Give the run another turn when the model answered with nothing.
+
+        A model that reasons but writes no answer leaves the run with no
+        answer at all: the workflow stops, the "Agent Response" section is
+        empty, and the operator is left with a rule and nothing under it.
+        The run is given one more turn — and only one, because every turn
+        is a full round-trip to a local model.
+
+        Returns:
+            The ``AgentInput`` that continues the run, or ``None`` when
+            the run should end as it is.
+        """
+        if ev.tool_calls:
+            # The model wants to act, not to answer.  Nothing is missing.
+            return None
+
+        if self._extract_text(ev.response).strip():
+            # There is an answer.
+            return None
+
+        attempts = await ctx.store.get(_EMPTY_ANSWER_KEY, default=0)
+        try:
+            attempts = int(attempts)
+        except (TypeError, ValueError):
+            attempts = 0
+
+        if attempts >= EMPTY_ANSWER_RETRIES:
+            logger.warning(
+                "The model answered with nothing again — the run ends "
+                "without an answer."
+            )
+            return None
+
+        await ctx.store.set(_EMPTY_ANSWER_KEY, attempts + 1)
+        logger.warning(
+            "The model answered with nothing — the run is given another "
+            "turn (%d of %d).",
+            attempts + 1,
+            EMPTY_ANSWER_RETRIES,
+        )
+
+        # The nudge follows the empty answer in the scratchpad, so the
+        # model sees what happened before it is asked again.
+        scratchpad: List[ChatMessage] = await ctx.store.get(
+            self.scratchpad_key, default=[]
+        )
+        scratchpad.append(
+            ChatMessage(role="user", content=EMPTY_ANSWER_MESSAGE)
+        )
+        await ctx.store.set(self.scratchpad_key, scratchpad)
+
+        # The iteration is counted here, because the base implementation
+        # is not called on this path — and the budget of the run has to
+        # include the turns the run spends on an empty answer.
+        num_iterations = await ctx.store.get("num_iterations", default=0)
+        await ctx.store.set("num_iterations", num_iterations + 1)
+
+        memory = await ctx.store.get("memory")
+        return AgentInput(
+            input=await memory.aget(),
+            current_agent_name=self.name,
+        )
 
     async def handle_tool_call_results(self, ctx: Context, results, memory) -> None:
         """Remember what the tools returned, then let the base class work.

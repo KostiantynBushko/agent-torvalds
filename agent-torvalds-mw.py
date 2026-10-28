@@ -266,6 +266,7 @@ from components.ollama_config import apply_context_window, get_ollama_base_url
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
 from components.event_consumer import EventConsumer
+from components.agent_answer import extract_answer
 
 # ---------------------------------------------------------------------------
 # HITL Components
@@ -991,11 +992,16 @@ async def prompt_handler(
         human_loop_handler.event_consumer = event_consumer
         result = await event_consumer.consume_events(workflow_handler, cmd)
 
-        response_text = (
-            result.get("output")
-            if isinstance(result, dict)
-            else str(result)
-        )
+        # The answer of the run.  It used to be read straight off the
+        # result -- ``str(result)`` -- which is the text of the model's
+        # *TextBlocks* and nothing else.  A run in which the model
+        # reasoned but wrote no answer therefore produced an empty string,
+        # and the Agent Response section was blank while the tool result
+        # that held the answer sat in the output the whole time.
+        # ``extract_answer`` never returns an empty string: when the model
+        # wrote nothing, the operator is told so and shown what the run
+        # found.
+        response_text = extract_answer(result)
 
         if stats_handler:
             stats = stats_handler.finalize()

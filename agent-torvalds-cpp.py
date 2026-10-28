@@ -18,6 +18,8 @@ except Exception:  # pragma: no cover - the toolkit is optional
 from toolkits.math_toolkit.agent_math_toolkit import *
 from toolkits.git_toolkit.agent_git_toolkit import *
 
+from components.agent_answer import extract_answer
+
 # Path to your local GGUF model
 MODEL_PATH = "${HOME}/ai-agent-investiagte/models/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf"
 
@@ -68,11 +70,11 @@ logging.basicConfig(level=logging.DEBUG)
 async def prompt_handler(cmd: str) -> str:
     try:
         result = await agent.run(cmd, memory=get_memory_buffer())
-        if hasattr(result, "response"):
-            return result.response
-        elif isinstance(result, dict):
-            return result.get("output") or result.get("text") or str(result)
-        return str(result)
+        # The answer of the run.  ``extract_answer`` never returns an
+        # empty string: when the model wrote nothing, the operator is told
+        # so and shown what the run found (the last tool result and the
+        # thinking of the model) instead of a blank section.
+        return extract_answer(result)
     except Exception as e:
         logging.exception("Agent run failed")
         return f"Error: {e}\n{traceback.format_exc()}"

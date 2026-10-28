@@ -1,5 +1,43 @@
 # Changelog
 
+## [Unreleased] - The Agent Response section is never empty
+
+### Added
+- **`components/agent_answer.py`** — one place that says what a run has.
+  `extract_answer(result)` returns the text of the model when there is one,
+  unchanged; when there is none, it returns a readable notice — *"The
+  model returned no answer"* — together with **the last tool result of the
+  run** and **the thinking of the model**.  It never returns an empty
+  string, and it never raises: a payload from the framework must not be
+  able to break a run.
+
+- **`tests/test_agent_answer.py`** — 32 tests: the extraction in every
+  shape it can take, the run that is given another turn (the real
+  `HITLFunctionAgent` with a mock LLM), and the wiring of the three entry
+  points.
+
+### Changed
+- **A run in which the model wrote nothing is given one more turn.**
+  `HITLFunctionAgent.parse_agent_output()` notices an answer that is not
+  there, appends a short nudge to the scratchpad and gives the model
+  another turn — **one**, because every turn is a full round-trip to a
+  local model, and a model that answered nothing once usually answers
+  nothing again.  A run that wants to *act* (it has tool calls) and a run
+  that *asked a question* are never interrupted.
+
+- **The three entry points read the answer through `extract_answer`.**
+  `agent-torvalds.py`, `agent-torvalds-mw.py` and `agent-torvalds-cpp.py`
+  no longer read it with `str(result)`.
+
+### Fixed
+- **The Agent Response section was empty when the model wrote no text.**
+  The answer of a run was read with `str(result)`, and
+  `AgentOutput.__str__` returns `self.response.content or ""` — the text of
+  the **TextBlocks** only.  A model that reasoned but wrote no answer left
+  the section blank, while the tool result that held the answer sat in the
+  output the whole time, unread.  The run reported no error
+  (`errors=0`) and the operator was left with a rule and nothing under it.
+
 ## [Unreleased] - The deployment scripts have a home of their own
 
 ### Added
