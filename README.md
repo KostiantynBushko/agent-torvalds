@@ -10,6 +10,11 @@ A comprehensive, general-purpose AI agent toolkit designed for engineering scien
 
 > **Key Philosophy**: Tool-first approach - always use provided tools for calculations, file operations, SQL, etc. Never simulate results.
 
+> **The long-form documentation is the [wiki](wiki/)** — installation,
+> configuration, the toolkits, the architecture, the database and the
+> contribution workflow.  It is a submodule of this repository, so the
+> pages travel with the code.
+
 ---
 
 ## Toolkits Included
@@ -42,71 +47,164 @@ The project documentation:
 
 | Topic | Document |
 |---|---|
+| **The wiki** — the long-form documentation, carried in this repository as a submodule | [wiki/](wiki/) |
+| Deployment — install the agent, configure it, and run the deployment script | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| The deployment script — what the `deploy/` folder holds, and its contract | [deploy/README.md](deploy/README.md) |
 | Continuous integration — the CI test gate and the known-failure baseline | [docs/ci.md](docs/ci.md) |
 | Local LLM setup — install Ollama, pull the models, run the agent | [docs/ollama-setup.md](docs/ollama-setup.md) |
+| MikroTik RouterOS Toolkit — the end-user reference | [docs/mikrotik-toolkit.md](docs/mikrotik-toolkit.md) |
+| Shodan Toolkit — the end-user reference | [docs/shodan-toolkit.md](docs/shodan-toolkit.md) |
+| The design proposals — the documents the features were designed in | [docs/proposals/](docs/proposals/) |
+| The self-development rules — how the agent modifies its own code | [SELF_DEVELOPMENT_RULES.md](SELF_DEVELOPMENT_RULES.md) |
+| The CI test gate — the script the build runs | [scripts/ci_test_gate.py](scripts/ci_test_gate.py) |
+| The change log — every change, newest first | [CHANGELOG.md](CHANGELOG.md) |
+
+The **wiki** is the long-form documentation: installation, configuration,
+the toolkits, the architecture, the database and the contribution workflow.
+It lives in its own repository — `agent-torvalds.wiki.git` — and is carried
+here as a **submodule**, so the pages are versioned next to the code they
+describe.  A plain `git clone` leaves the directory empty;
+`git clone --recurse-submodules` brings the pages with it.
+
+| Wiki page | What it covers |
+|---|---|
+| [wiki/Home.md](wiki/Home.md) | The overview and the quick start |
+| [wiki/Installation.md](wiki/Installation.md) | Clone, virtualenv, dependencies, Ollama, the models |
+| [wiki/Deployment.md](wiki/Deployment.md) | The one-command install: the script, its phases, its `.env` |
+| [wiki/Configuration.md](wiki/Configuration.md) | LLM, database, cache, statistics, HITL, the context guard |
+| [wiki/Toolkits.md](wiki/Toolkits.md) | Every toolkit and what it can do |
+| [wiki/Usage.md](wiki/Usage.md) | The runtime commands, chat sessions, router and Shodan commands |
+| [wiki/Architecture.md](wiki/Architecture.md) | The orchestrators, the components, the event flow, the project layout |
+| [wiki/Database.md](wiki/Database.md) | PostgreSQL setup, the schema, and the Sqitch migrations |
+| [wiki/Contributing.md](wiki/Contributing.md) | Branching, commit style, the self-development workflow |
 
 ### 1. OS Toolkit (`toolkits/os-toolkit/`)
-- Browse file systems (`ls`, `pwd`)
-- Create, read, write, move, and delete files and directories
-- Check file/directory existence and permissions
-- Full access to underlying OS functionality
-- Built on the **standard library only** — the reusable core package in
-  `toolkits/os-toolkit/` has **no** LlamaIndex imports and no third-party
-  dependency at all, so it also works as a plain library
-- See section 21 and the
-  [OS Toolkit README](toolkits/os-toolkit/README.md)
+- The current working directory, directory listings, and path checks
+- Creating, reading, writing, copying, moving and removing files and
+  directories
+- Comprehensive system information: OS, hardware, and user details
+- Built on the **standard library only** — `os`, `shutil`, `pathlib` and
+  `platform`. The reusable core package in `toolkits/os-toolkit/` has
+  **no** LlamaIndex imports and **no** third-party dependency at all, so
+  it works in any Python that exists
+- The LlamaIndex adapter is the one module that knows about the agent
+  framework, and it is imported on demand
+- No tool raises: a failure is reported as a message string (or as
+  `{"error": ...}`), so the model gets a message it can reason about
+- `rm` is destructive and irreversible; the tool description and the
+  docstring both say so, so the model sees the warning before it calls
+  the tool
+- The eleven tools join the **Operating System** category of the startup
+  tool selection menu (`--select`, and `\tools` / `\tool-select` in the
+  TUI), so the whole category can be loaded on its own
+- See the [OS Toolkit README](toolkits/os-toolkit/README.md) for the
+  module reference
 
 ### 2. Linux Toolkit (`toolkits/linux-toolkit/`)
-- Execute shell commands with timeout and error handling
-- Run multiple commands sequentially
-- Parse command output into structured format
-- Get system information (OS, CPU, memory, disk)
-- Execute commands with custom environment variables
-- Check file permissions
-- Built on the **standard library only** — the reusable core package in
-  `toolkits/linux-toolkit/` has **no** LlamaIndex imports and no third-party
-  dependency at all, so it also works as a plain library
-- See section 22 and the
-  [Linux Toolkit README](toolkits/linux-toolkit/README.md)
+- Running shell commands, with a timeout, a working directory and an
+  option to skip the shell
+- Running a series of commands one after another
+- Splitting command output into lines and metadata
+- System information — OS, CPU, memory and disk — gathered through the
+  shell
+- File permissions, owner and group
+- Running a command with extra environment variables
+- Built on the **standard library only** — `subprocess`, `os`, `logging`
+  and `typing`. The reusable core package in `toolkits/linux-toolkit/`
+  has **no** LlamaIndex imports and **no** third-party dependency at
+  all, so it works in any Python that exists
+- The LlamaIndex adapter is the one module that knows about the agent
+  framework, and it is imported on demand
+- No tool raises: a failure is reported — a non-zero exit code, or
+  `returncode: -1` and the error text in `stderr` — so the model gets a
+  message it can reason about
+- The six tools join the **System** category of the startup tool
+  selection menu (`--select`, and `\tools` / `\tool-select` in the TUI),
+  so the whole category can be loaded on its own
+- See the [Linux Toolkit README](toolkits/linux-toolkit/README.md) for the
+  module reference
 
 ### 3. Windows PowerShell Toolkit (`toolkits/windows-toolkit/`)
-- Execute PowerShell commands on Windows systems
-- Run multiple commands sequentially with batch operation support
-- Parse command output into structured format
-- Get system information via PowerShell cmdlets
-- Check file permissions and access rules
-- Execute commands with custom environment variables
-- Full Windows system integration
-- Built on the **standard library only** — the reusable core package in
-  `toolkits/windows-toolkit/` has **no** LlamaIndex imports and no third-party
-  dependency at all, so it also works as a plain library
-- See section 24 and the
-  [Windows Toolkit README](toolkits/windows-toolkit/README.md)
+- Running PowerShell commands, with a timeout, a working directory and an
+  option to skip the shell
+- Running a series of commands one after another
+- Splitting command output into lines and metadata
+- System information — OS, CPU, memory and disk — gathered through the
+  PowerShell cmdlets
+- File ownership and access rules
+- Running a command with extra environment variables
+- The PowerShell executable is picked automatically: `pwsh` (PowerShell
+  Core 7+) is preferred, `powershell.exe` (Windows PowerShell 5.1+) is
+  the fallback
+- Built on the **standard library only** — `subprocess`, `logging` and
+  `typing`. The reusable core package in `toolkits/windows-toolkit/` has
+  **no** LlamaIndex imports and **no** third-party dependency at all, so
+  it works in any Python that exists
+- The LlamaIndex adapter is the one module that knows about the agent
+  framework, and it is imported on demand
+- No tool raises: a failure is reported — a non-zero exit code, or
+  `returncode: -1` and the error text in `stderr` — so the model gets a
+  message it can reason about
+- The six tools join the **System** category of the startup tool
+  selection menu (`--select`, and `\tools` / `\tool-select` in the TUI),
+  so the whole category can be loaded on its own
+- The toolkit is loaded **only on Windows**, so exactly one of the
+  Windows, Linux and OS toolkits is ever in the menu
+- See the [Windows Toolkit README](toolkits/windows-toolkit/README.md) for
+  the module reference
+
+---
 
 ### 4. GitHub Toolkit (`toolkits/github-toolkit/`)
-- GitHub API integration for Pull Request management
-- Create, list, update, close, and merge Pull Requests
-- Add comments and review file changes
-- Check authentication status and user information
-- Configure Git credentials
-- Full PR workflow support
+- Full Pull Request lifecycle: create, list, inspect, update, close, merge
+- Comments, file-change reviews, and review submissions
+- Authentication status and the authenticated user profile
+- Git credential configuration for commits
 - Built on `requests` — the reusable core package in
   `toolkits/github-toolkit/` has **no** LlamaIndex imports, so it also
   works as a plain library
-- See section 20 and the
-  [GitHub Toolkit README](toolkits/github-toolkit/README.md)
+- The LlamaIndex adapter is the one module that knows about the agent
+  framework, and it is imported on demand
+- No tool raises: a failure is reported as `False` or as
+  `{"success": False, "error": ...}`, so the model gets a message it can
+  reason about
+- The thirteen tools join the **Version Control** category of the startup
+  tool selection menu (`--select`, and `\tools` / `\tool-select` in the
+  TUI), so the whole category can be loaded on its own
+- See the [GitHub Toolkit README](toolkits/github-toolkit/README.md) for
+  the module reference
 
 ### 5. APT Package Management Toolkit (`toolkits/apt-toolkit/`)
-- Interactive Debian/Ubuntu package installation
-- Command resolution to APT packages
-- Multiple password prompting methods (console, whiptail, env_var, parameter)
-- Sudo password caching and validation
-- Batch package installation
-- Automatic dependency resolution workflow
+- Resolving a missing command to the APT package that provides it —
+  through `apt-file`, `dpkg` or `apt-cache`, in that order
+- Checking whether a command is on the `PATH`
+- Installing one package, or several in sequence
+- The end-to-end workflow: detect the missing command, resolve it,
+  install it, and verify that it is there afterwards
+- Obtaining the sudo password from a parameter, the
+  `TORVALDS_SUDO_PASSWORD` environment variable, the session cache,
+  or the console — with an automatic fallback between the console
+  and the whiptail dialog
+- Validating a sudo password, and clearing the cached one
+- Choosing the default password prompt method for the session
 - The reusable core package in `toolkits/apt-toolkit/` has **no**
-  LlamaIndex imports, so it also works as a plain library
-- See section 23 and the
-  [APT Toolkit README](toolkits/apt-toolkit/README.md)
+  LlamaIndex imports, so the operations also work as a plain
+  library. It needs `rich` for the console password prompt, and
+  the repository's own `components.whiptail_password` for the
+  whiptail one — both imports are deferred, and both degrade
+  gracefully when they are missing
+- The LlamaIndex adapter is the one module that knows about the
+  agent framework, and it is imported on demand
+- No tool raises: a failure is reported — `success: False` and
+  the reason in `error` — so the model gets a message it can
+  reason about
+- The ten tools join the **System / Package Management** category
+  of the startup tool selection menu (`--select`, and `\tools` /
+  `\tool-select` in the TUI)
+- The command-line interface moved with the toolkit:
+  `python -m toolkits.apt_toolkit --show-method`
+- See the [APT Toolkit README](toolkits/apt-toolkit/README.md) for the
+  module reference
 
 ### 6. Database Toolkit (`toolkits/db-toolkit/`)
 - Execute SQL queries on **PostgreSQL** databases
@@ -146,7 +244,7 @@ The project documentation:
   [Data Analysis Toolkit README](toolkits/data-analysis-toolkit/README.md)
 
 ### 7. Chat Memory (`chat_manager/`)
-- The chat memory is provided by the **Chat History Manager** — see § 17
+- The chat memory is provided by the **Chat History Manager** — see § 15
 - The legacy `agent_chat_memory.py` module has been removed; the manager is the only
   source of a memory buffer, and an in-memory buffer is the last resort
 - Token-limited memory buffers for conversation context, one per session
@@ -328,134 +426,6 @@ The project documentation:
   in the TUI), so the whole category can be loaded on its own
 - See the [Git Toolkit README](toolkits/git-toolkit/README.md) for the
   module reference
-
-### 20. GitHub Toolkit (`toolkits/github-toolkit/`)
-- Full Pull Request lifecycle: create, list, inspect, update, close, merge
-- Comments, file-change reviews, and review submissions
-- Authentication status and the authenticated user profile
-- Git credential configuration for commits
-- Built on `requests` — the reusable core package in
-  `toolkits/github-toolkit/` has **no** LlamaIndex imports, so it also
-  works as a plain library
-- The LlamaIndex adapter is the one module that knows about the agent
-  framework, and it is imported on demand
-- No tool raises: a failure is reported as `False` or as
-  `{"success": False, "error": ...}`, so the model gets a message it can
-  reason about
-- The thirteen tools join the **Version Control** category of the startup
-  tool selection menu (`--select`, and `\tools` / `\tool-select` in the
-  TUI), so the whole category can be loaded on its own
-- See the [GitHub Toolkit README](toolkits/github-toolkit/README.md) for
-  the module reference
-
-### 21. OS Toolkit (`toolkits/os-toolkit/`)
-- The current working directory, directory listings, and path checks
-- Creating, reading, writing, copying, moving and removing files and
-  directories
-- Comprehensive system information: OS, hardware, and user details
-- Built on the **standard library only** — `os`, `shutil`, `pathlib` and
-  `platform`. The reusable core package in `toolkits/os-toolkit/` has
-  **no** LlamaIndex imports and **no** third-party dependency at all, so
-  it works in any Python that exists
-- The LlamaIndex adapter is the one module that knows about the agent
-  framework, and it is imported on demand
-- No tool raises: a failure is reported as a message string (or as
-  `{"error": ...}`), so the model gets a message it can reason about
-- `rm` is destructive and irreversible; the tool description and the
-  docstring both say so, so the model sees the warning before it calls
-  the tool
-- The eleven tools join the **Operating System** category of the startup
-  tool selection menu (`--select`, and `\tools` / `\tool-select` in the
-  TUI), so the whole category can be loaded on its own
-- See the [OS Toolkit README](toolkits/os-toolkit/README.md) for the
-  module reference
-
-### 22. Linux Toolkit (`toolkits/linux-toolkit/`)
-- Running shell commands, with a timeout, a working directory and an
-  option to skip the shell
-- Running a series of commands one after another
-- Splitting command output into lines and metadata
-- System information — OS, CPU, memory and disk — gathered through the
-  shell
-- File permissions, owner and group
-- Running a command with extra environment variables
-- Built on the **standard library only** — `subprocess`, `os`, `logging`
-  and `typing`. The reusable core package in `toolkits/linux-toolkit/`
-  has **no** LlamaIndex imports and **no** third-party dependency at
-  all, so it works in any Python that exists
-- The LlamaIndex adapter is the one module that knows about the agent
-  framework, and it is imported on demand
-- No tool raises: a failure is reported — a non-zero exit code, or
-  `returncode: -1` and the error text in `stderr` — so the model gets a
-  message it can reason about
-- The six tools join the **System** category of the startup tool
-  selection menu (`--select`, and `\tools` / `\tool-select` in the TUI),
-  so the whole category can be loaded on its own
-- See the [Linux Toolkit README](toolkits/linux-toolkit/README.md) for the
-  module reference
-
-### 23. APT Toolkit (`toolkits/apt-toolkit/`)
-- Resolving a missing command to the APT package that provides it —
-  through `apt-file`, `dpkg` or `apt-cache`, in that order
-- Checking whether a command is on the `PATH`
-- Installing one package, or several in sequence
-- The end-to-end workflow: detect the missing command, resolve it,
-  install it, and verify that it is there afterwards
-- Obtaining the sudo password from a parameter, the
-  `TORVALDS_SUDO_PASSWORD` environment variable, the session cache,
-  or the console — with an automatic fallback between the console
-  and the whiptail dialog
-- Validating a sudo password, and clearing the cached one
-- Choosing the default password prompt method for the session
-- The reusable core package in `toolkits/apt-toolkit/` has **no**
-  LlamaIndex imports, so the operations also work as a plain
-  library. It needs `rich` for the console password prompt, and
-  the repository's own `components.whiptail_password` for the
-  whiptail one — both imports are deferred, and both degrade
-  gracefully when they are missing
-- The LlamaIndex adapter is the one module that knows about the
-  agent framework, and it is imported on demand
-- No tool raises: a failure is reported — `success: False` and
-  the reason in `error` — so the model gets a message it can
-  reason about
-- The ten tools join the **System / Package Management** category
-  of the startup tool selection menu (`--select`, and `\tools` /
-  `\tool-select` in the TUI)
-- The command-line interface moved with the toolkit:
-  `python -m toolkits.apt_toolkit --show-method`
-- See the [APT Toolkit README](toolkits/apt-toolkit/README.md) for the
-  module reference
-
-### 24. Windows PowerShell Toolkit (`toolkits/windows-toolkit/`)
-- Running PowerShell commands, with a timeout, a working directory and an
-  option to skip the shell
-- Running a series of commands one after another
-- Splitting command output into lines and metadata
-- System information — OS, CPU, memory and disk — gathered through the
-  PowerShell cmdlets
-- File ownership and access rules
-- Running a command with extra environment variables
-- The PowerShell executable is picked automatically: `pwsh` (PowerShell
-  Core 7+) is preferred, `powershell.exe` (Windows PowerShell 5.1+) is
-  the fallback
-- Built on the **standard library only** — `subprocess`, `logging` and
-  `typing`. The reusable core package in `toolkits/windows-toolkit/` has
-  **no** LlamaIndex imports and **no** third-party dependency at all, so
-  it works in any Python that exists
-- The LlamaIndex adapter is the one module that knows about the agent
-  framework, and it is imported on demand
-- No tool raises: a failure is reported — a non-zero exit code, or
-  `returncode: -1` and the error text in `stderr` — so the model gets a
-  message it can reason about
-- The six tools join the **System** category of the startup tool
-  selection menu (`--select`, and `\tools` / `\tool-select` in the TUI),
-  so the whole category can be loaded on its own
-- The toolkit is loaded **only on Windows**, so exactly one of the
-  Windows, Linux and OS toolkits is ever in the menu
-- See the [Windows Toolkit README](toolkits/windows-toolkit/README.md) for
-  the module reference
-
----
 
 ## Key Features
 
@@ -1136,33 +1106,77 @@ manager.shutdown()
 | agent_cache_system.py          # Persistent cache for operational context
 | agent_stats_handler.py         # Per-request statistics collection and rendering
 | agent_tool_retriever.py        # On-demand semantic tool loading
+| agent_tool_selection.py        # The startup tool menu, and the category selection
 | agent-torvalds.py              # Main orchestrator (the actual agent)
+| agent-torvalds-mw.py           # Multi-window console agent (the TUI variant)
 | agent-torvalds-cpp.py          # C++ toolkit integration
 | spinner_manager.py             # Global console spinner management
+| conftest.py                    # The repository-root pytest fixtures
 | db_toolkit_config.yaml         # Database configuration
+| setup_postgres_db.sql          # The database schema
 | mikrotik_targets.yaml.example  # MikroTik router target configuration (example)
 | requirements.txt               # Project dependencies
 | requirements-ci.lock           # The pinned environment the CI baseline was recorded with
+| pytest.ini                     # The test paths, and the pytest configuration
+| scripts/                       # The CI test gate and the HITL test scripts
+| +-- ci_test_gate.py            # The gate the build runs: a NEW failure breaks the build
+| +-- hitl_question_bank.py      # The question classifier's case bank
+| +-- hitl_interactive_test.py
+| +-- hitl_live_llm_test.py
 | LICENSE                        # MIT License
 | CHANGELOG.md                   # Version history
+| DEPLOYMENT.md                  # The deployment guide
 | README.md                      # This file
+| SELF_DEVELOPMENT_RULES.md      # The rules the agent follows on its own code
+| tools_menu_update.md           # The startup tool menu, category by category
 | __pycache__/                  # Python cache
 | .venv/                        # Virtual environment
 | .git/                         # Git repository
 | .gitignore                    # Git ignore rules
+| .gitmodules                   # The wiki submodule
+| .github/                      # The GitHub Actions workflow
+| +-- workflows/                # The CI test gate
 | .idea/                        # IDE configuration
 | docs/                         # Documentation and proposals
+| +-- ci.md                     # Continuous integration: the CI test gate and the known-failure baseline
+| +-- ollama-setup.md           # Local LLM setup: install Ollama, pull models, run the agent
+| +-- mikrotik-toolkit.md       # MikroTik RouterOS Toolkit: the end-user reference
+| +-- shodan-toolkit.md         # Shodan Toolkit: the end-user reference
 | +-- proposals/                # Design proposals
 | +-- agent_cache_system.md
-| +-- ollama-setup.md           # Local LLM setup: install Ollama, pull models, run the agent
-| +-- ci.md                     # Continuous integration: the CI test gate and the known-failure baseline
 | +-- extended_logging_statistics.md
+| +-- interactive_apt_package_installation.md
+| +-- llamaindex_memory_implementation.md
 | +-- on_demand_tool_loading.md
+| +-- pull_request_tooling.md
 | deploy/                       # Deployment scripts
 | +-- README.md                 # What the folder holds, and how to use it
 | +-- deploy-torvalds.sh        # The automated deployment script
 | +-- deploy-torvalds.sh.example.env  # Example environment file
 | +-- tests/                    # The folder's contract harness, and the proof that it catches drifts
+| +-- verify_deploy_layout.py   # Eleven invariants over the folder and the script
+| +-- verify_harness_catches_regressions.py  # The proof that the harness catches eleven drifts
+| +-- test_deploy_layout.py     # The harness, under pytest
+| wiki/                         # The long-form documentation - a submodule of agent-torvalds.wiki.git
+| +-- Home.md
+| +-- Installation.md
+| +-- Configuration.md
+| +-- Toolkits.md
+| +-- Usage.md
+| +-- Architecture.md
+| +-- Database.md
+| +-- Contributing.md
+| project_manager/              # Project detection, workspace config and project-aware actions
+| +-- README.md                 # Project Manager documentation
+| +-- __init__.py
+| +-- manager.py                # The project manager core
+| +-- scanner.py                # Project type detection
+| +-- executor.py               # Build / test / run / clean
+| +-- recommender.py            # Project-aware tool recommendation
+| +-- prompt_engine.py          # Project context for the system prompt
+| +-- git_status.py
+| +-- config.py
+| +-- types.py
 | components/                   # Helper modules and utilities
 | +-- README.md                 # Components documentation
 | +-- __init__.py
@@ -1309,32 +1323,33 @@ manager.shutdown()
 
 ---
 
-## Recent Updates (September 2026)
+## Recent Updates (October 2026)
 
 ### Latest Features Added
-- **Chat History Manager**: Multi-user, multi-session chat history with isolated per-session message storage, database-persisted active session, and eight `\chat-*` runtime commands
-- **Human-in-the-Loop (HITL)**: Interactive questioning with runtime toggle; no timeout by default — the agent waits for the user
-- **APT Package Management Toolkit**: Full Debian/Ubuntu package installation with multiple password methods
-- **Windows PowerShell Toolkit**: Native Windows PowerShell support for command execution
-- **GitHub Toolkit**: Complete PR lifecycle management including creation, review, commenting, and merging
-- **Spinner Manager**: Global console spinner with pause/resume for interactive operations
-- **Real-time Event Streaming**: State management and thread-safe spinner with event consumer
-- **Enhanced Logging**: CLI argument for logging level configuration
+- **A dedicated `deploy/` folder**: the deployment scripts have a home of their own, and the script was repaired — a non-interactive run can now obtain sudo by itself, the `.env` it writes names the variables the agent actually reads, and an unknown option fails instead of reporting success
+- **Every toolkit is a module**: the ten loose toolkits at the project root moved under `toolkits/`, each split into a dependency-free library half and a LlamaIndex adapter — so a missing or broken toolkit degrades to "no tools" instead of a failed boot
+- **The legacy chat memory is gone**: `agent_chat_memory.py` was removed once the SQLite fallback made it unnecessary — the manager is now the only source of a memory buffer
+- **The debug log is readable**: the prompt is rendered message by message instead of dumped as a Python `repr`, and the answer — which was never logged at all — is logged now
+- **The context window is logged, and proved**: the number in the log is the window the *server* uses, not the maximum the model advertises, and the source of the number is in the log line
+- **The context guard is optional**: `--context-guard-on` trims the prompt to the model's real window; it is off by default
+- **The wiki**: the long-form documentation, carried in this repository as a submodule
 
 ### Key Refactors
-- Reworked `agent_chat_memory.py` into a compatibility layer over the new `chat_manager` package (legacy single-key behaviour retained as fallback)
-- Moved stats handler to components directory for better organization
-- Added comprehensive debug logging throughout the codebase
-- Fixed cmd.lower() bug for console command processing
-- Improved git_add_files with input validation and richer response
+- Ten toolkits moved under `toolkits/`, each split into a library half and an adapter, with a layout contract that pins the dependency set
+- The chat history gained a SQLite fallback, so an unreachable database no longer costs the agent its sessions
+- The deployment script moved out of `investigate/` and into `deploy/`, where a folder named for what it holds can be found again
+- The `Co-Authored-By:` contributor was purged from the history, and the tooling that keeps it out was merged
 
 ### Pull Request History
-- **PR #6**: Merge feature/logging-level-cli-argument into master
-- **PR #5**: Fix cmd.lower() bug and refactor stats_handler
-- **PR #4**: Merge investigation/llama-index-workflow
-- **PR #3**: Add Windows PowerShell toolkit support
-- **PR #2**: Add APT package management toolkit with enhanced git utilities
-- **PR #1**: Merge cognitive_overhead branch with major features
+- **PR #65**: give the deployment scripts a dedicated folder, and repair the script
+- **PR #57**: make the data analysis toolkit a module — the tenth and last of the series
+- **PR #37**: remove the legacy chat memory implementation
+- **PR #58**: purge the Claude co-author contributor from the history
+- **PR #43**: make the GitHub toolkit a module
+- **PR #39**: make the math toolkit a module
+
+The full list is in the [CHANGELOG.md](CHANGELOG.md) and in the
+[git history](https://github.com/KostiantynBushko/agent-torvalds/commits/master).
 
 ---
 

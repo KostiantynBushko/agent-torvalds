@@ -4,8 +4,13 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-28 (the **deployment scripts** moved into a
-dedicated `deploy/` folder — **PR #65** — and the script was repaired: a
+**Last updated:** 2026-10-28 (the **documentation was audited** and the
+**wiki became a submodule** of the repository: the root README had no
+link to the wiki, the wiki had no link to the deployment guide, and the
+README described five of its toolkits twice; before that, the
+**deployment scripts** moved into a dedicated `deploy/` folder —
+**squash-merged into `master` as PR #65**,
+commit `5d63058` — and the script was repaired: a
 non-interactive run can now obtain sudo by itself, the `.env` it writes
 names the variables the agent actually reads, and an unknown option
 fails instead of reporting success; before that, 2026-10-27 (the
@@ -142,12 +147,93 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `feature/deploy-folder` — based on `master` at `c6e92af` (the merge of PR #56, the deployment script). The branch was **renamed** from `fix/deploy-script-sudo-noninteractive`, which is what it was called when the repair was the only work on it. **Committed** as `f79e1e4` and **pushed**; **PR #65** is open. |
+| Branch | `feature/deploy-folder` — based on `master` at `c6e92af` (the merge of PR #56, the deployment script). The branch was **renamed** from `fix/deploy-script-sudo-noninteractive`, which is what it was called when the repair was the only work on it. **Squash-merged into `master` as PR #65** — commit `5d63058`, head `05f3120`. The branch is kept, as every merged branch in this repository is. |
 | Scope | Give the deployment scripts a **folder of their own**, and finish the repair of the script that was already in progress: a **non-interactive run must be able to obtain sudo by itself**. |
-| Status | Implemented and **verified**. The script and its example environment file moved from `investigate/deployment-script/` to `deploy/`, and the investigation documents stayed where they were — `investigate/` holds the *record* of a piece of work, and the implementations that came out of it live in their own place (the toolkits under `toolkits/`, the chat manager under `chat_manager/`). The script itself was repaired in nine places, and every repair is held by an invariant. |
+| Status | Implemented, **verified** and **merged**. The script and its example environment file moved from `investigate/deployment-script/` to `deploy/`, and the investigation documents stayed where they were — `investigate/` holds the *record* of a piece of work, and the implementations that came out of it live in their own place (the toolkits under `toolkits/`, the chat manager under `chat_manager/`). The script itself was repaired in nine places, and every repair is held by an invariant. |
 | Policy | **The folder is named for what it holds.** A folder called `investigate/deployment-script/` holds an investigation; the day the script shipped, the investigation had become its archive. The operator asked for *"a dedicated folder for deployment scripts"*, and the rule the rest of the repository already follows — the toolkits, the chat manager, the components — says what that folder is called: `deploy/`. |
 | Investigation | The **deployment script** itself: `investigate/deployment-script/` still holds the report, the requirements and the plan. The implementation is the deliverable and it lives in `deploy/`. |
-| State | **Verified, and open as PR #65.** `deploy/tests/verify_deploy_layout.py` — eleven invariants, over the folder *and* the behaviour of the script. `deploy/tests/verify_harness_catches_regressions.py` — the proof that the harness catches eleven deliberate drifts, one per invariant. `deploy/tests/test_deploy_layout.py` — the harness under pytest. The CI gate reports **0 new failures** (40 known, 0 new, 0 fixed) — locally and in the CI run of PR #65, which is green. Rule 4: the commit and the push were made on the operator's explicit approval. |
+| State | **Merged into `master`.** `deploy/tests/verify_deploy_layout.py` — eleven invariants, over the folder *and* the behaviour of the script. `deploy/tests/verify_harness_catches_regressions.py` — the proof that the harness catches eleven deliberate drifts, one per invariant. `deploy/tests/test_deploy_layout.py` — the harness under pytest. The CI gate reported **0 new failures** (40 known, 0 new, 0 fixed) — locally and in the CI run of PR #65, which was green. The merge result tree (`c8e80f3`) is **byte-identical** to the head tree of `05f3120` that CI ran green, so the merge introduced no untested content. Rule 4: the commit and the push were made on the operator's explicit approval. |
+
+### Latest change: the documentation was audited, and the wiki became a submodule
+
+**The operator asked for it on 2026-10-28**: *"can you verify all
+information is properly documented and has link in root READADME file
+also do check it has link in wiki page, anothe work is to add wiki repo
+as a submodule in agent-torvalds repo"*.
+
+Three things, and the first one turned up more than it looked.
+
+#### The audit found five defects in the root README
+
+**The README described five of its toolkits twice.**  Sections 1-5 and
+sections 20-24 were the same five toolkits — 1 = 21 (OS), 2 = 22
+(Linux), 3 = 24 (Windows), 4 = 20 (GitHub), 5 = 23 (APT) — and the
+short versions ended with *"See section 21 and the ... README"*.  The
+long versions were the supersets, so the short ones were replaced by
+them and the long ones deleted.  The numbering stays **1-19**, so no
+anchor changed and no other cross-reference broke.
+
+**One cross-reference pointed at the wrong section.**  Section 7 said
+*"The chat memory is provided by the **Chat History Manager** — see
+§ 17"*, and § 17 is the **Shodan Toolkit**.  The Chat History Manager
+is § 15.  It was right when the list was shorter.
+
+**The "Recent Updates" section had stopped at PR #6** and still said
+that the legacy `agent_chat_memory.py` had been *"reworked into a
+compatibility layer"* — it was **removed** in PR #37.  The section now
+covers October 2026 and the real recent work.
+
+**`tools_menu_update.md` described a menu that does not exist.**  Six
+categories, two of them invented (*Development*, *Networking*), with
+counts of 18, 10, 6, 7, 12 and 4.  The live menu has **twelve**
+categories and **155** tools.  The file is now generated from the live
+menu, and it says how.
+
+**The project-structure tree had drifted.**  It named neither
+`DEPLOYMENT.md`, nor `SELF_DEVELOPMENT_RULES.md`, nor `scripts/`, nor
+`project_manager/`, nor the `wiki/`, and its `docs/` entry named four
+of the six documents.
+
+#### The wiki had no link to the deployment guide, and two pages had no links at all
+
+`Architecture.md` and `Usage.md` carried **no link whatsoever**.  The
+deployment story — the `deploy/` folder, the script, its eight phases,
+its `.env` — was **absent from the wiki entirely**, and the wiki's
+project layout still listed `agent_chat_memory.py`, which was removed
+in PR #37.
+
+The wiki now has a **Deployment** page, every page links to the pages
+around it and back to the repository, `Toolkits.md` links **all twelve**
+toolkit READMEs instead of one, and `Configuration.md` documents the
+`.env` the deployment script writes.
+
+#### The wiki is now a submodule
+
+```gitmodules
+[submodule "wiki"]
+	path = wiki
+	url = https://github.com/KostiantynBushko/agent-torvalds.wiki.git
+```
+
+**This reverses a deliberate decision, and the reason given for it
+does not hold.**  The `.gitignore` excluded the folder with this
+comment:
+
+> *The GitHub wiki clone.  It is its own repository, with its own
+> remote (agent-torvalds.wiki.git) and its own history - the wiki pages
+> are published from there, not from this repository.  Committing it
+> here would record a gitlink that no clone of this repository could
+> resolve.*
+
+A submodule **is** a gitlink, and the wiki repository is **public** —
+it was cloned over HTTPS with no credentials, so every clone can
+resolve it.  What is true is narrower: a plain `git clone` leaves the
+directory empty, and `git clone --recurse-submodules` brings the pages
+with it.  The comment now says that, and the exclusion is gone.
+
+**Verified after the push**: a fresh `git clone --recurse-submodules`
+brings the **nine** wiki pages down, and a plain clone leaves the
+directory empty and the build green.
 
 ### Latest change: the deployment scripts have a home of their own
 
@@ -252,6 +338,24 @@ Eleven invariants hold, and **11 of 11** deliberate drifts are caught.
 **The PR.**  <https://github.com/KostiantynBushko/agent-torvalds/pull/65> —
 *feat: give the deployment scripts a dedicated folder*.  The CI gate is
 green on it: 40 known failures, 0 new, 0 fixed.
+
+**Merged.**  **Squash-merged into `master` as PR #65** (commit `5d63058`,
+head `05f3120`, based on `master` at `c6e92af`) — the operator merged it
+on 2026-10-28.  The squash departs from the standing convention of a
+merge commit, as PR #54, #52, #50, #48 and #46 did before it, and for the
+same reason: this PR was based directly on the tip of `master`, so the
+next PR's merge base is `5d63058` and its diff does not balloon.  The tree
+check the convention exists for holds as well — `master`'s tree after the
+merge (`c8e80f3`) is **byte-identical** to the head tree of `05f3120` that
+CI ran green, so the merge introduced no untested content.
+
+**The empty `deploy/` directory in the operator's working copy was no
+obstacle.**  It was created before the branch existed, and it was
+untracked and empty — and an empty directory is invisible to git, so it
+cannot conflict with a merge that writes files into it.  This was not
+assumed: it was **measured**, on a clone at the pre-merge `c6e92af` with
+an empty `deploy/` created in it.  The pull filled the directory, and the
+working tree stayed clean.
 
 **One PR, two concerns, deliberately.**  The move and the repair are
 separate changes and would ordinarily be separate PRs.  They are folded
@@ -761,6 +865,38 @@ checked against the rewritten history:
 
 The tool that does the refresh is `investigate/claude-contributor-purge/refresh_commit_shas.py`,
 which arrived with the purge tooling in #58.
+
+#### Correction (2026-10-28): there is no such piece of work
+
+**The 18 were never commit references.**  The count came from a token
+scan, and a token scan cannot tell a commit SHA from anything else that
+happens to be made of hex characters.  The whole repository was rescanned
+on 2026-10-28 — **456** tracked text files, **58** tokens that resolve to
+nothing — and every one of them was classified by its context:
+
+| What the token really is | Examples |
+|---|---|
+| A **UUID fragment** — a chat key, a session id, a user id | `e89a145c`, `fab62e1a`, `7f2c1a44`, `2b8d5c1e0f11` |
+| A **HITL question id** or a **request id** | `hitl-4934d309`, `hitl-c30af0fb`, `cab12ce4` |
+| An **inode number**, a **float**, a **file size** | `53882449`, `0694212`, `10485760` |
+| An **md5 checksum** of the tool menu | `db58a70628cfdc6d12faf17d91f159f1` |
+| An **Ollama image digest** | `0a109f422b47`, `331499cb5960` |
+| **Placeholder example data** | `a1b2c3d4…`, `abc1234`, `fedcba654321` |
+| The **left half of a unicode escape** | `0001f511` (\U0001f511), `0001f680` (\U0001f680) |
+| **Ordinary English** | `cceeded` (succeeded), `feedbac` (feedback) |
+
+**Exactly one** of the 58 is a commit SHA that no longer exists: `21063431`
+in `investigate/claude-contributor-purge/REPORT_claude_contributor_purge.md`,
+where the table row reads *"`master` | `21063431` → `0779228`"*.  That one
+is **correct as it stands** — it is the left-hand side of the record of
+the rewrite, and replacing it would destroy the very thing the row
+documents.  It is not a stale reference; it is the record of the rewrite.
+
+So the item this file named as *the next piece of work* was **a false
+premise**, and there is nothing to refresh: the commit map that the
+rewrite left behind is gone, it was a temporary file, and no
+substitution is needed.  The 18 tokens that the original count found were
+found by looking for hex, not by looking for commits.
 
 ### Previous change: the data analysis toolkit is a module
 
