@@ -5,7 +5,7 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 future agent invocation.
 
 **Last updated:** 2026-10-28 (the **deployment scripts** moved into a
-dedicated `deploy/` folder, and the script was repaired: a
+dedicated `deploy/` folder — **PR #65** — and the script was repaired: a
 non-interactive run can now obtain sudo by itself, the `.env` it writes
 names the variables the agent actually reads, and an unknown option
 fails instead of reporting success; before that, 2026-10-27 (the
@@ -142,12 +142,12 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `fix/deploy-script-sudo-noninteractive` — based on `master` at `c6e92af` (the merge of PR #56, the deployment script). The changes are **in the working tree**: not committed, not pushed. The branch is **local only** — it has no upstream — so the move into `deploy/` and the repairs are folded into the same uncommitted change. |
+| Branch | `feature/deploy-folder` — based on `master` at `c6e92af` (the merge of PR #56, the deployment script). The branch was **renamed** from `fix/deploy-script-sudo-noninteractive`, which is what it was called when the repair was the only work on it. **Committed** as `f79e1e4` and **pushed**; **PR #65** is open. |
 | Scope | Give the deployment scripts a **folder of their own**, and finish the repair of the script that was already in progress: a **non-interactive run must be able to obtain sudo by itself**. |
 | Status | Implemented and **verified**. The script and its example environment file moved from `investigate/deployment-script/` to `deploy/`, and the investigation documents stayed where they were — `investigate/` holds the *record* of a piece of work, and the implementations that came out of it live in their own place (the toolkits under `toolkits/`, the chat manager under `chat_manager/`). The script itself was repaired in nine places, and every repair is held by an invariant. |
 | Policy | **The folder is named for what it holds.** A folder called `investigate/deployment-script/` holds an investigation; the day the script shipped, the investigation had become its archive. The operator asked for *"a dedicated folder for deployment scripts"*, and the rule the rest of the repository already follows — the toolkits, the chat manager, the components — says what that folder is called: `deploy/`. |
 | Investigation | The **deployment script** itself: `investigate/deployment-script/` still holds the report, the requirements and the plan. The implementation is the deliverable and it lives in `deploy/`. |
-| State | **Verified, not yet committed.** `deploy/tests/verify_deploy_layout.py` — eleven invariants, over the folder *and* the behaviour of the script. `deploy/tests/verify_harness_catches_regressions.py` — the proof that the harness catches eleven deliberate drifts, one per invariant. `deploy/tests/test_deploy_layout.py` — the harness under pytest. Rule 4: the commit and the push need the operator's explicit approval. |
+| State | **Verified, and open as PR #65.** `deploy/tests/verify_deploy_layout.py` — eleven invariants, over the folder *and* the behaviour of the script. `deploy/tests/verify_harness_catches_regressions.py` — the proof that the harness catches eleven deliberate drifts, one per invariant. `deploy/tests/test_deploy_layout.py` — the harness under pytest. The CI gate reports **0 new failures** (40 known, 0 new, 0 fixed) — locally and in the CI run of PR #65, which is green. Rule 4: the commit and the push were made on the operator's explicit approval. |
 
 ### Latest change: the deployment scripts have a home of their own
 
@@ -248,6 +248,23 @@ python3 -m pytest deploy/tests -q
 ```
 
 Eleven invariants hold, and **11 of 11** deliberate drifts are caught.
+
+**The PR.**  <https://github.com/KostiantynBushko/agent-torvalds/pull/65> —
+*feat: give the deployment scripts a dedicated folder*.  The CI gate is
+green on it: 40 known failures, 0 new, 0 fixed.
+
+**One PR, two concerns, deliberately.**  The move and the repair are
+separate changes and would ordinarily be separate PRs.  They are folded
+together because the repair is *of the thing being moved* — shipping
+the script into its new home unchanged would have shipped it broken —
+and because the branch was already open with the repair in progress,
+uncommitted.
+
+**A note for the merge.**  The operator's working copy has an **empty,
+untracked `deploy/` directory** — it was created before the branch
+existed.  A directory that is empty does not conflict with the merge:
+git writes the files into it.  It would only refuse if a *file* stood
+in the way.
 
 ### Latest change: the empty lines are gone, and the context window is logged
 
