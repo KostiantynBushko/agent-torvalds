@@ -10,7 +10,8 @@ traced to its cause: the answer of a run was read with `str(result)`, and
 model that *reasoned but wrote no answer* left the section blank while the
 tool result that held the answer sat in the output, unread; the branch
 `investigate/empty-agent-response` holds the investigation and the repair,
-and it is **not committed yet** — Rule 4; before that, the
+**committed and pushed** on the operator's explicit approval (Rule 4) —
+commit `073288f`, no pull request yet; before that, the
 **documentation was audited** and the
 **wiki became a submodule** of the repository: the root README had no
 link to the wiki, the wiki had no link to the deployment guide, and the
@@ -154,12 +155,12 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `investigate/empty-agent-response` — based on `master` at `5a7a4a2` (the documentation audit, PR #66).  The branch holds the investigation of the **empty *Agent Response* section** and the repair that came out of it.  It is **not committed yet**: Rule 4 — the commit needs the operator's explicit approval. |
+| Branch | `investigate/empty-agent-response` — based on `master` at `5a7a4a2` (the documentation audit, PR #66).  The branch holds the investigation of the **empty *Agent Response* section** and the repair that came out of it.  **Committed and pushed** — commit `073288f`, on the operator's explicit approval (Rule 4).  **No pull request was opened**: the operator asked for the branch to be pushed and the PR to wait. |
 | Scope | A long run ends with an **empty *Agent Response* section**, while the run *had* a tool result to show.  Find where the answer is lost, and make the section say what the run found. |
 | Status | Root cause found, fix implemented, **verified**.  The answer of a run was read with `str(result)`, and `AgentOutput.__str__` returns `self.response.content or ""` — the text of the **TextBlocks** only.  A model that *reasoned but wrote no answer* therefore left the section blank, while the tool result that held the answer sat in the output the whole time, unread.  The run reported no error (`errors=0`). |
 | Policy | **A run that has something to show must show it.**  The answer of a run is read in one place (`components/agent_answer.py`), and that place never returns an empty string: when the model wrote nothing, the operator is told so and shown the last tool result and the thinking of the model.  The *model* is not what this project controls; the *rendering* is. |
 | Investigation | `investigate/empty-agent-response/` — the report, the probes (the chain that loses the answer, the model at several prompt sizes, the truncation of an oversized prompt, the window filling up), the end-to-end reproduction, the six invariants and the proof that the harness catches six deliberate drifts. |
-| State | **On the branch, not committed.** `components/agent_answer.py` (new), `components/hitl_agent.py` (one more turn when the model wrote nothing), the three entry points, `tests/test_agent_answer.py` (32 tests), the report and the probes.  The invariants: 16/16.  The drift harness: 6/6.  The CI gate: **0 new failures** (40 known, 0 new, 0 fixed). |
+| State | **Committed and pushed** — commit `073288f`, branch `origin/investigate/empty-agent-response`.  `components/agent_answer.py` (new), `components/hitl_agent.py` (one more turn when the model wrote nothing), the three entry points, `tests/test_agent_answer.py` (32 tests), the report and the probes.  The invariants: 16/16.  The drift harness: 6/6.  The CI gate: **0 new failures** (40 known, 0 new, 0 fixed). |
 
 ### Previous change: the deployment scripts have a home of their own
 
