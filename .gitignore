@@ -133,6 +133,12 @@ Thumbs.db
 # Self-development directory
 self-development/
 
+# The GitHub wiki clone. It is its own repository, with its own remote
+# (agent-torvalds.wiki.git) and its own history - the wiki pages are
+# published from there, not from this repository. Committing it here would
+# record a gitlink that no clone of this repository could resolve.
+wiki/
+
 # MikroTik RouterOS target configuration - it holds real credentials.
 # Only the annotated example (mikrotik_targets.yaml.example) is tracked.
 mikrotik_targets.yaml
