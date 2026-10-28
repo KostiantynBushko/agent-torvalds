@@ -64,6 +64,17 @@ PG_DATABASE="llama_index_db"
 PG_HOST="127.0.0.1"
 PG_PORT="5432"
 
+# Password used to bootstrap a sudo timestamp in non-interactive mode.
+# Taken from the environment (SUDO_PASSWORD) or from SUDO_PASSWORD_FILE;
+# empty means "no password source" and the script then relies on an
+# already-cached sudo. The default expansion keeps an exported value.
+SUDO_PASSWORD="${SUDO_PASSWORD:-}"
+
+# Set once the deployment itself starts. --help and --version exit
+# before that, and the EXIT trap must not report a deployment that
+# never ran.
+DEPLOYMENT_STARTED=false
+
 # Internal state tracking
 DEPLOY_TIMESTAMP="$(date +%s)"
 DEPLOY_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -74,6 +85,8 @@ WARNINGS=0
 OS_FAMILY=""
 PACKAGE_MANAGER=""
 PYTHON3_PATH=""
+PYTHON_MAJOR=""
+PYTHON_MINOR=""
 
 # ---------------------------------------------------------------------------
 # Logging Framework
@@ -84,7 +97,7 @@ PYTHON3_PATH=""
 log_info() {
     local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $*"
     echo "$msg" >&2
-    echo "$msg" >> "$LOG_FILE" 2>/dev/null || true
+    echo "$msg" 2>/dev/null >> "$LOG_FILE" || true
 }
 
 # log_warn <message>
@@ -92,7 +105,7 @@ log_info() {
 log_warn() {
     local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $*"
     echo "$msg" >&2
-    echo "$msg" >> "$LOG_FILE" 2>/dev/null || true
+    echo "$msg" 2>/dev/null >> "$LOG_FILE" || true
     ((WARNINGS++)) || true
 }
 
@@ -101,7 +114,7 @@ log_warn() {
 log_error() {
     local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $*"
     echo "$msg" >&2
-    echo "$msg" >> "$LOG_FILE" 2>/dev/null || true
+    echo "$msg" 2>/dev/null >> "$LOG_FILE" || true
     ((ERRORS++)) || true
 }
 
@@ -114,10 +127,10 @@ log_section() {
     echo "$border" >&2
     echo "  $title" >&2
     echo "$border" >&2
-    echo "" >> "$LOG_FILE" 2>/dev/null || true
-    echo "$border" >> "$LOG_FILE" 2>/dev/null || true
-    echo "  $title" >> "$LOG_FILE" 2>/dev/null || true
-    echo "$border" >> "$LOG_FILE" 2>/dev/null || true
+    echo "" 2>/dev/null >> "$LOG_FILE" || true
+    echo "$border" 2>/dev/null >> "$LOG_FILE" || true
+    echo "  $title" 2>/dev/null >> "$LOG_FILE" || true
+    echo "$border" 2>/dev/null >> "$LOG_FILE" || true
 }
 
 # log_step <step_number> <message>
@@ -126,6 +139,40 @@ log_step() {
     local step="$1"
     local msg="$2"
     log_info "Step ${step}: ${msg}"
+}
+
+# ---------------------------------------------------------------------------
+# Log File
+# ---------------------------------------------------------------------------
+
+# resolve_log_file
+# Make sure the log file can actually be written to.
+#
+# The default is /var/log/torvalds-deploy.log, which only root may
+# create, and a deployment run by an ordinary user with sudo is the
+# normal case. The project convention is ~/.torvalds/logs/, so that is
+# where the log goes when the default is not writable.
+#
+# If nothing is writable the path becomes /dev/null: every
+# `2>>"$LOG_FILE"` in the script then stays valid, so the deployment
+# still runs - it is simply not recorded.
+resolve_log_file() {
+    local dir
+    dir="$(dirname "$LOG_FILE")"
+
+    if mkdir -p "$dir" 2>/dev/null && : >> "$LOG_FILE" 2>/dev/null; then
+        return 0
+    fi
+
+    local fallback="${HOME}/.torvalds/logs/$(basename "$LOG_FILE")"
+    if mkdir -p "$(dirname "$fallback")" 2>/dev/null && : >> "$fallback" 2>/dev/null; then
+        log_warn "Cannot write to ${LOG_FILE} - logging to ${fallback} instead"
+        LOG_FILE="$fallback"
+        return 0
+    fi
+
+    log_warn "Cannot write a log file - the deployment runs without one"
+    LOG_FILE="/dev/null"
 }
 
 # ---------------------------------------------------------------------------
@@ -138,12 +185,24 @@ trap_err() {
     local line_number="$1"
     local exit_code="$2"
     log_error "Command failed at line ${line_number} with exit code ${exit_code}"
+    ((ERRORS++)) || true
 }
 
-# trap_exit
+# trap_exit <exit_status>
 # Called on script exit to print summary.
 trap_exit() {
-    if [[ "$ERRORS" -gt 0 ]]; then
+    local status="${1:-0}"
+
+    # --help, --version and an unknown option exit before the
+    # deployment starts. They are not a deployment, and they are not
+    # reported as one.
+    if [[ "$DEPLOYMENT_STARTED" != "true" ]]; then
+        return 0
+    fi
+
+    if [[ "$status" -ne 0 ]]; then
+        log_error "Deployment FAILED (exit code ${status}) with ${ERRORS} error(s) and ${WARNINGS} warning(s)"
+    elif [[ "$ERRORS" -gt 0 ]]; then
         log_error "Deployment completed with ${ERRORS} error(s) and ${WARNINGS} warning(s)"
     elif [[ "$WARNINGS" -gt 0 ]]; then
         log_warn "Deployment completed with ${WARNINGS} warning(s)"
@@ -153,7 +212,7 @@ trap_exit() {
 }
 
 trap 'trap_err ${LINENO} $?' ERR
-trap 'trap_exit' EXIT
+trap 'trap_exit $?' EXIT
 
 # ---------------------------------------------------------------------------
 # Banner & Help
@@ -174,10 +233,11 @@ print_banner() {
 EOF
 }
 
-# print_help
-# Print usage information and exit.
+# print_help <exit_code>
+# Print usage information and exit with the given code.
 print_help() {
-    cat >&2 <<EOF
+    local code="${1:-0}"
+    cat <<EOF
 ${SCRIPT_NAME} v${SCRIPT_VERSION} — Agent Torvalds Deployment Script
 
 USAGE:
@@ -225,15 +285,20 @@ EXAMPLES:
 ENVIRONMENT:
     TORVALDS_DEPLOY_DIR     Override deployment directory
     TORVALDS_NON_INTERACTIVE Set to '1' for non-interactive mode
+    SUDO_PASSWORD           Password used to bootstrap the sudo timestamp.
+                            Required for a fully unattended run unless the
+                            script is executed as root.
+    SUDO_PASSWORD_FILE      Path to a file holding that password (first line).
+                            Used when SUDO_PASSWORD is unset.
 
 EOF
-    exit 0
+    exit "$code"
 }
 
 # print_version
 # Print version and exit.
 print_version() {
-    echo "${SCRIPT_NAME} v${SCRIPT_VERSION}" >&2
+    echo "${SCRIPT_NAME} v${SCRIPT_VERSION}"
     exit 0
 }
 
@@ -249,7 +314,7 @@ parse_args() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -h|--help)       print_help ;;
+            -h|--help)       print_help 0 ;;
             -v|--version)    print_version ;;
             -n|--non-interactive) INTERACTIVE=false; shift ;;
             -s|--skip-ollama)   SKIP_OLLAMA=true; shift ;;
@@ -266,7 +331,7 @@ parse_args() {
             -O|--pg-port)       PG_PORT="$2"; shift 2 ;;
             *)
                 log_error "Unknown option: $1"
-                print_help
+                print_help 2
                 ;;
         esac
     done
@@ -313,11 +378,58 @@ check_command() {
     command -v "$1" &>/dev/null
 }
 
+# load_sudo_password
+# Populate SUDO_PASSWORD from SUDO_PASSWORD or SUDO_PASSWORD_FILE.
+# Returns 0 when a password is available, 1 otherwise.
+load_sudo_password() {
+    if [[ -n "${SUDO_PASSWORD:-}" ]]; then
+        return 0
+    fi
+
+    if [[ -n "${SUDO_PASSWORD_FILE:-}" ]]; then
+        if [[ -r "${SUDO_PASSWORD_FILE}" ]]; then
+            SUDO_PASSWORD="$(head -n 1 "${SUDO_PASSWORD_FILE}")"
+            return 0
+        fi
+        log_warn "SUDO_PASSWORD_FILE is not readable: ${SUDO_PASSWORD_FILE}"
+        return 1
+    fi
+
+    return 1
+}
+
+# bootstrap_sudo
+# Establish a usable sudo timestamp from the configured password source.
+# sudo scopes its cached timestamp to the terminal by default, so a cache
+# created by the parent process is not necessarily visible to this script.
+# Establishing it here, in the script's own context, is what works.
+# Returns 0 when a usable sudo credential is available.
+bootstrap_sudo() {
+    load_sudo_password || return 1
+
+    printf '%s\n' "$SUDO_PASSWORD" | sudo -S -v 2>/dev/null || true
+
+    if sudo -n true 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
 # run_sudo <command...>
-# Run a command with sudo, caching the password first.
+# Run a command with sudo, refreshing the cached timestamp when needed.
 run_sudo() {
-    sudo -v 2>/dev/null || true
-    sudo "$@"
+    if ! sudo -n true 2>/dev/null; then
+        bootstrap_sudo || true
+    fi
+
+    if sudo -n true 2>/dev/null; then
+        # A valid cache means sudo will not prompt, so stdin stays untouched.
+        sudo "$@"
+    elif [[ -n "$SUDO_PASSWORD" ]]; then
+        printf '%s\n' "$SUDO_PASSWORD" | sudo -S "$@"
+    else
+        sudo "$@"
+    fi
 }
 
 # wait_for_service <name> <url> <timeout_seconds>
@@ -357,13 +469,27 @@ check_root_or_sudo() {
         return 0
     fi
 
-    if ! sudo -n true 2>/dev/null; then
-        if [[ "$INTERACTIVE" == "false" ]]; then
-            log_error "Not running as root and non-interactive mode requires cached sudo"
-            return 1
-        fi
-        sudo -v
+    # Establish our own timestamp first. A cache created by the calling
+    # shell is not visible here, because sudo keys its timestamp on the
+    # terminal by default - so a script that only probes `sudo -n true`
+    # cannot bootstrap itself in non-interactive mode.
+    if bootstrap_sudo; then
+        log_info "Sudo privileges confirmed (password source)"
+        return 0
     fi
+
+    if sudo -n true 2>/dev/null; then
+        log_info "Sudo privileges confirmed (cached timestamp)"
+        return 0
+    fi
+
+    if [[ "$INTERACTIVE" == "false" ]]; then
+        log_error "Not running as root and no usable sudo credential"
+        log_error "Set SUDO_PASSWORD or SUDO_PASSWORD_FILE, run 'sudo -v' first, or run this script as root"
+        return 1
+    fi
+
+    sudo -v
     log_info "Sudo privileges confirmed"
 }
 
@@ -459,29 +585,71 @@ detect_os() {
 }
 
 # check_python3
-# Verify Python 3.8+ is available.
+# Report the Python 3 interpreter, if the machine has a usable one.
+#
+# This never fails, and that is deliberate.  The script exists to
+# provision a machine that does not have Python yet, so a missing or
+# too-old interpreter is a WARNING here - Phase 3 installs one.
+# resolve_python3() is the hard gate, and it runs after the packages
+# are installed.
 check_python3() {
     log_step 2 "Checking Python 3"
 
-    if check_command python3; then
-        PYTHON3_PATH="$(command -v python3)"
-        local version
-        version="$(${PYTHON3_PATH} --version 2>&1)"
-        log_info "Found: ${version} at ${PYTHON3_PATH}"
+    if ! check_command python3; then
+        log_warn "Python 3 not found in PATH - it will be installed with the system packages"
+        PYTHON3_PATH=""
+        PYTHON_MAJOR=""
+        PYTHON_MINOR=""
+        return 0
+    fi
 
-        # Check version >= 3.8
-        local major minor
-        major="$(${PYTHON3_PATH} -c 'import sys; print(sys.version_info.major)')"
-        minor="$(${PYTHON3_PATH} -c 'import sys; print(sys.version_info.minor)')"
+    PYTHON3_PATH="$(command -v python3)"
+    local version
+    version="$(${PYTHON3_PATH} --version 2>&1)"
+    log_info "Found: ${version} at ${PYTHON3_PATH}"
 
-        if [[ "$major" -lt 3 ]] || { [[ "$major" -eq 3 ]] && [[ "$minor" -lt 8 ]]; }; then
-            log_error "Python 3.8+ required, found ${major}.${minor}"
-            return 1
-        fi
-    else
-        log_error "Python 3 not found in PATH"
+    PYTHON_MAJOR="$(${PYTHON3_PATH} -c 'import sys; print(sys.version_info.major)')"
+    PYTHON_MINOR="$(${PYTHON3_PATH} -c 'import sys; print(sys.version_info.minor)')"
+
+    if [[ "$PYTHON_MAJOR" -lt 3 ]] || { [[ "$PYTHON_MAJOR" -eq 3 ]] && [[ "$PYTHON_MINOR" -lt 8 ]]; }; then
+        log_warn "Python ${PYTHON_MAJOR}.${PYTHON_MINOR} is older than 3.8 - a newer one will be installed"
+        PYTHON3_PATH=""
+        PYTHON_MAJOR=""
+        PYTHON_MINOR=""
+    fi
+}
+
+# resolve_python3
+# Locate the interpreter the virtual environment is built with, and
+# insist on Python 3.8 or newer.
+#
+# This is the hard gate.  check_python3() only reports, because a
+# machine without a usable interpreter is exactly what this script
+# exists to fix - so the check that matters runs after the packages
+# are in.
+resolve_python3() {
+    log_step 2 "Resolving Python 3 after the system packages were installed"
+
+    if ! check_command python3; then
+        log_error "Python 3 is still not in PATH after the package installation"
+        log_error "Install it manually and re-run the script"
         return 1
     fi
+
+    local path major minor
+    path="$(command -v python3)"
+    major="$(python3 -c 'import sys; print(sys.version_info.major)')"
+    minor="$(python3 -c 'import sys; print(sys.version_info.minor)')"
+
+    if [[ "$major" -lt 3 ]] || { [[ "$major" -eq 3 ]] && [[ "$minor" -lt 8 ]]; }; then
+        log_error "Python 3.8+ required, found ${major}.${minor} at ${path}"
+        return 1
+    fi
+
+    PYTHON3_PATH="$path"
+    PYTHON_MAJOR="$major"
+    PYTHON_MINOR="$minor"
+    log_info "Using Python ${PYTHON_MAJOR}.${PYTHON_MINOR} at ${PYTHON3_PATH}"
 }
 
 # check_git
@@ -551,8 +719,15 @@ install_system_packages() {
         apt)
             log_info "Using apt package manager"
             packages=(
+                # The interpreter itself. The script is meant to run on a
+                # machine that does not have one yet.
+                "python3"
                 "python3-venv"
                 "python3-pip"
+                # Python.h. Without it every C extension has to be built
+                # from source and fails with "Python.h: No such file or
+                # directory" - which takes the whole pip install down.
+                "python3-dev"
                 "git"
                 "build-essential"
                 "cmake"
@@ -562,6 +737,18 @@ install_system_packages() {
                 "unzip"
                 "whiptail"
             )
+            # The version-specific module provides ensurepip for the
+            # interpreter that is actually installed. The generic
+            # python3-venv metapackage alone is not enough on newer
+            # releases, where it tracks a different Python version.
+            #
+            # It is added only when an interpreter was found: with an
+            # empty PYTHON_MINOR this would be "python3.-venv", which is
+            # not a package name, and apt-get would fail on the whole
+            # batch.
+            if [[ -n "$PYTHON_MINOR" ]]; then
+                packages+=("python3.${PYTHON_MINOR}-venv")
+            fi
             ;;
         dnf)
             log_info "Using dnf package manager"
@@ -603,12 +790,15 @@ install_system_packages() {
             ;;
     esac
 
-    # Check which packages are already installed
+    # Check which packages are already installed.
+    # NOTE: `dpkg -l <name>` exits 0 for a package that dpkg knows about but
+    # that is not installed, so it cannot be used to test for installation.
+    # `dpkg-query -f '${Status}'` reports the real state.
     local to_install=()
     for pkg in "${packages[@]}"; do
         case "$PACKAGE_MANAGER" in
             apt)
-                if ! dpkg -l "$pkg" &>/dev/null; then
+                if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "^install ok installed$"; then
                     to_install+=("$pkg")
                 fi
                 ;;
@@ -635,7 +825,7 @@ install_system_packages() {
     case "$PACKAGE_MANAGER" in
         apt)
             run_sudo apt-get update -qq
-            run_sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${to_install[@]}"
+            run_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${to_install[@]}"
             ;;
         dnf)
             run_sudo dnf install -y "${to_install[@]}"
@@ -667,7 +857,7 @@ install_postgres() {
     # Install PostgreSQL packages
     case "$PACKAGE_MANAGER" in
         apt)
-            run_sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql postgresql-contrib
+            run_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends postgresql postgresql-contrib
             ;;
         dnf)
             run_sudo dnf install -y postgresql-server postgresql-contrib
@@ -769,15 +959,34 @@ setup_python_env() {
 
     local venv_dir="${DEPLOY_DIR}/.venv"
 
-    # Create venv if it doesn't exist
-    if [[ ! -d "$venv_dir" ]]; then
+    # Create the venv if it is missing or incomplete. Testing for the
+    # directory alone is not enough, and neither is testing for the
+    # interpreter: when ensurepip fails, venv leaves a half-built tree
+    # behind that has a working bin/python but no bin/activate and no
+    # pip, and that tree is never repaired.
+    if [[ ! -x "${venv_dir}/bin/python" ]] || [[ ! -f "${venv_dir}/bin/activate" ]]; then
+        if [[ -d "$venv_dir" ]]; then
+            log_warn "Existing virtual environment at ${venv_dir} is incomplete - recreating it"
+            rm -rf "$venv_dir"
+        fi
+
         log_info "Creating Python virtual environment at ${venv_dir}"
-        ${PYTHON3_PATH} -m venv "$venv_dir"
+        if ! ${PYTHON3_PATH} -m venv "$venv_dir"; then
+            log_error "Could not create the virtual environment at ${venv_dir}"
+            log_error "On Debian/Ubuntu the venv module is a separate package:"
+            log_error "  apt install python3.${PYTHON_MINOR}-venv"
+            return 1
+        fi
     else
         log_info "Virtual environment already exists at ${venv_dir}"
     fi
 
     # Activate and upgrade pip
+    if [[ ! -f "${venv_dir}/bin/activate" ]]; then
+        log_error "Virtual environment is missing bin/activate: ${venv_dir}"
+        return 1
+    fi
+
     log_info "Upgrading pip, setuptools, wheel..."
     source "${venv_dir}/bin/activate"
 
@@ -789,9 +998,38 @@ setup_python_env() {
     local req_file="${DEPLOY_DIR}/requirements.txt"
     if [[ -f "$req_file" ]]; then
         log_info "Installing Python dependencies from requirements.txt..."
-        pip install -r "$req_file" 2>>"$LOG_FILE" || {
-            log_warn "Some pip packages may have failed to install — check log"
-        }
+        if ! pip install -r "$req_file" 2>>"$LOG_FILE"; then
+            # pip builds every wheel before it installs anything, so a single
+            # package that cannot be built leaves the environment completely
+            # empty. Fall back to installing the requirements one by one so
+            # that a single bad entry cannot take the deployment down.
+            log_warn "Bulk install failed - retrying requirement by requirement"
+            log_warn "Check ${LOG_FILE} for the build errors"
+
+            local failed=()
+            local pkg spec
+            while IFS= read -r spec || [[ -n "$spec" ]]; do
+                pkg="${spec%%#*}"
+                pkg="${pkg//[[:space:]]/}"
+                [[ -z "$pkg" ]] && continue
+                [[ "$pkg" == "-"* ]] && continue
+
+                if pip install "$pkg" 2>>"$LOG_FILE"; then
+                    log_info "  installed ${pkg}"
+                else
+                    log_warn "  could not install ${pkg}"
+                    failed+=("$pkg")
+                fi
+            done < "$req_file"
+
+            if [[ ${#failed[@]} -gt 0 ]]; then
+                log_warn "Could not install: ${failed[*]}"
+            else
+                log_info "All requirements installed individually"
+            fi
+        else
+            log_info "Python dependencies installed"
+        fi
     else
         log_warn "requirements.txt not found at ${req_file}"
     fi
@@ -889,9 +1127,15 @@ bootstrap_config() {
 
 # ---------------------------------------------------------------------------
 # Ollama Configuration
+#
+# The variable names below are the ones the agent actually reads:
+#   TORVALDS_MODEL        - the chat model (agent-torvalds.py)
+#   TORVALDS_OLLAMA_HOST  - the endpoint (components/ollama_config.py)
+# TORVALDS_EMBEDDING_MODEL is written for reference only: the retriever
+# hard-codes "nomic-embed-text" in agent_tool_retriever.py.
 # ---------------------------------------------------------------------------
-TORVALDS_OLLAMA_BASE_URL=http://localhost:11434
-TORVALDS_CHAT_MODEL=${CHAT_MODEL}
+TORVALDS_OLLAMA_HOST=http://localhost:11434
+TORVALDS_MODEL=${CHAT_MODEL}
 TORVALDS_EMBEDDING_MODEL=${EMBEDDING_MODEL}
 
 # ---------------------------------------------------------------------------
@@ -944,10 +1188,10 @@ verify_deployment() {
     log_step 1 "Verifying Python virtual environment"
     if [[ -x "${DEPLOY_DIR}/.venv/bin/python" ]]; then
         log_info "✓ Python virtual environment OK"
-        ((checks_passed++))
+        ((checks_passed++)) || true
     else
         log_error "✗ Python virtual environment missing or broken"
-        ((checks_failed++))
+        ((checks_failed++)) || true
     fi
 
     # Check 2: Python imports
@@ -955,10 +1199,10 @@ verify_deployment() {
     if [[ -x "${DEPLOY_DIR}/.venv/bin/python" ]]; then
         if "${DEPLOY_DIR}/.venv/bin/python" -c "import llama_index" 2>/dev/null; then
             log_info "✓ llama_index import OK"
-            ((checks_passed++))
+            ((checks_passed++)) || true
         else
             log_warn "✗ llama_index import failed"
-            ((checks_failed++))
+            ((checks_failed++)) || true
         fi
     fi
 
@@ -967,10 +1211,10 @@ verify_deployment() {
         log_step 3 "Verifying Ollama connectivity"
         if curl -sf http://localhost:11434/api/version &>/dev/null; then
             log_info "✓ Ollama server responding"
-            ((checks_passed++))
+            ((checks_passed++)) || true
         else
             log_warn "✗ Ollama server not responding"
-            ((checks_failed++))
+            ((checks_failed++)) || true
         fi
     else
         log_info "Ollama verification skipped (--skip-ollama)"
@@ -984,10 +1228,10 @@ verify_deployment() {
             -d "$PG_DATABASE" -U "$PG_USER" \
             -c "SELECT 1" &>/dev/null; then
             log_info "✓ PostgreSQL connectivity OK"
-            ((checks_passed++))
+            ((checks_passed++)) || true
         else
             log_warn "✗ PostgreSQL connectivity test failed"
-            ((checks_failed++))
+            ((checks_failed++)) || true
         fi
     else
         log_info "PostgreSQL verification skipped (--with-postgres not specified)"
@@ -1046,6 +1290,12 @@ EOF
 main() {
     parse_args "$@"
 
+    # Before anything is logged, and before anything is redirected to
+    # the log file.
+    resolve_log_file
+
+    DEPLOYMENT_STARTED=true
+
     print_banner
     log_section "Agent Torvalds Deployment — ${DEPLOY_DATE}"
     log_info "Version: ${SCRIPT_VERSION}"
@@ -1068,6 +1318,10 @@ main() {
 
     # Phase 3: System Packages
     install_system_packages
+
+    # The interpreter the packages just installed - this is the one the
+    # virtual environment is built with.
+    resolve_python3
 
     # Phase 4: PostgreSQL
     install_postgres

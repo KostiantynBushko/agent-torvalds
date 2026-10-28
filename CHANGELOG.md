@@ -1,5 +1,92 @@
 # Changelog
 
+## [Unreleased] - The deployment scripts have a home of their own
+
+### Added
+- **`deploy/`** — the dedicated folder for the deployment scripts.  The
+  script used to live in `investigate/deployment-script/`, next to the
+  report that described it, which is the wrong home for it:
+  `investigate/` holds the *record* of a piece of work, and the
+  implementations that came out of it live in their own place — the
+  toolkits under `toolkits/`, the chat manager under `chat_manager/`, the
+  deployment scripts here.  The investigation documents stayed where
+  they were.
+
+  | Path | What it is |
+  |---|---|
+  | `deploy/deploy-torvalds.sh` | The deployment script, moved |
+  | `deploy/deploy-torvalds.sh.example.env` | The example environment file, moved |
+  | `deploy/README.md` | What the folder holds, and how to use it |
+  | `deploy/tests/` | The folder's contract harness, and the proof that it catches deliberate breakage |
+
+- **`deploy/tests/verify_deploy_layout.py`** — eleven invariants that
+  hold the folder and the script to their contract, and
+  **`deploy/tests/verify_harness_catches_regressions.py`** — the proof
+  that the harness catches eleven deliberate drifts, one per invariant.
+  Both run under pytest as well.
+
+### Changed
+- **The generated `.env` names the variables the agent actually reads.**
+  The script wrote `TORVALDS_CHAT_MODEL` and `TORVALDS_OLLAMA_BASE_URL`;
+  the agent reads `TORVALDS_MODEL` and `TORVALDS_OLLAMA_HOST`, so the
+  `.env` it produced configured nothing.  `TORVALDS_EMBEDDING_MODEL` is
+  still written, but only for reference — the retriever hard-codes
+  `nomic-embed-text`.
+
+- **`sudo env VAR=value cmd`, never `sudo VAR=value cmd`.**  sudo only
+  honours a variable set on the command line when the `setenv` option is
+  set in sudoers, or when the variable survives `env_reset`.  Neither is
+  guaranteed, and when the variable is refused sudo aborts the whole
+  command.  `sudo env VAR=value cmd` always works, because `env` runs
+  *as root*, after sudo has already reset the environment.
+
+- **`dpkg-query` instead of `dpkg -l`.**  `dpkg -l <name>` exits **0**
+  for a package that dpkg knows about but that is not installed, so it
+  could not be used to test for installation.
+
+- **The virtual environment is repaired when it is incomplete.**  When
+  `ensurepip` fails, `venv` leaves a half-built tree behind — a working
+  `bin/python`, but no `bin/activate` and no `pip` — and that tree was
+  never repaired.  The script now recreates it.
+
+- **A single bad requirement cannot take the deployment down.**  pip
+  builds every wheel before it installs anything, so one package that
+  cannot be built left the environment completely empty.  The bulk
+  install now falls back to installing the requirements one by one.
+
+- **The log file is made writable before anything is redirected to it.**
+  The default is `/var/log/torvalds-deploy.log`, which only root may
+  create — and every `2>>"$LOG_FILE"` in the script is a redirection,
+  and a redirection that cannot be opened means the command does not
+  run at all.  An ordinary user would have silently skipped every pip
+  and apt call.  The log now falls back to `~/.torvalds/logs/`, and the
+  script says so.
+
+- **`--help` and `--version` are queries.**  They write to **stdout**
+  now, so `--help | less` shows something, and they no longer report a
+  deployment summary.  The deployment itself keeps logging to stderr.
+
+- **The script needs no Python of its own.**  A missing or too-old
+  interpreter was a fatal error, and the script died before the phase
+  that installs one — on exactly the machine it exists to fix.  It is a
+  warning now, and the hard check runs after the packages are in.
+
+### Fixed
+- **An unknown option exits 2, not 0.**  The script logged the error,
+  printed the help and exited **0** — a deployment that was given a bad
+  flag and reported success.
+
+- **A non-interactive run can obtain sudo by itself.**  sudo keys its
+  cached timestamp on the terminal, so a cache created by the calling
+  shell is not visible to a script, and the script could never bootstrap
+  itself.  It now establishes its own timestamp, from `SUDO_PASSWORD` or
+  `SUDO_PASSWORD_FILE`.
+
+- **`python3.-venv` is no longer requested.**  The version-specific
+  venv module was added to the apt list unconditionally, and with an
+  empty `PYTHON_MINOR` — which is what a machine without Python has —
+  apt-get failed on the whole batch.
+
 ## [Unreleased] - The prompt in the debug log is readable
 
 ### Added

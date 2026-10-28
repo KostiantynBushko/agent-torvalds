@@ -527,6 +527,12 @@ Ollama server for both the chat model and the embedding model. The
 [Local LLM Setup](#local-llm-setup-ollama) section below walks through it in
 detail.
 
+> **Or let the script do it.** `deploy/deploy-torvalds.sh` performs the
+> system packages, the virtual environment, Ollama with the models and a
+> starter `.env` in one pass — on a machine that does not have Python
+> either. See [`deploy/README.md`](deploy/README.md) and section 17 of
+> [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ### Prerequisites
 
 - Python 3.8+
@@ -1152,6 +1158,11 @@ manager.shutdown()
 | +-- ci.md                     # Continuous integration: the CI test gate and the known-failure baseline
 | +-- extended_logging_statistics.md
 | +-- on_demand_tool_loading.md
+| deploy/                       # Deployment scripts
+| +-- README.md                 # What the folder holds, and how to use it
+| +-- deploy-torvalds.sh        # The automated deployment script
+| +-- deploy-torvalds.sh.example.env  # Example environment file
+| +-- tests/                    # The folder's contract harness, and the proof that it catches drifts
 | components/                   # Helper modules and utilities
 | +-- README.md                 # Components documentation
 | +-- __init__.py

@@ -146,16 +146,31 @@ Test scenarios:
 
 ## File Structure
 
+The investigation documents stay here. The implementation moved to the
+dedicated `deploy/` folder at the repository root: an implementation that
+ships should not live in a folder named for the *investigation* that
+produced it.
+
 ```
 self-development/investigate/deployment-script/
 ├── INVESTIGATION_REPORT.md          # This analysis
 ├── REQUIREMENTS.md                  # Functional & non-functional requirements
-├── IMPLEMENTATION_PLAN.md           # This document
-├── deploy-torvalds.sh               # The deployment script (to be created)
+└── IMPLEMENTATION_PLAN.md           # This document
+
+self-development/deploy/
+├── README.md                        # What the folder holds, and how to use it
+├── deploy-torvalds.sh               # The deployment script
 ├── deploy-torvalds.sh.example.env   # Example .env template
-└── tests/                           # Test scripts (future)
-    └── test-deploy-idempotency.sh
+└── tests/
+    ├── verify_deploy_layout.py      # The folder's contract harness
+    ├── test_deploy_layout.py        # The harness, under pytest
+    └── verify_harness_catches_regressions.py  # The proof that it catches drifts
 ```
+
+The harness and the drift proof replaced the `test-deploy-idempotency.sh`
+that was planned here: they check the contract of the folder and the
+behaviour of the script, and the drift proof shows they catch a
+deliberate breakage.
 
 ---
 
