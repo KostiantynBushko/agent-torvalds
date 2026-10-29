@@ -601,6 +601,220 @@ class TestTheFileTheAgentCreatesForItself(TempDirCase):
 
 
 # ---------------------------------------------------------------------------
+# Writing into the file
+# ---------------------------------------------------------------------------
+
+class TestWritingIntoTheFile(TempDirCase):
+    """What ``\\config <setting> <value>`` writes."""
+
+    def a_config(self, text: str = "") -> Config:
+        """A configuration that reads a file with the given text."""
+        path = self.tmp / "config.toml"
+        if text:
+            path.write_text(text, encoding="utf-8")
+        return Config(path=path, environ={})
+
+    def the_file(self, config: Config) -> str:
+        """The text of the file the configuration reads."""
+        return config.path.read_text(encoding="utf-8")
+
+    def test_the_value_is_written_into_the_file(self):
+        config = self.a_config('[logging]\nfile = "old.log"\n')
+        value, problem = config.set_value("logging.file", "agent.output.log")
+        self.assertIsNone(problem)
+        self.assertEqual(value, "agent.output.log")
+        self.assertIn('file = "agent.output.log"', self.the_file(config))
+
+    def test_a_commented_setting_is_uncommented(self):
+        """That is where the template leaves every setting."""
+        config = self.a_config(
+            "[logging]\n# The log file.\n# file = \"\"\n# dir = \"x\"\n"
+        )
+        config.set_value("logging.file", "agent.output.log")
+        text = self.the_file(config)
+        self.assertIn('file = "agent.output.log"', text)
+        self.assertNotIn('# file = ', text)
+
+    def test_the_comments_of_the_operator_survive(self):
+        config = self.a_config(
+            "[logging]\n# my own note\nfile = \"old.log\"\n# another note\n"
+        )
+        config.set_value("logging.file", "new.log")
+        text = self.the_file(config)
+        self.assertIn("# my own note", text)
+        self.assertIn("# another note", text)
+        self.assertIn('file = "new.log"', text)
+
+    def test_the_order_of_the_settings_survives(self):
+        config = self.a_config(
+            '[llm]\nmodel = "a"\nhost = "b"\n[logging]\nfile = "c"\n'
+        )
+        config.set_value("logging.file", "d")
+        text = self.the_file(config)
+        self.assertLess(text.index('model = "a"'), text.index('host = "b"'))
+        self.assertLess(text.index('host = "b"'), text.index('file = "d"'))
+
+    def test_a_setting_that_is_not_in_the_file_is_added(self):
+        config = self.a_config('[llm]\nmodel = "a"\n')
+        config.set_value("logging.file", "agent.output.log")
+        text = self.the_file(config)
+        self.assertIn("[logging]", text)
+        self.assertIn('file = "agent.output.log"', text)
+
+    def test_a_section_that_is_not_in_the_file_is_created(self):
+        config = self.a_config('[llm]\nmodel = "a"\n')
+        config.set_value("logging.file", "agent.output.log")
+        text = self.the_file(config)
+        self.assertIn("[logging]", text)
+        self.assertIn('file = "agent.output.log"', text)
+        # the section of the setting is the one it went into
+        self.assertLess(text.index("[logging]"), text.index('file = "'))
+
+    def test_the_value_is_escaped(self):
+        """A path with a backslash in it has to survive the trip."""
+        config = self.a_config('[logging]\nfile = ""\n')
+        config.set_value("logging.file", r"C:\Users\<user>\agent.log")
+        import tomllib
+        with config.path.open("rb") as handle:
+            data = tomllib.load(handle)
+        self.assertEqual(
+            data["logging"]["file"], r"C:\Users\<user>\agent.log"
+        )
+
+    def test_an_unknown_setting_is_a_problem(self):
+        config = self.a_config("")
+        value, problem = config.set_value("logging.nonsense", "x")
+        self.assertIsNone(value)
+        self.assertIn("no setting called", problem)
+
+    def test_a_value_that_is_not_usable_is_a_problem(self):
+        """The file can never carry a value the agent would refuse."""
+        config = self.a_config('[hitl]\ntimeout = 60\n')
+        before = self.the_file(config)
+        value, problem = config.set_value("hitl.timeout", "soon")
+        self.assertIsNone(value)
+        self.assertIsNotNone(problem)
+        self.assertEqual(self.the_file(config), before)
+
+    def test_a_number_is_written_as_a_number(self):
+        config = self.a_config('[hitl]\ntimeout = -1\n')
+        config.set_value("hitl.timeout", "120")
+        import tomllib
+        with config.path.open("rb") as handle:
+            data = tomllib.load(handle)
+        self.assertEqual(data["hitl"]["timeout"], 120)
+        self.assertNotEqual(data["hitl"]["timeout"], "120")
+
+    def test_a_boolean_is_written_as_a_boolean(self):
+        config = self.a_config('[agent]\nverbose_events = false\n')
+        config.set_value("agent.verbose_events", "yes")
+        import tomllib
+        with config.path.open("rb") as handle:
+            data = tomllib.load(handle)
+        self.assertIs(data["agent"]["verbose_events"], True)
+
+    def test_the_file_stays_private(self):
+        config = self.a_config("")
+        config.set_value("logging.file", "agent.output.log")
+        mode = stat.S_IMODE(config.path.stat().st_mode)
+        self.assertEqual(mode, 0o600)
+
+    def test_no_temporary_file_is_left_behind(self):
+        config = self.a_config("")
+        config.set_value("logging.file", "agent.output.log")
+        leftovers = [p.name for p in config.path.parent.iterdir() if p != config.path]
+        self.assertEqual(leftovers, [])
+
+    def test_the_value_is_read_back_at_once(self):
+        config = self.a_config("")
+        config.set_value("logging.file", "agent.output.log")
+        self.assertEqual(config.get("logging.file"), "agent.output.log")
+        self.assertIn("config file", config.source("logging.file"))
+
+    def test_a_file_that_is_not_there_is_created(self):
+        config = self.a_config("")
+        self.assertFalse(config.path.exists())
+        value, problem = config.set_value("logging.file", "agent.output.log")
+        self.assertIsNone(problem)
+        self.assertTrue(config.path.is_file())
+        self.assertIn('file = "agent.output.log"', self.the_file(config))
+
+
+# ---------------------------------------------------------------------------
+# The command
+# ---------------------------------------------------------------------------
+
+class TestTheConfigCommand(TempDirCase):
+    """The ``\\config`` command — show it, and change it."""
+
+    def a_config(self, text: str = "") -> Config:
+        """A configuration that reads a file with the given text."""
+        path = self.tmp / "config.toml"
+        if text:
+            path.write_text(text, encoding="utf-8")
+        return Config(path=path, environ={})
+
+    def the_output(self, config: Config, argument: str) -> str:
+        """What the command prints."""
+        import io
+
+        from rich.console import Console
+
+        from components.config_view import handle_config
+
+        stream = io.StringIO()
+        console = Console(file=stream, width=100, force_terminal=False)
+        handle_config(config, argument, console)
+        return stream.getvalue()
+
+    def test_without_an_argument_the_table_is_shown(self):
+        config = self.a_config("")
+        config.get("llm.model")
+        output = self.the_output(config, "")
+        self.assertIn("llm.model", output)
+
+    def test_one_setting_is_shown_in_detail(self):
+        config = self.a_config('[logging]\nfile = "agent.output.log"\n')
+        output = self.the_output(config, "logging.file")
+        self.assertIn("logging.file", output)
+        self.assertIn("agent.output.log", output)
+        self.assertIn("config file", output)
+
+    def test_a_value_is_written_into_the_file(self):
+        config = self.a_config('[logging]\nfile = ""\n')
+        output = self.the_output(config, "logging.file agent.output.log")
+        self.assertIn("agent.output.log", output)
+        self.assertIn(
+            'file = "agent.output.log"',
+            config.path.read_text(encoding="utf-8"),
+        )
+
+    def test_a_value_with_a_space_is_written(self):
+        config = self.a_config('[logging]\nfile = ""\n')
+        self.the_output(config, "logging.file my agent.log")
+        self.assertIn(
+            'file = "my agent.log"',
+            config.path.read_text(encoding="utf-8"),
+        )
+
+    def test_an_unknown_setting_says_so(self):
+        config = self.a_config("")
+        output = self.the_output(config, "logging.nonsense")
+        self.assertIn("no setting called", output)
+
+    def test_a_value_that_is_not_usable_says_so(self):
+        config = self.a_config('[hitl]\ntimeout = 60\n')
+        output = self.the_output(config, "hitl.timeout soon")
+        self.assertIn("must be a number", output)
+
+    def test_the_wiring_is_in_both_orchestrators(self):
+        """The argument has to reach the command."""
+        for filename in ("agent-torvalds.py", "agent-torvalds-mw.py"):
+            source = (ROOT / filename).read_text(encoding="utf-8")
+            self.assertIn("handle_config(config, argument", source, filename)
+
+
+# ---------------------------------------------------------------------------
 # The effective configuration
 # ---------------------------------------------------------------------------
 

@@ -144,8 +144,9 @@ COMMAND_SPECS: Tuple[CommandSpec, ...] = (
     CommandSpec(
         name="\\config",
         description="Show the effective configuration and where every value "
-                    "came from.",
-        usage="\\config",
+                    "came from, and write a value into the configuration "
+                    "file.",
+        usage="\\config [setting] [value]",
         category="Statistics",
     ),
 

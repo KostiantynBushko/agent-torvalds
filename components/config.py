@@ -68,7 +68,9 @@ Retriever Keywords: config, configuration, config file, toml, xdg, settings,
 from __future__ import annotations
 
 import os
+import re
 import sys
+import tempfile
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -187,6 +189,86 @@ def default_config_path(environ: Optional[Mapping[str, str]] = None) -> Path:
     if raw:
         return Path(raw).expanduser()
     return default_config_dir(env) / CONFIG_FILENAME
+
+
+def _edit_setting(text: str, setting: Setting, value: Any) -> str:
+    """The text of the file with the setting written into it.
+
+    The file is **edited**, not rewritten: the comments of the operator,
+    the order of the settings and everything that is not this setting
+    are left exactly as they were.
+
+    Three cases, in this order:
+
+    1. the setting is **in** the file — the line is replaced;
+    2. the setting is in the file but **commented out** — the line is
+       uncommented and the value is written into it.  That is where the
+       template leaves every setting;
+    3. the setting is not in the file at all — it is added to its
+       section, and the section is created when it is not there either.
+
+    Args:
+        text: The text of the file.
+        setting: The setting to write.
+        value: The value to write.
+
+    Returns:
+        The new text of the file.
+    """
+    rendered = f"{setting.option} = {_render_toml(value, setting.kind)}"
+    lines = text.splitlines(keepends=True)
+
+    section_start: Optional[int] = None
+    section_end: Optional[int] = None
+    option_line: Optional[int] = None
+
+    current: Optional[str] = None
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if current == setting.section and section_end is None:
+                section_end = index
+            current = stripped[1:-1].strip()
+            if current == setting.section and section_start is None:
+                section_start = index
+            continue
+        if current != setting.section:
+            continue
+        for pattern in (_ACTIVE_OPTION, _COMMENTED_OPTION):
+            match = pattern.match(line)
+            if match and match.group("option") == setting.option:
+                option_line = index
+                break
+        if option_line is not None:
+            break
+
+    # 1. and 2. — the setting is there, commented or not.
+    if option_line is not None:
+        lines[option_line] = rendered + "\n"
+        return "".join(lines)
+
+    # 3. — the setting is not in the file.
+    if section_start is None:
+        # The section is not there either: add both at the end.
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] += "\n"
+        while lines and not lines[-1].strip():
+            lines.pop()
+        lines.append("")
+        lines.append(f"[{setting.section}]")
+        lines.append(rendered)
+        lines.append("")
+        return "".join(lines)
+
+    # The section is there: the setting goes at the end of it, before
+    # the blank line that separates it from the next section.
+    if section_end is None:
+        section_end = len(lines)
+    insert_at = section_end
+    while insert_at > section_start + 1 and not lines[insert_at - 1].strip():
+        insert_at -= 1
+    lines.insert(insert_at, rendered + "\n")
+    return "".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +458,32 @@ SETTINGS: tuple[Setting, ...] = (
 )
 
 
+def _toml_string(value: Any) -> str:
+    """A TOML basic string, with the characters that would end it escaped.
+
+    A value that comes from the operator — a path with a backslash in
+    it, a name with a quote in it — has to survive the trip into the
+    file.  Without the escaping, ``C:\\Users\\<user>`` would be
+    read back as ``C:Users<user>``.
+    """
+    text = str(value)
+    escaped: list[str] = []
+    for character in text:
+        if character == "\\":
+            escaped.append("\\\\")
+        elif character == '"':
+            escaped.append('\\"')
+        elif character == "\n":
+            escaped.append("\\n")
+        elif character == "\t":
+            escaped.append("\\t")
+        elif ord(character) < 0x20 or ord(character) == 0x7F:
+            escaped.append(f"\\u{ord(character):04X}")
+        else:
+            escaped.append(character)
+    return '"' + "".join(escaped) + '"'
+
+
 def _render_toml(value: Any, kind: str) -> str:
     """Render a value the way it would be written in the file.
 
@@ -390,7 +498,18 @@ def _render_toml(value: Any, kind: str) -> str:
         return str(value)
     if value is None:
         return '""'
-    return f'"{value}"'
+    return _toml_string(value)
+
+
+#: The line that sets an option: ``model = "x"``.
+_ACTIVE_OPTION = re.compile(
+    r"^(?P<indent>\s*)(?P<option>[A-Za-z0-9_-]+)(?P<space>\s*)=(?P<value>.*)$"
+)
+
+#: The commented line that shows an option: ``# model = "x"``.
+_COMMENTED_OPTION = re.compile(
+    r"^(?P<indent>\s*)#\s*(?P<option>[A-Za-z0-9_-]+)(?P<space>\s*)=(?P<value>.*)$"
+)
 
 
 #: The values that count as "yes".
@@ -802,6 +921,97 @@ class Config:
         self.present = True
         self.created = written
         return written
+
+    def set_value(self, key: str, raw: Any) -> tuple[Any, Optional[str]]:
+        """Write a setting into the configuration file.
+
+        The file is **edited**, not rewritten: the comments of the
+        operator, the order of the settings, and everything that is not
+        this setting are left exactly as they were.  A setting that is
+        not in the file yet is added to its section — and a setting that
+        is in the file **commented out** is uncommented, because that is
+        where the template leaves it.
+
+        The value is coerced exactly as a value that was **read** is
+        coerced, so the file can never carry a value the agent would
+        refuse.
+
+        The file is read **once**, when the agent starts.  A setting
+        that the agent resolved at the start of the session applies on
+        the next start; the ones that are resolved while it runs apply
+        at once.
+
+        Args:
+            key: The dotted name of the setting — ``llm.model``.
+            raw: The value, as the operator typed it.
+
+        Returns:
+            The value that was written, and the problem when there was
+            one.  A problem is never fatal.
+        """
+        setting = self.settings.get(key)
+        if setting is None:
+            problem = f"there is no setting called {key}"
+            self.problems.append(problem)
+            return None, problem
+
+        value, ok = self._coerce(setting, raw)
+        if not ok:
+            # The coercion has said what is wrong with the value.
+            problem = (
+                self.problems[-1]
+                if self.problems
+                else f"the value of {key} is not usable"
+            )
+            return None, problem
+
+        try:
+            if self.path.is_file():
+                current = self.path.read_text(encoding="utf-8")
+            else:
+                current = self.default_template()
+            edited = _edit_setting(current, setting, value)
+            self._write_text(edited)
+        except OSError as exc:
+            problem = (
+                f"the configuration file {self.path} could not be written "
+                f"({exc})"
+            )
+            self.problems.append(problem)
+            return None, problem
+
+        # The file changed: the values it carries are the ones now.
+        self._load()
+        return value, None
+
+    def _write_text(self, text: str) -> None:
+        """Write the file, atomically, and keep it private.
+
+        The file is written **beside** the old one and moved over it,
+        so a crash in the middle cannot leave a half-written file where
+        the configuration was.
+        """
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        handle = tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=str(self.path.parent),
+            prefix=self.path.name + ".",
+            suffix=".tmp",
+            delete=False,
+        )
+        try:
+            with handle:
+                handle.write(text)
+            os.chmod(handle.name, 0o600)
+            os.replace(handle.name, self.path)
+        except BaseException:
+            # A half-written file is worse than no file.
+            try:
+                os.unlink(handle.name)
+            except OSError:
+                pass
+            raise
 
     def write_default(
         self,
