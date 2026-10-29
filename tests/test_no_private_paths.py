@@ -38,6 +38,7 @@ HOME_PATTERNS = (
 PLACEHOLDERS = frozenset({
     "user",
     "<user>",
+    "<account>",
     "agent",
     "username",
     "name",
@@ -118,7 +119,7 @@ class TestNothingPublishesThePrivateFolder(unittest.TestCase):
     def test_the_check_finds_a_home_when_one_is_there(self):
         """A check that has never failed proves nothing."""
         pattern = HOME_PATTERNS[0]
-        self.assertIsNotNone(pattern.search("/home/somebody/.config/x.toml"))
+        self.assertIsNotNone(pattern.search("/home/<account>/.config/x.toml"))
         self.assertIsNone(pattern.search("~/.config/x.toml"))
 
     def test_the_placeholder_is_recognised_as_a_placeholder(self):
@@ -126,6 +127,22 @@ class TestNothingPublishesThePrivateFolder(unittest.TestCase):
         match = HOME_PATTERNS[0].search("/home/user/.config/x.toml")
         self.assertIsNotNone(match)
         self.assertIn(match.group(1), PLACEHOLDERS)
+
+    def test_this_file_does_not_fail_the_check(self):
+        """The file that defines the patterns is scanned like any other.
+
+        It must not fail on its own docstring, and it must not fail on
+        the patterns themselves — the parenthesis that opens the group
+        is not a character of a home directory.
+        """
+        text = self.the_text(Path(__file__).resolve())
+        for pattern in HOME_PATTERNS:
+            for match in pattern.finditer(text):
+                self.assertIn(
+                    match.group(1),
+                    PLACEHOLDERS,
+                    f"the check matches its own file at {match.group(0)}",
+                )
 
 
 if __name__ == "__main__":
