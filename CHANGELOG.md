@@ -69,6 +69,14 @@ All notable changes to this project are documented in this file.
   and the layer it came from.  It works in the classic REPL (a table) and
   in the multi-window TUI (the document pane).
 
+- **The agent writes the file for itself.**  When it starts and the file
+  is not there, it creates the commented template — every setting of it is
+  a comment, so **nothing changes about the way the agent runs**.  Only
+  the default location is written to: a file the operator named with
+  `TORVALDS_CONFIG` is theirs, and the agent does not create it.  An
+  existing file is never overwritten, and a home directory that cannot be
+  written to is a warning, not a failure.
+
 - **`--write-default-config`** — writes a commented template with every
   setting, its default, the environment variable that overrides it and
   one line of explanation.

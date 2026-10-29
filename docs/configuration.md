@@ -163,13 +163,41 @@ file did must not change its meaning. `TORVALDS_MODEL` still wins over
 
 ## 5. The template
 
+### The agent writes it for itself
+
+The agent creates the file **when it starts**, if it is not there yet:
+
+```console
+$ python agent-torvalds.py
+Config file: /home/kbush/.config/torvalds/config.toml
+The configuration template was created at /home/kbush/.config/torvalds/config.toml — every setting in it is commented out, so the defaults are used
+```
+
+The template carries **no settings** — every one of its lines is a
+comment — so the file changes **nothing** about the way the agent runs.
+It is a starting point to edit, not a change of behaviour.
+
+Three rules about it:
+
+| | |
+|---|---|
+| **Only the default location.** | A file the operator named with `TORVALDS_CONFIG` is theirs: they pointed at it on purpose, and the agent does not create it. |
+| **Never an overwrite.** | If the file is there, it is left exactly as it is — the operator's own settings are worth more than a fresh copy of the defaults. |
+| **Never fatal.** | A home directory that cannot be written to is a warning, and the agent boots with the defaults. |
+
+The creation belongs to the **startup**, not to the import: a module that
+wrote into the home directory when it was imported would litter every
+process that imports it.
+
+### Writing it by hand
+
 ```console
 $ python agent-torvalds.py --write-default-config
 ```
 
-writes a **commented** file: every setting, its default, the environment
-variable that overrides it and one line of explanation. Uncomment a line,
-change the value, and it is yours.
+writes the same **commented** file: every setting, its default, the
+environment variable that overrides it and one line of explanation.
+Uncomment a line, change the value, and it is yours.
 
 Three things about the write are deliberate:
 

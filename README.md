@@ -794,6 +794,18 @@ dir  = "~/.torvalds/logs"
 max_size = "10MB"
 ```
 
+The agent **writes the file for itself** when it starts and it is not
+there yet — a commented template, every setting explained, and nothing
+uncommented, so it changes nothing about the way the agent runs:
+
+```console
+$ python agent-torvalds.py
+Config file: /home/kbush/.config/torvalds/config.toml
+The configuration template was created at /home/kbush/.config/torvalds/config.toml — every setting in it is commented out, so the defaults are used
+```
+
+The same file can be written by hand:
+
 ```console
 $ python agent-torvalds.py --write-default-config
 The configuration template was written to /home/kbush/.config/torvalds/config.toml

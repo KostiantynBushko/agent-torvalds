@@ -1264,6 +1264,13 @@ async def main():
         include_custom_instructions=True,
     )
 
+    # The configuration file is created when it is not there: the agent
+    # writes the template, every setting of it is a comment, and the
+    # operator gets a starting point to edit.  Nothing is overwritten,
+    # and a home directory that cannot be written to is not a reason to
+    # stop.
+    config.ensure_default()
+
     console.print("[cyan]Torvalds AI Agent[/cyan]")
     console.print(f"[dim]Model: {MODEL} | Max iterations: {MAX_ITERATIONS}[/dim]")
     console.print(f"[dim]Logging: {args.log_level}[/dim]")
@@ -1272,6 +1279,11 @@ async def main():
     else:
         console.print(
             f"[dim]Config file: none at {config.path} — the defaults are used[/dim]"
+        )
+    if config.created is not None:
+        console.print(
+            f"[dim]The configuration template was created at {config.created} — "
+            f"every setting in it is commented out, so the defaults are used[/dim]"
         )
     if file_config is not None:
         console.print(

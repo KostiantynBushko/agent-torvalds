@@ -377,6 +377,10 @@ class Config:
         #: The problems found in the file.  They are reported, never fatal.
         self.problems: list[str] = []
 
+        #: The file that was **created** by :meth:`ensure_default`, when
+        #: it was.  ``None`` when nothing was created.
+        self.created: Optional[Path] = None
+
         #: The problems that were already reported.  A problem is reported
         #: **once**: the file is validated when it is read, and again
         #: when a setting is resolved, and the operator must not see the
@@ -664,6 +668,68 @@ class Config:
             )
         lines.append("")
         return "\n".join(lines)
+
+    def ensure_default(self) -> Optional[Path]:
+        """Create the configuration file, if it is not there yet.
+
+        The agent writes the **template** into the default location when
+        it starts and the file is not there.  The template carries **no
+        settings** — every one of its lines is a comment — so the file
+        changes nothing about the way the agent runs.  It is a starting
+        point for the operator, not a change of behaviour.
+
+        Only the **default** location is written to.  A file the operator
+        named with ``TORVALDS_CONFIG`` is theirs: they pointed at it on
+        purpose, and a file that is not there is not an invitation to
+        create one.
+
+        Nothing here is fatal.  A home directory that cannot be written
+        to is a **problem**, and the agent boots.
+
+        Returns:
+            The path that was created, or ``None`` when nothing was
+            written.
+        """
+        env = self.environ
+        if (env.get(CONFIG_PATH_ENV) or "").strip():
+            # The operator named the file with the environment variable.
+            # They pointed at it on purpose, and a file that is not there
+            # is not an invitation to create one.
+            return None
+        if self.path != default_config_dir(env) / CONFIG_FILENAME:
+            # It is not the default location either — it was named in the
+            # code, or by the caller.  It is not ours to create.
+            return None
+
+        if self.path.is_symlink():
+            self.problems.append(
+                f"the configuration file {self.path} is a symbolic link — "
+                f"the defaults are used"
+            )
+            return None
+
+        if self.path.exists():
+            # It is there, and it is never overwritten.
+            self.present = self.path.is_file()
+            return None
+
+        try:
+            written = self.write_default()
+        except OSError as exc:
+            if isinstance(exc, FileExistsError) and self.path.exists():
+                # Another agent created it between the check and the
+                # write.  The file is there, and it is not ours.
+                self.present = True
+                return None
+            self.problems.append(
+                f"the configuration file {self.path} could not be created "
+                f"({exc}) — the defaults are used"
+            )
+            return None
+
+        self.present = True
+        self.created = written
+        return written
 
     def write_default(
         self,
