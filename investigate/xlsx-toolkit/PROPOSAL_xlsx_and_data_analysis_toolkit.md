@@ -214,4 +214,4 @@ pandas>=2.0.0
 ---
 
 *Proposal based on investigation: `investigate/investigation_xlsx_support.md`*  
-*Created in: `/home/agent/ai-agent-investigate/agent-torvalds/self-development`*
+*Created in: `~/ai-agent-investigate/agent-torvalds/self-development`*

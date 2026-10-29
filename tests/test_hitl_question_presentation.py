@@ -384,7 +384,7 @@ class TestDecoratedQuestion:
     """The wrapping of a question does not change what it asks.
 
     The operator reported that a question with three choices was prompted
-    with ``[y/N]`` (``/home/kbush/torvald-log/hitl_questions_issue/
+    with ``[y/N]`` (``~/torvald-log/hitl_questions_issue/
     wrong-user-input.txt``).  The agent had written the question quoted
     and labelled — ``question: 'Which one should I use?'`` — and the
     quotes kept the "which" out of the head of the question, so the

@@ -3,8 +3,8 @@ Verbatim payloads from the two operator-reported HITL issues.
 
 Source files (read-only, outside the repository):
 
-* ``/home/kbush/torvald-log/hitl_questions_issue/hitl-wrong-question.md``
-* ``/home/kbush/torvald-log/hitl_questions_issue/hitl_dublicate_question.md``
+* ``~/torvald-log/hitl_questions_issue/hitl-wrong-question.md``
+* ``~/torvald-log/hitl_questions_issue/hitl_dublicate_question.md``
 
 The two texts below are the *assistant messages* that the agent produced in
 the sessions the operator reported.  They are the payload that reached

@@ -38,7 +38,7 @@ set -euo pipefail
 REPO="KostiantynBushko/agent-torvalds"
 REMOTE="git@github.com:${REPO}.git"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_CLONE="${SOURCE_CLONE:-/home/kbush/ai-agent-investiagte/agent-torvalds}"
+SOURCE_CLONE="${SOURCE_CLONE:-$HOME/ai-agent-investiagte/agent-torvalds}"
 
 APPLY=0
 SCRATCH="/tmp/agent-torvalds-claude-purge"

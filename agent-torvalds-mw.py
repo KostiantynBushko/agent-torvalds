@@ -1156,6 +1156,11 @@ async def run_classic_repl(
         console.print(
             f"[dim]Config file: none at {config.path} — the defaults are used[/dim]"
         )
+    if config.created is not None:
+        console.print(
+            f"[dim]The configuration template was created at {config.created} — "
+            f"every setting in it is commented out, so the defaults are used[/dim]"
+        )
     if file_config is not None:
         console.print(
             f"[dim]Log file: {file_config.log_file} "
@@ -1338,6 +1343,13 @@ async def main():
             "[dim]Uncomment a line and change the value to make it yours.[/dim]"
         )
         return
+
+    # The configuration file is created when it is not there: the agent
+    # writes the template, every setting of it is a comment, and the
+    # operator gets a starting point to edit.  Nothing is overwritten,
+    # and a home directory that cannot be written to is not a reason to
+    # stop.
+    config.ensure_default()
 
     # The file-logging configuration is resolved **once**, after the
     # arguments are parsed: the flags win over the environment, and the

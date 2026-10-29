@@ -3,7 +3,7 @@
 **Status:** root cause found, fix implemented, verified against a reproduction of the
 failing run.
 **Branch:** `fix/context-guard-agent-loop`
-**Reported symptom:** `/home/kbush/torvald-log/agent-in-loop.md`
+**Reported symptom:** `~/torvald-log/agent-in-loop.md`
 **Model:** `richardyoung/qwen3.6-27b-abliterated:Q4_K_M` (local, Ollama)
 
 ---

@@ -19,7 +19,7 @@ A new environment variable `TORVALDS_GITHUB_TOKEN` must be introduced for authen
 ### 2.1 File Under Analysis
 
 **File**: `agent_git_toolkit.py`  
-**Location**: `/home/kbush/ai-agent-investiagte/agent-torvalds/agent_git_toolkit.py`  
+**Location**: `~/ai-agent-investiagte/agent-torvalds/agent_git_toolkit.py`  
 **Lines of Code**: ~900 lines  
 **Current Dependencies**: `subprocess`, `os`, `logging`, `datetime`, `typing`, `llama_index.core.tools.FunctionTool`
 

@@ -425,7 +425,7 @@ Add environment variables for tuning:
 ### Compact Mode (Default)
 
 ```
->>> what is the latest commit in /home/kbush/ai-agent-investiagte/agent-torvalds?
+>>> what is the latest commit in ~/agent-torvalds?
 Processing...
 
 ─────────────────────────────────────

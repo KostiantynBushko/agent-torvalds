@@ -791,7 +791,7 @@ and cannot be triggered by the model.
 
 ```
 >>> \chat-sessions
-Sessions for user 'kbush':
+Sessions for user 'the-operator':
 ID                                     Name                 Type       Active   Created
 ----------------------------------------------------------------------------------------------------
 7f2c1a44-6f0e-4a1c-9a3e-2b8d5c1e0f11   Postgres migration   custom              2026-10-20 10:02
@@ -802,7 +802,7 @@ ID                                     Name                 Type       Active   
 Switched to session: 'Postgres migration' (custom)
 
 >>> \chat-info
-Active session for user 'kbush':
+Active session for user 'the-operator':
   ID:       7f2c1a44-6f0e-4a1c-9a3e-2b8d5c1e0f11
   Name:     Postgres migration
   Type:     custom
@@ -894,7 +894,7 @@ except SettingError as exc:
 
 ```
 >>> \chat-user
-Settings for user 'kbush':
+Settings for user 'the-operator':
   chat_token_limit  5000 tokens
   backend_type      postgres string
 

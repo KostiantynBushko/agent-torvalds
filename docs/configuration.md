@@ -31,7 +31,7 @@ when it is broken.
 
 ```console
 $ python agent-torvalds.py --write-default-config
-The configuration template was written to /home/kbush/.config/torvalds/config.toml
+The configuration template was written to ~/.config/torvalds/config.toml
 Uncomment a line and change the value to make it yours.
 
 $ $EDITOR ~/.config/torvalds/config.toml
@@ -43,31 +43,57 @@ The agent announces what it found at startup:
 
 ```
 Logging: INFO
-Config file: /home/kbush/.config/torvalds/config.toml
+Config file: ~/.config/torvalds/config.toml
 ```
 
 ---
 
 ## 2. The location
 
-```
-~/.config/torvalds/config.toml
-```
-
-That is the **XDG Base Directory** standard — `$XDG_CONFIG_HOME` when it is
-set, `~/.config` otherwise. It completes the triad the project already
-keeps:
+The file follows the convention of the platform the agent runs on:
 
 | | |
 |---|---|
-| `~/.config/torvalds/config.toml` | the operator's **intent** — this file |
+| **Linux and the BSDs** | `~/.config/torvalds/config.toml` |
+| **macOS** | `~/Library/Application Support/torvalds/config.toml` |
+| **Windows** | `%APPDATA%\torvalds\config.toml` — `C:\Users\<user>\AppData\Roaming\torvalds\config.toml` |
+
+`$XDG_CONFIG_HOME` is honoured on **every** platform when it is set — it
+is an explicit choice by the operator, and it beats the convention of the
+system. A **relative** path is ignored: the XDG standard says so, and a
+relative path would make the configuration of the agent depend on the
+directory it was started in.
+
+On Windows, `%APPDATA%` is used when it is set, and
+`~/AppData/Roaming` when it is not.
+
+The file is **named** the same everywhere — `config.toml` — so the
+documentation of the project describes one file, and the operator who
+moves between the three systems finds it where the system expects it.
+
+### The data does not move
+
+Only the configuration file follows the convention of the platform. What
+the agent **produced** stays where it is, on every system:
+
+| | |
+|---|---|
 | `~/.torvalds/chat_manager.db` | what the agent **produced** |
 | `~/.torvalds/logs/` | what the agent **produced** |
 | `~/.cache/torvalds/agent_cache.json` | what the agent **produced** |
 
-The data does not move. A database and a rotating log are not
-configuration — they are what the agent wrote — and moving the chat
-history would break the sessions of everybody who already has one.
+A database and a rotating log are not configuration — they are what the
+agent wrote — and moving the chat history would break the sessions of
+everybody who already has one.
+
+### The file is private, where "private" means something
+
+The file is created with the mode `0600` **at creation**, so there is no
+moment at which it is readable by every account on the box.
+
+On **Windows** there are no POSIX permissions: the access is decided by
+the ACL of the directory. The mode is still asked for — it costs nothing,
+and it keeps the file writable, which is what the agent needs.
 
 `TORVALDS_CONFIG` points the agent at another file. It exists for the
 tests, for a second installation, and for the operator who keeps the
@@ -163,13 +189,41 @@ file did must not change its meaning. `TORVALDS_MODEL` still wins over
 
 ## 5. The template
 
+### The agent writes it for itself
+
+The agent creates the file **when it starts**, if it is not there yet:
+
+```console
+$ python agent-torvalds.py
+Config file: ~/.config/torvalds/config.toml
+The configuration template was created at ~/.config/torvalds/config.toml — every setting in it is commented out, so the defaults are used
+```
+
+The template carries **no settings** — every one of its lines is a
+comment — so the file changes **nothing** about the way the agent runs.
+It is a starting point to edit, not a change of behaviour.
+
+Three rules about it:
+
+| | |
+|---|---|
+| **Only the default location.** | A file the operator named with `TORVALDS_CONFIG` is theirs: they pointed at it on purpose, and the agent does not create it. |
+| **Never an overwrite.** | If the file is there, it is left exactly as it is — the operator's own settings are worth more than a fresh copy of the defaults. |
+| **Never fatal.** | A home directory that cannot be written to is a warning, and the agent boots with the defaults. |
+
+The creation belongs to the **startup**, not to the import: a module that
+wrote into the home directory when it was imported would litter every
+process that imports it.
+
+### Writing it by hand
+
 ```console
 $ python agent-torvalds.py --write-default-config
 ```
 
-writes a **commented** file: every setting, its default, the environment
-variable that overrides it and one line of explanation. Uncomment a line,
-change the value, and it is yours.
+writes the same **commented** file: every setting, its default, the
+environment variable that overrides it and one line of explanation.
+Uncomment a line, change the value, and it is yours.
 
 Three things about the write are deliberate:
 
@@ -193,12 +247,12 @@ won?"* — and it has to have an answer.
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ setting                    ┃ value                  ┃ source                                       ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ llm.model                  │ from-the-file:q4       │ config file /home/kbush/.config/torvalds/…    │
+│ llm.model                  │ from-the-file:q4       │ config file ~/.config/torvalds/…    │
 │ llm.max_iterations         │ 2000                   │ environment variable TORVALDS_MAX_ITERATIONS │
 │ llm.host                   │ http://localhost:11434 │ default                                      │
-│ hitl.timeout               │ 99                     │ config file /home/kbush/.config/torvalds/…    │
+│ hitl.timeout               │ 99                     │ config file ~/.config/torvalds/…    │
 └────────────────────────────┴────────────────────────┴──────────────────────────────────────────────┘
-The configuration file: /home/kbush/.config/torvalds/config.toml
+The configuration file: ~/.config/torvalds/config.toml
 ```
 
 The command works in the classic REPL and in the multi-window TUI — the

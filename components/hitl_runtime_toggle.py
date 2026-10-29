@@ -176,7 +176,7 @@ class HITLRuntimeToggle:
     # ------------------------------------------------------------------
 
     async def process_command(self, command: str) -> Optional[str]:
-        """Process an inline command string.
+        r"""Process an inline command string.
 
         Recognised commands:
         - ``\toggle-hitl`` — Toggle HITL on/off

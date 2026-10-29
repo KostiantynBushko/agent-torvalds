@@ -3,7 +3,7 @@
 **Date**: 2026-10-24
 **Status**: Investigation complete — 7 defects found, all reproduced empirically
 **Location**: `self-development/investigate/hitl-questions-issue/`
-**Reported by**: the operator, in `/home/kbush/torvald-log/hitl_questions_issue/`
+**Reported by**: the operator, in `~/torvald-log/hitl_questions_issue/`
 **Affected components**: `components/hitl_agent.py`, `components/event_consumer.py`, `components/console_input_module.py`, `components/human_loop_handler.py`
 **Base commit**: `16bbd83` (master)
 **Branch**: `investigate/hitl-questions-issue`

@@ -153,6 +153,59 @@ question was not answered; act on your own judgement."*
 
 ---
 
+## Rule 8 — Never expose the private folder of the operator
+
+The repository is **public**.  The home directory of the operator — the
+name of the account, and the path that carries it — is **private**, and
+it must never be published: not in the source, not in the documentation,
+not in a commit message, not in the body of a pull request, not in a
+comment.
+
+What is published is the **system default**, written the way the
+documentation of a project writes it:
+
+| | |
+|---|---|
+| `/home/<user>/.config/torvalds/config.toml` | `~/.config/torvalds/config.toml` |
+| `/home/<user>/.torvalds/logs/agent.log` | `~/.torvalds/logs/agent.log` |
+| the name of the account | `the-operator` |
+| `<user>@example.com` | `operator@example.com` |
+
+The examples of this rule are written with a **placeholder**, on purpose:
+a rule that names the private folder in order to forbid it has already
+published it.
+
+The same holds for the **name** of the account, on its own: it is
+private even without the path in front of it.
+
+This is not only about the home directory.  Nothing that identifies the
+operator — the account, the machine, the directories of the machine —
+belongs in a public repository.
+
+**In the code, a path that has to work on the machine of the operator is
+computed, not written down.**  A literal path in the source is a path
+that is wrong on every other machine:
+
+```python
+# wrong — it names one operator and one machine
+sys.path.insert(0, '/home/<user>/<project>/self-development')
+
+# right — it is the directory of the file itself
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+```
+
+**A check before every push.**  The agent searches the staged content,
+the commit message and the body of the pull request for the home
+directory of the operator before it pushes, and it reports what it
+found.  A finding is fixed, not explained away.
+
+The operator stated this on 2026-10-29, after finding the home
+directory of the operator in the body of a pull request.
+
+---
+
+---
+
 ## Current self-development work
 
 | Item | Status |
@@ -965,7 +1018,7 @@ EventConsumer._on_agent_input: prompt: 5 messages
 EventConsumer._on_agent_input:   [0] system: You are Torvalds, a technical AI assistant that interacts with the operating system.
 EventConsumer._on_agent_input:   [1] user: I want to improve debug message for context window
 EventConsumer._on_agent_input:   [3] assistant: thinking: The user asks for a better debug message. | tool call: pwd(path=/)
-EventConsumer._on_agent_input:   [4] tool: output: /home/kbush
+EventConsumer._on_agent_input:   [4] tool: output: ~
 ```
 
 | Path | Change |
@@ -2270,7 +2323,7 @@ nobody answered.
 ### Previous change: a decorated question is asked as the question it is
 
 The operator reported it a third time
-(`/home/kbush/torvald-log/hitl_questions_issue/wrong-user-input.txt`): a
+(`~/torvald-log/hitl_questions_issue/wrong-user-input.txt`): a
 question with three choices was prompted with `[y/N]`. The agent had written
 the question as `question: 'Which one should I use?'` — the quotes and the
 label kept the "which" out of the head of the question, so the "should I"
