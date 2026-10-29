@@ -117,6 +117,47 @@ base_url = get_ollama_base_url()   # e.g. 'http://localhost:11434'
 
 ---
 
+### `file_logging.py`
+The rotating log file and the symlink to the current one.
+
+**Purpose:** Lets the agent write its log into a file, rotated at a
+predefined size, with a symlink to the current log file next to the
+rotated generations.
+
+**Features:**
+- `RotatingFileHandler` from the **standard library** — the subclass adds
+  the symlink and the file mode (`0600`); a plain `FileHandler` would
+  never rotate, and the file would grow until the disk was full
+- The symlink points at the **path** of the live log file, not at its
+  inode, so it survives every rotation untouched
+- The size is written the way an operator writes it — `10MB`, `512K`,
+  `1G` — and an unknown unit is reported rather than ignored
+- The file logging is **off by default**, and it is a **tee**: the
+  stderr handler stays
+- A missing feature **degrades**: a directory that cannot be created, a
+  file that cannot be opened and a symlink that cannot be created each
+  warn and let the agent boot
+
+**Usage:**
+```python
+from components.file_logging import (
+    add_logging_arguments,   # the five flags of the command line
+    build_file_handler,      # the handler, or None when it degrades
+    resolve_config,          # the flags and the environment -> a config
+)
+
+# in parse_args():
+add_logging_arguments(parser)
+
+# in main(), after the arguments are parsed:
+config = resolve_config(log_file=args.log_file, log_dir=args.log_dir)
+handler = build_file_handler(config, logging.INFO)
+```
+
+See [`docs/logging.md`](../docs/logging.md) for the full documentation.
+
+---
+
 ### `__init__.py`
 Package initialization file.
 
@@ -134,6 +175,7 @@ Package initialization file.
 
 ## Recent Updates
 
+- **2026-10-29**: Added `file_logging.py` — the rotating log file, the size parser and the symlink
 - **PR #5**: Moved `agent_stats_handler.py` to `components/stats_handler.py` for better organization
 - **September 2026**: Added comprehensive debug logging throughout all components
 - **September 2026**: Extracted SpinnerController components and enhanced with whiptail support
