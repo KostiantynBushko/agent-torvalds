@@ -813,6 +813,17 @@ $ python agent-torvalds.py --write-default-config
 The configuration template was written to ~/.config/torvalds/config.toml
 ```
 
+A value can be changed from the menu, and it is written into the file:
+
+```console
+>>> \config logging.file agent.output.log
+logging.file is now agent.output.log
+  written to ~/.config/torvalds/config.toml
+```
+
+The file is **edited**, not rewritten: your comments and the order of the
+settings stay as they are.
+
 The **order of things** is the one the project already used, with the file
 inserted underneath the environment variables:
 
