@@ -727,7 +727,7 @@ CLI flags override environment variables, exactly as `--hitl-timeout` overrides
     {
       "id": "torvalds-voice",
       "family": "kokoro_tts",
-      "path": "/home/kbush/ai-agent-investiagte/models/TTS/kokoro-82m-bf16.gguf",
+      "path": "~/ai-agent-investiagte/models/TTS/kokoro-82m-bf16.gguf",
       "task": "tts",
       "mode": "offline",
       "busy_timeout_ms": 15000

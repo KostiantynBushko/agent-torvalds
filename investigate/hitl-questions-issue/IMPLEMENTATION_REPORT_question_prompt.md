@@ -411,7 +411,7 @@ Each of the three defects has a test that fails without its fix:
 ## 9. The third round — a decorated question is still a yes/no question
 
 The operator reported it again, in
-`/home/kbush/torvald-log/hitl_questions_issue/wrong-user-input.txt`:
+`~/torvald-log/hitl_questions_issue/wrong-user-input.txt`:
 
 ```
 🤖 Agent asks:

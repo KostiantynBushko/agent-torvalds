@@ -20,7 +20,7 @@ from llama_index.core.base.llms.types import ChatMessage, MessageRole
 
 from components.chat_message import to_string
 
-LOG = Path("/home/kbush/torvald-log/chat-message.md")
+LOG = Path.home() / "torvald-log" / "chat-message.md"
 
 if not LOG.exists():
     print(f"The log {LOG} is not there — nothing to replay.")

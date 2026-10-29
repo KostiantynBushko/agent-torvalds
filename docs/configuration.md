@@ -31,7 +31,7 @@ when it is broken.
 
 ```console
 $ python agent-torvalds.py --write-default-config
-The configuration template was written to /home/kbush/.config/torvalds/config.toml
+The configuration template was written to ~/.config/torvalds/config.toml
 Uncomment a line and change the value to make it yours.
 
 $ $EDITOR ~/.config/torvalds/config.toml
@@ -43,7 +43,7 @@ The agent announces what it found at startup:
 
 ```
 Logging: INFO
-Config file: /home/kbush/.config/torvalds/config.toml
+Config file: ~/.config/torvalds/config.toml
 ```
 
 ---
@@ -195,8 +195,8 @@ The agent creates the file **when it starts**, if it is not there yet:
 
 ```console
 $ python agent-torvalds.py
-Config file: /home/kbush/.config/torvalds/config.toml
-The configuration template was created at /home/kbush/.config/torvalds/config.toml — every setting in it is commented out, so the defaults are used
+Config file: ~/.config/torvalds/config.toml
+The configuration template was created at ~/.config/torvalds/config.toml — every setting in it is commented out, so the defaults are used
 ```
 
 The template carries **no settings** — every one of its lines is a
@@ -247,12 +247,12 @@ won?"* — and it has to have an answer.
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ setting                    ┃ value                  ┃ source                                       ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ llm.model                  │ from-the-file:q4       │ config file /home/kbush/.config/torvalds/…    │
+│ llm.model                  │ from-the-file:q4       │ config file ~/.config/torvalds/…    │
 │ llm.max_iterations         │ 2000                   │ environment variable TORVALDS_MAX_ITERATIONS │
 │ llm.host                   │ http://localhost:11434 │ default                                      │
-│ hitl.timeout               │ 99                     │ config file /home/kbush/.config/torvalds/…    │
+│ hitl.timeout               │ 99                     │ config file ~/.config/torvalds/…    │
 └────────────────────────────┴────────────────────────┴──────────────────────────────────────────────┘
-The configuration file: /home/kbush/.config/torvalds/config.toml
+The configuration file: ~/.config/torvalds/config.toml
 ```
 
 The command works in the classic REPL and in the multi-window TUI — the

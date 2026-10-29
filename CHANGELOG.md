@@ -4,6 +4,42 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+#### The private folder of the operator is never published
+
+- **The home directory of the operator was published.**  The repository
+  is public, and the home of the operator — the name of the account and
+  the path that carries it — is private.  It was in the documentation,
+  in the reports of the investigations, in the examples of the
+  toolkits, in a test fixture and in the body of a pull request.
+
+  It is written the way the documentation of a project writes it now:
+  `~/.config/torvalds/config.toml` instead of the absolute path, and
+  the name of the account is not written down at all.
+
+- **The paths that have to work on the machine of the operator are
+  computed, not written down.**  Three of them were literal paths, and
+  they were wrong on every other machine:
+
+  | | |
+  |---|---|
+  | `test_live_agent_hitl.py` | the directory of the file itself |
+  | `investigate/context-window-proof/replay_the_operator_log.py` | `Path.home()` |
+  | `agent-torvalds-cpp.py` | `os.path.expanduser`, with `TORVALDS_CPP_MODEL` |
+
+  The model path of the C++ agent was `"${HOME}/..."` — a **shell**
+  variable, in a Python file, where it is not expanded and never was.
+
+- **The check is in the build.**  `tests/test_no_private_paths.py`
+  looks for the **shape** of a home directory in every tracked file,
+  and for the home of the machine the test runs on — **computed**,
+  never written down.  It was proven against a leak: with a home in a
+  tracked file, the check fails and names the file and the line.
+
+  The generic placeholders — `/home/user/...` — are not a home of
+  anybody and are left alone.
+
 ### Added
 
 #### The configuration file — `~/.config/torvalds/config.toml`
@@ -1088,7 +1124,7 @@ All notable changes to this project are documented in this file.
   EventConsumer._on_agent_input:   [0] system: You are Torvalds, a technical AI assistant that interacts with the operating system.
   EventConsumer._on_agent_input:   [1] user: I want to improve debug message for context window
   EventConsumer._on_agent_input:   [3] assistant: thinking: The user asks for a better debug message. | tool call: pwd(path=/)
-  EventConsumer._on_agent_input:   [4] tool: output: /home/kbush
+  EventConsumer._on_agent_input:   [4] tool: output: ~
   ```
 
   A message shows its **text**, its **thinking** and the **tool calls**

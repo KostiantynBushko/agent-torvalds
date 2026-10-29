@@ -153,3 +153,7 @@ mikrotik_targets.local.yaml
 # cleaned of.  It is a local safety net for the footer normalisation and
 # must not be committed to a repository the operator wants Claude-free.
 pr-body-backup-2026-10-27/
+
+# The project manager's workspace registration — it carries the
+# home directory of the operator, and it is never published.
+.agentworkspace.json

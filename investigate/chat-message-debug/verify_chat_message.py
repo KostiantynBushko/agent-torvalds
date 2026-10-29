@@ -91,7 +91,7 @@ def sample_prompt() -> List[ChatMessage]:
                 ToolCallBlock(tool_name="pwd", tool_kwargs={"path": "/"}),
             ],
         ),
-        ChatMessage(role=MessageRole.TOOL, content="output: /home/kbush"),
+        ChatMessage(role=MessageRole.TOOL, content="output: ~"),
     ]
 
 

@@ -6,9 +6,11 @@ import asyncio
 import sys
 import os
 import importlib
+from pathlib import Path
 
-# Add self-development to path
-sys.path.insert(0, '/home/kbush/ai-agent-investiagte/agent-torvalds/self-development')
+# Add self-development to path — the directory of this file, so the
+# script works on every machine and for every operator.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from rich.console import Console
 

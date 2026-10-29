@@ -82,10 +82,10 @@ this report and the accompanying proposal live under
 
 | Path | Role in the investigation |
 |---|---|
-| `/home/kbush/ai-agent-investiagte/text-to-speach/audio.cpp` | The audio inference framework (the *engine* side) |
-| `/home/kbush/ai-agent-investiagte/models/TTS/` | Locally downloaded TTS weights (Kokoro, MagpieTTS, OmniVoice) |
-| `/home/kbush/ai-agent-investiagte/agent-torvalds/` | The agent (the *consumer* side) |
-| `/home/kbush/ai-agent-investiagte/agent-torvalds/self-development/` | Where this report and the proposal are written |
+| `~/ai-agent-investiagte/text-to-speach/audio.cpp` | The audio inference framework (the *engine* side) |
+| `~/ai-agent-investiagte/models/TTS/` | Locally downloaded TTS weights (Kokoro, MagpieTTS, OmniVoice) |
+| `~/ai-agent-investiagte/agent-torvalds/` | The agent (the *consumer* side) |
+| `~/ai-agent-investiagte/agent-torvalds/self-development/` | Where this report and the proposal are written |
 
 **Method.** Static reading of both code bases against the repository's own
 conventions; then empirical validation — the `audio.cpp` CLI and HTTP server

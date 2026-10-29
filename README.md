@@ -754,7 +754,7 @@ EventConsumer._on_agent_input: prompt: 5 messages
 EventConsumer._on_agent_input:   [0] system: You are Torvalds, a technical AI assistant that interacts with the operating system.
 EventConsumer._on_agent_input:   [1] user: I want to improve debug message for context window
 EventConsumer._on_agent_input:   [3] assistant: thinking: The user asks for a better debug message. | tool call: pwd(path=/)
-EventConsumer._on_agent_input:   [4] tool: output: /home/kbush
+EventConsumer._on_agent_input:   [4] tool: output: ~
 ```
 
 A message is rendered as its **role**, a colon, and what it carries:
@@ -802,15 +802,15 @@ uncommented, so it changes nothing about the way the agent runs:
 
 ```console
 $ python agent-torvalds.py
-Config file: /home/kbush/.config/torvalds/config.toml
-The configuration template was created at /home/kbush/.config/torvalds/config.toml — every setting in it is commented out, so the defaults are used
+Config file: ~/.config/torvalds/config.toml
+The configuration template was created at ~/.config/torvalds/config.toml — every setting in it is commented out, so the defaults are used
 ```
 
 The same file can be written by hand:
 
 ```console
 $ python agent-torvalds.py --write-default-config
-The configuration template was written to /home/kbush/.config/torvalds/config.toml
+The configuration template was written to ~/.config/torvalds/config.toml
 ```
 
 The **order of things** is the one the project already used, with the file
@@ -854,7 +854,7 @@ log file** next to the rotated generations:
 ```console
 $ python agent-torvalds.py --log-file agent.log
 ...
-Log file: /home/kbush/.torvalds/logs/agent.log (rotated at 10485760 bytes, 5 generations kept)
+Log file: ~/.torvalds/logs/agent.log (rotated at 10485760 bytes, 5 generations kept)
 ```
 
 | Flag | Environment variable | Default | What it does |

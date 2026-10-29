@@ -2,7 +2,7 @@
 
 **Status:** root cause found, fix implemented, verified against the live model.
 **Branch:** `investigate/no-user-query-error`
-**Reported symptom:** `/home/kbush/torvald-log/exel.txt`
+**Reported symptom:** `~/torvald-log/exel.txt`
 
 ---
 

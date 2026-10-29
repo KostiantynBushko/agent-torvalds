@@ -1,6 +1,6 @@
 # Investigation: the HITL question is wrong, and it is shown twice
 
-**Reported by**: the operator — `/home/kbush/torvald-log/hitl_questions_issue/`
+**Reported by**: the operator — `~/torvald-log/hitl_questions_issue/`
 (`hitl-wrong-question.md`, `hitl_dublicate_question.md`)
 **Date**: 2026-10-24
 **Branch**: `investigate/hitl-questions-issue` (in the `self-development` clone)

@@ -17,7 +17,7 @@ This module renders the same messages the way they are meant to be read::
     system: You are Torvalds, a technical AI assistant that interacts with the operating system.
     user: I want to improve debug message for context window
     assistant: thinking: The user asks for a better debug message. | tool call: pwd(path=/)
-    tool: output: /home/kbush
+    tool: output: ~
 
 Why a function and not a method
 -------------------------------

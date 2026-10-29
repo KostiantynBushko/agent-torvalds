@@ -81,7 +81,7 @@ def prompt() -> list:
                 ToolCallBlock(tool_name="pwd", tool_kwargs={"path": "/"}),
             ],
         ),
-        ChatMessage(role=MessageRole.TOOL, content="output: /home/kbush"),
+        ChatMessage(role=MessageRole.TOOL, content="output: ~"),
     ]
 
 
@@ -314,7 +314,7 @@ class TestEventConsumerAgentInput:
         assert "user: I want to improve debug message" in text
         assert "thinking: The user asks for a better log." in text
         assert "tool call: pwd(path=/)" in text
-        assert "tool: output: /home/kbush" in text
+        assert "tool: output: ~" in text
 
     @pytest.mark.asyncio
     async def test_the_debug_log_does_not_carry_the_repr(

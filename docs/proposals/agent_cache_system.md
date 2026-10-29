@@ -25,7 +25,7 @@ A persistent cache file to store operational and technical context during the ag
   "last_updated": "2026-09-11T10:46:54",
   "sessions": [],
   "context": {
-    "current_directory": "/home/kbush/...",
+    "current_directory": "~/...",
     "active_databases": [],
     "running_processes": [],
     "git_repos": {}
