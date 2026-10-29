@@ -665,15 +665,71 @@ class Config:
         lines.append("")
         return "\n".join(lines)
 
-    def write_default(self, path: Optional[Path | str] = None) -> Path:
+    def write_default(
+        self,
+        path: Optional[Path | str] = None,
+        overwrite: bool = False,
+    ) -> Path:
         """Write the commented template, and return the path it was written to.
 
-        The file is written with the mode ``0600``: it may hold a host, a
-        a model and a path, and it belongs to the operator alone.
+        The file is created with the mode ``0600`` **at creation**: it may
+        hold a host, a model and a path, and it belongs to the operator
+        alone — a file that is briefly readable by every account on the
+        box is a file that was exposed.  Creating it with the mode is
+        the only way to be sure there is no such moment.
+
+        An existing file is **not** overwritten.  The template is a
+        starting point, and the settings the operator wrote into it are
+        worth more than a fresh copy of the defaults: running
+        ``--write-default-config`` twice must not throw away what was
+        written in between.
+
+        A symbolic link is **never** written through.  The link and the
+        file it points at are two different things, and only the operator
+        knows which one they meant.
+
+        Args:
+            path: Where to write.  The configured path when it is omitted.
+            overwrite: Write over an existing file.  Off by default.
+
+        Returns:
+            The path that was written.
+
+        Raises:
+            FileExistsError: The file is there already, or the path is a
+                symbolic link, and nothing was written.
         """
         target = Path(path).expanduser() if path is not None else self.path
+
+        if target.is_symlink():
+            raise FileExistsError(
+                f"{target} is a symbolic link — the template was not written"
+            )
+        if target.exists() and not overwrite:
+            raise FileExistsError(
+                f"{target} already exists — the template was not written, "
+                f"and the file was left as it is"
+            )
+
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(self.default_template(), encoding="utf-8")
+
+        # O_EXCL makes the creation atomic: the file is either created
+        # here, or it was there already and nothing is written to it.
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        if not overwrite:
+            flags |= os.O_EXCL
+        handle = os.open(target, flags, 0o600)
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                stream.write(self.default_template())
+        except BaseException:
+            # A half-written template is worse than no template.
+            try:
+                os.unlink(target)
+            except OSError:
+                pass
+            raise
+
         try:
             os.chmod(target, 0o600)
         except OSError:

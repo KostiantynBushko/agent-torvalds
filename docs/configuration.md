@@ -171,8 +171,13 @@ writes a **commented** file: every setting, its default, the environment
 variable that overrides it and one line of explanation. Uncomment a line,
 change the value, and it is yours.
 
-The file is written with the mode `0600` — it may hold a host, a model
-and a path, and it belongs to the operator alone.
+Three things about the write are deliberate:
+
+| | |
+|---|---|
+| **The file is created with the mode `0600`.** | Not chmod'ed afterwards — created that way. A file that is briefly readable by every account on the box is a file that was exposed. |
+| **An existing file is not overwritten.** | The template is a starting point, and the settings the operator wrote into it are worth more than a fresh copy of the defaults. Running the command twice does not throw away what was written in between — the agent says so and stops. |
+| **A symbolic link is never written through.** | The link and the file it points at are two different things, and only the operator knows which one they meant. |
 
 ---
 

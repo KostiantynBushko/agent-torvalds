@@ -284,6 +284,67 @@ class TestTheTemplate(TempDirCase):
         self.assertIn("environment variable", text)
         self.assertIn("default", text)
 
+    def test_an_existing_file_is_not_overwritten(self):
+        """The settings the operator wrote are worth more than a fresh copy."""
+        target = self.tmp / "config.toml"
+        target.write_text("[llm]\nmodel = 'mine'\n", encoding="utf-8")
+        config = Config(path=target, environ={})
+
+        with self.assertRaises(FileExistsError):
+            config.write_default()
+
+        self.assertEqual(
+            target.read_text(encoding="utf-8"), "[llm]\nmodel = 'mine'\n"
+        )
+
+    def test_an_existing_file_is_overwritten_when_it_is_asked_for(self):
+        target = self.tmp / "config.toml"
+        target.write_text("[llm]\nmodel = 'mine'\n", encoding="utf-8")
+        config = Config(path=target, environ={})
+
+        config.write_default(overwrite=True)
+
+        self.assertIn("# model =", target.read_text(encoding="utf-8"))
+
+    def test_a_symbolic_link_is_never_written_through(self):
+        """The link and the file it points at are two different things."""
+        elsewhere = self.tmp / "elsewhere.toml"
+        elsewhere.write_text("do not touch me\n", encoding="utf-8")
+        link = self.tmp / "config.toml"
+        link.symlink_to(elsewhere)
+
+        config = Config(path=link, environ={})
+        with self.assertRaises(FileExistsError):
+            config.write_default()
+
+        self.assertEqual(
+            elsewhere.read_text(encoding="utf-8"), "do not touch me\n"
+        )
+
+    def test_a_broken_symbolic_link_is_not_written_through(self):
+        link = self.tmp / "config.toml"
+        link.symlink_to(self.tmp / "nothing.toml")
+
+        config = Config(path=link, environ={})
+        with self.assertRaises(FileExistsError):
+            config.write_default()
+
+        self.assertFalse((self.tmp / "nothing.toml").exists())
+
+    def test_the_file_is_private_from_the_moment_it_exists(self):
+        """Not 'private after a moment' — private."""
+        target = self.tmp / "config.toml"
+        config = Config(path=target, environ={})
+        config.write_default()
+        mode = stat.S_IMODE(target.stat().st_mode)
+        self.assertEqual(mode, 0o600)
+
+    def test_the_directory_is_created_when_it_is_missing(self):
+        target = self.tmp / "deep" / "deeper" / "config.toml"
+        config = Config(path=target, environ={})
+        written = config.write_default()
+        self.assertTrue(written.is_file())
+
 
 # ---------------------------------------------------------------------------
 # The effective configuration

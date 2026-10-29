@@ -71,7 +71,14 @@ All notable changes to this project are documented in this file.
 
 - **`--write-default-config`** — writes a commented template with every
   setting, its default, the environment variable that overrides it and
-  one line of explanation.  The file is written `0600`.
+  one line of explanation.
+
+  The file is created with the mode `0600` — **at creation**, not chmod'ed
+  afterwards, so there is no moment at which it is readable by every
+  account on the box.  An **existing file is never overwritten**: the
+  settings the operator wrote are worth more than a fresh copy of the
+  defaults, so the command says so and stops.  A **symbolic link is never
+  written through**.
 
 - **A broken file never stops the agent.**  A missing file is the normal
   state of a fresh installation; a malformed one is a **warning** with

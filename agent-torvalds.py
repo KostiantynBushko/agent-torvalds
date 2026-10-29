@@ -1161,7 +1161,13 @@ async def main():
     if args.write_default_config:
         # The operator asked for a template.  Nothing else happens: this
         # is not a run of the agent.
-        written = config.write_default()
+        try:
+            written = config.write_default()
+        except FileExistsError as exc:
+            # The file is there, and it holds the operator's own
+            # settings.  It is not thrown away.
+            console.print(f"[yellow]{exc}[/yellow]")
+            sys.exit(2)
         console.print(
             f"[green]The configuration template was written to {written}[/green]"
         )
