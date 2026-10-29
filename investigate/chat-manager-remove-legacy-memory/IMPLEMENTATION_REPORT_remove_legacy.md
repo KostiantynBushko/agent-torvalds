@@ -122,7 +122,7 @@ introduced.
 | The chat manager suite | **207 passed** (198 before, 9 new) |
 | The full suite | **40 known failures, 0 new** — the failure set is identical to the baseline on `feature/chat-manager-sqlite-fallback` (the one difference in the captured output is the iteration order of a `frozenset` inside one assertion message) |
 | The orchestrators import | `agent-torvalds.py` and `agent-torvalds-mw.py` both import cleanly |
-| The end-to-end outage run | The manager came up on the fallback: user `kbush`, sessions `['Project Chat', 'General Chat']`, active session `General Chat`, `storage_mode` `fallback`, and the buffer bound to the active session's key |
+| The end-to-end outage run | The manager came up on the fallback: user `$USER`, sessions `['Project Chat', 'General Chat']`, active session `General Chat`, `storage_mode` `fallback`, and the buffer bound to the active session's key |
 | `git grep agent_chat_memory` | No references left outside the historical reports and the documentation that says the module is gone |
 
 ---

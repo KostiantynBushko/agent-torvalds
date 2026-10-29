@@ -31,6 +31,22 @@ All notable changes to this project are documented in this file.
   The model path of the C++ agent was `"${HOME}/..."` — a **shell**
   variable, in a Python file, where it is not expanded and never was.
 
+- **The name of the account is taken from the environment.**  It was
+  written down in the reports of the investigations, in the SSH harness
+  of the MikroTik prototypes and in the path of the workspace on the
+  external drive.
+
+  | | |
+  |---|---|
+  | the reports | `$USER` |
+  | `investigate/MikroTik-RouterOS/_proto_config.py` | `os.environ["USER"]`, with `getpass.getuser()` behind it |
+  | `investigate/no-user-query-error/repro_live.py` | `os.environ["USER"]`, and `SOURCE_WORKSPACE` overrides it |
+
+  A literal `$USER` is right in a shell and in a report.  In **Python**
+  it is not expanded — it is a path that starts with a dollar sign — so
+  the environment is read instead.  That is the same thing `$USER`
+  means, and it is the reason the two are not written the same way.
+
 - **The check is in the build.**  `tests/test_no_private_paths.py`
   looks for the **shape** of a home directory in every tracked file,
   and for the home of the machine the test runs on — **computed**,

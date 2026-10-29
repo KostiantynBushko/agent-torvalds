@@ -137,7 +137,7 @@ handled) is now guarded too, by
 
 ```
 >>> \chat-user
-Settings for user 'kbush':
+Settings for user '$USER':
   chat_token_limit  5000 tokens
   backend_type      postgres string
 
