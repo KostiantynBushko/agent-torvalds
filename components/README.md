@@ -117,6 +117,52 @@ base_url = get_ollama_base_url()   # e.g. 'http://localhost:11434'
 
 ---
 
+### `config.py`
+The configuration file — `~/.config/torvalds/config.toml`.
+
+**Purpose:** Gives the agent one place to keep its settings, instead of
+forty-five environment variables spread over a shell profile.
+
+**Features:**
+- The **XDG** location — `$XDG_CONFIG_HOME`, or `~/.config` — and
+  `TORVALDS_CONFIG` for a file that is somewhere else
+- The precedence chain: **flag > environment variable > config file >
+  default**.  The file sits *below* the variables on purpose, so an
+  operator who already has variables sees no change when they upgrade
+- **Every setting reports its source**, so "why is my model X?" has an
+  answer
+- A broken file is a **warning**, never a failed boot; a typo is
+  **reported**, never silently ignored
+- TOML, read by `tomllib` from the standard library — no dependency, and
+  a syntax error is a hard error with a line number
+
+**Usage:**
+```python
+from components.config import config
+
+MODEL = config.get("llm.model")
+config.source("llm.model")   # "environment variable TORVALDS_MODEL"
+```
+
+---
+
+### `config_view.py`
+The `\config` command — the effective configuration, rendered.
+
+**Purpose:** Shows every setting the agent resolved, the value that won
+and the layer it came from.  The multi-window TUI renders it into the
+document pane; the classic REPL prints it as a table.
+
+**Usage:**
+```python
+from components.config_view import render_effective, render_effective_markdown
+
+render_effective(config, console)          # the classic REPL
+render_effective_markdown(config)          # the TUI
+```
+
+---
+
 ### `file_logging.py`
 The rotating log file and the symlink to the current one.
 
@@ -175,6 +221,7 @@ Package initialization file.
 
 ## Recent Updates
 
+- **2026-10-29**: Added `config.py` and `config_view.py` — the configuration file and the `\config` command
 - **2026-10-29**: Added `file_logging.py` — the rotating log file, the size parser and the symlink
 - **PR #5**: Moved `agent_stats_handler.py` to `components/stats_handler.py` for better organization
 - **September 2026**: Added comprehensive debug logging throughout all components

@@ -6,6 +6,115 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The configuration file — `~/.config/torvalds/config.toml`
+
+- **The agent has a configuration file.**  It had forty-five environment
+  variables and no file, and a shell profile is a poor home for
+  forty-five settings: it is loaded into every shell, it is shared with
+  every other program, and it cannot hold a comment that explains what a
+  value is for.  The operator asked for it on 2026-10-29:
+
+  > *"we do not have a torvalds config file let say i=under ~/.config
+  > folder but I would like to introduce such folder with name 'torvalds'
+  > and under this folder we can have a config"*
+
+  The location is the **XDG** one — `$XDG_CONFIG_HOME`, or `~/.config` —
+  and it completes the triad the project already keeps:
+
+  | | |
+  |---|---|
+  | `~/.config/torvalds/config.toml` | the operator's **intent** |
+  | `~/.torvalds/chat_manager.db` | what the agent **produced** |
+  | `~/.torvalds/logs/` | what the agent **produced** |
+  | `~/.cache/torvalds/agent_cache.json` | what the agent **produced** |
+
+  The data does not move.  A database and a rotating log are not
+  configuration, and moving the chat history would break the sessions of
+  everybody who already has one.
+
+- **The order of things is the one the project already used, with the
+  file inserted underneath the environment variables:**
+
+  ```
+  flag  >  environment variable  >  config file  >  built-in default
+  ```
+
+  The file sits **below** the variables on purpose.  Every operator who
+  has been running this agent has variables in their shell profile, and a
+  file that outranked them would change the behaviour of every one of
+  them the moment they upgraded — a different model, a different host,
+  silently.  With the file underneath, an operator with no file sees **no
+  change**, an operator with both keeps the variables winning, and the
+  file becomes the *"set it once, in one place"* layer.
+
+- **`components/config.py`** — the loader, the registry of the settings,
+  the resolution and the provenance.  The format is **TOML**, read by
+  `tomllib` from the standard library: no dependency, and a syntax error
+  is a hard error with a line number — YAML, by contrast, turns a
+  malformed document into `None`.
+
+  | Section | What it holds |
+  |---|---|
+  | `[llm]` | the model, the host, the context window, the iterations, the timeout |
+  | `[agent]` | the retriever, the events, the prompt injection, the context guard |
+  | `[hitl]` | the human in the loop |
+  | `[stats]` | the statistics |
+  | `[logging]` | the level, the file, the rotation, the symlink |
+
+- **Every setting reports where it came from.**  Four layers without
+  provenance is a debugging nightmare: "why is my model X?" must have an
+  answer.
+
+- **`\config`** — the effective configuration, with the value that won
+  and the layer it came from.  It works in the classic REPL (a table) and
+  in the multi-window TUI (the document pane).
+
+- **`--write-default-config`** — writes a commented template with every
+  setting, its default, the environment variable that overrides it and
+  one line of explanation.
+
+  The file is created with the mode `0600` — **at creation**, not chmod'ed
+  afterwards, so there is no moment at which it is readable by every
+  account on the box.  An **existing file is never overwritten**: the
+  settings the operator wrote are worth more than a fresh copy of the
+  defaults, so the command says so and stops.  A **symbolic link is never
+  written through**.
+
+- **A broken file never stops the agent.**  A missing file is the normal
+  state of a fresh installation; a malformed one is a **warning** with
+  the line and the column, and the defaults are used.  A typo is
+  **reported** — a section the agent does not know, a setting it does
+  not know, a value of the wrong type, a value outside the choices of
+  the setting.  A setting the agent silently ignores is a setting the
+  operator believes in and that does nothing.
+
+- **The MikroTik configuration file falls back to the config directory.**
+  `mikrotik_targets.yaml` was found in the **working directory only**,
+  which meant it was found when the agent was started from the repository
+  root and nowhere else.  The working directory is still the first place
+  to look — the developer keeps working as before — and the configuration
+  directory is the second.
+
+  The **database toolkit keeps its behaviour**: its own verification
+  proves that the library half is behaviour-neutral against the original
+  script it was split out of, and a second search path is a difference
+  that proof cannot accept.
+
+### Fixed
+
+#### The boolean environment variables did not agree with each other
+
+- **`TORVALDS_HITL_ENABLED=1` disabled the human in the loop.**  The
+  HITL flags were read with `== "true"` while every other boolean in the
+  project was read with `in ("true", "1", "yes")` — so `1` meant *yes*
+  everywhere and *no* in the HITL.  The values are read the same way
+  now, and `1`, `yes` and `on` all mean *yes*.
+
+- **A malformed integer environment variable killed the agent.**  The
+  settings were read with `int(os.environ.get(...))` at import time, so
+  `TORVALDS_MAX_ITERATIONS=abc` ended the run with a traceback.  A
+  malformed value is now a **warning**, and the default is used.
+
 #### The logging goes into a file, and it rotates
 
 - **The log can be written into a file, rotated at a predefined size,

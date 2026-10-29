@@ -263,6 +263,8 @@ from components.stats_handler import (
 # Core Components
 # ---------------------------------------------------------------------------
 from components.ollama_config import apply_context_window, get_ollama_base_url
+from components.config import config
+from components.config_view import render_effective as render_effective_config
 from components.file_logging import (
     LogFileConfig,
     add_logging_arguments,
@@ -302,24 +304,30 @@ from components.mikrotik_commands import (
 
 # ---------------------------------------------------------------------------
 # Configuration & Defaults
+#
+# Every value is resolved through components/config.py, which reads the
+# configuration file (``~/.config/torvalds/config.toml``) and the
+# environment variable of the setting.  The variable wins, the file is
+# the layer underneath it, and the built-in default is the last resort.
+# The command line flag overrides all of them, in main().
 # ---------------------------------------------------------------------------
-REQUEST_TIMEOUT = int(os.environ.get("TORVALDS_REQUEST_TIMEOUT", "99999"))
-MAX_ITERATIONS = int(os.environ.get("TORVALDS_MAX_ITERATIONS", "500"))
-MODEL = os.environ.get("TORVALDS_MODEL", "richardyoung/qwen3.6-27b-abliterated:Q4_K_M")
+REQUEST_TIMEOUT = config.get("llm.request_timeout")
+MAX_ITERATIONS = config.get("llm.max_iterations", default=500)
+MODEL = config.get("llm.model")
 # Endpoint of the Ollama server that hosts the chat model.
 OLLAMA_BASE_URL = get_ollama_base_url()
-SIMILARITY_TOP_K = int(os.environ.get("TORVALDS_SIMILARITY_TOP_K", "8"))
+SIMILARITY_TOP_K = config.get("agent.top_k")
 
-ENABLE_EVENT_STREAMING = os.environ.get("TORVALDS_EVENT_STREAMING", "true").lower() in ("true", "1", "yes")
-ENABLE_VERBOSE_EVENTS = os.environ.get("TORVALDS_VERBOSE_EVENTS", "true").lower() in ("true", "1", "yes")
+ENABLE_EVENT_STREAMING = config.get("agent.event_streaming")
+ENABLE_VERBOSE_EVENTS = config.get("agent.verbose_events", default=True)
 
-HITL_ENABLED = os.environ.get("TORVALDS_HITL_ENABLED", "true").lower() == "true"
-HITL_METHOD = os.environ.get("TORVALDS_HITL_METHOD", "console")
+HITL_ENABLED = config.get("hitl.enabled")
+HITL_METHOD = config.get("hitl.method")
 # ``-1`` means *no timeout*: the agent waits for the user's answer
 # constantly, for as long as it takes.  See components/hitl_timeout.py.
-HITL_TIMEOUT = int(os.environ.get("TORVALDS_HITL_TIMEOUT", "-1"))
-HITL_DEFAULT_ANSWER = os.environ.get("TORVALDS_HITL_DEFAULT_ANSWER", "")
-HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").lower() == "true"
+HITL_TIMEOUT = config.get("hitl.timeout")
+HITL_DEFAULT_ANSWER = config.get("hitl.default_answer")
+HITL_RUNTIME_TOGGLE = config.get("hitl.runtime_toggle")
 
 # ---------------------------------------------------------------------------
 # Context Guard Configuration
@@ -330,9 +338,7 @@ HITL_RUNTIME_TOGGLE = os.environ.get("TORVALDS_HITL_RUNTIME_TOGGLE", "true").low
 # template fail with "No user query found in messages.").  It is **off by
 # default**: the guard changes what the model is shown, and the operator
 # asks for it explicitly with --context-guard-on.
-CONTEXT_GUARD_ENABLED = os.environ.get(
-    "TORVALDS_CONTEXT_GUARD", "false"
-).lower() in ("true", "1", "yes")
+CONTEXT_GUARD_ENABLED = config.get("agent.context_guard")
 
 # ---------------------------------------------------------------------------
 # Active HITL configuration (mutated by the CLI flags in main())
@@ -358,9 +364,9 @@ TUI_DEFAULT_FPS = int(os.environ.get("TORVALDS_TUI_FPS", "15"))
 # ---------------------------------------------------------------------------
 # Runtime Prompt Injection Configuration
 # ---------------------------------------------------------------------------
-PROMPT_INJECTION_ENABLED = os.environ.get("TORVALDS_PROMPT_INJECTION", "true").lower() == "true"
-PROMPT_TEMPLATE_PATH = os.environ.get("TORVALDS_PROMPT_TEMPLATE", "")
-INCLUDE_TOOL_RECOMMENDATIONS = os.environ.get("TORVALDS_INCLUDE_RECOMMENDATIONS", "true").lower() == "true"
+PROMPT_INJECTION_ENABLED = config.get("agent.prompt_injection")
+PROMPT_TEMPLATE_PATH = config.get("agent.prompt_template")
+INCLUDE_TOOL_RECOMMENDATIONS = config.get("agent.tool_recommendations")
 
 logger = logging.getLogger(__name__)
 
@@ -806,12 +812,21 @@ def parse_args():
         "--log-level",
         type=str,
         choices=VALID_LOG_LEVELS,
-        default=DEFAULT_LOG_LEVEL,
+        default=config.get("logging.level", default=DEFAULT_LOG_LEVEL),
         help="Set logging verbosity level (default: %(default)s)",
     )
 
     # --log-file, --log-dir, --log-max-size, --log-max-files, --log-symlink
-    add_logging_arguments(parser)
+    # The defaults come from the configuration file, which has already
+    # been resolved against the environment variables — argparse only has
+    # to validate them, exactly as it validates the variables today.
+    add_logging_arguments(
+        parser,
+        defaults={
+            "max_size": str(config.get("logging.max_size")),
+            "max_files": str(config.get("logging.max_files")),
+        },
+    )
     parser.add_argument(
         "--no-hitl",
         action="store_true",
@@ -929,6 +944,12 @@ def parse_args():
         type=int,
         default=TUI_DEFAULT_FPS,
         help="Target frames per second for TUI refresh loop (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--write-default-config",
+        action="store_true",
+        help="Write a commented configuration file with every setting and "
+             "its default, and exit",
     )
     return parser.parse_args()
 
@@ -1129,6 +1150,12 @@ async def run_classic_repl(
     console.print("[cyan]Torvalds AI Agent (Classic Linear REPL)[/cyan]")
     console.print(f"[dim]Model: {MODEL} | Max iterations: {MAX_ITERATIONS}[/dim]")
     console.print(f"[dim]Logging: {args.log_level}[/dim]")
+    if config.present:
+        console.print(f"[dim]Config file: {config.path}[/dim]")
+    else:
+        console.print(
+            f"[dim]Config file: none at {config.path} — the defaults are used[/dim]"
+        )
     if file_config is not None:
         console.print(
             f"[dim]Log file: {file_config.log_file} "
@@ -1201,6 +1228,13 @@ async def run_classic_repl(
         if cmd.lower() == "\\stats":
             summary = get_stats_summary()
             render_stats_summary(summary)
+            continue
+
+        if cmd.lower() == "\\config":
+            # Show the effective configuration and where every value
+            # came from — the flag, the environment variable, the
+            # configuration file or the default.
+            render_effective_config(config, console)
             continue
 
         if cmd.lower() == "\\hitl-status" and runtime_toggle_enabled:
@@ -1287,17 +1321,41 @@ async def main():
 
     args = parse_args()
 
+    if args.write_default_config:
+        # The operator asked for a template.  Nothing else happens: this
+        # is not a run of the agent.
+        try:
+            written = config.write_default()
+        except FileExistsError as exc:
+            # The file is there, and it holds the operator's own
+            # settings.  It is not thrown away.
+            console.print(f"[yellow]{exc}[/yellow]")
+            sys.exit(2)
+        console.print(
+            f"[green]The configuration template was written to {written}[/green]"
+        )
+        console.print(
+            "[dim]Uncomment a line and change the value to make it yours.[/dim]"
+        )
+        return
+
     # The file-logging configuration is resolved **once**, after the
     # arguments are parsed: the flags win over the environment, and the
     # environment wins over the defaults.  Without --log-file (and without
     # TORVALDS_LOG_FILE) the resolution returns None and the agent logs
     # to stderr exactly as it does today.
+    # The flag wins over the environment variable, and the environment
+    # variable wins over the configuration file.
+    log_file = config.flag("logging.file", args.log_file) if args.log_file else config.get("logging.file")
+    log_dir = config.flag("logging.dir", args.log_dir) if args.log_dir else config.get("logging.dir")
+    log_symlink = config.flag("logging.symlink", args.log_symlink) if args.log_symlink else config.get("logging.symlink")
+
     file_config = resolve_config(
-        log_file=args.log_file,
-        log_dir=args.log_dir,
+        log_file=log_file,
+        log_dir=log_dir,
         max_size=args.log_max_size,
         max_files=args.log_max_files,
-        symlink=args.log_symlink,
+        symlink=log_symlink,
     )
 
     configure_logging(args.log_level, file_config)
