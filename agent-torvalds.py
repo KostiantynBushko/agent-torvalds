@@ -245,6 +245,12 @@ from components.stats_handler import (
 # Components
 # ---------------------------------------------------------------------------
 from components.ollama_config import apply_context_window, get_ollama_base_url
+from components.file_logging import (
+    LogFileConfig,
+    add_logging_arguments,
+    build_file_handler,
+    resolve_config,
+)
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
 from components.event_consumer import EventConsumer
@@ -468,7 +474,10 @@ VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 DEFAULT_LOG_LEVEL = "INFO"
 
 
-def configure_logging(level_name: str = DEFAULT_LOG_LEVEL) -> None:
+def configure_logging(
+    level_name: str = DEFAULT_LOG_LEVEL,
+    file_config: Optional[LogFileConfig] = None,
+) -> None:
     """
     Centralized logging configuration.
 
@@ -476,15 +485,34 @@ def configure_logging(level_name: str = DEFAULT_LOG_LEVEL) -> None:
     including timestamps and module names, and outputs to stderr (best
     practice — keeps logs separate from stdout).
 
+    The file logging is a **tee**: when ``file_config`` is given, the
+    records go to the rotating log file *as well as* to stderr, and the
+    operator still sees them in the terminal.
+
+    The function is called **twice**: once at module level, and once
+    after the command line is parsed.  The second call uses
+    ``force=True``, which removes and closes the handlers of the first —
+    so the file handler is added by the second call, the one that knows
+    the flags, and the module-level call stays stderr-only.
+
     Args:
         level_name: Logging level name (DEBUG, INFO, WARNING, ERROR, CRITICAL).
                     Defaults to INFO.
+        file_config: The resolved file-logging configuration, or ``None``
+                     for stderr only (the default).
     """
     level = getattr(logging, level_name.upper(), logging.INFO)
+    handlers = [logging.StreamHandler(sys.stderr)]
+
+    if file_config is not None:
+        file_handler = build_file_handler(file_config, level)
+        if file_handler is not None:
+            handlers.append(file_handler)
+
     logging.basicConfig(
         level=level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        handlers=[logging.StreamHandler(sys.stderr)],
+        handlers=handlers,
         force=True,  # Reconfigure even if basicConfig was already called
     )
 
@@ -791,6 +819,9 @@ def parse_args():
         help="Set logging verbosity level (default: %(default)s). "
              "Options: DEBUG, INFO, WARNING, ERROR, CRITICAL",
     )
+
+    # --log-file, --log-dir, --log-max-size, --log-max-files, --log-symlink
+    add_logging_arguments(parser)
     parser.add_argument(
         "--no-hitl",
         action="store_true",
@@ -1106,8 +1137,21 @@ async def main():
 
     args = parse_args()
 
+    # The file-logging configuration is resolved **once**, after the
+    # arguments are parsed: the flags win over the environment, and the
+    # environment wins over the defaults.  Without --log-file (and without
+    # TORVALDS_LOG_FILE) the resolution returns None and the agent logs
+    # to stderr exactly as it does today.
+    file_config = resolve_config(
+        log_file=args.log_file,
+        log_dir=args.log_dir,
+        max_size=args.log_max_size,
+        max_files=args.log_max_files,
+        symlink=args.log_symlink,
+    )
+
     # Apply logging configuration from CLI argument (reconfigures if different from default)
-    configure_logging(args.log_level)
+    configure_logging(args.log_level, file_config)
 
     # Determine if stats are enabled (CLI flag overrides env var)
     stats_enabled = STATS_ENABLED and not args.no_stats
@@ -1178,6 +1222,12 @@ async def main():
     console.print("[cyan]Torvalds AI Agent[/cyan]")
     console.print(f"[dim]Model: {MODEL} | Max iterations: {MAX_ITERATIONS}[/dim]")
     console.print(f"[dim]Logging: {args.log_level}[/dim]")
+    if file_config is not None:
+        console.print(
+            f"[dim]Log file: {file_config.log_file} "
+            f"(rotated at {file_config.max_bytes} bytes, "
+            f"{file_config.backup_count} generations kept)[/dim]"
+        )
     if stats_enabled:
         console.print(
             f"[dim]Stats: enabled (format={STATS_FORMAT}, verbose={'on' if STATS_VERBOSE else 'off'})[/dim]"
