@@ -4,6 +4,30 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+#### The configuration is changed from the menu
+
+- **`\config <setting> <value>` writes into the configuration file.**
+  The command showed the configuration; now it changes it.
+
+  The file is **edited**, not rewritten: the comments of the operator,
+  the order of the settings and everything that is not the setting stay
+  exactly as they were.  A setting that is not in the file yet is added
+  to its section, and a setting that is **commented out** — where the
+  template leaves every one of them — is uncommented and written into.
+
+  The value is coerced exactly as a value that was **read** is coerced,
+  so the file can never carry a value the agent would refuse.  The write
+  is **atomic** — the file is written beside the old one and moved over
+  it — and it stays `0600`.
+
+  `\config <setting>` shows one setting in detail: its value, where it
+  came from, its default and how to change it.
+
+  The file is read **once**, when the agent starts: the settings that
+  were resolved at the start of the session apply on the **next start**.
+
 ### Fixed
 
 #### The private folder of the operator is never published

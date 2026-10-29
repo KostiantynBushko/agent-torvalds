@@ -246,7 +246,7 @@ from components.stats_handler import (
 # ---------------------------------------------------------------------------
 from components.ollama_config import apply_context_window, get_ollama_base_url
 from components.config import config
-from components.config_view import render_effective as render_effective_config
+from components.config_view import handle_config
 from components.file_logging import (
     LogFileConfig,
     add_logging_arguments,
@@ -1527,11 +1527,12 @@ async def main():
             render_stats_summary(summary)
             continue
 
-        if cmd.lower() == "\\config":
-            # Show the effective configuration and where every value
-            # came from — the flag, the environment variable, the
-            # configuration file or the default.
-            render_effective_config(config, console)
+        name, _, argument = cmd.partition(" ")
+        if name.lower() == "\\config":
+            # The effective configuration and where every value came
+            # from — and, with an argument, a change of the file:
+            # "\\config <setting> <value>" writes the value into it.
+            handle_config(config, argument.strip(), console)
             continue
 
         if cmd.lower() == "\\hitl-status" and runtime_toggle_enabled:

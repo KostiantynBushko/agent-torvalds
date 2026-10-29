@@ -258,6 +258,49 @@ The configuration file: ~/.config/torvalds/config.toml
 The command works in the classic REPL and in the multi-window TUI — the
 TUI renders it into the document pane.
 
+### Changing a value from the menu
+
+The command takes an argument, and it writes into the file:
+
+```
+>>> \config logging.file agent.output.log
+logging.file is now agent.output.log
+  written to ~/.config/torvalds/config.toml
+  TORVALDS_LOG_FILE overrides the file — and the flag overrides both.
+  the settings that were read when the agent started apply on the next start.
+```
+
+And with one argument it shows a single setting in detail:
+
+```
+>>> \config logging.file
+logging.file = agent.output.log
+  it came from: config file ~/.config/torvalds/config.toml
+  the default is:
+  TORVALDS_LOG_FILE overrides the file, and the flag overrides both.
+  to change it: \config logging.file <value>
+```
+
+**The file is edited, not rewritten.** Your comments, the order of the
+settings and everything that is not the setting you changed stay exactly
+as they were. A setting that is not in the file yet is added to its
+section; a setting that is **commented out** — where the template leaves
+every setting — is uncommented and written into.
+
+**The value is checked before it is written.** It is coerced exactly as a
+value that was *read* is coerced, so the file can never carry a value the
+agent would refuse: `hitl.timeout soon` is refused, and the file is left
+exactly as it was.
+
+**The write is atomic.** The file is written beside the old one and
+moved over it, so a crash cannot leave a half-written file where the
+configuration was. It stays `0600`.
+
+**When it takes effect.** The file is read **once**, when the agent
+starts. The settings that were resolved at the start of the session — the
+model, the logging, the timeouts — apply on the **next start**. The
+ones that are resolved while the agent runs apply at once.
+
 ---
 
 ## 7. What the file must not hold
