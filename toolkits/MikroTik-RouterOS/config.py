@@ -347,7 +347,18 @@ def load_targets(path: str | Path = DEFAULT_TARGETS_PATH) -> TargetRegistry:
     config_path = Path(path).expanduser()
 
     if not config_path.is_file():
-        return registry
+        # The working directory did not have it — the agent's
+        # configuration directory may.  The path is computed with
+        # ``os.path`` alone: this toolkit is a package of its own, and it
+        # must keep working when it is installed without the agent.
+        config_home = os.environ.get("XDG_CONFIG_HOME", "").strip()
+        if not config_home:
+            config_home = os.path.expanduser("~/.config")
+        fallback = Path(config_home) / "torvalds" / config_path.name
+        if not fallback.is_file():
+            return registry
+        config_path = fallback
+
 
     try:
         data = _load_yaml(config_path)

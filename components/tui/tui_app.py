@@ -20,6 +20,8 @@ from rich.console import Console
 from rich.live import Live
 
 from components.command_registry import HelpOptions, build_help_markdown, is_help_command
+from components.config import config
+from components.config_view import render_effective_markdown
 from components.tui.layout_manager import (
     build_torvalds_layout,
     render_header,
@@ -298,6 +300,13 @@ class TuiApp:
 
         if cmd_lower == "\\stats":
             self._render_stats_to_markdown()
+            return
+
+        if cmd_lower == "\\config":
+            # The effective configuration and where every value came
+            # from — the flag, the environment variable, the
+            # configuration file or the default.
+            self.state.set_markdown_content(render_effective_markdown(config))
             return
 
         if cmd_lower == "\\toggle-hitl" and self.hitl_toggle:

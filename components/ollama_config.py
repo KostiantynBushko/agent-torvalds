@@ -18,6 +18,11 @@ Two environment variables are honoured, in this order:
     Override the context window the agent assumes.  Use this when the
     server runs with a context length that cannot be detected.
 
+The configuration file (``~/.config/torvalds/config.toml``) carries the
+same two settings — ``[llm] host`` and ``[llm] context_length`` — and it
+sits **underneath** the environment variables: the variable wins, the
+file is the layer below it, and the built-in default is the last resort.
+
 Both the LlamaIndex ``Ollama`` LLM and the ``OllamaEmbedding`` class expect a
 full URL including the scheme, so a bare ``host:port`` is rewritten to
 ``http://host:port``.
@@ -27,6 +32,8 @@ Example:
 """
 import logging
 import os
+
+from components.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +81,19 @@ def get_ollama_base_url() -> str:
                 normalized,
             )
             return normalized
+
+    # The configuration file sits underneath the environment variables:
+    # the variable wins, the file is the layer below it.
+    from_file = config.get("llm.host", default=None)
+    if from_file and str(from_file).strip():
+        normalized = _normalize_base_url(str(from_file).strip())
+        logger.info(
+            "Ollama base URL from the configuration file %s: %s",
+            config.path,
+            normalized,
+        )
+        return normalized
+
     logger.info(
         "No Ollama host environment variable set, using default: %s",
         DEFAULT_OLLAMA_BASE_URL,
@@ -88,6 +108,7 @@ CONTEXT_LENGTH_ENV_VAR = "TORVALDS_CONTEXT_LENGTH"
 #: because a number on its own says nothing about whether it is the
 #: number the server really uses.
 SOURCE_ENVIRONMENT = "the TORVALDS_CONTEXT_LENGTH override"
+SOURCE_CONFIG_FILE = "the configuration file"
 SOURCE_RUNNING_MODEL = "the running model (/api/ps)"
 SOURCE_MODELFILE = "the model's Modelfile (PARAMETER num_ctx)"
 SOURCE_MODEL_MAXIMUM = "the model's advertised maximum"
@@ -247,6 +268,16 @@ def resolve_context_window_with_source(
             CONTEXT_LENGTH_ENV_VAR,
             override,
         )
+
+    # 1b. The configuration file — underneath the environment variable.
+    from_file = config.get("llm.context_length", default=None)
+    if from_file is not None:
+        logger.info(
+            "Context window resolved from %s: %d tokens",
+            SOURCE_CONFIG_FILE,
+            from_file,
+        )
+        return from_file, SOURCE_CONFIG_FILE
 
     # 2 & 3. Probe running model and Modelfile
     for probe, source in (

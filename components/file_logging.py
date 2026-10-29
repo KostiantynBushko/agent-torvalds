@@ -536,7 +536,10 @@ def resolve_config(
     )
 
 
-def add_logging_arguments(parser: argparse.ArgumentParser) -> None:
+def add_logging_arguments(
+    parser: argparse.ArgumentParser,
+    defaults: Optional[Mapping[str, str]] = None,
+) -> None:
     """Add the five file-logging flags to an argument parser.
 
     The flags follow the pattern the project already uses: the
@@ -545,7 +548,17 @@ def add_logging_arguments(parser: argparse.ArgumentParser) -> None:
     ``argparse`` validates it with the same type as the flag — a typo in
     ``TORVALDS_LOG_MAX_SIZE`` stops the agent with the same message as a
     typo in ``--log-max-size``.
+
+    Args:
+        parser: The parser the flags are added to.
+        defaults: The values the **configuration file** resolved, used as
+            the default of the flags.  They are already resolved — the
+            environment variable won over the file — so the parser only
+            has to validate them, exactly as it validates the environment
+            variable today.
     """
+    values = dict(defaults or {})
+
     parser.add_argument(
         "--log-file",
         type=str,
@@ -564,14 +577,18 @@ def add_logging_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--log-max-size",
         type=size_argument,
-        default=os.environ.get(ENV_LOG_MAX_SIZE, DEFAULT_MAX_SIZE),
+        default=values.get(
+            "max_size", os.environ.get(ENV_LOG_MAX_SIZE, DEFAULT_MAX_SIZE)
+        ),
         help="The size at which the log is rotated (default: %(default)s). "
              "Units: B, KB, MB, GB.",
     )
     parser.add_argument(
         "--log-max-files",
         type=positive_int_argument,
-        default=os.environ.get(ENV_LOG_MAX_FILES, str(DEFAULT_MAX_FILES)),
+        default=values.get(
+            "max_files", os.environ.get(ENV_LOG_MAX_FILES, str(DEFAULT_MAX_FILES))
+        ),
         help="How many rotated generations are kept next to the live log "
              "file (default: %(default)s).",
     )

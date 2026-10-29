@@ -141,6 +141,13 @@ COMMAND_SPECS: Tuple[CommandSpec, ...] = (
         usage="\\stats",
         category="Statistics",
     ),
+    CommandSpec(
+        name="\\config",
+        description="Show the effective configuration and where every value "
+                    "came from.",
+        usage="\\config",
+        category="Statistics",
+    ),
 
     # ---- Human-in-the-Loop ---------------------------------------------
     CommandSpec(

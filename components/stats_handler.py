@@ -26,17 +26,23 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
+from components.config import config
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration
+#
+# The values are resolved through components/config.py: the environment
+# variable wins, the configuration file is the layer underneath it, and
+# the built-in default is the last resort.
 # ---------------------------------------------------------------------------
 
-STATS_ENABLED = os.environ.get("TORVALDS_STATS_ENABLED", "true").lower() in ("true", "1", "yes")
-STATS_VERBOSE = os.environ.get("TORVALDS_STATS_VERBOSE", "false").lower() in ("true", "1", "yes")
-STATS_PERSIST = os.environ.get("TORVALDS_STATS_PERSIST", "true").lower() in ("true", "1", "yes")
-STATS_MAX_HISTORY = int(os.environ.get("TORVALDS_STATS_MAX_HISTORY", "500"))
-STATS_FORMAT = os.environ.get("TORVALDS_STATS_FORMAT", "compact").lower()  # compact | detailed | json
+STATS_ENABLED = config.get("stats.enabled")
+STATS_VERBOSE = config.get("stats.verbose")
+STATS_PERSIST = config.get("stats.persist")
+STATS_MAX_HISTORY = config.get("stats.max_history")
+STATS_FORMAT = config.get("stats.format").lower()  # compact | detailed | json
 
 
 logger.debug(
