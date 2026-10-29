@@ -51,7 +51,9 @@ def _normalize_base_url(url: str) -> str:
         str: A URL with a scheme.
     """
     if "://" not in url:
+        logger.debug("Adding default http scheme to URL: %s -> http://%s", url, url)
         return f"http://{url}"
+    logger.debug("URL already has scheme: %s", url)
     return url
 
 
@@ -65,7 +67,17 @@ def get_ollama_base_url() -> str:
     for var in OLLAMA_HOST_ENV_VARS:
         raw = os.environ.get(var)
         if raw and raw.strip():
-            return _normalize_base_url(raw.strip())
+            normalized = _normalize_base_url(raw.strip())
+            logger.info(
+                "Ollama base URL from environment variable %s: %s",
+                var,
+                normalized,
+            )
+            return normalized
+    logger.info(
+        "No Ollama host environment variable set, using default: %s",
+        DEFAULT_OLLAMA_BASE_URL,
+    )
     return DEFAULT_OLLAMA_BASE_URL
 
 
@@ -90,21 +102,43 @@ def _context_length_from_modelfile(llm) -> int | None:
     Modelfile.  That value — and not the model's advertised maximum — is
     what the server uses unless it is overridden on the command line.
     """
+    logger.debug("Probing context length from Modelfile for model: %s", llm.model)
     try:
         info = llm.client.show(llm.model)
-    except Exception:  # noqa: BLE001 - the server may be unreachable
+    except Exception as e:
+        logger.debug(
+            "Failed to retrieve model info from server for Modelfile probe: %s", e
+        )
         return None
 
     modelfile = getattr(info, "modelfile", None) or ""
+    if not modelfile:
+        logger.debug("No Modelfile content available for model: %s", llm.model)
+        return None
+
     for line in modelfile.splitlines():
         line = line.strip()
         if not line.upper().startswith("PARAMETER NUM_CTX"):
             continue
         value = line.split("num_ctx")[-1].strip()
         try:
-            return int(value)
+            length = int(value)
+            logger.info(
+                "Context length from Modelfile for model %s: %d tokens",
+                llm.model,
+                length,
+            )
+            return length
         except ValueError:
+            logger.warning(
+                "Invalid num_ctx value in Modelfile for model %s: %s",
+                llm.model,
+                value,
+            )
             return None
+    logger.debug(
+        "No PARAMETER num_ctx found in Modelfile for model: %s", llm.model
+    )
     return None
 
 
@@ -119,22 +153,47 @@ def _context_length_from_running_model(llm) -> int | None:
     import json
     import urllib.request
 
+    logger.debug(
+        "Probing context length from running model via /api/ps for: %s",
+        llm.model,
+    )
+
     base_url = str(getattr(llm, "base_url", "") or "").rstrip("/")
     if not base_url:
+        logger.debug("No base_url available on LLM instance, skipping /api/ps probe")
         return None
 
     try:
         with urllib.request.urlopen(f"{base_url}/api/ps", timeout=10) as resp:
             payload = json.loads(resp.read().decode())
-    except Exception:  # noqa: BLE001 - the endpoint may be unavailable
+    except Exception as e:
+        logger.debug(
+            "Failed to query /api/ps for running model context length: %s", e
+        )
         return None
 
-    for entry in payload.get("models") or []:
+    models = payload.get("models") or []
+    if not models:
+        logger.debug("No running models found in /api/ps response")
+        return None
+
+    for entry in models:
         name = entry.get("model") or entry.get("name") or ""
         if llm.model in name or name in llm.model:
             length = entry.get("context_length")
             if length:
+                logger.info(
+                    "Context length from running model %s: %d tokens",
+                    name,
+                    length,
+                )
                 return int(length)
+            logger.debug(
+                "Running model %s found but has no context_length field", name
+            )
+    logger.debug(
+        "No matching running model found for %s in /api/ps", llm.model
+    )
     return None
 
 
@@ -166,28 +225,74 @@ def resolve_context_window_with_source(
         A tuple of the context window in tokens (or *default*) and the
         name of the source it came from.
     """
+    logger.debug(
+        "Resolving context window for model: %s, default: %s",
+        getattr(llm, "model", "unknown"),
+        default,
+    )
+
+    # 1. Check explicit environment override
     override = os.environ.get(CONTEXT_LENGTH_ENV_VAR)
     if override and override.strip().isdigit():
-        return int(override.strip()), SOURCE_ENVIRONMENT
+        length = int(override.strip())
+        logger.info(
+            "Context window resolved from %s: %d tokens",
+            SOURCE_ENVIRONMENT,
+            length,
+        )
+        return length, SOURCE_ENVIRONMENT
+    elif override:
+        logger.warning(
+            "Invalid value for %s: %s (expected integer)",
+            CONTEXT_LENGTH_ENV_VAR,
+            override,
+        )
 
+    # 2 & 3. Probe running model and Modelfile
     for probe, source in (
         (_context_length_from_running_model, SOURCE_RUNNING_MODEL),
         (_context_length_from_modelfile, SOURCE_MODELFILE),
     ):
+        logger.debug("Attempting to resolve context window from: %s", source)
         length = probe(llm)
         if length and length > 0:
+            logger.info(
+                "Context window resolved from %s: %d tokens",
+                source,
+                length,
+            )
             return int(length), source
+        logger.debug("Could not resolve context window from: %s", source)
 
+    # 4. Fall back to model's advertised maximum
     try:
         length = int(llm.metadata.context_window)
         if length > 0:
+            logger.info(
+                "Context window resolved from %s: %d tokens",
+                SOURCE_MODEL_MAXIMUM,
+                length,
+            )
             return length, SOURCE_MODEL_MAXIMUM
-    except Exception:  # noqa: BLE001 - metadata may be unavailable
-        pass
+    except Exception as e:
+        logger.debug(
+            "Could not read context_window from llm.metadata: %s", e
+        )
 
+    # 5. Use default if provided
     if default is not None:
+        logger.info(
+            "Context window resolved from %s: %s tokens",
+            SOURCE_DEFAULT,
+            default,
+        )
         return default, SOURCE_DEFAULT
 
+    # 6. Nothing could be determined
+    logger.warning(
+        "Could not determine context window for model %s from any source",
+        getattr(llm, "model", "unknown"),
+    )
     return None, SOURCE_UNKNOWN
 
 
@@ -204,7 +309,13 @@ def resolve_context_window(llm, default: int | None = None) -> int | None:
     Returns:
         The context window in tokens, or *default*.
     """
-    length, _ = resolve_context_window_with_source(llm, default)
+    length, source = resolve_context_window_with_source(llm, default)
+    if length is not None:
+        logger.debug(
+            "Resolved context window: %d tokens (source: %s)", length, source
+        )
+    else:
+        logger.debug("Could not resolve context window from any source")
     return length
 
 
@@ -230,6 +341,12 @@ def apply_context_window(llm, default: int | None = None) -> int | None:
         The context window in tokens, or ``None`` when it could not be
         determined or the LLM did not accept it.
     """
+    logger.debug(
+        "Applying context window for model: %s, default: %s",
+        getattr(llm, "model", "unknown"),
+        default,
+    )
+
     length, source = resolve_context_window_with_source(llm, default=default)
     if not length or length <= 0:
         logger.info(
@@ -237,14 +354,17 @@ def apply_context_window(llm, default: int | None = None) -> int | None:
             "the context guard cannot size the prompt."
         )
         return None
+
     try:
         llm.context_window = int(length)
-    except Exception:  # noqa: BLE001 - the LLM may not be an Ollama instance
+    except Exception as e:
         logger.info(
-            "Context window: %d tokens — %s (the LLM did not accept it)",
+            "Context window: %d tokens — %s (the LLM did not accept it: %s)",
             length,
             source,
+            e,
         )
         return None
+
     logger.info("Context window: %d tokens — %s", length, source)
     return length
