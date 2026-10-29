@@ -4,7 +4,11 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-28 (the **documentation was audited** and the
+**Last updated:** 2026-10-29 (the **first release**, `v1.0.0`, was **cut
+and published** on GitHub: the changelog was written for it, the thirty
+"[Unreleased]" sections were folded into one `## [1.0.0]` section, six
+merged PRs that had no entry at all were written up, and the tag points at
+the merge commit `ea0dd2c`; before that, 2026-10-28 (the **documentation was audited** and the
 **wiki became a submodule** of the repository: the root README had no
 link to the wiki, the wiki had no link to the deployment guide, and the
 README described five of its toolkits twice; before that, the
@@ -147,12 +151,96 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `feature/deploy-folder` — based on `master` at `c6e92af` (the merge of PR #56, the deployment script). The branch was **renamed** from `fix/deploy-script-sudo-noninteractive`, which is what it was called when the repair was the only work on it. **Squash-merged into `master` as PR #65** — commit `5d63058`, head `05f3120`. The branch is kept, as every merged branch in this repository is. |
-| Scope | Give the deployment scripts a **folder of their own**, and finish the repair of the script that was already in progress: a **non-interactive run must be able to obtain sudo by itself**. |
-| Status | Implemented, **verified** and **merged**. The script and its example environment file moved from `investigate/deployment-script/` to `deploy/`, and the investigation documents stayed where they were — `investigate/` holds the *record* of a piece of work, and the implementations that came out of it live in their own place (the toolkits under `toolkits/`, the chat manager under `chat_manager/`). The script itself was repaired in nine places, and every repair is held by an invariant. |
-| Policy | **The folder is named for what it holds.** A folder called `investigate/deployment-script/` holds an investigation; the day the script shipped, the investigation had become its archive. The operator asked for *"a dedicated folder for deployment scripts"*, and the rule the rest of the repository already follows — the toolkits, the chat manager, the components — says what that folder is called: `deploy/`. |
-| Investigation | The **deployment script** itself: `investigate/deployment-script/` still holds the report, the requirements and the plan. The implementation is the deliverable and it lives in `deploy/`. |
-| State | **Merged into `master`.** `deploy/tests/verify_deploy_layout.py` — eleven invariants, over the folder *and* the behaviour of the script. `deploy/tests/verify_harness_catches_regressions.py` — the proof that the harness catches eleven deliberate drifts, one per invariant. `deploy/tests/test_deploy_layout.py` — the harness under pytest. The CI gate reported **0 new failures** (40 known, 0 new, 0 fixed) — locally and in the CI run of PR #65, which was green. The merge result tree (`c8e80f3`) is **byte-identical** to the head tree of `05f3120` that CI ran green, so the merge introduced no untested content. Rule 4: the commit and the push were made on the operator's explicit approval. |
+| Branch | `feature/release-v1.0.0` — based on `master` at `9d8c3ff` (the merge of PR #67). **Squash-merged into `master` as PR #68** — commit `ea0dd2c`. The branch is kept, as every merged branch in this repository is. |
+| Scope | Write the changelog for the **first release**, and release **v1.0.0** on GitHub. |
+| Status | Implemented, **verified**, **merged** and **released**. The thirty `[Unreleased]` sections of `CHANGELOG.md` are now one `## [1.0.0] - 2026-10-29` section; six merged PRs that had no entry at all were written up; the tag `v1.0.0` and the GitHub release both point at the merge commit. |
+| Policy | **The version was not chosen — it was read.** The deployment script has declared `SCRIPT_VERSION="1.0.0"` since it was written, and `project_manager` has carried `__version__ = "1.0.0"` since it was written. The release makes those two declarations true instead of inventing a number for them. |
+| Investigation | The **changelog** itself. The **coverage check**: every merged PR matched against the changelog by keyword — 64 of 66 covered. The two that are not are PRs #34 and #38, which record the PR stack in this file, and which describe *how* the work was done rather than the software. |
+| State | **Released.** The tag `v1.0.0` resolves to `ea0dd2c`. The CI gate reported **0 new failures** (40 known, 0 new) in the PR run and in the `master` push run. A fresh `git clone --branch v1.0.0 --recurse-submodules` brings the nine wiki pages and the structured changelog down with it. Rule 4: the commit, the push, the merge and the release were made on the operator's explicit approval. |
+
+### Latest change: the first release, v1.0.0
+
+**The operator asked for it on 2026-10-29**: *"update CHANGELOG.md to
+reflect all development in current master and release first version of
+the agent torvald on github"*.
+
+Two things, and the first turned out to be the real work.
+
+#### The changelog had thirty "[Unreleased]" headings
+
+Not one release-worth of changes under a single heading — **thirty**,
+each with its own `## [Unreleased] - <title>`.  Everything since 0.1.0
+was therefore claiming to be unreleased, thirty times over, and none of
+it was in a form a reader could follow.
+
+They are now one `## [1.0.0] - 2026-10-29` section.  The `###`
+subsections are re-grouped under the canonical Keep-a-Changelog names —
+**Added**, **Changed**, **Fixed**, **Removed**, **Security**,
+**Documentation**, **Tests** — and each one keeps its original heading
+as a `####` beneath it, so the prose is unchanged and still says which
+work it belongs to.
+
+**Every line of the original prose is preserved**, and the five that are
+not were each checked first:
+
+- **Four** one-line toolkit descriptions in the legacy `## [Unreleased]`
+  block — *"Added comprehensive Git toolkit capabilities"*, and the
+  same for the OS, the database and the math toolkit.  Each of those
+  toolkits has a section of its own now, that says the same thing in
+  more detail, so the four lines were **redundant, not lost**.
+
+- **One** sentence — *"All notable changes to this project will be
+  documented in this file"* — which sat under the 2026-09-10 heading.
+  It is the changelog's own preamble, so it is now under the title,
+  where Keep a Changelog puts it.
+
+#### Six merged PRs had no entry at all
+
+The changelog was checked against **every** merged PR, by keyword.
+**64 of 66** were covered once the restructure was done; five of the
+seven that were missing were missing **features**, and are now written
+up:
+
+- The **signal handler** — the graceful shutdown on SIGINT, SIGQUIT and
+  SIGTERM, with the state dump and the `atexit` fallback.
+- The **readline integration** — the line editing and the history, for
+  every prompt.
+- The **agent cache**, and the **on-demand tool retriever**, from the
+  cognitive-overhead work.
+- The **wiki submodule**, and the **documentation audit** that went with
+  it.
+- The **Claude co-author purge**.  No commit in `master` names Claude
+  as a co-author; the two `Co-authored-by` trailers that remain name
+  the project's own authors.
+
+The sixth is the design proposals under `docs/proposals/`, and it is
+now an entry under Documentation.
+
+The two that were left out are PRs **#34** and **#38**, which record
+the PR stack in *this* file.  This file is the record of **how** the
+work was done, not a description of the software, so it gets no
+release-note entry — and that decision is written down in the pull
+request rather than made silently.
+
+#### The version was read, not chosen
+
+`deploy/deploy-torvalds.sh` has declared `SCRIPT_VERSION="1.0.0"`
+since it was written, and `project_manager/__init__.py` has carried
+`__version__ = "1.0.0"` since it was written.  **v1.0.0** is what the
+project already called itself; the release makes those two declarations
+true.
+
+#### What was verified
+
+| Check | Result |
+|---|---|
+| Original prose preserved | 1,559 content lines → 1,607; **5 removals, each listed above** |
+| Heading structure | **0** heading-level jumps |
+| Merged-PR coverage | **64 / 66** |
+| The CI gate | **0 new failures** (40 known, 0 new) — in the PR run and in the `master` push run |
+| The tag | `v1.0.0` resolves to `ea0dd2c`, the merge commit |
+| A fresh clone | `git clone --branch v1.0.0 --recurse-submodules` brings the **nine** wiki pages and the structured changelog down with it |
+| The source archives | `v1.0.0.tar.gz` (1.3 MB) and `v1.0.0.zip` (1.7 MB) both download |
 
 ### Latest change: the documentation was audited, and the wiki became a submodule
 
