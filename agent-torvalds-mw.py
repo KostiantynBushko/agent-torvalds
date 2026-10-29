@@ -263,6 +263,12 @@ from components.stats_handler import (
 # Core Components
 # ---------------------------------------------------------------------------
 from components.ollama_config import apply_context_window, get_ollama_base_url
+from components.file_logging import (
+    LogFileConfig,
+    add_logging_arguments,
+    build_file_handler,
+    resolve_config,
+)
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
 from components.event_consumer import EventConsumer
@@ -492,12 +498,34 @@ VALID_LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 DEFAULT_LOG_LEVEL = "INFO"
 
 
-def configure_logging(level_name: str = DEFAULT_LOG_LEVEL, to_file: Optional[str] = None) -> None:
-    """Configure logging format and destination."""
+def configure_logging(
+    level_name: str = DEFAULT_LOG_LEVEL,
+    file_config: Optional[LogFileConfig] = None,
+) -> None:
+    """Configure logging format and destination.
+
+    The file logging is a **tee**: the stderr handler stays, so the
+    operator still sees the output in the terminal, and the rotating log
+    file carries the history.
+
+    The dead ``to_file`` parameter that used to sit here wrote to a plain
+    ``logging.FileHandler`` — a handler that never rotates, so the file
+    grew until the disk was full.  It is replaced by the resolved
+    configuration of ``components.file_logging``, which rotates.
+
+    The function is called **twice**: once at module level, and once
+    after the command line is parsed.  The second call uses
+    ``force=True``, which removes and closes the handlers of the first —
+    so the file handler is added by the second call, the one that knows
+    the flags, and the module-level call stays stderr-only.
+    """
     level = getattr(logging, level_name.upper(), logging.INFO)
     handlers = [logging.StreamHandler(sys.stderr)]
-    if to_file:
-        handlers.append(logging.FileHandler(to_file, encoding="utf-8"))
+
+    if file_config is not None:
+        file_handler = build_file_handler(file_config, level)
+        if file_handler is not None:
+            handlers.append(file_handler)
 
     logging.basicConfig(
         level=level,
@@ -781,6 +809,9 @@ def parse_args():
         default=DEFAULT_LOG_LEVEL,
         help="Set logging verbosity level (default: %(default)s)",
     )
+
+    # --log-file, --log-dir, --log-max-size, --log-max-files, --log-symlink
+    add_logging_arguments(parser)
     parser.add_argument(
         "--no-hitl",
         action="store_true",
@@ -1092,11 +1123,18 @@ async def run_classic_repl(
     runtime_toggle_enabled: bool,
     chat_history_enabled: bool = True,
     selected_tools: Optional[List[FunctionTool]] = None,
+    file_config: Optional[LogFileConfig] = None,
 ):
     """Run classic linear REPL loop matching agent-torvalds.py."""
     console.print("[cyan]Torvalds AI Agent (Classic Linear REPL)[/cyan]")
     console.print(f"[dim]Model: {MODEL} | Max iterations: {MAX_ITERATIONS}[/dim]")
     console.print(f"[dim]Logging: {args.log_level}[/dim]")
+    if file_config is not None:
+        console.print(
+            f"[dim]Log file: {file_config.log_file} "
+            f"(rotated at {file_config.max_bytes} bytes, "
+            f"{file_config.backup_count} generations kept)[/dim]"
+        )
     console.print(f"[dim]Stats: {'enabled' if stats_enabled else 'disabled'}[/dim]")
     console.print(f"[dim]Event streaming: {'enabled' if events_enabled else 'disabled'}[/dim]")
     console.print(
@@ -1248,7 +1286,21 @@ async def main():
     _setup_signal_handlers()
 
     args = parse_args()
-    configure_logging(args.log_level)
+
+    # The file-logging configuration is resolved **once**, after the
+    # arguments are parsed: the flags win over the environment, and the
+    # environment wins over the defaults.  Without --log-file (and without
+    # TORVALDS_LOG_FILE) the resolution returns None and the agent logs
+    # to stderr exactly as it does today.
+    file_config = resolve_config(
+        log_file=args.log_file,
+        log_dir=args.log_dir,
+        max_size=args.log_max_size,
+        max_files=args.log_max_files,
+        symlink=args.log_symlink,
+    )
+
+    configure_logging(args.log_level, file_config)
 
     stats_enabled = STATS_ENABLED and not args.no_stats
     events_enabled = ENABLE_EVENT_STREAMING and not args.no_events
@@ -1454,6 +1506,7 @@ async def main():
             runtime_toggle_enabled=runtime_toggle_enabled,
             chat_history_enabled=chat_history_enabled,
             selected_tools=selected_tools,
+            file_config=file_config,
         )
         return
 

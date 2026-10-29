@@ -772,6 +772,46 @@ blank lines, would otherwise fill the log with empty records.  One
 empty line is kept — it is a paragraph break and it carries meaning —
 and a run of them is reduced to one.
 
+### Logging to a File
+
+The agent logs to **stderr** by default.  It can also write the log into
+a **file**, rotated at a predefined size, with a **symlink to the current
+log file** next to the rotated generations:
+
+```
+~/.torvalds/logs/
+├── agent.log                    the current log file — a real file
+├── agent-current.log -> agent.log  the symlink to the current log file
+├── agent.log.1                  the previous generation
+└── agent.log.2 ...
+```
+
+```console
+$ python agent-torvalds.py --log-file agent.log
+...
+Log file: /home/kbush/.torvalds/logs/agent.log (rotated at 10485760 bytes, 5 generations kept)
+```
+
+| Flag | Environment variable | Default | What it does |
+|---|---|---|---|
+| `--log-file PATH` | `TORVALDS_LOG_FILE` | *off* | The log file.  A bare name goes into the log directory. |
+| `--log-dir DIR` | `TORVALDS_LOG_DIR` | `~/.torvalds/logs` | The directory that holds the log, the symlink and the rotated files. |
+| `--log-max-size SIZE` | `TORVALDS_LOG_MAX_SIZE` | `10MB` | The size at which the log is rotated.  `B`, `KB`, `MB`, `GB`. |
+| `--log-max-files N` | `TORVALDS_LOG_MAX_FILES` | `5` | How many generations are kept.  `0` is refused. |
+| `--log-symlink NAME` | `TORVALDS_LOG_SYMLINK` | `<stem>-current.log` | The name of the symlink.  The word `none` turns the pointer off. |
+
+The file logging is **off** until it is asked for, and the flag wins over
+the environment variable.  The file is a **tee**: the stderr handler
+stays, so the output is still seen in the terminal while the run happens.
+
+The log file is `0600` — it carries the prompts, the tool output and the
+answers, and the standard library would create it `0664`.  The size limit
+is **soft**: the file may exceed it by the record that crossed it, because
+a record is never cut in half.
+
+The full documentation — the rotation, the symlink, what degrades and what
+does not — is in [`docs/logging.md`](docs/logging.md).
+
 ### The Context Window
 
 The agent writes the size of the model's context window to the log at

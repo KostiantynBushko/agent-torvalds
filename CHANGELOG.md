@@ -4,7 +4,121 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+#### The logging goes into a file, and it rotates
+
+- **The log can be written into a file, rotated at a predefined size,
+  with a symlink to the current log file next to the rotated ones.**  The
+  operator asked for it on 2026-10-27:
+
+  > *"I want be able to redirect logging into file, this solution must
+  > have a posibility to rotare log when reaching current log file
+  > predefined size. Inside directory we must have soft link to current
+  > log file the files"*
+
+  | Flag | Environment variable | Default |
+  |---|---|---|
+  | `--log-file PATH` | `TORVALDS_LOG_FILE` | *off* |
+  | `--log-dir DIR` | `TORVALDS_LOG_DIR` | `~/.torvalds/logs` |
+  | `--log-max-size SIZE` | `TORVALDS_LOG_MAX_SIZE` | `10MB` |
+  | `--log-max-files N` | `TORVALDS_LOG_MAX_FILES` | `5` |
+  | `--log-symlink NAME` | `TORVALDS_LOG_SYMLINK` | `<stem>-current.log` |
+
+  The flag wins over the environment variable, and the environment
+  variable wins over the default — the order the project already uses for
+  `TORVALDS_OLLAMA_HOST`.
+
+- **`components/file_logging.py`** — the handler, the size parser and the
+  wiring.  The standard library only: `logging.handlers.RotatingFileHandler`
+  does the rotation, and the subclass adds the symlink and the file mode.
+
+  | | The stdlib handler | The subclass |
+  |---|---|---|
+  | Rotates at `maxBytes` | yes | yes |
+  | Keeps `backupCount` generations | yes | yes |
+  | The file is `0600` | no — `0666 & ~umask` | yes |
+  | A symlink to the live file | no | yes |
+  | The symlink heals itself | no | yes |
+
+- **The symlink points at the *path* of the live log file, not at its
+  inode.**  `doRollover()` renames `agent.log` to `agent.log.1` and
+  reopens `agent.log` — the path does not change, only the file at it
+  does.  The pointer is therefore valid at every moment and never has to
+  be re-pointed.  It is created atomically (`os.replace`) and re-asserted
+  after a rollover, so it heals itself.
+
+- **The size limit is written the way an operator writes it** —
+  `--log-max-size 10MB`, with `B`, `KB`, `MB` and `GB`.  An unknown unit
+  is a **typo that is reported**: a log that never rotates because the
+  size was not understood is the exact failure this feature exists to
+  prevent, so the agent stops with a message instead of ignoring it.
+
+- **The file logging is off by default**, and it is a **tee** — the
+  stderr handler stays, so the operator still sees the output in the
+  terminal while the file carries the history.  That was the operator's
+  decision on 2026-10-29: *"no let him write to the stderr we can also
+  redirect it into file under torvalds log directory"*.
+
+- **A missing feature degrades, it never takes the agent down.**  A log
+  directory that cannot be created, a log file that cannot be opened and
+  a symlink that cannot be created each produce a warning, and the agent
+  boots.  The two things that stop it are the two typos: a size that
+  cannot be parsed, and `--log-max-files 0` — zero generations would mean
+  no rotation at all, and the file would grow until the disk is full.
+
+- **The dead `to_file` parameter of `agent-torvalds-mw.py` is gone.**  It
+  had been there since the multi-window work, and no caller ever reached
+  it.  It wrote to a plain `logging.FileHandler` — a handler that never
+  rotates, so the file grew until the disk was full.  Both orchestrators
+  now take the resolved configuration of `components/file_logging.py`.
+
+- **`docs/logging.md`** — the rotation, the symlink, the file mode, the
+  flags, the environment variables, and what degrades and what does not.
+
+### Fixed
+
+#### A `NameError` in the classic REPL of the multi-window agent
+
+- **The log file announcement read a name that the function did not
+  have.**  The multi-window agent has two modes — the classic REPL and
+  the TUI — and the announcement of the log file was added to the REPL,
+  where the resolved configuration was not a parameter.  The TUI path was
+  never taken by a test, so nothing noticed, and the REPL would have
+  crashed on its first run.
+
+  `tests/test_no_undefined_globals.py` now reads the source of every
+  function of both orchestrators and checks that every global it reads
+  exists in its module.  It is a static check, so it covers the paths no
+  test enters.
+
+#### The L5 invariant had a hole
+
+- **The check that the symlink cannot stop the logging passed when the
+  handler was never installed.**  The check skipped the second half of
+  the invariant when the handler was `None`, so a drift that turned the
+  degradation of the pointer into the end of the file logging altogether
+  was invisible.  The check now fails when the handler is missing, and
+  the drift proof caught the drift it let through.
+
+### Tests
+
+- **`tests/test_file_logging.py`** — 52 tests: the size parser, the
+  resolution, the handler, the degradation and the tee.
+- **`tests/test_logging_cli.py`** — the five flags, their defaults and
+  their environment variables, pinned next to `--log-level`.
+- **`tests/test_multi_window_parity.py`** — the file-logging flags of the
+  two orchestrators must not drift.
+- **`tests/test_no_undefined_globals.py`** — a **static** check that every
+  global a function reads exists in its module.  It closes the hole that
+  let a `NameError` reach the classic REPL of the multi-window agent: the
+  name was only read in that one mode, and no test entered it.
+- **`investigate/logging-to-file/verify_implementation.py`** — the
+  thirteen invariants of the investigation, run against the **shipped
+  implementation** and not only against the prototype.
+- **`investigate/logging-to-file/verify_implementation_catches_regressions.py`**
+  — the proof that the harness catches seven deliberate drifts in the
+  implementation.
 
 ## [1.0.0] - 2026-10-29
 

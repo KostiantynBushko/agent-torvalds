@@ -4,7 +4,10 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-29 (the **first release**, `v1.0.0`, was **cut
+**Last updated:** 2026-10-29 (the **logging goes into a file** — the
+investigation of 2026-10-27 became the implementation: a rotating log
+file, a symlink to the current one, and the five flags that turn it on;
+before that, the **first release**, `v1.0.0`, was **cut
 and published** on GitHub: the changelog was written for it, the thirty
 "[Unreleased]" sections were folded into one `## [1.0.0]` section, six
 merged PRs that had no entry at all were written up, and the tag points at
@@ -151,12 +154,127 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `feature/release-v1.0.0` — based on `master` at `9d8c3ff` (the merge of PR #67). **Squash-merged into `master` as PR #68** — commit `ea0dd2c`. The branch is kept, as every merged branch in this repository is. |
-| Scope | Write the changelog for the **first release**, and release **v1.0.0** on GitHub. |
-| Status | Implemented, **verified**, **merged** and **released**. The thirty `[Unreleased]` sections of `CHANGELOG.md` are now one `## [1.0.0] - 2026-10-29` section; six merged PRs that had no entry at all were written up; the tag `v1.0.0` and the GitHub release both point at the merge commit. |
-| Policy | **The version was not chosen — it was read.** The deployment script has declared `SCRIPT_VERSION="1.0.0"` since it was written, and `project_manager` has carried `__version__ = "1.0.0"` since it was written. The release makes those two declarations true instead of inventing a number for them. |
-| Investigation | The **changelog** itself. The **coverage check**: every merged PR matched against the changelog by keyword — 64 of 66 covered. The two that are not are PRs #34 and #38, which record the PR stack in this file, and which describe *how* the work was done rather than the software. |
-| State | **Released.** The tag `v1.0.0` resolves to `ea0dd2c`. The CI gate reported **0 new failures** (40 known, 0 new) in the PR run and in the `master` push run. A fresh `git clone --branch v1.0.0 --recurse-submodules` brings the nine wiki pages and the structured changelog down with it. Rule 4: the commit, the push, the merge and the release were made on the operator's explicit approval. |
+| Branch | `investigate/logging-to-file` — based on `master` at `99e8586`, **pushed** to `origin/investigate/logging-to-file` on 2026-10-29. Three commits: `6fac399` (feat), `aa46876` (test), `52180da` (docs). **Not merged** — the operator wants to test it on their own first. Rule 4: the commit and the push were made on the operator's explicit approval. |
+| Scope | Turn the **investigation** of the logging into a file into the **implementation**: the rotating log file, the symlink to the current one, and the five flags that turn it on. |
+| Status | **Implemented and verified.** `components/file_logging.py` is new; both orchestrators take the five flags; 54 new tests, the parity test and the documentation are in place. The CI gate reports **0 new failures** (40 known, 0 new). |
+| Policy | **The branch did not exist.** The investigation of 2026-10-27 was committed onto `feature/context-window-debug-report` and reached `master` through the squash-merge `2b8f781` — the *artefacts* were merged, the *branch* never was. The repository already carries `investigate/empty-agent-response` and `investigate/no-user-query-error`, and both hold the investigation **and** the fix that followed it, so `investigate/logging-to-file` is the name that fits. |
+| The operator's decisions | The **stderr handler stays** — *"no let him write to the stderr we can also redirect it into file under torvalds log directory"*. The file is a **tee**, not a replacement. The other three open questions of the report took the defaults of the report: the symlink is `agent-current.log`, the size is `10MB` with `5` generations, and the TUI keeps writing to stderr. |
+| Investigation | The investigation is `investigate/logging-to-file/` — the report, the prototype, the harness and the drift proof. It was **completed** here: the harness now runs against the **shipped implementation** and not only against the prototype, and the implementation has a drift proof of its own. |
+| State | **Implemented, verified, committed and pushed.** 73 new tests — 54 in `tests/test_file_logging.py`, 13 in `tests/test_logging_cli.py`, 3 in the parity test, 3 in the static check.  13/13 invariants hold against the implementation, 7/7 drifts are caught against it, and **both** orchestrators wrote a `0600` log with a live symlink next to the rotated generation in an end-to-end run.  The CI gate reports **0 new failures** (40 known, 0 new).  Each of the three commits was checked on its own in a throw-away worktree: no new failure against the baseline at any of them. |
+
+### Latest change: the logging goes into a file, and it rotates
+
+**The operator asked for it on 2026-10-27**:
+
+> *"I want be able to redirect logging into file, this solution must have a
+> posibility to rotare log when reaching current log file predefined size.
+> Inside directory we must have soft link to current log file the files"*
+
+The **investigation** was done on the same day — the report, a working
+prototype, a harness of seven invariants and a drift proof.  It was
+committed onto `feature/context-window-debug-report` and reached `master`
+through the squash-merge `2b8f781`.  **No branch was ever created for
+it**, and no source file of the agent was touched.
+
+On 2026-10-29 the operator asked to continue, and to report the branch
+decision before the development started.  The branch did not exist, so it
+was created: `investigate/logging-to-file`, based on `master` at
+`99e8586`, in the `self-development` clone.
+
+#### The branch, and why it is called that
+
+| | |
+|---|---|
+| The branch did not exist | Verified on both clones after `git fetch --all --prune` — no local and no remote `investigate/logging-to-file`. |
+| The investigation was on the wrong branch | `11ad030` sits on `feature/context-window-debug-report`. The artefacts reached `master` through the squash-merge; the branch did not follow. |
+| The name follows the repository | `investigate/empty-agent-response` and `investigate/no-user-query-error` are on the remote, and both carry the investigation **and** the fix that followed it (`073288f`, `c3f70fd`). |
+| The base is `master` | The branch is based on `master` at `99e8586` — the current head — and not on the stale `feature/context-window-debug-report`. |
+
+#### The implementation
+
+| Path | Change |
+|---|---|
+| `components/file_logging.py` | **New.** The handler, the size parser, the resolution and the wiring.  The standard library only. |
+| `agent-torvalds.py` | The five flags; `configure_logging()` gains the file handler. |
+| `agent-torvalds-mw.py` | The same — and the dead `to_file` parameter becomes the real thing. |
+| `tests/test_file_logging.py` | **New.** 54 tests. |
+| `tests/test_logging_cli.py` | The new flags, pinned next to `--log-level`. |
+| `tests/test_multi_window_parity.py` | The flags of the two orchestrators must not drift. |
+| `tests/test_no_undefined_globals.py` | **New.** A static check that every global a function reads exists in its module. |
+| `docs/logging.md` | **New.** The documentation. |
+| `README.md`, `CHANGELOG.md`, `components/README.md` | The documentation. |
+
+#### The four open questions of the report
+
+The report ended with four questions for the operator.  They were
+answered on 2026-10-29:
+
+| Question | The answer |
+|---|---|
+| The name of the symlink | `agent-current.log` — the default of the report.  `--log-symlink` chooses, and the word `none` turns the pointer off. |
+| The default size | `10MB` with `5` generations — 60MB of disk use at the most. |
+| Whether the file replaces the terminal or joins it | It **joins** it: *"no let him write to the stderr we can also redirect it into file under torvalds log directory"*. |
+| Whether the TUI should stop writing to stderr | It does not. |
+
+#### A `NameError` that no test could have caught
+
+The announcement of the log file was added to the **classic REPL** of the
+multi-window agent — and the resolved configuration was not a parameter of
+that function.  The name was read, the function did not have it, and the
+REPL would have crashed on its first run.
+
+No test noticed, and no test *could* have: the multi-window agent has two
+modes, the classic REPL and the TUI, and the tests start the TUI.  The
+defect was found by reading the diff, not by running anything.
+
+So the hole was closed: `tests/test_no_undefined_globals.py` reads the
+source of every function of both orchestrators and checks that every
+global it reads exists in its module.  It is a **static** check, so it
+covers the paths no test enters.  The check was proven against the
+defect: with the bug put back, it fails with
+
+```
+agent-torvalds-mw.py: run_classic_repl() reads names that do not exist: ['file_config']
+```
+
+#### What the harness found — a second time
+
+**The L5 invariant had a hole, and it was in the harness itself.**  The
+check that a symlink that cannot be created never stops the logging
+skipped its second half when the handler was `None` — so a drift that
+turned the degradation of the *pointer* into the end of the *file logging*
+altogether was invisible.  The check now fails when the handler was never
+installed, and the drift proof caught the drift it had let through.
+
+*"A check that has never failed proves nothing."*  The lesson is the one
+the project keeps learning, and it was learned twice: once by the
+investigation, and once by the implementation that followed it.
+
+#### The implementation was proved, not the prototype
+
+The harness of the investigation checks the **prototype**.  The code that
+actually runs is `components/file_logging.py`, and an invariant that has
+only ever been checked against a prototype proves nothing about the
+implementation.  So:
+
+| | |
+|---|---|
+| `verify_implementation.py` | The same thirteen checks, run against the **shipped implementation**.  13/13 hold. |
+| `verify_implementation_catches_regressions.py` | Seven deliberate drifts in the implementation, each caught by the invariant it attacks.  7/7. |
+| The end-to-end run | The agent wrote a `0600` log, rotated it at 4KB, and the symlink still pointed at the live file after the rotation. |
+
+#### Verifying the change
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/tests/test_file_logging.py -q
+self-development/.venv/bin/python investigate/logging-to-file/verify_implementation.py
+self-development/.venv/bin/python investigate/logging-to-file/verify_implementation_catches_regressions.py
+self-development/.venv/bin/python scripts/ci_test_gate.py
+```
+
+54 tests pass, the thirteen invariants hold against the implementation, and
+every deliberate drift is caught.  The CI gate reported **0 new failures**
+(40 known, 0 new).
 
 ### Latest change: the first release, v1.0.0
 
@@ -628,6 +746,12 @@ self-development/.venv/bin/python investigate/logging-to-file/verify_harness_cat
 The report ends with **four open questions for the operator**: the name of
 the symlink, the default size, whether the file replaces the terminal or
 joins it, and whether the TUI should stop writing to stderr.
+
+**This investigation became the implementation on 2026-10-29** — see
+**Latest change: the logging goes into a file, and it rotates** above.
+The four questions were answered, the branch `investigate/logging-to-file`
+was created, and the design in this report is now the code in
+`components/file_logging.py`.
 
 ### Latest change: the answer is in the debug log
 

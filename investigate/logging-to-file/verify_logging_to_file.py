@@ -33,13 +33,44 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
 
-from prototype_file_logging import (  # noqa: E402
-    SymlinkedRotatingFileHandler,
-    install_file_logging,
-    parse_size,
-)
+
+def _module_under_test():
+    """The module the invariants are checked against.
+
+    The **prototype** by default — that is the evidence the investigation
+    rests on.  ``TORVALDS_FILE_LOGGING_TARGET=implementation`` points the
+    harness at the shipped implementation in ``components/file_logging.py``,
+    so the same invariants can be checked against the code that actually
+    runs.  The implementation is loaded by path: it is standard library
+    only, and it must be provable without the rest of the package.
+    """
+    target = os.environ.get("TORVALDS_FILE_LOGGING_TARGET", "prototype")
+    if target == "implementation":
+        import importlib.util
+
+        path = HERE.parent.parent / "components" / "file_logging.py"
+        spec = importlib.util.spec_from_file_location("file_logging", path)
+        module = importlib.util.module_from_spec(spec)
+        # The module has to be in sys.modules *before* it is executed:
+        # @dataclass looks the class up by its module name.
+        sys.modules["file_logging"] = module
+        spec.loader.exec_module(module)
+        return module
+
+    import prototype_file_logging
+
+    return prototype_file_logging
+
+
+_MODULE = _module_under_test()
+TARGET_NAME = os.environ.get("TORVALDS_FILE_LOGGING_TARGET", "prototype")
+
+SymlinkedRotatingFileHandler = _MODULE.SymlinkedRotatingFileHandler
+install_file_logging = _MODULE.install_file_logging
+parse_size = _MODULE.parse_size
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +236,11 @@ def check_l5_degrades_without_a_symlink(tmp: Path, h: Harness) -> None:
     except Exception:  # noqa: BLE001 — the point of the check
         raised = True
 
-    ok = not raised
+    # The handler must be **there**: a handler that was never installed
+    # is not a degradation of the pointer — it is the end of the file
+    # logging altogether, and the check below would be skipped instead
+    # of failing.
+    ok = not raised and handler is not None
     h.check("L5", ok, "the handler is installed even though the symlink cannot be created")
 
     if handler is not None:
@@ -215,6 +250,8 @@ def check_l5_degrades_without_a_symlink(tmp: Path, h: Harness) -> None:
         handler.flush()
         written = log_file.exists() and "record 0000" in log_file.read_text(encoding="utf-8")
         h.check("L5", written, "the records still reach the log file")
+    else:
+        h.check("L5", False, "the records still reach the log file")
 
 
 def check_l6_append_and_private(tmp: Path, h: Harness) -> None:
@@ -273,7 +310,7 @@ def check_l7_the_size_is_parsed(tmp: Path, h: Harness) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    print("The file-logging invariants")
+    print(f"The file-logging invariants — against the {TARGET_NAME}")
     print("=" * 70)
     tmp = Path(tempfile.mkdtemp(prefix="torvalds-log-verify-"))
     h = Harness()
