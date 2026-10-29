@@ -402,7 +402,7 @@ QUESTION_BANK: List[QuestionCase] = [
         regression=(
             "the label kept the 'which' out of the head of the question, so the "
             "operator was prompted with [y/N] — this is the shape the operator "
-            "reported in /home/kbush/torvald-log/hitl_questions_issue/"
+            "reported in ~/torvald-log/hitl_questions_issue/"
             "wrong-user-input.txt"
         ),
     ),

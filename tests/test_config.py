@@ -29,6 +29,7 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 # Ensure the repository root is on the path
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,8 +38,14 @@ sys.path.insert(0, str(ROOT))
 from components.config import (  # noqa: E402
     APP_DIR_NAME,
     CONFIG_FILENAME,
+    CONFIG_HOME_ENV,
     CONFIG_PATH_ENV,
     Config,
+    MACOS_APP_SUPPORT_DIR,
+    WINDOWS_APP_DATA_ENV,
+    WINDOWS_APP_DATA_FALLBACK,
+    default_config_dir,
+    default_config_path,
     Effective,
     Setting,
     SETTINGS,
@@ -105,6 +112,94 @@ class TestTheLocation(TempDirCase):
     def test_the_xdg_home_is_expanded(self):
         path = default_config_dir({"XDG_CONFIG_HOME": "~/xdg"})
         self.assertEqual(path, Path.home() / "xdg" / APP_DIR_NAME)
+
+
+# ---------------------------------------------------------------------------
+# The location on every platform
+# ---------------------------------------------------------------------------
+
+class TestTheLocationOnEveryPlatform(TempDirCase):
+    """Where the file is on Windows, on macOS and on Linux.
+
+    The platform is a property of the interpreter, not of the
+    environment, so it is patched — the tests must say the same thing on
+    every system they run on.
+    """
+
+    def the_dir(self, platform: str, environ=None) -> Path:
+        """The configuration directory, as it would be on that platform."""
+        with mock.patch.object(sys, "platform", platform):
+            return default_config_dir({} if environ is None else environ)
+
+    def test_on_windows_the_application_data_wins_over_the_fallback(self):
+        """The path is absolute **on the platform the test runs on**: the
+        Windows shape cannot be written on POSIX and the other way
+        round, and ``is_absolute()`` is the platform's."""
+        app_data = str(self.tmp / "AppData" / "Roaming")
+        directory = self.the_dir("win32", {"APPDATA": app_data})
+        self.assertEqual(
+            directory, self.tmp / "AppData" / "Roaming" / APP_DIR_NAME
+        )
+
+    def test_the_windows_directories_are_the_ones_windows_uses(self):
+        """The shape of the path, pinned as the constants they are."""
+        self.assertEqual(WINDOWS_APP_DATA_ENV, "APPDATA")
+        self.assertEqual(WINDOWS_APP_DATA_FALLBACK, "~/AppData/Roaming")
+
+    def test_the_macos_directory_is_the_application_support(self):
+        """The shape of the path, pinned as the constant it is."""
+        self.assertEqual(MACOS_APP_SUPPORT_DIR, "~/Library/Application Support")
+
+    def test_on_windows_without_the_variable_the_home_is_used(self):
+        directory = self.the_dir("win32", {})
+        self.assertEqual(
+            directory,
+            Path.home() / "AppData" / "Roaming" / APP_DIR_NAME,
+        )
+
+    def test_on_macos_the_file_is_under_the_application_support(self):
+        directory = self.the_dir("darwin", {})
+        self.assertEqual(
+            directory,
+            Path.home() / "Library" / "Application Support" / APP_DIR_NAME,
+        )
+
+    def test_on_linux_the_xdg_standard_is_used(self):
+        directory = self.the_dir("linux", {})
+        self.assertEqual(directory, Path.home() / ".config" / APP_DIR_NAME)
+
+    def test_the_xdg_variable_is_honoured_on_every_platform(self):
+        """An explicit choice by the operator beats the convention."""
+        for platform in ("linux", "darwin", "win32"):
+            directory = self.the_dir(
+                platform, {CONFIG_HOME_ENV: str(self.tmp)}
+            )
+            self.assertEqual(directory, self.tmp / APP_DIR_NAME, platform)
+
+    def test_the_file_is_named_the_same_on_every_platform(self):
+        for platform in ("linux", "darwin", "win32"):
+            with mock.patch.object(sys, "platform", platform):
+                path = default_config_path({})
+            self.assertEqual(path.name, CONFIG_FILENAME, platform)
+
+    def test_a_relative_xdg_path_is_ignored(self):
+        """A relative path would make the configuration depend on the
+        directory the agent was started in."""
+        directory = self.the_dir("linux", {CONFIG_HOME_ENV: "relative/path"})
+        self.assertEqual(directory, Path.home() / ".config" / APP_DIR_NAME)
+
+    def test_a_relative_application_data_is_ignored_on_windows(self):
+        directory = self.the_dir("win32", {"APPDATA": "relative/path"})
+        self.assertEqual(
+            directory,
+            Path.home() / "AppData" / "Roaming" / APP_DIR_NAME,
+        )
+
+    def test_the_directory_carries_the_name_of_the_application(self):
+        for platform in ("linux", "darwin", "win32"):
+            with mock.patch.object(sys, "platform", platform):
+                directory = default_config_dir({})
+            self.assertEqual(directory.name, APP_DIR_NAME, platform)
 
 
 # ---------------------------------------------------------------------------
@@ -347,6 +442,165 @@ class TestTheTemplate(TempDirCase):
 
 
 # ---------------------------------------------------------------------------
+# The file the agent creates for itself
+# ---------------------------------------------------------------------------
+
+class TestTheFileTheAgentCreatesForItself(TempDirCase):
+    """What the agent writes into its home directory when it starts."""
+
+    def the_default(self, home: Path) -> Config:
+        """A configuration that reads the default location of a home.
+
+        ``XDG_CONFIG_HOME`` and not ``HOME``: the ``~`` of
+        ``~/.config`` is expanded by :meth:`Path.expanduser`, which reads
+        the environment of the **process**, not the mapping that was
+        handed over.
+        """
+        return Config(environ={CONFIG_HOME_ENV: str(home / ".config")})
+
+    def test_the_file_is_created_when_it_is_not_there(self):
+        home = self.tmp / "home"
+        config = self.the_default(home)
+
+        created = config.ensure_default()
+
+        self.assertIsNotNone(created)
+        self.assertTrue(created.is_file())
+        self.assertEqual(
+            created, home / ".config" / APP_DIR_NAME / CONFIG_FILENAME
+        )
+
+    def test_the_file_it_creates_is_private(self):
+        home = self.tmp / "home"
+        config = self.the_default(home)
+
+        created = config.ensure_default()
+
+        self.assertEqual(stat.S_IMODE(created.stat().st_mode), 0o600)
+
+    def test_the_file_it_creates_carries_no_settings(self):
+        """It must not change the way the agent runs."""
+        home = self.tmp / "home"
+        config = self.the_default(home)
+
+        created = config.ensure_default()
+
+        with created.open("rb") as handle:
+            data = tomllib.load(handle)
+        for section in data.values():
+            self.assertEqual(section, {}, "the template carries a setting")
+
+    def test_an_existing_file_is_not_overwritten(self):
+        home = self.tmp / "home"
+        target = home / ".config" / APP_DIR_NAME / CONFIG_FILENAME
+        target.parent.mkdir(parents=True)
+        target.write_text("[llm]\nmodel = 'mine'\n", encoding="utf-8")
+        config = self.the_default(home)
+
+        created = config.ensure_default()
+
+        self.assertIsNone(created)
+        self.assertEqual(
+            target.read_text(encoding="utf-8"), "[llm]\nmodel = 'mine'\n"
+        )
+
+    def test_a_file_the_operator_named_is_not_created(self):
+        """They pointed at it on purpose."""
+        home = self.tmp / "home"
+        named = self.tmp / "named.toml"
+        config = Config(
+            environ={
+                CONFIG_HOME_ENV: str(home / ".config"),
+                CONFIG_PATH_ENV: str(named),
+            },
+        )
+
+        created = config.ensure_default()
+
+        self.assertIsNone(created)
+        self.assertFalse(named.exists())
+
+    def test_a_file_that_is_not_the_default_one_is_not_created(self):
+        other = self.tmp / "somewhere" / "config.toml"
+        config = Config(
+            path=other,
+            environ={CONFIG_HOME_ENV: str(self.tmp / "home" / ".config")},
+        )
+
+        created = config.ensure_default()
+
+        self.assertIsNone(created)
+        self.assertFalse(other.exists())
+
+    def test_a_symbolic_link_is_not_created_through(self):
+        home = self.tmp / "home"
+        target = home / ".config" / APP_DIR_NAME / CONFIG_FILENAME
+        target.parent.mkdir(parents=True)
+        elsewhere = self.tmp / "elsewhere.toml"
+        elsewhere.write_text("do not touch me\n", encoding="utf-8")
+        target.symlink_to(elsewhere)
+        config = self.the_default(home)
+
+        created = config.ensure_default()
+
+        self.assertIsNone(created)
+        self.assertEqual(
+            elsewhere.read_text(encoding="utf-8"), "do not touch me\n"
+        )
+
+    def test_importing_the_agent_writes_nothing(self):
+        """The creation belongs to the **startup**, not to the import.
+
+        A module that writes into the home directory when it is imported
+        litters every process that imports it — the tests, the tools, a
+        library that uses the agent.
+        """
+        home = self.tmp / "home"
+        script = (
+            "import importlib.util, sys\n"
+            f"spec = importlib.util.spec_from_file_location('agent', {str(ROOT / 'agent-torvalds.py')!r})\n"
+            "module = importlib.util.module_from_spec(spec)\n"
+            "sys.modules['agent'] = module\n"
+            "spec.loader.exec_module(module)\n"
+        )
+        env = dict(os.environ)
+        env["HOME"] = str(home)
+        env.pop("XDG_CONFIG_HOME", None)
+        env.pop(CONFIG_PATH_ENV, None)
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(ROOT),
+            timeout=180,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        self.assertFalse(
+            (home / ".config" / APP_DIR_NAME / CONFIG_FILENAME).exists()
+        )
+
+    def test_both_orchestrators_create_the_file_at_the_startup(self):
+        """The wiring, pinned on the source — the way the repo pins it."""
+        for filename in ("agent-torvalds.py", "agent-torvalds-mw.py"):
+            source = (ROOT / filename).read_text(encoding="utf-8")
+            self.assertIn("config.ensure_default()", source, filename)
+
+    def test_a_home_that_cannot_be_written_to_is_not_fatal(self):
+        """The agent boots anyway."""
+        home = self.tmp / "home"
+        (home / ".config").mkdir(parents=True)
+        (home / ".config" / APP_DIR_NAME).write_text("not a directory")
+        config = self.the_default(home)
+
+        created = config.ensure_default()
+
+        self.assertIsNone(created)
+        self.assertTrue(config.problems)
+        self.assertIn("could not be created", config.problems[0])
+
+
+# ---------------------------------------------------------------------------
 # The effective configuration
 # ---------------------------------------------------------------------------
 
@@ -418,6 +672,11 @@ class TestTheWiring(TempDirCase):
         env = dict(os.environ)
         for var in self.THE_ENVIRONMENT:
             env.pop(var, None)
+        # The home of the test, not the home of the operator: the agent
+        # writes its configuration file there when it starts, and the
+        # test must not litter the machine it runs on.
+        env["HOME"] = str(self.tmp)
+        env.pop("XDG_CONFIG_HOME", None)
         env.update(environ)
         result = subprocess.run(
             [sys.executable, "-c", script],

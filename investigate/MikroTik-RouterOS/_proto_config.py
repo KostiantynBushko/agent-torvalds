@@ -14,6 +14,7 @@ can also be pointed at a real router:
     export HARNESS_USER=admin
     export HARNESS_KEY=~/.ssh/id_ed25519
 """
+import getpass
 import os
 
 # --- Local SSH harness (emulates a MikroTik RouterOS CLI) ---------------------
@@ -22,7 +23,11 @@ HARNESS_DIR = os.environ.get("HARNESS_DIR", "/tmp/sshdtest")
 HARNESS_HOST = os.environ.get("HARNESS_HOST", "127.0.0.1")
 HARNESS_PORT_SESSION = int(os.environ.get("HARNESS_PORT_SESSION", "2224"))  # interactive
 HARNESS_PORT_EXEC = int(os.environ.get("HARNESS_PORT_EXEC", "2223"))       # exec mode
-HARNESS_USER = os.environ.get("HARNESS_USER", os.environ.get("USER", "kbush"))
+# The account of the operator, taken from the environment — the Python
+# equivalent of $USER, and it is never written down.
+HARNESS_USER = os.environ.get(
+    "HARNESS_USER", os.environ.get("USER") or getpass.getuser()
+)
 HARNESS_KEY = os.environ.get("HARNESS_KEY", f"{HARNESS_DIR}/userkey")
 
 HARNESS_HOSTKEY_PUB = os.environ.get("HARNESS_HOSTKEY_PUB", f"{HARNESS_DIR}/hostkey.pub")

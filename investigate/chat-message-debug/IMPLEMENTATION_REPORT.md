@@ -25,7 +25,7 @@ EventConsumer._on_agent_input: prompt: 5 messages
 EventConsumer._on_agent_input:   [0] system: You are Torvalds, a technical AI assistant that interacts with the operating system.
 EventConsumer._on_agent_input:   [1] user: I want to improve debug message for context window
 EventConsumer._on_agent_input:   [3] assistant: thinking: The user asks for a better debug message. | tool call: pwd(path=/)
-EventConsumer._on_agent_input:   [4] tool: output: /home/kbush
+EventConsumer._on_agent_input:   [4] tool: output: ~
 ```
 
 One line per message: the **role**, a colon, and what the message

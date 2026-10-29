@@ -87,8 +87,8 @@ def render_effective(config: Config, console: Optional[Console] = None) -> None:
     else:
         console.print(
             f"[dim]No configuration file at {config.path} — the defaults are "
-            f"used.  `--write-default-config` writes a commented template of "
-            f"it.[/dim]"
+            f"used.  The agent writes a commented template there when it "
+            f"starts.[/dim]"
         )
 
     # The problems.  A file that cannot be read, a setting of the wrong
@@ -131,7 +131,7 @@ def render_effective_markdown(config: Config) -> str:
     else:
         lines.append(
             f"No configuration file at `{config.path}` — the defaults are used.  "
-            f"`--write-default-config` writes a commented template of it."
+            f"The agent writes a commented template there when it starts."
         )
 
     if config.problems:

@@ -243,7 +243,7 @@ def git_configure_credentials(username: str, email: str) -> bool:
         bool: True if credentials were configured successfully, False otherwise
         
     Example:
-        >>> git_configure_credentials("KostiantynBushko", "kbush@example.com")
+        >>> git_configure_credentials("KostiantynBushko", "operator@example.com")
         True
         
     Keywords: configure, credentials, user, email, identity, settings

@@ -4,6 +4,58 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+#### The private folder of the operator is never published
+
+- **The home directory of the operator was published.**  The repository
+  is public, and the home of the operator — the name of the account and
+  the path that carries it — is private.  It was in the documentation,
+  in the reports of the investigations, in the examples of the
+  toolkits, in a test fixture and in the body of a pull request.
+
+  It is written the way the documentation of a project writes it now:
+  `~/.config/torvalds/config.toml` instead of the absolute path, and
+  the name of the account is not written down at all.
+
+- **The paths that have to work on the machine of the operator are
+  computed, not written down.**  Three of them were literal paths, and
+  they were wrong on every other machine:
+
+  | | |
+  |---|---|
+  | `test_live_agent_hitl.py` | the directory of the file itself |
+  | `investigate/context-window-proof/replay_the_operator_log.py` | `Path.home()` |
+  | `agent-torvalds-cpp.py` | `os.path.expanduser`, with `TORVALDS_CPP_MODEL` |
+
+  The model path of the C++ agent was `"${HOME}/..."` — a **shell**
+  variable, in a Python file, where it is not expanded and never was.
+
+- **The name of the account is taken from the environment.**  It was
+  written down in the reports of the investigations, in the SSH harness
+  of the MikroTik prototypes and in the path of the workspace on the
+  external drive.
+
+  | | |
+  |---|---|
+  | the reports | `$USER` |
+  | `investigate/MikroTik-RouterOS/_proto_config.py` | `os.environ["USER"]`, with `getpass.getuser()` behind it |
+  | `investigate/no-user-query-error/repro_live.py` | `os.environ["USER"]`, and `SOURCE_WORKSPACE` overrides it |
+
+  A literal `$USER` is right in a shell and in a report.  In **Python**
+  it is not expanded — it is a path that starts with a dollar sign — so
+  the environment is read instead.  That is the same thing `$USER`
+  means, and it is the reason the two are not written the same way.
+
+- **The check is in the build.**  `tests/test_no_private_paths.py`
+  looks for the **shape** of a home directory in every tracked file,
+  and for the home of the machine the test runs on — **computed**,
+  never written down.  It was proven against a leak: with a home in a
+  tracked file, the check fails and names the file and the line.
+
+  The generic placeholders — `/home/user/...` — are not a home of
+  anybody and are left alone.
+
 ### Added
 
 #### The configuration file — `~/.config/torvalds/config.toml`
@@ -17,6 +69,24 @@ All notable changes to this project are documented in this file.
   > *"we do not have a torvalds config file let say i=under ~/.config
   > folder but I would like to introduce such folder with name 'torvalds'
   > and under this folder we can have a config"*
+
+  The location follows the convention of the platform:
+
+  | | |
+  |---|---|
+  | **Linux and the BSDs** | `~/.config/torvalds/config.toml` |
+  | **macOS** | `~/Library/Application Support/torvalds/config.toml` |
+  | **Windows** | `%APPDATA%` \ `torvalds` \ `config.toml` |
+
+  `$XDG_CONFIG_HOME` is honoured on **every** platform when it is set — it
+  is an explicit choice by the operator — and a **relative** path is
+  ignored, the way the XDG standard says: a relative path would make the
+  configuration of the agent depend on the directory it was started in.
+
+  **Only the configuration file moves.**  What the agent produced — the
+  chat history, the logs, the cache — stays where it is, on every
+  system: moving it would break the sessions of everybody who already
+  has one.
 
   The location is the **XDG** one — `$XDG_CONFIG_HOME`, or `~/.config` —
   and it completes the triad the project already keeps:
@@ -68,6 +138,14 @@ All notable changes to this project are documented in this file.
 - **`\config`** — the effective configuration, with the value that won
   and the layer it came from.  It works in the classic REPL (a table) and
   in the multi-window TUI (the document pane).
+
+- **The agent writes the file for itself.**  When it starts and the file
+  is not there, it creates the commented template — every setting of it is
+  a comment, so **nothing changes about the way the agent runs**.  Only
+  the default location is written to: a file the operator named with
+  `TORVALDS_CONFIG` is theirs, and the agent does not create it.  An
+  existing file is never overwritten, and a home directory that cannot be
+  written to is a warning, not a failure.
 
 - **`--write-default-config`** — writes a commented template with every
   setting, its default, the environment variable that overrides it and
@@ -1062,7 +1140,7 @@ All notable changes to this project are documented in this file.
   EventConsumer._on_agent_input:   [0] system: You are Torvalds, a technical AI assistant that interacts with the operating system.
   EventConsumer._on_agent_input:   [1] user: I want to improve debug message for context window
   EventConsumer._on_agent_input:   [3] assistant: thinking: The user asks for a better debug message. | tool call: pwd(path=/)
-  EventConsumer._on_agent_input:   [4] tool: output: /home/kbush
+  EventConsumer._on_agent_input:   [4] tool: output: ~
   ```
 
   A message shows its **text**, its **thinking** and the **tool calls**

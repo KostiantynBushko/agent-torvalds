@@ -5,7 +5,7 @@
 **Repository:** agent-torvalds
 **Target:** Implementation of a `agent_mikrotik_toolkit.py` that connects to MikroTik routers over SSH, runs RouterOS CLI commands, and safely collects/returns structured output
 **Status:** Investigation Complete — all core technical risks validated empirically
-**Working directory:** `/home/kbush/ai-agent-investiagte/agent-torvalds/self-development`
+**Working directory:** `~/ai-agent-investiagte/agent-torvalds/self-development`
 
 ---
 
@@ -58,7 +58,7 @@ Both were implemented and exercised against a purpose-built SSH harness that emu
 ### 2.1 Repository Structure (self-development clone)
 
 ```
-/home/kbush/ai-agent-investiagte/agent-torvalds/self-development/
+~/ai-agent-investiagte/agent-torvalds/self-development/
 ├── agent-torvalds.py              # Main orchestrator
 ├── agent_*.py                     # Toolkits (flat, one file per domain)
 ├── agent_tool_retriever.py        # Semantic on-demand tool loading
@@ -987,5 +987,5 @@ cd self-development
 
 ---
 
-*Investigation conducted in: `/home/kbush/ai-agent-investiagte/agent-torvalds/self-development`*
+*Investigation conducted in: `~/ai-agent-investiagte/agent-torvalds/self-development`*
 *All work isolated to the self-development clone per the self-development rules.*

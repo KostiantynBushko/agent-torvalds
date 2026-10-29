@@ -1,4 +1,5 @@
 import asyncio
+import os
 from llama_index.core.agent.workflow import FunctionAgent
 from rich.console import Console
 
@@ -18,8 +19,18 @@ except Exception:  # pragma: no cover - the toolkit is optional
 from toolkits.math_toolkit.agent_math_toolkit import *
 from toolkits.git_toolkit.agent_git_toolkit import *
 
-# Path to your local GGUF model
-MODEL_PATH = "${HOME}/ai-agent-investiagte/models/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf"
+# Path to your local GGUF model.
+#
+# The path is **computed**, not written down: a literal path names one
+# machine and one operator, and it is wrong everywhere else.  The
+# environment variable is there for the machine the model is on, and the
+# default is the ordinary place a model is kept.
+MODEL_PATH = os.path.expanduser(
+    os.environ.get(
+        "TORVALDS_CPP_MODEL",
+        "~/models/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
+    )
+)
 
 from llama_index.llms.llama_cpp import LlamaCPP
 from llama_index.core.llms.function_calling import FunctionCallingLLM

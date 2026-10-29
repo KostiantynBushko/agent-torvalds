@@ -1,6 +1,6 @@
 # Investigation report — the toolkit alias warnings
 
-**Warnings investigated:** `/home/kbush/torvald-log/warnings/warnings.md`
+**Warnings investigated:** `~/torvald-log/warnings/warnings.md`
 
 ```
 agent_microtik_toolkit.py
@@ -55,7 +55,7 @@ The warning text is not produced by anything in `agent-torvalds`:
 ```
 $ grep -rn "Cannot find reference" .            # no hit
 $ git log --all -S "Cannot find reference"      # no hit
-$ grep -rl "Cannot find reference" /home/kbush  # only the warnings file itself
+$ grep -rl "Cannot find reference" ~  # only the warnings file itself
 ```
 
 The same is true for every branch in the clone. The checker is an **external**

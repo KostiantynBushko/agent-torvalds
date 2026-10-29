@@ -26,7 +26,21 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from llama_index.core.base.llms.types import ChatMessage
 from llama_index.llms.ollama.base import Ollama
 
-SOURCE_WORKSPACE = "/media/kbush/HP P500/IKS/inventory/output_by_unit/mytlushko"
+# The workspace of the operator, on the external drive.  The name of
+# the account comes from the environment — the Python equivalent of
+# $USER — and it is never written down.
+SOURCE_WORKSPACE = os.environ.get(
+    "SOURCE_WORKSPACE",
+    os.path.join(
+        "/media",
+        os.environ.get("USER", "operator"),
+        "HP P500",
+        "IKS",
+        "inventory",
+        "output_by_unit",
+        "mytlushko",
+    ),
+)
 
 REQUEST = (
     "in project folder: take a file A = OV_2026_10.xlsx file B = shtab.xlsx "

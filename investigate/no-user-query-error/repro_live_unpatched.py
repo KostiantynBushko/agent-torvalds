@@ -11,7 +11,7 @@ The run is expected to fail with
 
     "No user query found in messages."
 
-which is the error from ``/home/kbush/torvald-log/exel.txt``.
+which is the error from ``~/torvald-log/exel.txt``.
 
 Usage:
     python investigate/no-user-query-error/repro_live_unpatched.py

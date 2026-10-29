@@ -157,12 +157,12 @@ cd self-development
 is_initialized : True
 is_degraded    : True
 storage_mode   : fallback
-user           : kbush
+user           : $USER
 sessions       : ['Project Chat', 'General Chat']
 active session : General Chat
 
 === \chat-info shows the storage mode ===
-Active session for user 'kbush':
+Active session for user '$USER':
   ID:       fab62e1a-e4d3-47a4-bb80-675b10f5665c
   Name:     General Chat
   Type:     general
