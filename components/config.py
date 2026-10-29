@@ -1,4 +1,4 @@
-"""
+r"""
 The configuration file — ``~/.config/torvalds/config.toml``.
 
 The agent had **forty-five environment variables** and no file.  A shell
@@ -11,13 +11,25 @@ on 2026-10-29:
 > but I would like to introduce such folder with name 'torvalds' and under
 > this folder we can have a config"*
 
-The location is the **XDG Base Directory** one — ``$XDG_CONFIG_HOME`` or
-``~/.config`` — and it completes the triad the project already keeps:
+The location follows the convention of the platform the agent runs on:
 
-    ~/.config/torvalds/config.toml      the operator's intent  (this module)
+    Linux and the BSDs   ~/.config/torvalds/config.toml
+    macOS                ~/Library/Application Support/torvalds/config.toml
+    Windows              %APPDATA%\torvalds\config.toml
+
+``$XDG_CONFIG_HOME`` is honoured on **every** platform when it is set —
+it is an explicit choice by the operator.
+
+Only the configuration file moves to the convention of the platform.  The
+**data does not move** — it completes the triad the project already
+keeps, and it stays where it is on every system:
+
     ~/.torvalds/chat_manager.db         what the agent produced
     ~/.torvalds/logs/                   what the agent produced
     ~/.cache/torvalds/agent_cache.json  what the agent produced
+
+Moving those would break the sessions, the logs and the cache of
+everybody who already has one.
 
 The **precedence chain** is the one the project already uses — the flag
 beats the environment variable — with the file inserted underneath:
@@ -56,6 +68,7 @@ Retriever Keywords: config, configuration, config file, toml, xdg, settings,
 from __future__ import annotations
 
 import os
+import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,7 +93,23 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 #: The XDG variable that holds the root of the user's configuration.
+#:
+#: It is honoured on **every** platform, not only on the ones the XDG
+#: Base Directory standard speaks for.  It is an explicit choice by the
+#: operator, and it is how the tests point the agent at a temporary
+#: directory on any system.
 CONFIG_HOME_ENV = "XDG_CONFIG_HOME"
+
+#: The Windows variable that holds the per-user application data.
+#: ``C:\Users\<user>\AppData\Roaming`` on a normal installation.
+WINDOWS_APP_DATA_ENV = "APPDATA"
+
+#: The macOS directory that holds the application data.
+MACOS_APP_SUPPORT_DIR = "~/Library/Application Support"
+
+#: The Windows directory that holds the application data, when
+#: ``%APPDATA%`` is not set.
+WINDOWS_APP_DATA_FALLBACK = "~/AppData/Roaming"
 
 #: The name of the application's directory inside it.
 APP_DIR_NAME = "torvalds"
@@ -97,12 +126,55 @@ CONFIG_PATH_ENV = "TORVALDS_CONFIG"
 def default_config_dir(environ: Optional[Mapping[str, str]] = None) -> Path:
     """The directory that holds the configuration file.
 
-    ``$XDG_CONFIG_HOME`` when it is set, ``~/.config`` otherwise — the
-    XDG Base Directory standard.
+    The directory follows the convention of the platform the agent runs
+    on:
+
+    | | |
+    |---|---|
+    | **Windows** | ``%APPDATA%\\torvalds`` — ``C:\\Users\\<user>\\AppData\\Roaming\\torvalds`` |
+    | **macOS** | ``~/Library/Application Support/torvalds`` |
+    | **Linux and the BSDs** | ``$XDG_CONFIG_HOME/torvalds``, or ``~/.config/torvalds`` |
+
+    ``$XDG_CONFIG_HOME`` is honoured on **every** platform when it is
+    set: it is an explicit choice by the operator, and it beats the
+    convention of the system.
+
+    The file is **named** the same everywhere — ``config.toml`` — so the
+    documentation of the project describes one file, and the operator
+    who moves between the three systems finds it in the place the system
+    expects.
+
+    Args:
+        environ: The environment to read.  Defaults to ``os.environ``.
+
+    Returns:
+        The directory that holds the configuration file.
     """
     env = os.environ if environ is None else environ
-    base = (env.get(CONFIG_HOME_ENV) or "").strip() or "~/.config"
-    return Path(base).expanduser() / APP_DIR_NAME
+
+    # -- the explicit choice, on any platform ---------------------------
+    explicit = (env.get(CONFIG_HOME_ENV) or "").strip()
+    if explicit:
+        candidate = Path(explicit).expanduser()
+        if candidate.is_absolute():
+            return candidate / APP_DIR_NAME
+        # A relative path is **invalid**: the XDG standard says so, and a
+        # relative path would make the configuration of the agent depend
+        # on the directory it was started in.
+
+    # -- the convention of the platform ---------------------------------
+    if sys.platform == "win32":
+        app_data = (env.get(WINDOWS_APP_DATA_ENV) or "").strip()
+        if app_data:
+            candidate = Path(app_data).expanduser()
+            if candidate.is_absolute():
+                return candidate / APP_DIR_NAME
+        return Path(WINDOWS_APP_DATA_FALLBACK).expanduser() / APP_DIR_NAME
+
+    if sys.platform == "darwin":
+        return Path(MACOS_APP_SUPPORT_DIR).expanduser() / APP_DIR_NAME
+
+    return Path("~/.config").expanduser() / APP_DIR_NAME
 
 
 def default_config_path(environ: Optional[Mapping[str, str]] = None) -> Path:
@@ -743,6 +815,11 @@ class Config:
         alone — a file that is briefly readable by every account on the
         box is a file that was exposed.  Creating it with the mode is
         the only way to be sure there is no such moment.
+
+        On **Windows** the mode is not a mode: there are no POSIX
+        permissions there, and the access is decided by the ACL of the
+        directory.  The mode is still asked for — it costs nothing, and
+        it keeps the file writable, which is what the agent needs.
 
         An existing file is **not** overwritten.  The template is a
         starting point, and the settings the operator wrote into it are

@@ -867,7 +867,7 @@ def parse_args():
     parser.add_argument(
         "--hitl-no-runtime-toggle",
         action="store_true",
-        help="Disable runtime HITL toggle commands (\toggle-hitl, \hitl-status, etc.)",
+        help="Disable runtime HITL toggle commands (\\toggle-hitl, \\hitl-status, etc.)",
     )
     parser.add_argument(
         "--context-guard-on",

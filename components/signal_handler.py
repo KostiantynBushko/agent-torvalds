@@ -1,4 +1,4 @@
-"""
+r"""
 Signal Handler Component
 
 Manages OS signals for graceful shutdown of the Torvalds agent.
@@ -46,7 +46,7 @@ DUMP_STATE_ON_SIGQUIT = os.environ.get("TORVALDS_DUMP_STATE_ON_SIGQUIT", "false"
 
 
 class SignalHandler:
-    """
+    r"""
     Manages OS signals for graceful shutdown of the Torvalds agent.
 
     Handles SIGINT (Ctrl+C), SIGQUIT (Ctrl+\), and SIGTERM (kill <pid>).

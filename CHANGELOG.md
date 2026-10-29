@@ -18,6 +18,24 @@ All notable changes to this project are documented in this file.
   > folder but I would like to introduce such folder with name 'torvalds'
   > and under this folder we can have a config"*
 
+  The location follows the convention of the platform:
+
+  | | |
+  |---|---|
+  | **Linux and the BSDs** | `~/.config/torvalds/config.toml` |
+  | **macOS** | `~/Library/Application Support/torvalds/config.toml` |
+  | **Windows** | `%APPDATA%` \ `torvalds` \ `config.toml` |
+
+  `$XDG_CONFIG_HOME` is honoured on **every** platform when it is set — it
+  is an explicit choice by the operator — and a **relative** path is
+  ignored, the way the XDG standard says: a relative path would make the
+  configuration of the agent depend on the directory it was started in.
+
+  **Only the configuration file moves.**  What the agent produced — the
+  chat history, the logs, the cache — stays where it is, on every
+  system: moving it would break the sessions of everybody who already
+  has one.
+
   The location is the **XDG** one — `$XDG_CONFIG_HOME`, or `~/.config` —
   and it completes the triad the project already keeps:
 

@@ -775,7 +775,9 @@ and a run of them is reduced to one.
 ### The Configuration File
 
 The agent reads its settings from the **environment**, from the **command
-line**, and from a **configuration file** under `~/.config/torvalds/`:
+line**, and from a **configuration file** — `~/.config/torvalds/` on
+Linux and the BSDs, `~/Library/Application Support/torvalds/` on macOS,
+and `%APPDATA%` \ `torvalds` on Windows:
 
 ```toml
 # ~/.config/torvalds/config.toml

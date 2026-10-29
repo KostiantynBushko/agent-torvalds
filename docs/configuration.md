@@ -50,24 +50,50 @@ Config file: /home/kbush/.config/torvalds/config.toml
 
 ## 2. The location
 
-```
-~/.config/torvalds/config.toml
-```
-
-That is the **XDG Base Directory** standard — `$XDG_CONFIG_HOME` when it is
-set, `~/.config` otherwise. It completes the triad the project already
-keeps:
+The file follows the convention of the platform the agent runs on:
 
 | | |
 |---|---|
-| `~/.config/torvalds/config.toml` | the operator's **intent** — this file |
+| **Linux and the BSDs** | `~/.config/torvalds/config.toml` |
+| **macOS** | `~/Library/Application Support/torvalds/config.toml` |
+| **Windows** | `%APPDATA%\torvalds\config.toml` — `C:\Users\<user>\AppData\Roaming\torvalds\config.toml` |
+
+`$XDG_CONFIG_HOME` is honoured on **every** platform when it is set — it
+is an explicit choice by the operator, and it beats the convention of the
+system. A **relative** path is ignored: the XDG standard says so, and a
+relative path would make the configuration of the agent depend on the
+directory it was started in.
+
+On Windows, `%APPDATA%` is used when it is set, and
+`~/AppData/Roaming` when it is not.
+
+The file is **named** the same everywhere — `config.toml` — so the
+documentation of the project describes one file, and the operator who
+moves between the three systems finds it where the system expects it.
+
+### The data does not move
+
+Only the configuration file follows the convention of the platform. What
+the agent **produced** stays where it is, on every system:
+
+| | |
+|---|---|
 | `~/.torvalds/chat_manager.db` | what the agent **produced** |
 | `~/.torvalds/logs/` | what the agent **produced** |
 | `~/.cache/torvalds/agent_cache.json` | what the agent **produced** |
 
-The data does not move. A database and a rotating log are not
-configuration — they are what the agent wrote — and moving the chat
-history would break the sessions of everybody who already has one.
+A database and a rotating log are not configuration — they are what the
+agent wrote — and moving the chat history would break the sessions of
+everybody who already has one.
+
+### The file is private, where "private" means something
+
+The file is created with the mode `0600` **at creation**, so there is no
+moment at which it is readable by every account on the box.
+
+On **Windows** there are no POSIX permissions: the access is decided by
+the ACL of the directory. The mode is still asked for — it costs nothing,
+and it keeps the file writable, which is what the agent needs.
 
 `TORVALDS_CONFIG` points the agent at another file. It exists for the
 tests, for a second installation, and for the operator who keeps the
