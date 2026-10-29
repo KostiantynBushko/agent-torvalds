@@ -4,7 +4,10 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-29 (the **logging goes into a file** — the
+**Last updated:** 2026-10-29 (the **configuration file** —
+`~/.config/torvalds/config.toml`, the XDG location, with the file
+sitting *below* the environment variables and every setting reporting
+its source; before that, the **logging goes into a file** — the
 investigation of 2026-10-27 became the implementation: a rotating log
 file, a symlink to the current one, and the five flags that turn it on;
 before that, the **first release**, `v1.0.0`, was **cut
@@ -154,13 +157,102 @@ question was not answered; act on your own judgement."*
 
 | Item | Status |
 |---|---|
-| Branch | `investigate/logging-to-file` — based on `master` at `99e8586`, **pushed** to `origin/investigate/logging-to-file` on 2026-10-29. Three commits: `6fac399` (feat), `aa46876` (test), `52180da` (docs). **Not merged** — the operator wants to test it on their own first. Rule 4: the commit and the push were made on the operator's explicit approval. |
-| Scope | Turn the **investigation** of the logging into a file into the **implementation**: the rotating log file, the symlink to the current one, and the five flags that turn it on. |
-| Status | **Implemented and verified.** `components/file_logging.py` is new; both orchestrators take the five flags; 54 new tests, the parity test and the documentation are in place. The CI gate reports **0 new failures** (40 known, 0 new). |
-| Policy | **The branch did not exist.** The investigation of 2026-10-27 was committed onto `feature/context-window-debug-report` and reached `master` through the squash-merge `2b8f781` — the *artefacts* were merged, the *branch* never was. The repository already carries `investigate/empty-agent-response` and `investigate/no-user-query-error`, and both hold the investigation **and** the fix that followed it, so `investigate/logging-to-file` is the name that fits. |
-| The operator's decisions | The **stderr handler stays** — *"no let him write to the stderr we can also redirect it into file under torvalds log directory"*. The file is a **tee**, not a replacement. The other three open questions of the report took the defaults of the report: the symlink is `agent-current.log`, the size is `10MB` with `5` generations, and the TUI keeps writing to stderr. |
-| Investigation | The investigation is `investigate/logging-to-file/` — the report, the prototype, the harness and the drift proof. It was **completed** here: the harness now runs against the **shipped implementation** and not only against the prototype, and the implementation has a drift proof of its own. |
-| State | **Implemented, verified, committed and pushed.** 73 new tests — 54 in `tests/test_file_logging.py`, 13 in `tests/test_logging_cli.py`, 3 in the parity test, 3 in the static check.  13/13 invariants hold against the implementation, 7/7 drifts are caught against it, and **both** orchestrators wrote a `0600` log with a live symlink next to the rotated generation in an end-to-end run.  The CI gate reports **0 new failures** (40 known, 0 new).  Each of the three commits was checked on its own in a throw-away worktree: no new failure against the baseline at any of them. |
+| Branch | `feature/config-file` — based on `master` at `99e8586`. **Local only** — not committed, not pushed. Rule 4: the commit and the push wait for the operator's approval. |
+| Scope | Give the agent a **configuration file** — `~/.config/torvalds/config.toml` — for the forty-five settings that today live in environment variables. |
+| Status | **Implemented and verified.** `components/config.py` and `components/config_view.py` are new; both orchestrators, the stats handler, the Ollama configuration and the TUI read the file; 44 new tests and the documentation are in place. The CI gate reports **0 new failures**. |
+| Policy | **The file sits below the environment variables.** The chain is `flag > environment variable > config file > default`. A file that outranked the variables would change the behaviour of every operator who already has them the moment they upgraded — a different model, a different host, silently. With the file underneath, an operator with no file sees no change, and the file becomes the "set it once" layer. |
+| The operator's decisions | **TOML**, at `~/.config/torvalds/config.toml`. The location was the operator's own suggestion ("under ~/.config folder ... with name 'torvalds'"), and it is the XDG one, so it completes the triad the project already keeps. The sections `[llm] [agent] [hitl] [stats] [logging]` and the toolkit fallback took the recommendations that were put with the question. |
+| What did not move | The chat history, the cache and the logs. A database and a rotating log are what the agent *produced*, not configuration, and moving the chat history would break the sessions of everybody who has one. |
+
+### Latest change: the configuration file
+
+**The operator asked for it on 2026-10-29**:
+
+> *"we do not have a torvalds config file let say i=under ~/.config folder
+> but I would like to introduce such folder with name 'torvalds' and under
+> this folder we can have a config for lwhat do yis this good idea?"*
+
+The question was answered with the **recommendations that were put with
+it**, and the operator chose the format: *"let's use config.toml"*.
+
+#### The design, and the one decision that matters
+
+| | |
+|---|---|
+| The location | `~/.config/torvalds/config.toml` — the **XDG** one.  The project already keeps `~/.torvalds/` for the chat history and `~/.cache/torvalds/` for the cache, so the triad is complete. |
+| The order | `flag > environment variable > config file > default`.  **The file is below the variables** — see below. |
+| The format | **TOML**, read by `tomllib` from the standard library.  A syntax error is a hard error with a line number; YAML turns a malformed document into `None` and has the Norway problem. |
+| What it holds | The five sections `[llm] [agent] [hitl] [stats] [logging]`. |
+| What does not move | The chat history, the cache, the logs.  They are what the agent *produced*. |
+| Secrets | Stay in the environment.  A file is easier to copy around, and `0600` is a promise, not a guarantee. |
+
+**Why the file sits below the environment variables.**  Every operator who
+has been running this agent has variables in their shell profile.  A file
+that outranked them would change the behaviour of every one of them the
+moment they upgraded — a different model, a different host, silently.
+With the file underneath: an operator with **no file** sees **no change**,
+an operator with **both** keeps the variables winning, and the file
+becomes the *"set it once, in one place"* layer.  The chain the project
+already used — flag beats variable — is unchanged; the file is inserted
+underneath it.
+
+#### The implementation
+
+| Path | Change |
+|---|---|
+| `components/config.py` | **New.** The loader, the registry, the resolution and the provenance. |
+| `components/config_view.py` | **New.** The `\config` command — the table and the markdown. |
+| `agent-torvalds.py`, `agent-torvalds-mw.py` | The settings come from the config module; `--write-default-config`; the `\config` command. |
+| `components/ollama_config.py` | The host and the context window read the file, underneath the variables. |
+| `components/stats_handler.py` | The statistics read the file. |
+| `components/file_logging.py` | The flags take the file as their default. |
+| `components/tui/tui_app.py` | The `\config` command of the TUI. |
+| `components/command_registry.py` | The command is declared, so `\help` knows it. |
+| `toolkits/MikroTik-RouterOS/config.py` | The configuration directory is the fallback for the YAML file.  The **database toolkit keeps its behaviour** — its own verification proves the library half is behaviour-neutral against the original script, and a second search path is a difference that proof cannot accept. |
+| `tests/test_config.py` | **New.** 44 tests. |
+| `docs/configuration.md` | **New.** The documentation. |
+
+#### Two defects the work found on the way
+
+**The boolean variables did not agree with each other.**  `TORVALDS_HITL_ENABLED=1`
+**disabled** the human in the loop — the HITL flags were read with
+`== "true"` while every other boolean in the project was read with
+`in ("true", "1", "yes")`.  So `1` meant *yes* everywhere and *no* in the
+HITL.  They are read the same way now.
+
+**A malformed integer killed the agent.**  The settings were read with
+`int(os.environ.get(...))` at import time, so `TORVALDS_MAX_ITERATIONS=abc`
+ended the run with a traceback.  A malformed value is a warning now, and
+the default is used.
+
+#### A regex edit that deleted a block of arguments
+
+The `--write-default-config` flag was added to the multi-window parser
+with a **regular expression** that matched from `--no-session-select` to
+`return parser.parse_args()` — and the **TUI arguments sat in between**,
+so they were swallowed.  The parity test caught it:
+
+```
+AttributeError: 'Namespace' object has no attribute 'tui'
+```
+
+The lesson is the one the project keeps learning: a **regex** that spans
+more than the block it means to replace will take the blocks in between
+with it.  The fix was to restore the block and to make the replacement
+**exact**.
+
+#### Verifying the change
+
+```bash
+self-development/.venv/bin/python -m pytest self-development/tests/test_config.py -q
+self-development/.venv/bin/python scripts/ci_test_gate.py
+```
+
+44 tests pass, the whole suite shows **0 new failures** against the
+baseline, and both orchestrators were run end to end with a
+configuration file: the file was read, the environment variable still won
+over it, and `\config` printed the effective configuration with the
+source of every value.
 
 ### Latest change: the logging goes into a file, and it rotates
 

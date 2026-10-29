@@ -772,6 +772,57 @@ blank lines, would otherwise fill the log with empty records.  One
 empty line is kept — it is a paragraph break and it carries meaning —
 and a run of them is reduced to one.
 
+### The Configuration File
+
+The agent reads its settings from the **environment**, from the **command
+line**, and from a **configuration file** under `~/.config/torvalds/`:
+
+```toml
+# ~/.config/torvalds/config.toml
+[llm]
+model = "minimax-m3.1-flash:cloud"
+host = "http://localhost:11434"
+
+[hitl]
+enabled = true
+method = "console"
+timeout = 300
+
+[logging]
+file = "agent.log"
+dir  = "~/.torvalds/logs"
+max_size = "10MB"
+```
+
+```console
+$ python agent-torvalds.py --write-default-config
+The configuration template was written to /home/kbush/.config/torvalds/config.toml
+```
+
+The **order of things** is the one the project already used, with the file
+inserted underneath the environment variables:
+
+```
+flag  >  environment variable  >  config file  >  built-in default
+```
+
+The file sits **below** the variables on purpose: an operator who already
+has variables in their shell profile sees **no change** when they upgrade,
+and the file becomes the *"set it once, in one place"* layer.
+
+Every setting reports **where it came from** — `\config` prints the
+effective configuration with the layer that won:
+
+```
+>>> \config
+│ llm.model          │ from-the-file:q4 │ config file ~/.config/torvalds/config.toml │
+│ llm.max_iterations │ 2000              │ environment variable TORVALDS_MAX_ITERATIONS │
+```
+
+A missing file is not an error, and a broken one is a **warning** — the
+agent boots with the defaults and says what it could not read.  The full
+documentation is in [`docs/configuration.md`](docs/configuration.md).
+
 ### Logging to a File
 
 The agent logs to **stderr** by default.  It can also write the log into
