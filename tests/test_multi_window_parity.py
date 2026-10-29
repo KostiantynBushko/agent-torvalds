@@ -105,6 +105,51 @@ class TestMultiWindowCLIParity(unittest.TestCase):
         self.assertIn(args.hitl_method, ("console", "whiptail"))
         self.assertEqual(args.hitl_timeout, mw.HITL_TIMEOUT)
 
+    def test_the_file_logging_flags(self):
+        """Both orchestrators must expose the same file-logging flags."""
+        args = self._parse(
+            [
+                "--log-file", "agent.log",
+                "--log-dir", "/tmp/logs",
+                "--log-max-size", "20MB",
+                "--log-max-files", "3",
+                "--log-symlink", "current.log",
+            ]
+        )
+        self.assertEqual(args.log_file, "agent.log")
+        self.assertEqual(args.log_dir, "/tmp/logs")
+        self.assertEqual(args.log_max_size, 20 * 1024 * 1024)
+        self.assertEqual(args.log_max_files, 3)
+        self.assertEqual(args.log_symlink, "current.log")
+
+    def test_the_file_logging_is_off_by_default(self):
+        args = self._parse([])
+        self.assertIsNone(args.log_file)
+        self.assertIsNone(args.log_dir)
+        self.assertIsNone(args.log_symlink)
+
+    def test_the_file_logging_flags_match_the_classic_agent(self):
+        """The flag surface must not drift between the two orchestrators."""
+        classic_path = ROOT / "agent-torvalds.py"
+        spec = importlib.util.spec_from_file_location(
+            "agent_torvalds_classic_logging", classic_path
+        )
+        classic = importlib.util.module_from_spec(spec)
+        sys.modules["agent_torvalds_classic_logging"] = classic
+        spec.loader.exec_module(classic)
+
+        with patch.object(sys, "argv", ["agent-torvalds.py"]):
+            classic_args = classic.parse_args()
+        mw_args = self._parse([])
+
+        for name in ("log_file", "log_dir", "log_max_size", "log_max_files",
+                     "log_symlink"):
+            self.assertEqual(
+                getattr(classic_args, name),
+                getattr(mw_args, name),
+                f"the {name} default drifted between the two orchestrators",
+            )
+
 
 # ---------------------------------------------------------------------------
 # Tool collection parity

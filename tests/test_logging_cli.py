@@ -508,5 +508,95 @@ class TestLogLevelIntegration(unittest.TestCase):
         self.assertEqual(len(root.handlers), 1)
 
 
+# ---------------------------------------------------------------------------
+# The file-logging flags
+# ---------------------------------------------------------------------------
+
+class TestFileLoggingFlags(unittest.TestCase):
+    """The file-logging surface, pinned next to --log-level.
+
+    The operator asked for the logging to be redirectable into a file, to
+    be rotated at a predefined size, and for the directory to hold a
+    symlink to the current log file.  These are the five flags that
+    carry that, and their environment variables.
+    """
+
+    def _make_parser(self):
+        """A parser with the logging flags of the two orchestrators."""
+        from components.file_logging import add_logging_arguments
+
+        parser = argparse.ArgumentParser(description="Torvalds AI Agent")
+        add_logging_arguments(parser)
+        return parser
+
+    def test_the_file_logging_is_off_by_default(self):
+        args = self._make_parser().parse_args([])
+        self.assertIsNone(args.log_file)
+        self.assertIsNone(args.log_dir)
+        self.assertIsNone(args.log_symlink)
+
+    def test_the_default_size_and_the_default_number_of_files(self):
+        args = self._make_parser().parse_args([])
+        self.assertEqual(args.log_max_size, 10 * 1024 * 1024)
+        self.assertEqual(args.log_max_files, 5)
+
+    def test_the_flags_are_accepted(self):
+        args = self._make_parser().parse_args(
+            [
+                "--log-file", "agent.log",
+                "--log-dir", "/tmp/logs",
+                "--log-max-size", "20MB",
+                "--log-max-files", "3",
+                "--log-symlink", "current.log",
+            ]
+        )
+        self.assertEqual(args.log_file, "agent.log")
+        self.assertEqual(args.log_dir, "/tmp/logs")
+        self.assertEqual(args.log_max_size, 20 * 1024 * 1024)
+        self.assertEqual(args.log_max_files, 3)
+        self.assertEqual(args.log_symlink, "current.log")
+
+    def test_an_unknown_size_unit_stops_the_agent(self):
+        with self.assertRaises(SystemExit):
+            self._make_parser().parse_args(["--log-max-size", "10MBB"])
+
+    def test_zero_log_files_stop_the_agent(self):
+        """Zero generations would disable the rotation entirely."""
+        with self.assertRaises(SystemExit):
+            self._make_parser().parse_args(["--log-max-files", "0"])
+
+    def test_the_environment_is_the_default_of_the_flags(self):
+        saved = dict(os.environ)
+        os.environ["TORVALDS_LOG_MAX_SIZE"] = "5MB"
+        os.environ["TORVALDS_LOG_MAX_FILES"] = "2"
+        try:
+            args = self._make_parser().parse_args([])
+            self.assertEqual(args.log_max_size, 5 * 1024 * 1024)
+            self.assertEqual(args.log_max_files, 2)
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+
+    def test_the_flag_wins_over_the_environment(self):
+        saved = dict(os.environ)
+        os.environ["TORVALDS_LOG_MAX_SIZE"] = "5MB"
+        try:
+            args = self._make_parser().parse_args(["--log-max-size", "20MB"])
+            self.assertEqual(args.log_max_size, 20 * 1024 * 1024)
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+
+    def test_a_bad_size_in_the_environment_stops_the_agent(self):
+        saved = dict(os.environ)
+        os.environ["TORVALDS_LOG_MAX_SIZE"] = "10MBB"
+        try:
+            with self.assertRaises(SystemExit):
+                self._make_parser().parse_args([])
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+
+
 if __name__ == "__main__":
     unittest.main()
