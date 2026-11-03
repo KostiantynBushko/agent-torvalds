@@ -4,7 +4,7 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-29 (the **spinner is one feature now**, in `components/` — `spinner_manager.py` had no importer at all and was merged into `components/spinner_controller.py`; before that, 2026-10-29 (the **configuration file** —
+**Last updated:** 2026-10-29 (the **root test scripts move to `scripts/`** — they were never collected by pytest, and a break in one of them was invisible to the CI gate; before that, 2026-10-29 (the **spinner is one feature now**, in `components/` — `spinner_manager.py` had no importer at all and was merged into `components/spinner_controller.py`; before that, 2026-10-29 (the **configuration file** —
 `~/.config/torvalds/config.toml`, the XDG location, with the file
 sitting *below* the environment variables and every setting reporting
 its source; before that, the **logging goes into a file** — the
@@ -210,10 +210,19 @@ directory of the operator in the body of a pull request.
 
 | Item | Status |
 |---|---|
+| Branch | `refactor/move-root-test-scripts` — based on `master` at `af2ec92` (the squash of PR #77, the spinner annotation). **Open** — not merged. |
+| Scope | **No test file outside the reach of the CI gate.** `test_callback_events_debug.py` and `test_live_agent_hitl.py` sat in the repository root, where pytest never collects them. |
+| Status | **Implemented, verified and committed.** Both files moved to `scripts/` under names pytest cannot match; the `sys.path` line and the usage text were fixed for the new location; the `spinner=` argument that PR #76 broke is fixed; `tests/test_no_stray_test_files.py` is new with nine tests; the README tree and the investigation are in place. The CI gate reports **0 new failures** (40 known, 0 new, 0 fixed). |
+| The finding | **They are not tests.** They are a debug harness and a live smoke test, both `async def` and both needing a real LLM. They must **not** go under `tests/`: that directory is on pytest's `testpaths`, and putting them there would add seven failing tests — pytest cannot run bare `async def` functions, and `pytest.ini` sets no `asyncio_mode`. |
+| Why the root | Both were added in one commit, `43a88e5` (#10), on 2026-10-05 — written as scripts and left next to `agent-torvalds.py`, which they import. The `tests/` directory was **already organised** by then (`dcb1e39`, 2026-09-11), so there being no `tests/` folder yet is not the reason. |
+| What the naming cost | **A test file the gate cannot see.** PR #76 removed the unused `spinner=` argument of `HumanLoopHandler`; `test_live_agent_hitl.py` passed it, so the file broke with a `TypeError` — and the gate reported **0 new failures**, because it never looked at the file. The break was found by reading the file, not by the suite. |
+| Policy | **A test file must be somewhere pytest collects, or under `investigate/`.** The rule reads `testpaths` out of `pytest.ini` rather than repeating it, so it follows pytest. `investigate/` is exempt explicitly: it is the record of a piece of work, and its helper scripts are outside the suite on purpose. The rule is tested against deliberate strays — a file in the root, a file in an uncollected directory, a helper in the record, a test in a collected directory, and the virtual environment. |
+| Investigation | `investigate/root-test-files/REPORT_root_test_files.md`. |
+| State | **Verified, not merged.** The nine new tests pass; the CI gate reports no new failure. Both moved scripts were checked from their new location: the debug harness lists its six scenarios with `--list`, and the live script imports cleanly. |
 | Branch | `feature/spinner-consolidation` — based on `master` at `cfc03bd` (the squash of PR #75, the configuration menu). **Open** — not merged yet. The branch was kept, the way the other merged branches were kept. |
 | Scope | **One spinner feature, in `components/`.** The project had two implementations of the console spinner; `spinner_manager.py`, in the project root, had no importer at all. |
 | Status | **Implemented, verified and committed.** `spinner_manager.py` is deleted; `components/spinner_controller.py` gained the lifecycle callbacks; the unused `spinner` parameter of `HumanLoopHandler` is gone with its five call sites; `tests/test_spinner_controller.py` is new with twenty-one tests; the README, the components README and the wiki are corrected. The CI gate reports **0 new failures** (40 known, 0 new, 0 fixed). |
-| Policy | **The live one survived, and the dead one's API did not come with it.** The callbacks came across, because `components/README.md` already promised `spinner_controller.py` *callback hooks for lifecycle events* and the promise was false. The global singleton, the module-level helpers and the global console did not: nothing called them, the problem they solved does not exist — the component that needs the spinner already receives it explicitly — and a module-level global cannot be injected, so it cannot be tested in isolation. |
+| Policy (the spinner) | **The live one survived, and the dead one's API did not come with it.** The callbacks came across, because `components/README.md` already promised `spinner_controller.py` *callback hooks for lifecycle events* and the promise was false. The global singleton, the module-level helpers and the global console did not: nothing called them, the problem they solved does not exist — the component that needs the spinner already receives it explicitly — and a module-level global cannot be injected, so it cannot be tested in isolation. |
 | Investigation | `investigate/spinner-consolidation/REPORT_spinner_consolidation.md`. The finding: both files were created in the **same** commit, `b4c403c`, which extracted `SpinnerController` into `components/` and, alongside it, added a global singleton with callback hooks — for a reason that was never realised, because no toolkit references a spinner at all. The file was touched once more, to correct one line of its own architecture diagram. |
 | State | **Verified, not merged.** The twenty-one new tests pass; the CI gate reports no new failure. The change was **rebased** onto `master` at `cfc03bd` after the other work landed, and the patch-id is **identical** before and after the rebase — the rebase changed the history, not the code. The wiki is its own repository, so it was a separate commit there: `ba1a940`. |
 | Branch | `feature/config-file` — **rebased onto `master` at `eafd9c5`** (the squash of the logging), then **merged into `master` as pull request #72** on 2026-10-29, squash-merged as `108cf87`. The branch is kept, the way the other merged branches were kept. The tree of the merge commit is byte-for-byte the tree that was tested. |
@@ -225,6 +234,95 @@ directory of the operator in the body of a pull request.
 | Policy (the configuration file) | **The file sits below the environment variables.** The chain is `flag > environment variable > config file > default`. A file that outranked the variables would change the behaviour of every operator who already has them the moment they upgraded — a different model, a different host, silently. With the file underneath, an operator with no file sees no change, and the file becomes the "set it once" layer. |
 | The operator's decisions | **TOML**, at `~/.config/torvalds/config.toml`. The location was the operator's own suggestion ("under ~/.config folder ... with name 'torvalds'"), and it is the XDG one, so it completes the triad the project already keeps. The sections `[llm] [agent] [hitl] [stats] [logging]` and the toolkit fallback took the recommendations that were put with the question. |
 | What did not move | The chat history, the cache and the logs. A database and a rotating log are what the agent *produced*, not configuration, and moving the chat history would break the sessions of everybody who has one. |
+
+### Latest change: the root test scripts move to `scripts/`
+
+#### The question
+
+Why were `test_callback_events_debug.py` and `test_live_agent_hitl.py` in the
+repository root, and not under `tests/`?
+
+#### The answer
+
+**They are not tests.**  They are a debug harness and a live smoke test, both
+`async def` and both needing a real LLM, named `test_*` out of habit.
+
+They must **not** go under `tests/`.  That directory is on pytest's
+`testpaths`, and putting them there would add **seven failing tests** — pytest
+cannot run bare `async def` functions, and `pytest.ini` sets no
+`asyncio_mode`:
+
+```
+$ pytest test_live_agent_hitl.py test_callback_events_debug.py -q
+7 failed in 1.22s
+```
+
+They belong in `scripts/`, where the project's other manual and live scripts
+already live and where pytest does not collect.
+
+#### Why the root
+
+Both were added in one commit, `43a88e5` (#10), on 2026-10-05 — written as
+scripts and left next to `agent-torvalds.py`, which they import.  The
+`tests/` directory was **already organised** by then (`dcb1e39`,
+2026-09-11), so the root was not a consequence of there being nowhere else to
+put them.
+
+#### What the naming cost
+
+**A test file the CI gate cannot see.**  PR #76 removed the unused `spinner=`
+argument of `HumanLoopHandler`.  `test_live_agent_hitl.py` passed that
+argument, so the file broke with a `TypeError` — and the gate reported **0 new
+failures**, because it never looked at the file.  The break was found by
+reading the file, not by the suite.
+
+#### The change
+
+| From | To |
+|---|---|
+| `test_callback_events_debug.py` | `scripts/debug_callback_events.py` |
+| `test_live_agent_hitl.py` | `scripts/live_agent_hitl.py` |
+
+The names no longer start with `test_`, so pytest's `python_files =
+test_*.py` cannot match them — the way `scripts/hitl_live_llm_test.py` and
+`scripts/hitl_interactive_test.py` are already named.
+
+Two things had to change with the move: the `sys.path` line, which put the
+file's **own** directory on the path and now puts the **repository root**
+there instead; and the `spinner=` argument, which PR #76 broke.
+
+#### The rule
+
+`tests/test_no_stray_test_files.py` says one thing: **a test file must be
+somewhere pytest collects**.  It reads `testpaths` out of `pytest.ini` rather
+than repeating it, and a test asserts that the two agree.  It is tested
+against deliberate strays — a file in the root, a file in an uncollected
+directory, a file under `investigate/`, a test in a collected directory
+(allowed), and the virtual environment (not walked).
+
+**There is no exemption.**  Nothing outside the collected directories may
+carry the name of a test — not the repository root, and not `investigate/`
+either.  The three helpers under `investigate/` that were named like tests
+were renamed after what they are:
+
+| From | To |
+|---|---|
+| `investigate/claude-contributor-purge/test_strip_claude_trailer.py` | `investigate/claude-contributor-purge/check_strip_claude_trailer.py` |
+| `investigate/whiptail/test_python_whiptail.py` | `investigate/whiptail/demo_python_whiptail.py` |
+| `investigate/whiptail/test_bash_whiptail.sh` | `investigate/whiptail/demo_bash_whiptail.sh` |
+
+#### Verifying the change
+
+```
+self-development/.venv/bin/python -m pytest self-development/tests/test_no_stray_test_files.py -q
+10 passed in 0.51s
+
+self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+known failures in the baseline : 40
+failures in this run            : 40
+new failures                    : 0
+fixed since the baseline        : 0
+```
 
 ### Latest change: the spinner is one feature now, in components/
 
@@ -1257,7 +1355,7 @@ removed on 2026-10-27.
 |---|---|
 | `investigate/claude-contributor-purge/verify_no_claude.py` | The check. Walks the GitHub side (every PR title and body, every comment, every review comment) and the Git side (every commit message of every ref). Grades a **co-author trailer** and a **Claude Code footer** as FAIL, and a bare mention as informational. |
 | `investigate/claude-contributor-purge/strip_claude_trailer.py` | The `git filter-repo` message callback. Removes the trailer and the footer, line-wise, and nothing else. |
-| `investigate/claude-contributor-purge/test_strip_claude_trailer.py` | The test of that callback — 7 cases, driven the way filter-repo drives it. |
+| `investigate/claude-contributor-purge/check_strip_claude_trailer.py` | The check of that callback — 7 cases, driven the way filter-repo drives it. |
 | `investigate/claude-contributor-purge/purge_claude_contributor.sh` | The driver: baseline, scratch mirror clone, rewrite, verify, and — only with `--apply` — the force-push. |
 | `investigate/claude-contributor-purge/refresh_commit_shas.py` | The SHA refresh. It arrived with PR #58 and was used by PR #59. |
 | `investigate/claude-contributor-purge/REPORT_claude_contributor_purge.md` | The report. |
@@ -1268,7 +1366,7 @@ removed on 2026-10-27.
 
 ```bash
 python3 self-development/investigate/claude-contributor-purge/verify_no_claude.py
-python3 self-development/investigate/claude-contributor-purge/test_strip_claude_trailer.py
+python3 self-development/investigate/claude-contributor-purge/check_strip_claude_trailer.py
 ```
 
 The check reports **PASS** on both sides: no commit message of any ref carries

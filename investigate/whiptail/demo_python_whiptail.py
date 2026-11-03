@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Test Script: Python whiptail Package
-====================================
+Demo Script: Python whiptail Package
+======================================
 This script demonstrates usage of the 'whiptail' Python package.
 Package: whiptail 0.2 by Marwan Alsabbagh
 Source: https://github.com/marwano/whiptail
 
-Run with: python3 test_python_whiptail.py
+Run with: python3 demo_python_whiptail.py
 """
 
 import os

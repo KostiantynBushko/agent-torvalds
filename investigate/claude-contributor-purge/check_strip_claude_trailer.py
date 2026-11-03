@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The test of the `git filter-repo` message callback.
+"""The check of the `git filter-repo` message callback.
 
 `strip_claude_trailer.py` is a **snippet**, not a module: filter-repo execs
 it with `message` in scope.  This suite loads it the same way filter-repo
@@ -7,7 +7,7 @@ does — by exec'ing the snippet inside a function whose only argument is
 `message` — and drives it with the real offending message and with the
 messages that must survive untouched.
 
-    python3 test_strip_claude_trailer.py
+    python3 check_strip_claude_trailer.py
 """
 import os
 import re

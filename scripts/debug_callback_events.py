@@ -10,13 +10,13 @@ This script tests how the agent emits callbacks by:
 
 Usage:
     cd self-development
-    python test_callback_events_debug.py
+    python scripts/debug_callback_events.py
     
     # Or with specific test:
-    python test_callback_events_debug.py --test test_full_workflow
+    python scripts/debug_callback_events.py --test test_full_workflow
     
     # List available tests:
-    python test_callback_events_debug.py --list
+    python scripts/debug_callback_events.py --list
 """
 import asyncio
 import logging
@@ -27,8 +27,9 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from collections import defaultdict
 
-# Add self-development to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add the repository root to the path, so the script runs from
+# anywhere and the components resolve.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rich.console import Console
 from rich.table import Table
