@@ -6,6 +6,9 @@ contract on purpose, twelve times - once for every invariant, and
 once more for the second .env the folder ships - and shows that the
 harness notices each one.
 
+It also shows the one case the contract must **not** report: a copy of
+the script that lives in a copy of the repository.
+
 The breakages are made in a *copy* of the repository, never in the
 checkout: the real tree is never touched.
 
@@ -16,6 +19,7 @@ Run it directly::
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import re
 import shutil
@@ -32,7 +36,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 HARNESS = Path(__file__).resolve().with_name("verify_deploy_layout.py")
 
 #: The paths that are not copied into the scratch tree.
-IGNORED = shutil.ignore_patterns(
+IGNORED_PATTERNS = (
     ".git",
     ".venv",
     "venv",
@@ -42,12 +46,35 @@ IGNORED = shutil.ignore_patterns(
     "wiki",
     "node_modules",
     "site-packages",
-    # The self-development clone - a second copy of the whole
-    # repository.  Carrying it into every scratch tree would copy the
-    # tree twice, and the harness reads the scratch tree.
-    "self-development",
     "*.pyc",
 )
+
+
+def _ignored_names(directory: str, names: list[str]) -> list[str]:
+    """The names that are not copied into the scratch tree.
+
+    The noise is matched by name.  A copy of the repository is
+    recognised by the ``.git`` it carries, so it is left out whatever it
+    is called - carrying it into every scratch tree would copy the tree
+    twice, and the harness reads the scratch tree.
+
+    Args:
+        directory: The directory the names were found in.
+        names: The names that were found.
+
+    Returns:
+        The names to leave behind.
+    """
+    ignored = [
+        name
+        for name in names
+        if any(fnmatch.fnmatch(name, pattern) for pattern in IGNORED_PATTERNS)
+    ]
+    for name in names:
+        if (Path(directory) / name / ".git").exists():
+            ignored.append(name)
+    return ignored
+
 
 #: The script, relative to the repository root.
 SCRIPT_REL = Path("deploy") / "deploy-torvalds.sh"
@@ -320,6 +347,17 @@ def _failed_invariants(output: str) -> set[str]:
     return set(re.findall(r"^\[FAIL\] (D\d+)", output, re.MULTILINE))
 
 
+def _place_a_copy_of_the_repository(root: Path) -> None:
+    """Put a copy of the repository inside the tree, with a copy of the script.
+
+    A copy of the repository carries its own ``.git``, and that is how
+    the harness recognises one - whatever the copy is called.
+    """
+    nested = root / "a-copy-of-the-repository"
+    (nested / ".git").mkdir(parents=True)
+    shutil.copy2(_script(root), nested / SCRIPT_REL.name)
+
+
 def main() -> int:
     print("The drift proof - every deliberate breakage, caught")
     print("=" * 72)
@@ -333,7 +371,7 @@ def main() -> int:
     for index, drift in enumerate(DRIFTS, start=1):
         with tempfile.TemporaryDirectory(prefix="deploy-drift-") as tmp:
             root = Path(tmp) / "tree"
-            shutil.copytree(REPO_ROOT, root, ignore=IGNORED)
+            shutil.copytree(REPO_ROOT, root, ignore=_ignored_names)
 
             try:
                 drift.apply(root)
@@ -358,10 +396,36 @@ def main() -> int:
                     print(f"         {line}")
 
     print("=" * 72)
-    if missed:
-        print(f"FAILED - {len(missed)} of {len(DRIFTS)} drifts were not caught")
-        for drift in missed:
-            print(f"  - {drift.invariant}: {drift.name}")
+    print("The case the contract must not report")
+    print("-" * 72)
+
+    with tempfile.TemporaryDirectory(prefix="deploy-nested-") as tmp:
+        root = Path(tmp) / "tree"
+        shutil.copytree(REPO_ROOT, root, ignore=_ignored_names)
+        _place_a_copy_of_the_repository(root)
+        code, output = _run_harness(root)
+        failed = _failed_invariants(output)
+
+        if code == 0 and "D1" not in failed:
+            quiet = True
+            print(
+                "[PASS] D1 quiet: the script inside a copy of the repository "
+                "is not a second copy"
+            )
+        else:
+            quiet = False
+            print("[FAIL] D1 reported the copy of the script in a copy of the repository")
+            for line in output.splitlines()[:12]:
+                print(f"         {line}")
+
+    print("=" * 72)
+    if missed or not quiet:
+        if missed:
+            print(f"FAILED - {len(missed)} of {len(DRIFTS)} drifts were not caught")
+            for drift in missed:
+                print(f"  - {drift.invariant}: {drift.name}")
+        if not quiet:
+            print("FAILED - the contract reported a copy of the repository")
         return 1
 
     print(f"OK - {caught} of {len(DRIFTS)} deliberate drifts are caught")

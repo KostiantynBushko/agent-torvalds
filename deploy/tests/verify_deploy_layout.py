@@ -75,19 +75,6 @@ SKIP_DIRS = {
     "wiki",
     "node_modules",
     "site-packages",
-    # The self-development clone.  It was a **second copy of this
-    # repository**, so it held the script, and it held the harness
-    # files that name the old path on purpose.  A contract about "the
-    # script lives in deploy/ and nowhere else" cannot be about a copy
-    # of the whole tree, and a contract about stale references cannot
-    # be about the file that looks for them.
-    #
-    # The clone is retired (DEVELOPMENT_RULES.md): the agent works in
-    # this working copy now, and the folder is gone.  The entry stays
-    # as a defence, in case somebody clones the repository inside it
-    # again - the contract is about **this** repository, not about a
-    # copy of it.
-    "self-development",
 }
 
 #: The suffixes of the files that are scanned for stale references.
@@ -156,25 +143,63 @@ def run_script(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def is_a_copy_of_the_repository(directory: Path) -> bool:
+    """Whether a directory holds a copy of the repository.
+
+    A copy of the repository inside the repository is not part of the
+    contract: it carries its own copy of the script, and its own copy
+    of the harness.  A contract about "the script lives in deploy/ and
+    nowhere else" cannot be about a copy of the whole tree, and a
+    contract about stale references cannot be about the file that looks
+    for them.
+
+    The copy is recognised by the ``.git`` it carries, so the rule
+    holds whatever the copy is called - and it needs no list of names
+    to remember.
+
+    Args:
+        directory: The directory to look at.
+
+    Returns:
+        ``True`` when the directory is a copy of the repository.
+    """
+    return (directory / ".git").exists()
+
+
 def is_skipped(path: Path, root: Path) -> bool:
     """Whether a path lies inside one of the skipped directories.
 
     ``SKIP_DIRS`` prunes the **walk** of ``iter_text_files``, but D1 uses
     ``rglob``, which knows nothing about it - so the copy of the script
-    inside the self-development clone would be reported as a second copy
+    inside a copy of the repository would be reported as a second copy
     of the script.  This is the same rule, applied to one path.
     """
     try:
         relative = path.relative_to(root)
     except ValueError:
         return False
-    return any(part in SKIP_DIRS for part in relative.parts[:-1])
+
+    if any(part in SKIP_DIRS for part in relative.parts[:-1]):
+        return True
+
+    # A copy of the repository carries its own ``.git``.
+    directory = root
+    for part in relative.parts[:-1]:
+        directory = directory / part
+        if is_a_copy_of_the_repository(directory):
+            return True
+    return False
 
 
 def iter_text_files(root: Path):
     """Yield every text file of the tree, skipping the noisy directories."""
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in SKIP_DIRS
+            and not is_a_copy_of_the_repository(Path(dirpath) / d)
+        ]
         for filename in filenames:
             path = Path(dirpath) / filename
             if path.suffix.lower() not in TEXT_SUFFIXES:

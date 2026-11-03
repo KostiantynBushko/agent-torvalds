@@ -140,6 +140,20 @@ python3 -m pytest deploy/tests -q
 | **D10** | The log file is made writable before anything is redirected to it. |
 | **D11** | A query is not reported as a deployment. |
 
+### A copy of the repository is not part of the contract
+
+The contract is about **this** repository.  A copy of the repository
+inside it is not: the copy holds its own copy of the script, and its own
+copy of the harness, and neither is a breach.
+
+A copy is recognised by the `.git` it carries, so the rule holds whatever
+the copy is called — and there is no name to remember.  The harness does
+not scan a copy, and it does not report the script inside one.
+
+The proof shows that case too, and it is the only one the contract must
+*not* report: the twelve breakages must be caught, and the copy of the
+repository must stay quiet.
+
 ## Two things worth knowing about the script
 
 **`sudo env VAR=value cmd`, never `sudo VAR=value cmd`.** sudo only

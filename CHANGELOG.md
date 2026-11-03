@@ -30,6 +30,24 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The deployment harness named a folder that no longer exists
+
+- **The skip list of the deployment harness carried the name of the
+  retired clone folder.**  The folder is gone, and the rule was a name
+  in a list — a list that had to be remembered, and a name that pointed
+  at nothing.
+
+  The rule is now a fact about the tree rather than a remembered name:
+  a directory that carries its own `.git` is a copy of the repository,
+  and a copy of the repository is not part of the contract.  It holds
+  its own copy of the script and its own copy of the harness, and
+  neither is a breach.  The rule holds whatever the copy is called.
+
+  The proof grew the matching case: the contract must **not** report
+  the script that lives inside a copy of the repository.  With the
+  rule removed, the copy is reported and the proof fails — a check that
+  cannot fail proves nothing.
+
 #### The example `.env` of the deployment folder configured nothing
 
 - **`deploy/deploy-torvalds.sh.example.env` named two variables the
