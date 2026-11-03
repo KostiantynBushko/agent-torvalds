@@ -558,7 +558,6 @@ human_loop_handler = HumanLoopHandler(
     default_timeout=HITL_TIMEOUT,
     default_answer=HITL_DEFAULT_ANSWER,
     console=console,
-    spinner=spinner_controller,
     enable_hitl=HITL_ENABLED,
     runtime_toggle=hitl_toggle,
 )
@@ -1635,7 +1634,6 @@ async def main():
     # Wire TuiInputModule for non-blocking command bar HITL prompts
     tui_input_module = TuiInputModule(tui_state)
     human_loop_handler.console_input = tui_input_module
-    human_loop_handler.spinner = tui_spinner_controller
 
     # Create EventConsumer with silent console and connect TuiEventAdapter
     state_handler = StateHandler()

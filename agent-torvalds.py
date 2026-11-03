@@ -554,7 +554,6 @@ human_loop_handler = HumanLoopHandler(
     default_timeout=HITL_TIMEOUT,
     default_answer=HITL_DEFAULT_ANSWER,
     console=console,
-    spinner=spinner_controller,
     enable_hitl=HITL_ENABLED,
     runtime_toggle=hitl_toggle,
 )

@@ -40,7 +40,9 @@ Console spinner controller for progress indication.
 **Features:**
 - Thread-safe spinner with pause/resume functionality
 - Integration with rich console for styled output
-- Callback hooks for lifecycle events
+- Callback hooks for lifecycle events — `on_start`, `on_stop`, `on_pause`, `on_resume`
+- The single spinner feature of the project; it absorbed `spinner_manager.py`, which was
+  never imported by anything. The investigation is in `investigate/spinner-consolidation/`.
 
 ---
 

@@ -52,7 +52,6 @@ from components.hitl_timeout import (
 )
 from components.console_input_module import ConsoleInputModule
 from components.whiptail_input_module import WhiptailInputModule
-from components.spinner_controller import SpinnerController
 from rich.console import Console
 
 logger = logging.getLogger(__name__)
@@ -117,7 +116,6 @@ class HumanLoopHandler(BaseCallbackHandler):
         default_timeout: int = NO_TIMEOUT,
         default_answer: str = "",
         console: Optional[Console] = None,
-        spinner: Optional[SpinnerController] = None,
         enable_hitl: bool = True,
         event_consumer: Any = None,
         question_patterns: Optional[List[str]] = None,
@@ -132,7 +130,6 @@ class HumanLoopHandler(BaseCallbackHandler):
                 indefinitely.
             default_answer: Fallback value on timeout.
             console: Rich ``Console`` instance for display.
-            spinner: ``SpinnerController`` to pause/resume during prompts.
             enable_hitl: Toggle HITL on/off at runtime.
             event_consumer: Optional workflow ``EventConsumer`` to push
                 ``AgentQuestionEvent`` / ``AgentAnswerEvent`` into.
@@ -153,7 +150,6 @@ class HumanLoopHandler(BaseCallbackHandler):
         self.default_timeout = default_timeout
         self.default_answer = default_answer
         self.console = console or Console()
-        self.spinner = spinner
         self.enable_hitl = enable_hitl
         self.event_consumer = event_consumer
         self.runtime_toggle = runtime_toggle
