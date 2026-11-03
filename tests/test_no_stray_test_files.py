@@ -239,9 +239,10 @@ class TestNoStrayTestFiles(unittest.TestCase):
         """The clone is a second checkout of the repository, not part of it.
 
         The clone is retired - the agent works in this working copy now,
-        see DEVELOPMENT_RULES.md - but the folder is still on disk until
-        it is removed, and it holds a whole copy of the suite.  The rule
-        reads the tree of **this** repository.
+        see DEVELOPMENT_RULES.md - and the folder is gone.  The rule
+        still skips it, in case somebody clones the repository inside it
+        again: it holds a whole copy of the suite, and the rule reads
+        the tree of **this** repository.
         """
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -75,17 +75,18 @@ SKIP_DIRS = {
     "wiki",
     "node_modules",
     "site-packages",
-    # The self-development clone.  It is a **second copy of this
-    # repository**, so it holds the script, and it holds the harness
+    # The self-development clone.  It was a **second copy of this
+    # repository**, so it held the script, and it held the harness
     # files that name the old path on purpose.  A contract about "the
     # script lives in deploy/ and nowhere else" cannot be about a copy
     # of the whole tree, and a contract about stale references cannot
     # be about the file that looks for them.
     #
     # The clone is retired (DEVELOPMENT_RULES.md): the agent works in
-    # this working copy now.  The folder is still on disk and is removed
-    # separately, and until then the contract is about **this**
-    # repository, not about the copy.
+    # this working copy now, and the folder is gone.  The entry stays
+    # as a defence, in case somebody clones the repository inside it
+    # again - the contract is about **this** repository, not about a
+    # copy of it.
     "self-development",
 }
 
