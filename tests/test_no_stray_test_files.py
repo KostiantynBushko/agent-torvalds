@@ -20,6 +20,12 @@ carry the name of a test — not the repository root, and not
 for one particular case, and they are named for what they are, so
 nothing in that folder is mistaken for a test.
 
+The directories that are **not part of this repository** are never
+walked — ``.git``, ``.venv``, and the retired ``self-development``
+clone.  The clone is a second checkout of the repository: it holds a
+whole copy of the suite, and a rule about the files of this repository
+must not read the files of the copy.
+
 Run with:
     pytest tests/test_no_stray_test_files.py -v
 """
@@ -44,6 +50,11 @@ TESTPATHS = (
 #: The directories that are never walked.
 SKIP_DIRS = frozenset({
     ".git", ".venv", ".pytest_cache", "__pycache__", "node_modules",
+    # The self-development clone: a second checkout of this
+    # repository.  It is git-ignored, and it holds a whole copy of the
+    # suite - which the rule must not read as the suite of this
+    # repository.
+    "self-development",
 })
 
 
@@ -222,6 +233,33 @@ class TestNoStrayTestFiles(unittest.TestCase):
                 the_test_files(root),
                 [],
                 "the rule walks into the virtual environment",
+            )
+
+    def test_the_check_ignores_the_self_development_clone(self):
+        """The clone is a second checkout of the repository, not part of it.
+
+        The clone is retired - the agent works in this working copy now,
+        see DEVELOPMENT_RULES.md - but the folder is still on disk until
+        it is removed, and it holds a whole copy of the suite.  The rule
+        reads the tree of **this** repository.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            clone = root / "self-development" / "tests"
+            clone.mkdir(parents=True)
+            (clone / "test_whatever.py").write_text("# not ours\n")
+            (root / "tests").mkdir()
+            (root / "tests" / "test_fine.py").write_text("# a real test\n")
+
+            self.assertEqual(
+                the_test_files(root),
+                [Path("tests/test_fine.py")],
+                "the rule walks into the self-development clone",
+            )
+            self.assertEqual(
+                stray_test_files(root, [root / "tests"]),
+                [],
+                "the rule reports the test files of the clone as strays",
             )
 
     def test_this_file_does_not_fail_the_check(self):

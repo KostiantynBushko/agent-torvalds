@@ -41,6 +41,10 @@ IGNORED = shutil.ignore_patterns(
     "wiki",
     "node_modules",
     "site-packages",
+    # The self-development clone - a second copy of the whole
+    # repository.  Carrying it into every scratch tree would copy the
+    # tree twice, and the harness reads the scratch tree.
+    "self-development",
     "*.pyc",
 )
 
