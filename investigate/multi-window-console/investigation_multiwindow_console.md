@@ -86,6 +86,14 @@ In `components/event_consumer.py`, the `EventConsumer` class intercepts real-tim
 
 **Finding**: Rather than drawing a raw terminal spinner on stdout, the TUI connects to `SpinnerController` hooks to animate a `rich.spinner.Spinner` inside the Markdown Window's title or header during processing.
 
+> **Note (2026-10-29).**  `spinner_manager.py` is gone.  The two spinner
+> implementations were consolidated into `components/spinner_controller.py`,
+> which now carries the four lifecycle hooks on its own, so the finding
+> above holds with one file instead of two.  The global singleton that
+> `spinner_manager.py` offered was never used by anything and did not
+> come across; the hooks were what was worth keeping.  The
+> investigation is in `investigate/spinner-consolidation/`.
+
 ### 3.3 `StatsRenderer` and `StateHandler`
 - `RequestStatsHandler` aggregates request metrics (duration, LLM calls, tool counts, cache hits).
 - `StateHandler` tracks tool execution histories and active session states.
