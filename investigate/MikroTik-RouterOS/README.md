@@ -193,5 +193,4 @@ be confirmed against real hardware** (precondition P6 / open question Q6 in the 
 
 ---
 
-*All work performed in the `self-development` clone per the self-development rules. The main
-repository was not modified.*
+*All work performed on its own branch; the main repository was not modified.*

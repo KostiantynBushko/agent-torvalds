@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-21 (revised for the `toolkits/` layout requirement)
 **Repository:** agent-torvalds
-**Branch:** `feature/mikrotik-routeros-toolkit` (in the `self-development` clone)
+**Branch:** `feature/mikrotik-routeros-toolkit`
 **Status:** **Authoritative** — this document defines the module layout and the
 implementation contract. Where it conflicts with `IMPLEMENTATION_PLAN.md` or
 `PROPOSAL_mikrotik_toolkit.md`, **this document wins**.
@@ -675,7 +675,7 @@ markers =
 | D11 | `pytest` is green; the prompt-regex corpus test is permanently green |
 | D12 | The existing `\help` output lists the new commands |
 | D13 | No LlamaIndex import exists under the library half of `toolkits/MikroTik-RouterOS/`; the agent adapter is the only exception, and it is never imported eagerly |
-| D14 | All work is confined to the `self-development` clone on its own branch |
+| D14 | All work is confined to its own branch |
 | D15 | The package-local test directory contains **no** `__init__.py` (§3.4) |
 | D16 | `pytest.ini` sets `--import-mode=importlib` in `addopts` **and** lists the package-local test directory in `testpaths` |
 | D17 | A bare `pytest` run collects the package-local tests (not silently skipped) |
@@ -698,5 +698,5 @@ markers =
 ---
 
 *This specification is authoritative for the MikroTik RouterOS module layout.
-All implementation work is to be performed in the `self-development` clone on
-branch `feature/mikrotik-routeros-toolkit`.*
+All implementation work is to be performed on branch
+`feature/mikrotik-routeros-toolkit`.*

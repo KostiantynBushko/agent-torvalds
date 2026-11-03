@@ -3,7 +3,7 @@
 **Reported by**: the operator — `~/torvald-log/hitl_questions_issue/`
 (`hitl-wrong-question.md`, `hitl_dublicate_question.md`)
 **Date**: 2026-10-24
-**Branch**: `investigate/hitl-questions-issue` (in the `self-development` clone)
+**Branch**: `investigate/hitl-questions-issue`
 **Status**: **implemented and verified** — 7 defects closed, the harness reports 8/8; not committed (awaiting the operator's approval)
 
 ---

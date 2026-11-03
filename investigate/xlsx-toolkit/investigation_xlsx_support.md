@@ -19,7 +19,7 @@ python3 -c "import openpyxl"  # ❌ ModuleNotFoundError
 python3 -c "import pandas"     # ❌ ModuleNotFoundError
 ```
 
-**No XLSX-related Python packages are currently installed** in the self-development environment.
+**No XLSX-related Python packages are currently installed** in the project environment.
 
 ---
 

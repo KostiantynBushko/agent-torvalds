@@ -255,7 +255,7 @@ is refreshing the SHAs in the documentation.
 
 The sequence, each step verified before the next:
 
-1. **Commit** the tooling on the self-development branch
+1. **Commit** the tooling on the branch
    `feature/purge-claude-contributor`.
 2. **Push** the 29 rewritten branches (`purge_claude_contributor.sh --apply`).
 3. **Verify** with `verify_no_claude.py` — both sides PASS.

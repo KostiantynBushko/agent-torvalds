@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-21 (revised for the `toolkits/` layout requirement)
 **Repository:** agent-torvalds
-**Branch:** `feature/mikrotik-routeros-toolkit` (in the `self-development` clone)
+**Branch:** `feature/mikrotik-routeros-toolkit`
 **Status:** Phases 0-5 implemented — the feature is complete except for the
 real-router validation (precondition P6)
 **Estimated Effort:** ~6 working days
@@ -39,7 +39,7 @@ real-router validation (precondition P6)
 
 | # | Precondition | Status |
 |---|---|---|
-| P1 | Work happens **only** in the `self-development` clone | ✅ Rule 1 & 2 of the self-development rules |
+| P1 | Work happens **only** on its own branch | ✅ Rule 1 of the development rules |
 | P2 | Dedicated branch off `master` | ⬜ Created in Phase 0 |
 | P3 | `asyncssh` importable in `.venv` | ✅ Verified (2.24.1) |
 | P4 | `pydantic` importable | ✅ Verified (2.13.5) |
@@ -53,7 +53,7 @@ real-router validation (precondition P6)
 
 **Duration:** 0.5 day
 
-- [x] Create the branch in the self-development clone:
+- [x] Create the branch:
   ```bash
   git checkout -b feature/mikrotik-routeros-toolkit master
   ```
@@ -364,7 +364,7 @@ reuse the SSH toolkit's primitives (see Q1).
 | D7 | The agent still boots when `asyncssh` is not installed | ✅ |
 | D8 | `pytest` is green; the prompt-regex corpus test is permanently green | ✅ (no regression against the baseline) |
 | D9 | The existing `\help` output lists the new commands | ✅ |
-| D10 | All work is confined to the `self-development` clone on its own branch | ✅ |
+| D10 | All work is confined to its own branch | ✅ |
 | D11 | No LlamaIndex import exists under `toolkits/MikroTik-RouterOS/` | ✅ |
 | D12 | The package-local test directory contains **no** `__init__.py` | ✅ |
 | D13 | `pytest.ini` sets `--import-mode=importlib` in `addopts` **and** lists the package-local test directory in `testpaths` | ✅ |
@@ -386,7 +386,7 @@ reuse the SSH toolkit's primitives (see Q1).
 | D7 | The agent still boots when `asyncssh` is not installed |
 | D8 | `pytest` is green; the prompt-regex corpus test is permanently green |
 | D9 | The existing `\help` output lists the new commands |
-| D10 | All work is confined to the `self-development` clone on its own branch |
+| D10 | All work is confined to its own branch |
 | D11 | No LlamaIndex import exists under `toolkits/MikroTik-RouterOS/` |
 | D12 | The package-local test directory contains **no** `__init__.py` |
 | D13 | `pytest.ini` sets `--import-mode=importlib` in `addopts` **and** lists the package-local test directory in `testpaths` |
@@ -408,5 +408,5 @@ reuse the SSH toolkit's primitives (see Q1).
 
 ---
 
-*Plan derived from `INVESTIGATION_REPORT.md`. All implementation work is to be performed in the
-`self-development` clone on branch `feature/mikrotik-routeros-toolkit`.*
+*Plan derived from `INVESTIGATION_REPORT.md`. All implementation work is to be performed on
+branch `feature/mikrotik-routeros-toolkit`.*

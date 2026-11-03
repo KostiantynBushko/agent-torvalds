@@ -55,7 +55,7 @@ Both were implemented and exercised against a purpose-built SSH harness that emu
 
 ## 2. Current Architecture Analysis
 
-### 2.1 Repository Structure (self-development clone)
+### 2.1 Repository Structure
 
 ```
 ~/ai-agent-investiagte/agent-torvalds/
@@ -741,11 +741,11 @@ Additional classifier rules:
 
 ## 8. Implementation Plan
 
-Work happens in the `self-development` clone, on a dedicated branch.
+Work happens on a dedicated branch of the working copy.
 
 ### Phase 0 — Branch & Dependencies (0.5 day)
 
-- [ ] Create branch `feature/mikrotik-routeros-toolkit` in `self-development/`
+- [ ] Create branch `feature/mikrotik-routeros-toolkit`
 - [ ] Add to `requirements.txt` (all **optional**, guarded by `try/except ImportError`):
   ```
   # MikroTik RouterOS Toolkit Dependencies
@@ -950,7 +950,7 @@ Key findings:
    high/critical changes, automatic `/export` backup, and safe-mode support.
 
 **Recommended next step:** begin Phase 1 (core package) on branch
-`feature/mikrotik-routeros-toolkit` in the `self-development` clone, and in parallel confirm the
+`feature/mikrotik-routeros-toolkit`, and in parallel confirm the
 `exec` vs `session` transport split against a real RouterOS device (CHR container or physical
 router) — the single piece of evidence the local harness cannot provide.
 
@@ -987,4 +987,4 @@ router) — the single piece of evidence the local harness cannot provide.
 ---
 
 *Investigation conducted in: `~/ai-agent-investiagte/agent-torvalds`*
-*All work isolated to the self-development clone per the self-development rules.*
+*All work isolated to its own branch.*

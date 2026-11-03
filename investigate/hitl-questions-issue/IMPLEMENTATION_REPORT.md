@@ -1,7 +1,7 @@
 # Implementation report — the HITL question must be a question, and shown once
 
 **Date**: 2026-10-24
-**Branch**: `investigate/hitl-questions-issue` (in the `self-development` clone)
+**Branch**: `investigate/hitl-questions-issue`
 **Status**: implemented, verified — **not committed** (Rule 4: awaiting the operator's approval)
 **Companion to**: `INVESTIGATION_REPORT.md`, `PROPOSAL_hitl_question_presentation.md`
 

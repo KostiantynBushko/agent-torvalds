@@ -258,4 +258,4 @@ Full detail in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 ---
 
 *Proposed in `investigate/MikroTik-RouterOS/`. All implementation work is to be
-performed in the `self-development` clone on branch `feature/mikrotik-routeros-toolkit`.*
+performed on branch `feature/mikrotik-routeros-toolkit`.*

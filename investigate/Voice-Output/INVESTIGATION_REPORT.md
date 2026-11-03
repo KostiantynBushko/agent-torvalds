@@ -2,7 +2,7 @@
 
 **Subject:** Can `agent-torvalds` be given a unified interface that lets it produce voice instead of only text, using the local `audio.cpp` stack?
 **Date:** 2026-10-22
-**Investigated by:** Torvalds (self-development session)
+**Investigated by:** Torvalds (development session)
 **Status:** Investigation complete — proposal follows in `PROPOSAL_voice_output.md`
 
 ---
