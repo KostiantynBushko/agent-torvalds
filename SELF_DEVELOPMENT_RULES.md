@@ -4,7 +4,7 @@ These rules govern how the Torvalds agent modifies its own codebase. They are
 **persisted here** so that they survive across sessions and are available to any
 future agent invocation.
 
-**Last updated:** 2026-10-29 (the **configuration file** —
+**Last updated:** 2026-10-29 (the **spinner is one feature now**, in `components/` — `spinner_manager.py` had no importer at all and was merged into `components/spinner_controller.py`; before that, 2026-10-29 (the **configuration file** —
 `~/.config/torvalds/config.toml`, the XDG location, with the file
 sitting *below* the environment variables and every setting reporting
 its source; before that, the **logging goes into a file** — the
@@ -210,15 +210,113 @@ directory of the operator in the body of a pull request.
 
 | Item | Status |
 |---|---|
+| Branch | `feature/spinner-consolidation` — based on `master` at `cfc03bd` (the squash of PR #75, the configuration menu). **Open** — not merged yet. The branch was kept, the way the other merged branches were kept. |
+| Scope | **One spinner feature, in `components/`.** The project had two implementations of the console spinner; `spinner_manager.py`, in the project root, had no importer at all. |
+| Status | **Implemented, verified and committed.** `spinner_manager.py` is deleted; `components/spinner_controller.py` gained the lifecycle callbacks; the unused `spinner` parameter of `HumanLoopHandler` is gone with its five call sites; `tests/test_spinner_controller.py` is new with twenty-one tests; the README, the components README and the wiki are corrected. The CI gate reports **0 new failures** (40 known, 0 new, 0 fixed). |
+| Policy | **The live one survived, and the dead one's API did not come with it.** The callbacks came across, because `components/README.md` already promised `spinner_controller.py` *callback hooks for lifecycle events* and the promise was false. The global singleton, the module-level helpers and the global console did not: nothing called them, the problem they solved does not exist — the component that needs the spinner already receives it explicitly — and a module-level global cannot be injected, so it cannot be tested in isolation. |
+| Investigation | `investigate/spinner-consolidation/REPORT_spinner_consolidation.md`. The finding: both files were created in the **same** commit, `b4c403c`, which extracted `SpinnerController` into `components/` and, alongside it, added a global singleton with callback hooks — for a reason that was never realised, because no toolkit references a spinner at all. The file was touched once more, to correct one line of its own architecture diagram. |
+| State | **Verified, not merged.** The twenty-one new tests pass; the CI gate reports no new failure. The change was **rebased** onto `master` at `cfc03bd` after the other work landed, and the patch-id is **identical** before and after the rebase — the rebase changed the history, not the code. The wiki is its own repository, so it was a separate commit there: `ba1a940`. |
 | Branch | `feature/config-file` — **rebased onto `master` at `eafd9c5`** (the squash of the logging), then **merged into `master` as pull request #72** on 2026-10-29, squash-merged as `108cf87`. The branch is kept, the way the other merged branches were kept. The tree of the merge commit is byte-for-byte the tree that was tested. |
 | The order of the merges | **The logging went first.** #71 was squash-merged on 2026-10-29 as `eafd9c5`. The configuration branch was then **rebased** onto it, because a squash puts a *different* commit on `master` and the merge-base does not move on its own — the diff of #72 showed nine commits and twenty-four files until the rebase, and five and sixteen after it. The content did not change: the tree of the rebased head is byte-for-byte the tree that was tested. |
 | The lesson of the squash | **A squash merge does not move the merge-base.** "The merge-base moves and the second pull request shrinks on its own" is true for a merge commit and false for a squash. The branch has to be rebased, and the content has to be compared — by tree hash — to prove that the rebase changed the history and not the code. |
 | The security bot on #72 | **Aikido flagged the writer of the template as a "potential file inclusion attack via reading file".**  The reasoning does not hold — the function *writes* a fixed template and reads nothing, and the path is the operator's own — and its suggested fix would have broken `TORVALDS_CONFIG`, which points outside the configuration directory by design.  But it pointed at something real: the file was created at `0644` and chmod'ed to `0600` afterwards, an existing file was overwritten (so `--write-default-config` run twice threw away the operator's settings), and a symbolic link was written through.  All three are fixed, with six new tests, and the bot accepted the reasoning.  **A finding can be wrong and still be worth reading.** |
 | Scope | Give the agent a **configuration file** — `~/.config/torvalds/config.toml` — for the forty-five settings that today live in environment variables. |
 | Status | **Implemented, verified, committed and pushed.** `components/config.py` and `components/config_view.py` are new; both orchestrators, the stats handler, the Ollama configuration and the TUI read the file; 44 new tests and the documentation are in place. The CI gate reports **0 new failures** (40 known, 0 new). Each of the three commits was checked on its own in a throw-away worktree: no new failure against the baseline at any of them. |
-| Policy | **The file sits below the environment variables.** The chain is `flag > environment variable > config file > default`. A file that outranked the variables would change the behaviour of every operator who already has them the moment they upgraded — a different model, a different host, silently. With the file underneath, an operator with no file sees no change, and the file becomes the "set it once" layer. |
+| Policy (the configuration file) | **The file sits below the environment variables.** The chain is `flag > environment variable > config file > default`. A file that outranked the variables would change the behaviour of every operator who already has them the moment they upgraded — a different model, a different host, silently. With the file underneath, an operator with no file sees no change, and the file becomes the "set it once" layer. |
 | The operator's decisions | **TOML**, at `~/.config/torvalds/config.toml`. The location was the operator's own suggestion ("under ~/.config folder ... with name 'torvalds'"), and it is the XDG one, so it completes the triad the project already keeps. The sections `[llm] [agent] [hitl] [stats] [logging]` and the toolkit fallback took the recommendations that were put with the question. |
 | What did not move | The chat history, the cache and the logs. A database and a rotating log are what the agent *produced*, not configuration, and moving the chat history would break the sessions of everybody who has one. |
+
+### Latest change: the spinner is one feature now, in components/
+
+**The operator asked on 2026-10-29**: *"please make investigate of of the
+spinner feature, we haev components/spinner_controller.py and
+spinner_manager.py which one is used? We either have to merge them into a
+single feature or remove one of them if they are identical. The solution
+must be placed in componnents folder."*
+
+#### Which one is used
+
+**`components/spinner_controller.py`.**  `spinner_manager.py` has **never**
+been imported by anything — not the orchestrators, not a component, not a
+toolkit, not a test.  The only two mentions of it in the whole repository
+were inside its own docstring.
+
+#### Why there were two
+
+Both files were created in the **same** commit, `b4c403c`, which extracted
+`SpinnerController` into `components/` and, alongside it, added a global
+singleton with callback hooks.  The commit message gives the reason: *"Spinner
+can be paused during interactive dialogs (whiptail)"*, and it had to be
+reachable from the toolkits.
+
+**That was never done.**  No toolkit references a spinner at all.  The file
+was touched exactly once more, in `ce75ade`, and the change was **one line
+of its own architecture diagram**.
+
+Meanwhile `components/spinner_controller.py` was **improved** in `c8d6927` —
+which is where its thread safety and its error handling came from.  The one
+that was used is the one that got better.
+
+#### They are not identical, so they are merged
+
+The live one has the thread safety and the error handling.  The dead one has
+the lifecycle callbacks, a global singleton, three module-level helpers and a
+global console.  Neither is a superset of the other.
+
+**The callbacks came across.**  `components/README.md` already promised
+`spinner_controller.py` *callback hooks for lifecycle events* — a promise
+that was false, because the hooks were in the other file.  The merge makes
+it true.
+
+**The singleton did not.**  Nothing called it; the problem it solved does
+not exist, because the component that needs the spinner already receives it
+explicitly; and a module-level global cannot be injected, so it cannot be
+tested in isolation.
+
+#### The pause and resume that the orphan was built for — already live
+
+In `components/event_consumer.py`, which is documented as *"the single place
+where the user is prompted"*: it pauses around the interactive tools, and
+around a HITL question in both the input-required and the agent-question
+paths, and resumes in a `finally`.
+
+#### Two things the investigation found that were not in the question
+
+**A spinner was injected into `HumanLoopHandler` and never used.**  The
+parameter was documented as *"SpinnerController to pause/resume during
+prompts"*, it was stored, and `self.spinner` appears exactly once in the
+file — the assignment.  `EventConsumer` does the pausing, because
+`EventConsumer` is where the prompt happens.  It is the same failure mode as
+the orphan: a spinner wired into a place that does not use it, invisible
+because nothing reads it.  Removed, with its five call sites; the change is
+behaviour-neutral, because the value was stored and never read.
+
+**The spinner had no tests at all**, for either implementation.  It was
+covered only indirectly, by the tests of the components that use it, and
+those pass a mock or a spinner that is never started.
+`tests/test_spinner_controller.py` covers the class on its own — the state
+transitions, the idempotence, the pause context including its exception
+path, a console that refuses the spinner, the callbacks and the lock.
+Twenty-one tests.
+
+#### The documentation that named the orphan
+
+`README.md` section 12 was a whole section about it, the README project tree
+listed it, and the wiki's `Architecture.md` named it twice.  All corrected.
+The wiki is its own repository, so it was a separate commit there.
+
+#### Verifying the change
+
+```
+self-development/.venv/bin/python -m pytest self-development/tests/test_spinner_controller.py -q
+21 passed in 0.85s
+
+self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+known failures in the baseline : 40
+failures in this run            : 40
+new failures                    : 0
+fixed since the baseline        : 0
+```
 
 ### Latest change: the configuration file
 
