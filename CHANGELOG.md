@@ -30,6 +30,26 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The rule about stray test files named a folder that no longer exists
+
+- **The skip list of the rule about stray test files carried the name of
+  the retired clone folder.**  The folder is gone, and the rule was a
+  name in a list — a list that had to be remembered, and a name that
+  pointed at nothing.
+
+  The rule is now a fact about the tree rather than a remembered name:
+  a directory that carries its own `.git` is a copy of the repository,
+  and a copy of the repository is not part of this repository.  It holds
+  a whole copy of the suite, and a rule about the files of this
+  repository must not read the files of the copy.  The rule holds
+  whatever the copy is called.
+
+  The rule was proved in one direction only — it must ignore a copy —
+  and a rule that only ignores things can also ignore too much.  It now
+  proves the other side as well: a directory that carries no `.git` is
+  not a copy, so it is walked, and a test file in it is a stray like
+  any other.  With the rule broken either way, the proof fails.
+
 #### The deployment harness named a folder that no longer exists
 
 - **The skip list of the deployment harness carried the name of the

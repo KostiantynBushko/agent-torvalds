@@ -21,10 +21,11 @@ for one particular case, and they are named for what they are, so
 nothing in that folder is mistaken for a test.
 
 The directories that are **not part of this repository** are never
-walked — ``.git``, ``.venv``, and the retired ``self-development``
-clone.  The clone is a second checkout of the repository: it holds a
-whole copy of the suite, and a rule about the files of this repository
-must not read the files of the copy.
+walked — ``.git``, ``.venv``, and a copy of the repository inside it.
+A copy holds a whole copy of the suite, and a rule about the files of
+this repository must not read the files of the copy.  The copy is
+recognised by the ``.git`` it carries, so the rule holds whatever the
+copy is called.
 
 Run with:
     pytest tests/test_no_stray_test_files.py -v
@@ -50,21 +51,58 @@ TESTPATHS = (
 #: The directories that are never walked.
 SKIP_DIRS = frozenset({
     ".git", ".venv", ".pytest_cache", "__pycache__", "node_modules",
-    # The self-development clone: a second checkout of this
-    # repository.  It is git-ignored, and it holds a whole copy of the
-    # suite - which the rule must not read as the suite of this
-    # repository.
-    "self-development",
 })
+
+
+def is_a_copy_of_the_repository(directory):
+    """Whether a directory holds a copy of the repository.
+
+    A copy of the repository inside the repository holds a whole copy of
+    the suite, and a rule about the files of this repository must not
+    read the files of the copy.
+
+    The copy is recognised by the ``.git`` it carries, so the rule holds
+    whatever the copy is called - and it needs no list of names to
+    remember.
+
+    Args:
+        directory: The directory to look at.
+
+    Returns:
+        ``True`` when the directory is a copy of the repository.
+    """
+    return (directory / ".git").exists()
+
+
+def _is_inside_a_copy_of_the_repository(root, relative):
+    """Whether a path lies inside a copy of the repository.
+
+    Args:
+        root: The root the path is relative to.
+        relative: The path, relative to the root.
+
+    Returns:
+        ``True`` when one of the directories above the path is a copy of
+        the repository.
+    """
+    directory = root
+    for part in relative.parts[:-1]:
+        directory = directory / part
+        if is_a_copy_of_the_repository(directory):
+            return True
+    return False
 
 
 def the_test_files(root):
     """Every ``test_*.py`` under ``root``, outside the skipped dirs."""
     found = []
     for path in root.rglob("test_*.py"):
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
+        relative = path.relative_to(root)
+        if any(part in SKIP_DIRS for part in relative.parts):
             continue
-        found.append(path.relative_to(root))
+        if _is_inside_a_copy_of_the_repository(root, relative):
+            continue
+        found.append(relative)
     return sorted(found)
 
 
@@ -235,32 +273,63 @@ class TestNoStrayTestFiles(unittest.TestCase):
                 "the rule walks into the virtual environment",
             )
 
-    def test_the_check_ignores_the_self_development_clone(self):
-        """The clone is a second checkout of the repository, not part of it.
+    def test_the_check_ignores_a_copy_of_the_repository(self):
+        """A copy of the repository is not part of this repository.
 
-        The clone is retired - the agent works in this working copy now,
-        see DEVELOPMENT_RULES.md - and the folder is gone.  The rule
-        still skips it, in case somebody clones the repository inside it
-        again: it holds a whole copy of the suite, and the rule reads
-        the tree of **this** repository.
+        A copy holds a whole copy of the suite, and the rule reads the
+        tree of **this** repository.  The copy is recognised by the
+        ``.git`` it carries, so the rule holds whatever it is called.
         """
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            clone = root / "self-development" / "tests"
-            clone.mkdir(parents=True)
-            (clone / "test_whatever.py").write_text("# not ours\n")
+            copy = root / "a-copy-of-the-repository"
+            (copy / ".git").mkdir(parents=True)
+            (copy / "tests").mkdir()
+            (copy / "tests" / "test_whatever.py").write_text("# not ours\n")
             (root / "tests").mkdir()
             (root / "tests" / "test_fine.py").write_text("# a real test\n")
 
             self.assertEqual(
                 the_test_files(root),
                 [Path("tests/test_fine.py")],
-                "the rule walks into the self-development clone",
+                "the rule walks into the copy of the repository",
             )
             self.assertEqual(
                 stray_test_files(root, [root / "tests"]),
                 [],
-                "the rule reports the test files of the clone as strays",
+                "the rule reports the test files of the copy as strays",
+            )
+
+    def test_the_check_does_not_skip_a_directory_that_is_not_a_copy(self):
+        """The rule is about copies of the repository, not about a name.
+
+        A directory that carries no ``.git`` is not a copy, so it is
+        walked, and a test file in it is a stray like any other.  A rule
+        that skipped by name would skip a directory that holds no copy
+        of the repository at all.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plain = root / "a-plain-directory" / "tests"
+            plain.mkdir(parents=True)
+            (plain / "test_whatever.py").write_text("# not ours\n")
+            (root / "tests").mkdir()
+            (root / "tests" / "test_fine.py").write_text("# a real test\n")
+
+            self.assertEqual(
+                the_test_files(root),
+                [
+                    Path("a-plain-directory/tests/test_whatever.py"),
+                    Path("tests/test_fine.py"),
+                ],
+                "the rule skips a directory that holds no copy of the "
+                "repository",
+            )
+            self.assertEqual(
+                stray_test_files(root, [root / "tests"]),
+                ["a-plain-directory/tests/test_whatever.py"],
+                "the rule does not report the test file of a plain "
+                "directory as a stray",
             )
 
     def test_this_file_does_not_fail_the_check(self):
