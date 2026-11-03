@@ -291,12 +291,12 @@ print(f"returncode={result.returncode}, value='{result.value}'")
 
 ---
 
-## 11. Test Files
+## 11. Demo Files
 
 | File | Description |
 |------|-------------|
-| `test_bash_whiptail.sh` | Tests native bash whiptail |
-| `test_python_whiptail.py` | Tests Python whiptail package |
+| `demo_bash_whiptail.sh` | Demonstrates native bash whiptail |
+| `demo_python_whiptail.py` | Demonstrates the Python whiptail package |
 | `comparison_example.py` | Side-by-side comparison |
 
 ---

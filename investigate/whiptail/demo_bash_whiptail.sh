@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================================
-# Test Script: Bash Whiptail (native)
+# Demo Script: Bash Whiptail (native)
 # ============================================================================
 # This script demonstrates native whiptail usage from bash.
-# Run with: bash test_bash_whiptail.sh
+# Run with: bash demo_bash_whiptail.sh
 # ============================================================================
 
 set -euo pipefail

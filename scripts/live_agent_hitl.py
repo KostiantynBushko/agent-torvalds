@@ -8,9 +8,9 @@ import os
 import importlib
 from pathlib import Path
 
-# Add self-development to path — the directory of this file, so the
-# script works on every machine and for every operator.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Add the repository root to the path, so the script runs from
+# anywhere and the components resolve.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rich.console import Console
 
@@ -53,7 +53,6 @@ async def test_agent():
         default_timeout=15,
         default_answer='',
         console=console,
-        spinner=spinner,
         enable_hitl=True,
         runtime_toggle=hitl_toggle,
     )

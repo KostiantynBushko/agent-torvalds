@@ -1233,7 +1233,7 @@ manager.shutdown()
 | requirements.txt               # Project dependencies
 | requirements-ci.lock           # The pinned environment the CI baseline was recorded with
 | pytest.ini                     # The test paths, and the pytest configuration
-| scripts/                       # The CI test gate and the HITL test scripts
+| scripts/                       # The CI test gate, the HITL test scripts and the debug harnesses
 | +-- ci_test_gate.py            # The gate the build runs: a NEW failure breaks the build
 | +-- hitl_question_bank.py      # The question classifier's case bank
 | +-- hitl_interactive_test.py

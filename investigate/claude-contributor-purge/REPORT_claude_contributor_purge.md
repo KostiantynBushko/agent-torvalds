@@ -131,7 +131,7 @@ content does not change — only the commit messages and therefore the SHAs.
 |---|---|
 | `verify_no_claude.py` | The **check**. Walks the GitHub side (every PR title and body, every comment, every review comment, every commit of the default branch) and the Git side (every commit message of every ref). Reports PASS/FAIL per side. |
 | `strip_claude_trailer.py` | The `git filter-repo` message callback. Removes the `Co-Authored-By: … Claude …` trailer and the `🤖 Generated with [Claude Code]` footer, and nothing else. |
-| `test_strip_claude_trailer.py` | The test of that callback — 7 cases, driven the way filter-repo drives it. |
+| `check_strip_claude_trailer.py` | The check of that callback — 7 cases, driven the way filter-repo drives it. |
 | `refresh_commit_shas.py` | The follow-up tool: substitutes the SHAs the rewrite made stale, using the `commit-map` `filter-repo` leaves behind. |
 | `purge_claude_contributor.sh` | The **driver**. Baseline → scratch mirror clone → rewrite → verify → (optionally) force-push. Dry run by default. |
 | `REPORT_claude_contributor_purge.md` | This document. |
@@ -309,7 +309,7 @@ no longer contribute to the contributor list.
 python3 self-development/investigate/claude-contributor-purge/verify_no_claude.py
 
 # The callback
-python3 self-development/investigate/claude-contributor-purge/test_strip_claude_trailer.py
+python3 self-development/investigate/claude-contributor-purge/check_strip_claude_trailer.py
 
 # The one offending commit, across every ref
 git log --all --regexp-ignore-case --fixed-strings --grep=claude --format='%H %s'
