@@ -14,16 +14,16 @@ script broke and the gate reported no new failure.  Both are live
 scripts that need a real LLM, so they are not unit tests and they do not
 belong under ``tests/``; they live in ``scripts/`` now.
 
-The check is deliberately narrow.  It does not say where a test file has
-to be — it says that it has to be somewhere pytest collects, or under
-``investigate/``, which is the record of a piece of work and is outside
-the suite on purpose.
+There is **no exemption**.  Nothing outside the collected directories may
+carry the name of a test — not the repository root, and not
+``investigate/`` either.  The scripts under ``investigate/`` are helpers
+for one particular case, and they are named for what they are, so
+nothing in that folder is mistaken for a test.
 
 Run with:
     pytest tests/test_no_stray_test_files.py -v
 """
 import configparser
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -46,10 +46,6 @@ SKIP_DIRS = frozenset({
     ".git", ".venv", ".pytest_cache", "__pycache__", "node_modules",
 })
 
-#: The record of a piece of work.  It is outside the suite on purpose,
-#: and the helper scripts in it are not test modules.
-RECORD_DIR = "investigate"
-
 
 def the_test_files(root):
     """Every ``test_*.py`` under ``root``, outside the skipped dirs."""
@@ -64,13 +60,11 @@ def the_test_files(root):
 def stray_test_files(root, collected):
     """The test files that no collected directory reaches.
 
-    A file under the record directory is not a stray: the record of a
-    piece of work is outside the suite on purpose.
+    There is no exemption.  A file that pytest will never collect is a
+    stray, wherever it is.
     """
     strays = []
     for rel in the_test_files(root):
-        if rel.parts[0] == RECORD_DIR:
-            continue
         absolute = root / rel
         if not any(
             absolute == d or d in absolute.parents for d in collected
@@ -100,10 +94,10 @@ class TestNoStrayTestFiles(unittest.TestCase):
             [],
             f"a test file in the repository root is not collected by pytest: "
             f"{strays}.  pytest collects {TESTPATHS}.  Move it under one of "
-            f"those, or under {RECORD_DIR}/ if it is a helper script.",
+            f"those, or rename it after what it is.",
         )
 
-    def test_every_test_file_is_collected_or_is_a_record(self):
+    def test_every_test_file_is_collected(self):
         """No test file sits where pytest will never look for it."""
         strays = stray_test_files(ROOT, self.collected)
         self.assertEqual(
@@ -111,7 +105,24 @@ class TestNoStrayTestFiles(unittest.TestCase):
             [],
             f"these test files are outside every directory pytest collects: "
             f"{strays}.  pytest collects {TESTPATHS}.  Move them under one "
-            f"of those, or under {RECORD_DIR}/ if they are helper scripts.",
+            f"of those, or rename them after what they are.",
+        )
+
+    def test_investigate_holds_no_test_file(self):
+        """The helpers under investigate/ are named for what they are.
+
+        They test one particular case, and they are not part of the
+        suite.  Nothing in that folder may carry the name of a test.
+        """
+        strays = [
+            rel.as_posix() for rel in the_test_files(ROOT)
+            if rel.parts[0] == "investigate"
+        ]
+        self.assertEqual(
+            strays,
+            [],
+            f"these files under investigate/ are named like tests: {strays}.  "
+            f"They are helpers for one case - rename them after what they are.",
         )
 
     def test_the_check_reads_the_test_paths_of_pytest_ini(self):
@@ -169,20 +180,20 @@ class TestNoStrayTestFiles(unittest.TestCase):
                 "directories as a stray",
             )
 
-    def test_the_check_allows_a_helper_script_in_the_record(self):
-        """The record of a piece of work is outside the suite on purpose."""
+    def test_the_check_catches_a_test_file_under_investigate(self):
+        """There is no exemption for the record of a piece of work."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            record = root / RECORD_DIR
+            record = root / "investigate"
             record.mkdir()
-            (record / "test_helper.py").write_text("# a helper\n")
+            (record / "test_stray.py").write_text("# a stray\n")
             (root / "tests").mkdir()
             (root / "tests" / "test_fine.py").write_text("# a real test\n")
 
             self.assertEqual(
                 stray_test_files(root, [root / "tests"]),
-                [],
-                "the rule reports a helper script in the record as a stray",
+                ["investigate/test_stray.py"],
+                "the rule exempts a test file under investigate/",
             )
 
     def test_the_check_allows_a_test_file_in_a_collected_dir(self):
