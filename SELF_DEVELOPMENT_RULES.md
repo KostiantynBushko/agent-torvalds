@@ -294,17 +294,28 @@ there instead; and the `spinner=` argument, which PR #76 broke.
 #### The rule
 
 `tests/test_no_stray_test_files.py` says one thing: **a test file must be
-somewhere pytest collects, or under `investigate/`**.  It reads `testpaths`
-out of `pytest.ini` rather than repeating it, and a test asserts that the two
-agree.  It is tested against deliberate strays — a file in the root, a file
-in an uncollected directory, a helper in the record (allowed), a test in a
-collected directory (allowed), and the virtual environment (not walked).
+somewhere pytest collects**.  It reads `testpaths` out of `pytest.ini` rather
+than repeating it, and a test asserts that the two agree.  It is tested
+against deliberate strays — a file in the root, a file in an uncollected
+directory, a file under `investigate/`, a test in a collected directory
+(allowed), and the virtual environment (not walked).
+
+**There is no exemption.**  Nothing outside the collected directories may
+carry the name of a test — not the repository root, and not `investigate/`
+either.  The three helpers under `investigate/` that were named like tests
+were renamed after what they are:
+
+| From | To |
+|---|---|
+| `investigate/claude-contributor-purge/test_strip_claude_trailer.py` | `investigate/claude-contributor-purge/check_strip_claude_trailer.py` |
+| `investigate/whiptail/test_python_whiptail.py` | `investigate/whiptail/demo_python_whiptail.py` |
+| `investigate/whiptail/test_bash_whiptail.sh` | `investigate/whiptail/demo_bash_whiptail.sh` |
 
 #### Verifying the change
 
 ```
 self-development/.venv/bin/python -m pytest self-development/tests/test_no_stray_test_files.py -q
-9 passed in 0.39s
+10 passed in 0.51s
 
 self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
 known failures in the baseline : 40
@@ -1344,7 +1355,7 @@ removed on 2026-10-27.
 |---|---|
 | `investigate/claude-contributor-purge/verify_no_claude.py` | The check. Walks the GitHub side (every PR title and body, every comment, every review comment) and the Git side (every commit message of every ref). Grades a **co-author trailer** and a **Claude Code footer** as FAIL, and a bare mention as informational. |
 | `investigate/claude-contributor-purge/strip_claude_trailer.py` | The `git filter-repo` message callback. Removes the trailer and the footer, line-wise, and nothing else. |
-| `investigate/claude-contributor-purge/test_strip_claude_trailer.py` | The test of that callback — 7 cases, driven the way filter-repo drives it. |
+| `investigate/claude-contributor-purge/check_strip_claude_trailer.py` | The check of that callback — 7 cases, driven the way filter-repo drives it. |
 | `investigate/claude-contributor-purge/purge_claude_contributor.sh` | The driver: baseline, scratch mirror clone, rewrite, verify, and — only with `--apply` — the force-push. |
 | `investigate/claude-contributor-purge/refresh_commit_shas.py` | The SHA refresh. It arrived with PR #58 and was used by PR #59. |
 | `investigate/claude-contributor-purge/REPORT_claude_contributor_purge.md` | The report. |
@@ -1355,7 +1366,7 @@ removed on 2026-10-27.
 
 ```bash
 python3 self-development/investigate/claude-contributor-purge/verify_no_claude.py
-python3 self-development/investigate/claude-contributor-purge/test_strip_claude_trailer.py
+python3 self-development/investigate/claude-contributor-purge/check_strip_claude_trailer.py
 ```
 
 The check reports **PASS** on both sides: no commit message of any ref carries
