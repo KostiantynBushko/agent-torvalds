@@ -30,6 +30,41 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### A failure of the model server was shown as a stack trace
+
+- **The chat showed a traceback when the model server failed.**  The
+  agent answered a failed request with the exception and the whole
+  stack trace:
+
+  ```
+  Error: Internal Server Error (ref: 5da53c14-e0ba-41ea-9ae5-3fec8c43ef64) (status code: 500) (status code: 500)
+  Traceback (most recent call last):
+    File ".../site-packages/ollama/_client.py", line 809, in inner
+      raise ResponseError(e.response.text, e.response.status_code) from None
+    ...
+  ```
+
+  The traceback shows where the failure happened *inside the agent*,
+  and it hides the one thing that matters: the **server** failed.  The
+  operator was given forty frames of the agent and no hint of what to
+  do about it.
+
+  The chat now says what actually went wrong:
+
+  > The model server failed (HTTP 500). The request reached Ollama, and
+  > the server could not answer it. The usual causes are a model that
+  > crashed and a model that ran out of memory - `ollama ps` shows
+  > whether a model is loaded, and the server log says why it died.
+  > Reference: 5da53c14-e0ba-41ea-9ae5-3fec8c43ef64.
+
+  The traceback is not lost - it goes to the log, where it belongs.
+
+  The other failures of the model server are named as well: the model
+  that is not pulled (404), the request the server rejected (400), the
+  server that cannot be reached at all, and the request that timed out.
+  An error nobody knows is still shown as it is - just without the
+  frames.
+
 #### The rule about stray test files named a folder that no longer exists
 
 - **The skip list of the rule about stray test files carried the name of
