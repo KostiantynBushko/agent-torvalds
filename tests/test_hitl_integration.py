@@ -57,7 +57,6 @@ class TestHITLIntegration(unittest.TestCase):
             default_timeout=5,
             default_answer="default_response",
             console=self.console,
-            spinner=self.spinner,
             enable_hitl=True,
             runtime_toggle=self.toggle,
         )

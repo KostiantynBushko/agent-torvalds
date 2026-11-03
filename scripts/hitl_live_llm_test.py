@@ -59,7 +59,6 @@ async def main() -> int:
         default_timeout=-1,
         default_answer="",
         console=console,
-        spinner=spinner,
         enable_hitl=True,
         runtime_toggle=toggle,
     )
