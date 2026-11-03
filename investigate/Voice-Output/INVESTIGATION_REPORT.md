@@ -75,17 +75,17 @@ never break the agent boot when audio.cpp is absent.
 
 ## 2. Scope and Method
 
-Two repositories were inspected read-only. The self-development rules
-(`SELF_DEVELOPMENT_RULES.md`, Rules 1–2) forbid writing to the main checkout, so
+Two repositories were inspected read-only. The development rules
+(`DEVELOPMENT_RULES.md`) required the work to happen in a separate clone, so
 this report and the accompanying proposal live under
-`self-development/investigate/Voice-Output/`.
+`investigate/Voice-Output/`.
 
 | Path | Role in the investigation |
 |---|---|
 | `~/ai-agent-investiagte/text-to-speach/audio.cpp` | The audio inference framework (the *engine* side) |
 | `~/ai-agent-investiagte/models/TTS/` | Locally downloaded TTS weights (Kokoro, MagpieTTS, OmniVoice) |
 | `~/ai-agent-investiagte/agent-torvalds/` | The agent (the *consumer* side) |
-| `~/ai-agent-investiagte/agent-torvalds/self-development/` | Where this report and the proposal are written |
+| `~/ai-agent-investiagte/agent-torvalds/` | Where this report and the proposal are written |
 
 **Method.** Static reading of both code bases against the repository's own
 conventions; then empirical validation — the `audio.cpp` CLI and HTTP server

@@ -9,7 +9,7 @@ This exercises the *real* production wiring:
   * the answer is sent back and reaches the LLM,
   * the agent continues and produces a final answer.
 
-Run from the repository root (self-development/):
+Run from the repository root:
     python investigate/hitl-investigate/verify_hitl_roundtrip.py
 """
 from __future__ import annotations

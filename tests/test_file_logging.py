@@ -28,7 +28,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-# Ensure the self-development module root is on the path
+# Ensure the repository root is on the path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 

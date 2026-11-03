@@ -188,7 +188,7 @@ def main() -> int:
     args = parser.parse_args()
 
     here = os.path.dirname(os.path.abspath(__file__))
-    # .../self-development/investigate/<dir>/verify_no_claude.py
+    # .../investigate/<dir>/verify_no_claude.py
     clone = args.clone or os.path.dirname(os.path.dirname(os.path.dirname(here)))
     if not os.path.isdir(os.path.join(clone, ".git")):
         clone = os.path.dirname(clone)

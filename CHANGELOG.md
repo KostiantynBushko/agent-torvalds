@@ -838,8 +838,8 @@ All notable changes to this project are documented in this file.
 - **New harness**: `investigate/hitl-timeout-policy/verify_timeout_policy.py`
   — 11 checks of the operator's rule; 9/11 before the fix, 11/11 after.
 - **New report**: `investigate/hitl-timeout-policy/REPORT_timeout_policy.md`.
-- **Rule 7** in `SELF_DEVELOPMENT_RULES.md`: how the agent waits for the
-  operator, and what it may do when the wait ends.
+- **The timeout rule** in `DEVELOPMENT_RULES.md`: how the agent waits for
+  the operator, and what it may do when the wait ends.
 
 #### Continuous integration
 

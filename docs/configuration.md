@@ -389,10 +389,10 @@ and they are still the right place for a secret.
 
 ```bash
 # The unit tests.
-self-development/.venv/bin/python -m pytest self-development/tests/test_config.py -v
+.venv/bin/python -m pytest tests/test_config.py -v
 
 # The CI gate — a new failure breaks the build, a known one does not.
-self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+.venv/bin/python scripts/ci_test_gate.py
 ```
 
 The module is `components/config.py`, and the rendering of the effective

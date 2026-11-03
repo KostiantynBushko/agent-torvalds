@@ -39,10 +39,9 @@ Seven defects in total; three of them are the operator's two complaints.
 ## Diagnostics
 
 Every claim in the report is measured, not asserted. Run them from the
-`self-development` clone:
+repository root:
 
 ```bash
-cd self-development
 
 # D2 — the input type is guessed from the whole answer
 .venv/bin/python investigate/hitl-questions-issue/diag_input_type.py

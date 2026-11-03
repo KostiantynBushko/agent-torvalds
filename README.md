@@ -55,7 +55,7 @@ The project documentation:
 | MikroTik RouterOS Toolkit — the end-user reference | [docs/mikrotik-toolkit.md](docs/mikrotik-toolkit.md) |
 | Shodan Toolkit — the end-user reference | [docs/shodan-toolkit.md](docs/shodan-toolkit.md) |
 | The design proposals — the documents the features were designed in | [docs/proposals/](docs/proposals/) |
-| The self-development rules — how the agent modifies its own code | [SELF_DEVELOPMENT_RULES.md](SELF_DEVELOPMENT_RULES.md) |
+| The development rules — how the agent modifies its own code | [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) |
 | The CI test gate — the script the build runs | [scripts/ci_test_gate.py](scripts/ci_test_gate.py) |
 | The change log — every change, newest first | [CHANGELOG.md](CHANGELOG.md) |
 
@@ -76,7 +76,7 @@ describe.  A plain `git clone` leaves the directory empty;
 | [wiki/Usage.md](wiki/Usage.md) | The runtime commands, chat sessions, router and Shodan commands |
 | [wiki/Architecture.md](wiki/Architecture.md) | The orchestrators, the components, the event flow, the project layout |
 | [wiki/Database.md](wiki/Database.md) | PostgreSQL setup, the schema, and the Sqitch migrations |
-| [wiki/Contributing.md](wiki/Contributing.md) | Branching, commit style, the self-development workflow |
+| [wiki/Contributing.md](wiki/Contributing.md) | Branching, commit style, the development workflow |
 
 ### 1. OS Toolkit (`toolkits/os-toolkit/`)
 - The current working directory, directory listings, and path checks
@@ -1242,7 +1242,7 @@ manager.shutdown()
 | CHANGELOG.md                   # Version history
 | DEPLOYMENT.md                  # The deployment guide
 | README.md                      # This file
-| SELF_DEVELOPMENT_RULES.md      # The rules the agent follows on its own code
+| DEVELOPMENT_RULES.md         # The rules the agent follows on its own code
 | tools_menu_update.md           # The startup tool menu, category by category
 | __pycache__/                  # Python cache
 | .venv/                        # Virtual environment

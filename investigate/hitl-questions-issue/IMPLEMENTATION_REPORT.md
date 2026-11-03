@@ -142,7 +142,6 @@ reaches the terminal as the one block the agent wrote.
 ### The acceptance harness
 
 ```bash
-cd self-development
 .venv/bin/python investigate/hitl-questions-issue/verify_hitl_question_presentation.py
 ```
 
@@ -231,7 +230,6 @@ The change is **not committed** (Rule 4). The operator's review is
 requested:
 
 ```bash
-cd self-development
 git status
 git diff
 ```

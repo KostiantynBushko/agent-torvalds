@@ -263,7 +263,7 @@ Both were `git mv`, so the history follows the file.
 ### 6.4 The documentation
 
 `README.md`, `docs/mikrotik-toolkit.md`, `docs/shodan-toolkit.md`,
-`toolkits/MikroTik-RouterOS/README.md`, `SELF_DEVELOPMENT_RULES.md`,
+`toolkits/MikroTik-RouterOS/README.md`, `DEVELOPMENT_RULES.md`,
 `CHANGELOG.md`, `investigate/MikroTik-RouterOS/README.md`.
 
 The historical documents — `INVESTIGATION_REPORT.md`,

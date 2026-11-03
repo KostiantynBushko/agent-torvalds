@@ -243,8 +243,8 @@ half, which depends on the standard library and on nothing else, and
 ## 7. Verification
 
 ```bash
-self-development/.venv/bin/python -m pytest self-development/toolkits/linux-toolkit/tests -q
-self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+.venv/bin/python -m pytest toolkits/linux-toolkit/tests -q
+.venv/bin/python scripts/ci_test_gate.py
 ```
 
 **78 passed** in the toolkit suite (36 operations + 31 layout contract +

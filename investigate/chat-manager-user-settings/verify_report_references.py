@@ -4,7 +4,7 @@ A line reference in an investigation report is a promise: "look here and you
 will find this".  This script checks the promise mechanically, so the report
 cannot drift away from the code.
 
-    self-development/.venv/bin/python \\
+    .venv/bin/python \\
         investigate/chat-manager-user-settings/verify_report_references.py
 """
 

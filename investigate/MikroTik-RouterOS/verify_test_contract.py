@@ -29,8 +29,8 @@ fails with "attempted relative import beyond top-level package".
 
 Run from the clone root:
 
-    self-development/.venv/bin/python \
-        self-development/investigate/MikroTik-RouterOS/verify_test_contract.py
+    .venv/bin/python \
+        investigate/MikroTik-RouterOS/verify_test_contract.py
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-21
 **Status**: Investigation complete — 4 independent blocking defects found and empirically proven
-**Location**: `self-development/investigate/hitl-investigate/`
+**Location**: `investigate/hitl-investigate/`
 **Affected components**: `components/human_loop_handler.py`, `components/event_consumer.py`, `components/hitl_events.py`
 **Entry points**: `agent-torvalds.py`, `agent-torvalds-mw.py`
 **Environment**: llama-index-core 0.14.25, llama-index-llms-ollama 0.11.x, `workflows` (bundled), Python 3.12
@@ -626,7 +626,6 @@ question twice in one run.
 ### 8.3 Verification
 
 ```bash
-cd self-development
 ../.venv/bin/python investigate/hitl-investigate/verify_hitl.py          # 13/13
 ../.venv/bin/python investigate/hitl-investigate/verify_hitl_roundtrip.py # 8/8
 ../.venv/bin/python -m pytest tests/test_hitl_roundtrip.py -v           # 22 passed
@@ -697,7 +696,7 @@ passing; the single failing check (E1, "exactly one prompt") is the
 ## 10. Reproduction Scripts
 
 All scripts live in `investigate/hitl-investigate/` and run from the
-repository root (`self-development/`).
+repository root .
 
 | Script | Purpose | Needs Ollama |
 |---|---|---|
@@ -710,7 +709,6 @@ repository root (`self-development/`).
 | `diag_live_ollama.py` | Live proof against a real Ollama model | **yes** |
 
 ```bash
-cd self-development
 ../.venv/bin/python investigate/hitl-investigate/verify_hitl.py
 ../.venv/bin/python investigate/hitl-investigate/diag_callback_events.py
 ../.venv/bin/python investigate/hitl-investigate/diag_answer_path.py

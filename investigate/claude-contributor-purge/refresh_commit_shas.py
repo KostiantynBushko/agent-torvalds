@@ -5,7 +5,7 @@ On 2026-10-27 the repository's history was rewritten to remove the
 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 trailer from the root commit of the shodan-toolkit subtree.  A rewrite
 changes the SHA of every descendant, so the SHAs that the documentation
-records — in `SELF_DEVELOPMENT_RULES.md` and in the investigation reports —
+records — in the development rules and in the investigation reports —
 now name commits that no longer exist.
 
 `git filter-repo` leaves the mapping behind, in `filter-repo/commit-map`:

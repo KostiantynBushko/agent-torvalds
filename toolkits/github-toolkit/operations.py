@@ -253,7 +253,7 @@ def git_configure_credentials(username: str, email: str) -> bool:
     try:
         import subprocess
         
-        # Get current directory or use self-development as default
+        # Configure the credentials in the repository of the current directory
         cwd = os.getcwd()
         
         # Configure user.name

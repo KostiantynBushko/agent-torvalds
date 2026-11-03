@@ -146,7 +146,7 @@ Harness ready.
   sess port : $PORT_SESSION_B (RouterOS-style interactive session)
 
 Run the prototypes:
-  cd self-development/investigate/MikroTik-RouterOS
+  cd investigate/MikroTik-RouterOS
   ../../.venv/bin/python proto_prompt_regex.py
   ../../.venv/bin/python proto_asyncssh.py
   ../../.venv/bin/python proto_exec.py

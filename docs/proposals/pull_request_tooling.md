@@ -228,11 +228,11 @@ Agent workflow:
 
 | File | Action |
 |------|--------|
-| `self-development/agent_git_toolkit.py` | Add branch/diff/sync functions |
-| `self-development/agent-torvalds.py` | Import new GitHub toolkit |
-| `self-development/agent_github_toolkit.py` | **New file** - GitHub API/CLI integration |
-| `self-development/requirements.txt` | Add `requests` or `PyGithub` if using API |
-| `self-development/docs/proposals/pull_request_tooling.md` | This document |
+| `agent_git_toolkit.py` | Add branch/diff/sync functions |
+| `agent-torvalds.py` | Import new GitHub toolkit |
+| `agent_github_toolkit.py` | **New file** - GitHub API/CLI integration |
+| `requirements.txt` | Add `requests` or `PyGithub` if using API |
+| `docs/proposals/pull_request_tooling.md` | This document |
 
 ---
 
@@ -251,7 +251,7 @@ Agent workflow:
 
 1. [ ] Implement Tier 1 branch management tools
 2. [ ] Add unit tests for new Git functions
-3. [ ] Test branch workflow in self-development repo
+3. [ ] Test branch workflow in the repository
 4. [ ] Implement Tier 2 diff/sync tools
 5. [ ] Decide on GitHub CLI vs API approach
 6. [ ] Implement Tier 3 PR operations

@@ -20,7 +20,7 @@ import io
 import argparse
 import os
 
-# Ensure the self-development module root is on the path
+# Ensure the repository root is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import loggers from modules that actually define them

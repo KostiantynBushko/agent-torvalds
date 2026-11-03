@@ -16,8 +16,8 @@ produce, and checks six invariants:
 
 Run it:
 
-    self-development/.venv/bin/python \\
-        self-development/investigate/output-rendering/verify_output_rendering.py
+    .venv/bin/python \\
+        investigate/output-rendering/verify_output_rendering.py
 """
 
 from __future__ import annotations

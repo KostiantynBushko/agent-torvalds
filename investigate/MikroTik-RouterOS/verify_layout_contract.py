@@ -7,8 +7,8 @@ actual repository state, using the project's own venv.
 
 Run from the repository root of the clone:
 
-    self-development/.venv/bin/python \
-        self-development/investigate/MikroTik-RouterOS/verify_layout_contract.py
+    .venv/bin/python \
+        investigate/MikroTik-RouterOS/verify_layout_contract.py
 """
 
 from __future__ import annotations

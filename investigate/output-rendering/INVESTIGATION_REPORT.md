@@ -192,9 +192,9 @@ The module is exception-proof.
 ### Running it
 
 ```bash
-self-development/.venv/bin/python investigate/output-rendering/probe_output_rendering.py
-self-development/.venv/bin/python investigate/output-rendering/verify_output_rendering.py
-self-development/.venv/bin/python investigate/output-rendering/verify_harness_catches_regressions.py
+.venv/bin/python investigate/output-rendering/probe_output_rendering.py
+.venv/bin/python investigate/output-rendering/verify_output_rendering.py
+.venv/bin/python investigate/output-rendering/verify_harness_catches_regressions.py
 ```
 
 **8 checks hold**, **6 of 6 drifts are caught**, and the 45 tests of

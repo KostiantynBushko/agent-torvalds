@@ -5,7 +5,7 @@
 **Repository:** agent-torvalds
 **Target:** Implementation of a `agent_mikrotik_toolkit.py` that connects to MikroTik routers over SSH, runs RouterOS CLI commands, and safely collects/returns structured output
 **Status:** Investigation Complete — all core technical risks validated empirically
-**Working directory:** `~/ai-agent-investiagte/agent-torvalds/self-development`
+**Working directory:** `~/ai-agent-investiagte/agent-torvalds`
 
 ---
 
@@ -58,7 +58,7 @@ Both were implemented and exercised against a purpose-built SSH harness that emu
 ### 2.1 Repository Structure (self-development clone)
 
 ```
-~/ai-agent-investiagte/agent-torvalds/self-development/
+~/ai-agent-investiagte/agent-torvalds/
 ├── agent-torvalds.py              # Main orchestrator
 ├── agent_*.py                     # Toolkits (flat, one file per domain)
 ├── agent_tool_retriever.py        # Semantic on-demand tool loading
@@ -961,7 +961,7 @@ router) — the single piece of evidence the local harness cannot provide.
 | Component | Value |
 |---|---|
 | OS | Linux (Debian-based), Python 3.12.3 |
-| Venv | `self-development/.venv` |
+| Venv | `.venv` |
 | SSH server | OpenSSH_9.6p1 (localhost:2222/2223/2224) |
 | Libraries | `asyncssh` 2.24.1, `routeros_api` 0.21.0, `librouteros` 4.2.2, `pydantic` 2.13.5 |
 | MikroTik download server | **Unreachable** from this environment (HTTP 404/403) → CHR validation was not possible |
@@ -981,11 +981,10 @@ router) — the single piece of evidence the local harness cannot provide.
 ### Quick verification
 
 ```bash
-cd self-development
 .venv/bin/python investigate/MikroTik-RouterOS/proto_prompt_regex.py   # 15/15 PASS
 ```
 
 ---
 
-*Investigation conducted in: `~/ai-agent-investiagte/agent-torvalds/self-development`*
+*Investigation conducted in: `~/ai-agent-investiagte/agent-torvalds`*
 *All work isolated to the self-development clone per the self-development rules.*

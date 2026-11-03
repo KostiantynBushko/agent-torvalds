@@ -624,8 +624,6 @@ Before pointing the agent at a router:
 ## Testing
 
 ```bash
-cd self-development
-
 # The module-local suite
 .venv/bin/python -m pytest toolkits/MikroTik-RouterOS/tests -q
 

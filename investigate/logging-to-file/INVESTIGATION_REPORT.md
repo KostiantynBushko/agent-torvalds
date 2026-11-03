@@ -311,12 +311,12 @@ it stays valid when the implementation is refactored.
 ### Running it
 
 ```bash
-self-development/.venv/bin/python \\
-    self-development/investigate/logging-to-file/prototype_file_logging.py
-self-development/.venv/bin/python \\
-    self-development/investigate/logging-to-file/verify_logging_to_file.py
-self-development/.venv/bin/python \\
-    self-development/investigate/logging-to-file/verify_harness_catches_regressions.py
+.venv/bin/python \\
+    investigate/logging-to-file/prototype_file_logging.py
+.venv/bin/python \\
+    investigate/logging-to-file/verify_logging_to_file.py
+.venv/bin/python \\
+    investigate/logging-to-file/verify_harness_catches_regressions.py
 ```
 
 **13 checks hold**, and **7 of 7 deliberate drifts are caught**:

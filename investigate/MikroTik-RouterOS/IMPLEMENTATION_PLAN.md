@@ -41,7 +41,7 @@ real-router validation (precondition P6)
 |---|---|---|
 | P1 | Work happens **only** in the `self-development` clone | ✅ Rule 1 & 2 of the self-development rules |
 | P2 | Dedicated branch off `master` | ⬜ Created in Phase 0 |
-| P3 | `asyncssh` importable in `self-development/.venv` | ✅ Verified (2.24.1) |
+| P3 | `asyncssh` importable in `.venv` | ✅ Verified (2.24.1) |
 | P4 | `pydantic` importable | ✅ Verified (2.13.5) |
 | P5 | `routeros_api` importable | ✅ Verified (0.21.0) |
 | P6 | Real RouterOS available for the final integration test | ⚠️ **Not available locally** — MikroTik's download server is unreachable (HTTP 404/403). Needs CHR container or physical router. |
@@ -55,12 +55,10 @@ real-router validation (precondition P6)
 
 - [x] Create the branch in the self-development clone:
   ```bash
-  cd self-development
   git checkout -b feature/mikrotik-routeros-toolkit master
   ```
 - [x] **Create the toolkit home directory** (required layout):
   ```bash
-  cd self-development
   mkdir -p toolkits/MikroTik-RouterOS
   ```
   The directory name is **exact** — `MikroTik-RouterOS`, capital `M`/`T`/`R`/`O`/`S`.
@@ -71,7 +69,7 @@ real-router validation (precondition P6)
       The shim must catch `Exception` (not just `ImportError`) so that
       `import toolkits` can never fail because of an optional dependency.
       See [MODULE_SPECIFICATION.md §3.3](MODULE_SPECIFICATION.md#33-the-resolution-a-sysmodules-alias).
-- [x] Add the optional dependencies to `self-development/requirements.txt`:
+- [x] Add the optional dependencies to `requirements.txt`:
   ```ini
   # ---------------------------------------------------------------------------
   # MikroTik RouterOS Toolkit Dependencies
@@ -95,7 +93,7 @@ real-router validation (precondition P6)
 ## 3. Phase 1 — Core Package
 
 **Duration:** 2 days
-**Location:** `self-development/toolkits/MikroTik-RouterOS/`
+**Location:** `toolkits/MikroTik-RouterOS/`
 
 The core package must **not** import LlamaIndex — that keeps it independently testable and lets it
 reuse the SSH toolkit's primitives (see Q1).
@@ -221,7 +219,7 @@ reuse the SSH toolkit's primitives (see Q1).
 ## 4. Phase 2 — Agent Adapter
 
 **Duration:** 1 day
-**Location:** `self-development/agent_mikrotik_toolkit.py` (project root — flat pattern)
+**Location:** `agent_mikrotik_toolkit.py` (project root — flat pattern)
 
 - [x] Module docstring with the retrieval metadata block:
   ```python

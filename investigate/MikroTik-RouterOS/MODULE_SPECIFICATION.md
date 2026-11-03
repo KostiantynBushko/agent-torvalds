@@ -13,10 +13,10 @@ implementation contract. Where it conflicts with `IMPLEMENTATION_PLAN.md` or
 **Automated verification of this document:**
 
 ```bash
-self-development/.venv/bin/python \
-    self-development/investigate/MikroTik-RouterOS/verify_layout_contract.py
-self-development/.venv/bin/python \
-    self-development/investigate/MikroTik-RouterOS/verify_test_contract.py
+.venv/bin/python \
+    investigate/MikroTik-RouterOS/verify_layout_contract.py
+.venv/bin/python \
+    investigate/MikroTik-RouterOS/verify_test_contract.py
 ```
 
 The first script re-proves every row of the §3.2 behaviour matrix and the
@@ -152,8 +152,8 @@ All rows below were executed against **Python 3.12.3 / pytest 9.1.1**, the
 versions used by this project. The check is automated and re-runnable:
 
 ```bash
-self-development/.venv/bin/python \
-    self-development/investigate/MikroTik-RouterOS/verify_layout_contract.py
+.venv/bin/python \
+    investigate/MikroTik-RouterOS/verify_layout_contract.py
 ```
 
 | # | Approach | Result |
@@ -294,8 +294,8 @@ collect_ignore =
 #### Verification
 
 ```bash
-self-development/.venv/bin/python \
-    self-development/investigate/MikroTik-RouterOS/verify_test_contract.py
+.venv/bin/python \
+    investigate/MikroTik-RouterOS/verify_test_contract.py
 ```
 
 Measured outcome of applying the `pytest.ini` change to this repository
