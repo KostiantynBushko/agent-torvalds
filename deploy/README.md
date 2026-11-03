@@ -84,7 +84,10 @@ cannot be opened means the command does not run at all.
 
 ### The generated `.env`
 
-The script writes a `.env` with the variables the agent actually reads:
+The script writes a `.env` with the variables the agent actually reads.
+The example that ships next to it, `deploy-torvalds.sh.example.env`,
+carries the same names — it says "copy this file to .env", so a name
+the agent ignores in it would configure nothing:
 
 | Variable | Read by |
 |---|---|
@@ -105,8 +108,8 @@ python agent-torvalds.py
 ## The contract
 
 The folder is guarded by a harness with eleven invariants, and the
-harness is guarded by a proof: eleven deliberate breakages, one per
-invariant, each caught.
+harness is guarded by a proof: twelve deliberate breakages, at least one
+per invariant, each caught.
 
 ```bash
 python3 deploy/tests/verify_deploy_layout.py
@@ -132,7 +135,7 @@ python3 -m pytest deploy/tests -q
 | **D5** | An unknown option fails instead of reporting success. |
 | **D6** | The script bootstraps its own sudo timestamp. |
 | **D7** | No `sudo VAR=value` form, which the sudoers policy may refuse. |
-| **D8** | The `.env` names the variables the agent actually reads. |
+| **D8** | Every `.env` — the one the script writes and the example that ships with it — names the variables the agent actually reads. |
 | **D9** | No document still points at the old path. |
 | **D10** | The log file is made writable before anything is redirected to it. |
 | **D11** | A query is not reported as a deployment. |

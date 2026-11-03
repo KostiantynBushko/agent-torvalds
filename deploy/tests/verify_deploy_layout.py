@@ -348,12 +348,17 @@ def check_no_sudo_env_var_form(result: Result, root: Path) -> None:
 def check_the_environment_variables_are_the_ones_the_agent_reads(
     result: Result, root: Path
 ) -> None:
-    """D8 - the generated .env names the variables the agent reads.
+    """D8 - every .env names the variables the agent reads.
 
     The agent reads TORVALDS_MODEL and TORVALDS_OLLAMA_HOST.  It does
     not read TORVALDS_CHAT_MODEL or TORVALDS_OLLAMA_BASE_URL - the
     script used to write those two, so the .env it produced configured
     nothing.
+
+    Both files are checked: the .env the script writes, and the example
+    that ships next to it.  The example says "copy this file to .env",
+    so a name the agent ignores in it configures nothing just as
+    surely.
     """
     script = root / DEPLOY_DIRNAME / SCRIPT_NAME
     if not script.is_file():
@@ -368,6 +373,22 @@ def check_the_environment_variables_are_the_ones_the_agent_reads(
     for unwanted in ("TORVALDS_CHAT_MODEL=", "TORVALDS_OLLAMA_BASE_URL="):
         if unwanted in source:
             result.fail(f"the script writes {unwanted}, which the agent does not read")
+
+    example = root / DEPLOY_DIRNAME / ENV_EXAMPLE_NAME
+    if not example.is_file():
+        result.fail(f"{DEPLOY_DIRNAME}/{ENV_EXAMPLE_NAME} is missing")
+        return
+
+    sample = read(example)
+    for wanted in ("TORVALDS_MODEL=", "TORVALDS_OLLAMA_HOST="):
+        if wanted not in sample:
+            result.fail(f"the example .env does not set {wanted}")
+
+    for unwanted in ("TORVALDS_CHAT_MODEL=", "TORVALDS_OLLAMA_BASE_URL="):
+        if unwanted in sample:
+            result.fail(
+                f"the example .env sets {unwanted}, which the agent does not read"
+            )
 
 
 def check_nothing_points_at_the_old_path(result: Result, root: Path) -> None:

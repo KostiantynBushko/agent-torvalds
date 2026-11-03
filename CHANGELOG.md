@@ -30,6 +30,23 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The example `.env` of the deployment folder configured nothing
+
+- **`deploy/deploy-torvalds.sh.example.env` named two variables the
+  agent does not read.**  `TORVALDS_CHAT_MODEL` and
+  `TORVALDS_OLLAMA_BASE_URL` are the names the script used to write
+  before they were corrected; the agent reads `TORVALDS_MODEL` and
+  `TORVALDS_OLLAMA_HOST`.
+
+  The example says "copy this file to .env and adjust values as
+  needed", so copying it left the chat model and the Ollama endpoint
+  unset — the agent fell back to its defaults, silently.
+
+  The invariant **D8** caught exactly this in the `.env` the script
+  writes, and never looked at the example.  It covers both files now,
+  and the drift proof breaks the example as well: a check that has
+  never failed proves nothing.
+
 #### The private folder of the operator is never published
 
 - **The home directory of the operator was published.**  The repository

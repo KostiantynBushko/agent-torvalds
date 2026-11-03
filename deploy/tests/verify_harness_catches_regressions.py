@@ -2,8 +2,9 @@
 """The proof that the deployment folder's harness catches deliberate drifts.
 
 A harness that has never failed proves nothing.  This script breaks the
-contract on purpose, eleven times - once for every invariant - and
-shows that the harness notices each one.
+contract on purpose, twelve times - once for every invariant, and
+once more for the second .env the folder ships - and shows that the
+harness notices each one.
 
 The breakages are made in a *copy* of the repository, never in the
 checkout: the real tree is never touched.
@@ -50,6 +51,9 @@ IGNORED = shutil.ignore_patterns(
 
 #: The script, relative to the repository root.
 SCRIPT_REL = Path("deploy") / "deploy-torvalds.sh"
+
+#: The example environment file that ships next to it.
+ENV_EXAMPLE_REL = Path("deploy") / "deploy-torvalds.sh.example.env"
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +153,14 @@ def drift_the_env_names_the_wrong_variable(root: Path) -> None:
     path = _script(root)
     text = _read(path)
     text = text.replace("TORVALDS_MODEL=${CHAT_MODEL}", "TORVALDS_CHAT_MODEL=${CHAT_MODEL}", 1)
+    _write(path, text)
+
+
+def drift_the_example_env_names_the_wrong_variable(root: Path) -> None:
+    """Write the variable the agent does not read into the example .env."""
+    path = root / ENV_EXAMPLE_REL
+    text = _read(path)
+    text = text.replace("TORVALDS_MODEL=", "TORVALDS_CHAT_MODEL=", 1)
     _write(path, text)
 
 
@@ -259,6 +271,12 @@ DRIFTS = [
         "D8",
         "TORVALDS_MODEL becomes TORVALDS_CHAT_MODEL",
         drift_the_env_names_the_wrong_variable,
+    ),
+    Drift(
+        "the example .env names the wrong variable",
+        "D8",
+        "TORVALDS_MODEL becomes TORVALDS_CHAT_MODEL in the example .env",
+        drift_the_example_env_names_the_wrong_variable,
     ),
     Drift(
         "a document points at the old path",

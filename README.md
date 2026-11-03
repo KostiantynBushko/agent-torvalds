@@ -1270,7 +1270,7 @@ manager.shutdown()
 | +-- deploy-torvalds.sh.example.env  # Example environment file
 | +-- tests/                    # The folder's contract harness, and the proof that it catches drifts
 | +-- verify_deploy_layout.py   # Eleven invariants over the folder and the script
-| +-- verify_harness_catches_regressions.py  # The proof that the harness catches eleven drifts
+| +-- verify_harness_catches_regressions.py  # The proof that the harness catches twelve drifts
 | +-- test_deploy_layout.py     # The harness, under pytest
 | wiki/                         # The long-form documentation - a submodule of agent-torvalds.wiki.git
 | +-- Home.md
