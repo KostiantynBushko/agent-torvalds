@@ -283,12 +283,12 @@ describe.  A plain `git clone` leaves the directory empty;
   **off by default** — the guard changes what the model is shown, so the
   operator asks for it.
 
-### 12. Spinner Manager (`spinner_manager.py`)
-- Global singleton for console spinner management
-- Pause/resume functionality for interactive dialogs
+### 12. Spinner Controller (`components/spinner_controller.py`)
+- The console spinner, with pause/resume for interactive dialogs
+- Thread-safe, and a console that refuses the spinner never leaves it lying
 - Context manager support for automatic pause/resume
-- Callback hooks for lifecycle events
-- Shared across toolkit modules
+- Callback hooks for lifecycle events — `on_start`, `on_stop`, `on_pause`, `on_resume`
+- Paused around the interactive tools and around a HITL question, by `EventConsumer`
 
 
 ### 13. Project Manager (`project_manager/`)
@@ -1226,7 +1226,6 @@ manager.shutdown()
 | agent-torvalds.py              # Main orchestrator (the actual agent)
 | agent-torvalds-mw.py           # Multi-window console agent (the TUI variant)
 | agent-torvalds-cpp.py          # C++ toolkit integration
-| spinner_manager.py             # Global console spinner management
 | conftest.py                    # The repository-root pytest fixtures
 | db_toolkit_config.yaml         # Database configuration
 | setup_postgres_db.sql          # The database schema
