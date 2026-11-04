@@ -30,6 +30,96 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### A failure of the model server was shown as a stack trace
+
+- **The chat showed a traceback when the model server failed.**  The
+  agent answered a failed request with the exception and the whole
+  stack trace:
+
+  ```
+  Error: Internal Server Error (ref: 5da53c14-e0ba-41ea-9ae5-3fec8c43ef64) (status code: 500) (status code: 500)
+  Traceback (most recent call last):
+    File ".../site-packages/ollama/_client.py", line 809, in inner
+      raise ResponseError(e.response.text, e.response.status_code) from None
+    ...
+  ```
+
+  The traceback shows where the failure happened *inside the agent*,
+  and it hides the one thing that matters: the **server** failed.  The
+  operator was given forty frames of the agent and no hint of what to
+  do about it.
+
+  The chat now says what actually went wrong:
+
+  > The model server failed (HTTP 500). The request reached Ollama, and
+  > the server could not answer it. The usual causes are a model that
+  > crashed and a model that ran out of memory - `ollama ps` shows
+  > whether a model is loaded, and the server log says why it died.
+  > Reference: 5da53c14-e0ba-41ea-9ae5-3fec8c43ef64.
+
+  The traceback is not lost - it goes to the log, where it belongs.
+
+  The other failures of the model server are named as well: the model
+  that is not pulled (404), the request the server rejected (400), the
+  server that cannot be reached at all, and the request that timed out.
+  An error nobody knows is still shown as it is - just without the
+  frames.
+
+#### The rule about stray test files named a folder that no longer exists
+
+- **The skip list of the rule about stray test files carried the name of
+  the retired clone folder.**  The folder is gone, and the rule was a
+  name in a list — a list that had to be remembered, and a name that
+  pointed at nothing.
+
+  The rule is now a fact about the tree rather than a remembered name:
+  a directory that carries its own `.git` is a copy of the repository,
+  and a copy of the repository is not part of this repository.  It holds
+  a whole copy of the suite, and a rule about the files of this
+  repository must not read the files of the copy.  The rule holds
+  whatever the copy is called.
+
+  The rule was proved in one direction only — it must ignore a copy —
+  and a rule that only ignores things can also ignore too much.  It now
+  proves the other side as well: a directory that carries no `.git` is
+  not a copy, so it is walked, and a test file in it is a stray like
+  any other.  With the rule broken either way, the proof fails.
+
+#### The deployment harness named a folder that no longer exists
+
+- **The skip list of the deployment harness carried the name of the
+  retired clone folder.**  The folder is gone, and the rule was a name
+  in a list — a list that had to be remembered, and a name that pointed
+  at nothing.
+
+  The rule is now a fact about the tree rather than a remembered name:
+  a directory that carries its own `.git` is a copy of the repository,
+  and a copy of the repository is not part of the contract.  It holds
+  its own copy of the script and its own copy of the harness, and
+  neither is a breach.  The rule holds whatever the copy is called.
+
+  The proof grew the matching case: the contract must **not** report
+  the script that lives inside a copy of the repository.  With the
+  rule removed, the copy is reported and the proof fails — a check that
+  cannot fail proves nothing.
+
+#### The example `.env` of the deployment folder configured nothing
+
+- **`deploy/deploy-torvalds.sh.example.env` named two variables the
+  agent does not read.**  `TORVALDS_CHAT_MODEL` and
+  `TORVALDS_OLLAMA_BASE_URL` are the names the script used to write
+  before they were corrected; the agent reads `TORVALDS_MODEL` and
+  `TORVALDS_OLLAMA_HOST`.
+
+  The example says "copy this file to .env and adjust values as
+  needed", so copying it left the chat model and the Ollama endpoint
+  unset — the agent fell back to its defaults, silently.
+
+  The invariant **D8** caught exactly this in the `.env` the script
+  writes, and never looked at the example.  It covers both files now,
+  and the drift proof breaks the example as well: a check that has
+  never failed proves nothing.
+
 #### The private folder of the operator is never published
 
 - **The home directory of the operator was published.**  The repository
@@ -838,8 +928,8 @@ All notable changes to this project are documented in this file.
 - **New harness**: `investigate/hitl-timeout-policy/verify_timeout_policy.py`
   — 11 checks of the operator's rule; 9/11 before the fix, 11/11 after.
 - **New report**: `investigate/hitl-timeout-policy/REPORT_timeout_policy.md`.
-- **Rule 7** in `SELF_DEVELOPMENT_RULES.md`: how the agent waits for the
-  operator, and what it may do when the wait ends.
+- **The timeout rule** in `DEVELOPMENT_RULES.md`: how the agent waits for
+  the operator, and what it may do when the wait ends.
 
 #### Continuous integration
 

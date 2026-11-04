@@ -146,9 +146,17 @@ class ProjectManager:
             confidence = 0.0
             indicators = []
         else:
-            # Get confidence and indicators for the detected type
+            # Get confidence and indicators for the detected type.
+            #
+            # The indicators are the ones that were **found** - the files
+            # that are really there - and not the declared list of the
+            # type, which names every file that could have identified it.
+            # The declared list is what the scanner matches against; the
+            # found list is what the configuration records and shows.
             confidence = self.scan(str(project_path)).get(detected_type, 0.0)
-            indicators = [ind for ind, _ in self.scanner.get_project_indicators(detected_type)]
+            indicators = self.scanner.get_found_indicators(
+                str(project_path), detected_type
+            )
 
         # Derive name from directory if not provided
         if name is None:

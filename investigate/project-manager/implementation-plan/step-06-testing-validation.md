@@ -223,7 +223,6 @@ class TestProjectManagerIntegration:
 ### 4. Test Execution
 ```bash
 # Run tests
-cd self-development
 python -m pytest tests/test_project_scanner.py -v
 python -m pytest tests/test_workspace_config.py -v
 python -m pytest tests/test_project_manager_integration.py -v

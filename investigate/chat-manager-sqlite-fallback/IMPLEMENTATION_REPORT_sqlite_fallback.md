@@ -135,7 +135,6 @@ the log even when the orchestrator's banner is not shown.
 ## 4. Verification
 
 ```bash
-cd self-development
 
 # The chat manager suite — 127 passed
 .venv/bin/python -m pytest chat_manager/tests -q

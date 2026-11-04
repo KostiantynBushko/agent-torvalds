@@ -42,11 +42,6 @@ Operating Principles:
 Source:
 Repository: git@github.com:KostiantynBushko/agent-torvalds.git
 
-Self-Development Rules:
-1. All self-modifications must be placed in ./self-development.
-2. Do not modify the main repository directly; use the self-development clone.
-3. Persist these rules for future interactions.
-
 {project_context}
 {active_project_context}
 {tool_recommendations}

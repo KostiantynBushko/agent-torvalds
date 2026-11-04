@@ -1,6 +1,6 @@
 # Proposal: fix the agent loop caused by the context guard
 
-**Branch:** `fix/context-guard-agent-loop` (in `self-development/`)
+**Branch:** `fix/context-guard-agent-loop`
 **Investigation:** [`INVESTIGATION_REPORT.md`](INVESTIGATION_REPORT.md)
 **Reproduction:** [`repro_loop.py`](repro_loop.py)
 
@@ -133,7 +133,7 @@ agent that works in a cramped window and one that fights for every token.
 
 ## Next step
 
-The work was on the branch `fix/context-guard-agent-loop` in the
-`self-development/` clone. The operator approved the commit and merged
+The work was on the branch `fix/context-guard-agent-loop`. The operator
+approved the commit and merged
 it as **PR #61**, which squash-merged the fix into `master` as
 `0147443` on 2026-10-27.

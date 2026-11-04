@@ -1,7 +1,7 @@
 # Investigation — `chat_manager`: user settings, `token_limit`, and the legacy implementation
 
 **Date:** 2026-10-25
-**Scope:** `self-development/chat_manager/`, `agent_chat_memory.py`, the two orchestrators, the
+**Scope:** `chat_manager/`, `agent_chat_memory.py`, the two orchestrators, the
 command registry.
 **Method:** static reading + an executable probe
 (`investigate/chat-manager-user-settings/probe_user_settings.py`).
@@ -408,7 +408,6 @@ C5, C6 and C9 must wait for the SQLite fallback.
 ## 9. How to reproduce
 
 ```bash
-cd self-development
 .venv/bin/python investigate/chat-manager-user-settings/probe_user_settings.py
 ```
 
@@ -418,6 +417,5 @@ The probe answers all six questions with printed evidence and needs no database 
 The existing suite is green and is the regression baseline for any change:
 
 ```bash
-cd self-development
 .venv/bin/python -m pytest chat_manager/tests -q     # 104 passed
 ```

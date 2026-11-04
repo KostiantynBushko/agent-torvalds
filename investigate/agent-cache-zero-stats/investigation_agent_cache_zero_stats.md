@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-20
 **Status**: Investigation complete — root cause identified and empirically proven
-**Location**: `self-development/investigate/agent-cache-zero-stats/`
+**Location**: `investigate/agent-cache-zero-stats/`
 **Affected file**: `~/.cache/torvalds/agent_cache.json` → `request_stats[]`
 **Symptom**: `tool_call_count`, `completion_tokens`, `total_tokens` (and `llm_calls`, `prompt_tokens`, `tools_used`) are **always 0**, while `duration_ms` is correct.
 
@@ -502,7 +502,7 @@ folder (`investigate/agent-cache-zero-stats/`):
 * `diag_hitl_double_prompt.py` / `diag_hitl_real_forced.py` — double-prompt regression checks
 * `diag_payload_shape.py` — dumps the LLM event-end payload shape
 
-Run them from the repository root (`self-development/`):
+Run them from the repository root:
 
 ```bash
 python investigate/agent-cache-zero-stats/repro_zero_stats.py

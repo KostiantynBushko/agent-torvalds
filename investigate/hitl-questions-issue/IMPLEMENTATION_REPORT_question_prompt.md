@@ -12,7 +12,7 @@
 `investigate/hitl-questions-issue/diag_decorated_question.py` (new),
 `investigate/hitl-questions-issue/verify_hitl_question_presentation.py`
 **Companion to**: `INVESTIGATION_REPORT.md`, `PROPOSAL_hitl_question_presentation.md`
-**Nothing in the main repository was touched** (SELF_DEVELOPMENT_RULES.md, rule 1 and 2).
+**Nothing in the main repository was touched** (DEVELOPMENT_RULES.md, rule 1 and 2).
 
 ---
 
@@ -242,7 +242,6 @@ The baseline is the same tree with the change stashed — the *same* command, th
 *same* interpreter, the *same* machine:
 
 ```bash
-cd self-development
 git stash -u                       # the change goes away, the tree is master again
 python3 -m pytest -q > /tmp/base_suite.log
 git stash pop                      # the change comes back
@@ -288,7 +287,6 @@ Two contracts changed, deliberately, and both are visible in the tests:
 ## 7. How to verify it
 
 ```bash
-cd self-development
 
 # The question bank — the acceptance criterion (23 cases).
 .venv/bin/python -m pytest tests/test_hitl_question_bank.py -v

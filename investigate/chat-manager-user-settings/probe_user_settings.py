@@ -2,7 +2,7 @@
 
 Run it from the repository root:
 
-    self-development/.venv/bin/python investigate/chat-manager-user-settings/probe_user_settings.py
+    .venv/bin/python investigate/chat-manager-user-settings/probe_user_settings.py
 
 The probe answers six questions, each with a printed verdict:
 

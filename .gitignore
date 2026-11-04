@@ -130,7 +130,12 @@ dmypy.json
 # Windows
 Thumbs.db
 
-# Self-development directory
+# The self-development clone - a separate checkout of this repository.
+#
+# The workflow it served is retired (see DEVELOPMENT_RULES.md): the agent
+# works in this working copy now, on a branch of its own, and the folder is
+# gone.  The entry stays, so that the files of a second copy of the
+# repository can never reach a commit of this one.
 self-development/
 
 # The GitHub wiki is a **submodule**, not a vendored copy.

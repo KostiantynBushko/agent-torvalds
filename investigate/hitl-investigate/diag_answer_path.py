@@ -21,7 +21,7 @@ The script contrasts the **broken** mechanism with the **fixed** one.
 
 No network access required.
 
-Run from the repository root (self-development/):
+Run from the repository root:
     python investigate/hitl-investigate/diag_answer_path.py
 """
 from __future__ import annotations

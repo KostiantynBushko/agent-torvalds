@@ -48,7 +48,6 @@ database outage.
 ## Running them
 
 ```bash
-cd self-development
 
 # The probe — no database server needed.
 .venv/bin/python investigate/chat-manager-user-settings/probe_user_settings.py

@@ -227,8 +227,8 @@ for each, and the test drives each one separately.
 ## 7. Verification
 
 ```bash
-self-development/.venv/bin/python -m pytest self-development/toolkits/xlsx-toolkit/tests -q
-self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+.venv/bin/python -m pytest toolkits/xlsx-toolkit/tests -q
+.venv/bin/python scripts/ci_test_gate.py
 ```
 
 **95 passed**, and the CI gate reports **no new failure** (40 known

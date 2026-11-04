@@ -170,6 +170,48 @@ class ProjectScanner:
         """
         return PROJECT_INDICATORS.get(project_type, [])
 
+    def get_found_indicators(self, path: str, project_type: str) -> List[str]:
+        """
+        The indicator files of a project type that are present in the tree.
+
+        The declared indicator list of a type says what *could* identify
+        it.  This says what *does* - the files that are really there.
+
+        The distinction matters, because the list is written into the
+        workspace configuration and shown to whoever reads it.  A project
+        with a ``requirements.txt`` and nothing else is a Python project;
+        recording that it also has a ``Pipfile``, a ``poetry.lock`` and a
+        ``setup.cfg`` is a claim about files that do not exist.
+
+        The order of the declared list is kept, so the result is stable.
+
+        Args:
+            path: Directory to look in
+            project_type: The project type name
+
+        Returns:
+            List of the indicator files that exist, in declared order
+        """
+        project_path = Path(path).resolve()
+        if not project_path.is_dir():
+            return []
+
+        directories: List[Path] = []
+        for root, dirs, _files in os.walk(project_path):
+            rel_path = Path(root).relative_to(project_path)
+            if len(rel_path.parts) > self.max_depth:
+                dirs.clear()
+                continue
+            directories.append(Path(root))
+
+        found: List[str] = []
+        for indicator, _weight in self.get_project_indicators(project_type):
+            for directory in directories:
+                if (directory / indicator).exists():
+                    found.append(indicator)
+                    break
+        return found
+
     def get_supported_types(self) -> List[str]:
         """
         Get all supported project types.

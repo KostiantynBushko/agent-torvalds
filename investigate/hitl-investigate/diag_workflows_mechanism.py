@@ -42,7 +42,7 @@ This diagnostic proves both halves.
 
 No network access required.
 
-Run from the repository root (self-development/):
+Run from the repository root:
     python investigate/hitl-investigate/diag_workflows_mechanism.py
 """
 from __future__ import annotations

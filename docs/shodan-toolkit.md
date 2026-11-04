@@ -389,7 +389,7 @@ It holds the upstream library tests and the adapter tests that check the
 integration with the agent.
 
 ```bash
-self-development/.venv/bin/python -m pytest toolkits/shodan-toolkit/tests -q
+.venv/bin/python -m pytest toolkits/shodan-toolkit/tests -q
 ```
 
 `pytest.ini` puts the repository root on the path, so the suite tests the

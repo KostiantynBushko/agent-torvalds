@@ -143,10 +143,63 @@ def run_script(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def is_a_copy_of_the_repository(directory: Path) -> bool:
+    """Whether a directory holds a copy of the repository.
+
+    A copy of the repository inside the repository is not part of the
+    contract: it carries its own copy of the script, and its own copy
+    of the harness.  A contract about "the script lives in deploy/ and
+    nowhere else" cannot be about a copy of the whole tree, and a
+    contract about stale references cannot be about the file that looks
+    for them.
+
+    The copy is recognised by the ``.git`` it carries, so the rule
+    holds whatever the copy is called - and it needs no list of names
+    to remember.
+
+    Args:
+        directory: The directory to look at.
+
+    Returns:
+        ``True`` when the directory is a copy of the repository.
+    """
+    return (directory / ".git").exists()
+
+
+def is_skipped(path: Path, root: Path) -> bool:
+    """Whether a path lies inside one of the skipped directories.
+
+    ``SKIP_DIRS`` prunes the **walk** of ``iter_text_files``, but D1 uses
+    ``rglob``, which knows nothing about it - so the copy of the script
+    inside a copy of the repository would be reported as a second copy
+    of the script.  This is the same rule, applied to one path.
+    """
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return False
+
+    if any(part in SKIP_DIRS for part in relative.parts[:-1]):
+        return True
+
+    # A copy of the repository carries its own ``.git``.
+    directory = root
+    for part in relative.parts[:-1]:
+        directory = directory / part
+        if is_a_copy_of_the_repository(directory):
+            return True
+    return False
+
+
 def iter_text_files(root: Path):
     """Yield every text file of the tree, skipping the noisy directories."""
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in SKIP_DIRS
+            and not is_a_copy_of_the_repository(Path(dirpath) / d)
+        ]
         for filename in filenames:
             path = Path(dirpath) / filename
             if path.suffix.lower() not in TEXT_SUFFIXES:
@@ -176,9 +229,10 @@ def check_the_folder_holds_the_script(result: Result, root: Path) -> None:
     if old.exists():
         result.fail(f"the script is still at {OLD_SCRIPT_PATH}")
 
-    # And no other copy may exist anywhere in the tree.
+    # And no other copy may exist anywhere in the tree - except inside
+    # the skipped directories, which are not part of the contract.
     for path in root.rglob(SCRIPT_NAME):
-        if path.is_file() and path != deployed:
+        if path.is_file() and path != deployed and not is_skipped(path, root):
             result.fail(f"a second copy of the script exists: {path}")
 
 
@@ -319,12 +373,17 @@ def check_no_sudo_env_var_form(result: Result, root: Path) -> None:
 def check_the_environment_variables_are_the_ones_the_agent_reads(
     result: Result, root: Path
 ) -> None:
-    """D8 - the generated .env names the variables the agent reads.
+    """D8 - every .env names the variables the agent reads.
 
     The agent reads TORVALDS_MODEL and TORVALDS_OLLAMA_HOST.  It does
     not read TORVALDS_CHAT_MODEL or TORVALDS_OLLAMA_BASE_URL - the
     script used to write those two, so the .env it produced configured
     nothing.
+
+    Both files are checked: the .env the script writes, and the example
+    that ships next to it.  The example says "copy this file to .env",
+    so a name the agent ignores in it configures nothing just as
+    surely.
     """
     script = root / DEPLOY_DIRNAME / SCRIPT_NAME
     if not script.is_file():
@@ -339,6 +398,22 @@ def check_the_environment_variables_are_the_ones_the_agent_reads(
     for unwanted in ("TORVALDS_CHAT_MODEL=", "TORVALDS_OLLAMA_BASE_URL="):
         if unwanted in source:
             result.fail(f"the script writes {unwanted}, which the agent does not read")
+
+    example = root / DEPLOY_DIRNAME / ENV_EXAMPLE_NAME
+    if not example.is_file():
+        result.fail(f"{DEPLOY_DIRNAME}/{ENV_EXAMPLE_NAME} is missing")
+        return
+
+    sample = read(example)
+    for wanted in ("TORVALDS_MODEL=", "TORVALDS_OLLAMA_HOST="):
+        if wanted not in sample:
+            result.fail(f"the example .env does not set {wanted}")
+
+    for unwanted in ("TORVALDS_CHAT_MODEL=", "TORVALDS_OLLAMA_BASE_URL="):
+        if unwanted in sample:
+            result.fail(
+                f"the example .env sets {unwanted}, which the agent does not read"
+            )
 
 
 def check_nothing_points_at_the_old_path(result: Result, root: Path) -> None:

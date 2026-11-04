@@ -152,12 +152,12 @@ ships should not live in a folder named for the *investigation* that
 produced it.
 
 ```
-self-development/investigate/deployment-script/
+investigate/deployment-script/
 ├── INVESTIGATION_REPORT.md          # This analysis
 ├── REQUIREMENTS.md                  # Functional & non-functional requirements
 └── IMPLEMENTATION_PLAN.md           # This document
 
-self-development/deploy/
+deploy/
 ├── README.md                        # What the folder holds, and how to use it
 ├── deploy-torvalds.sh               # The deployment script
 ├── deploy-torvalds.sh.example.env   # Example .env template

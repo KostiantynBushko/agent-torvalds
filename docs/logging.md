@@ -241,16 +241,16 @@ take the agent down.
 
 ```bash
 # The invariants of the design, against the shipped implementation.
-self-development/.venv/bin/python \
-    self-development/investigate/logging-to-file/verify_implementation.py
+.venv/bin/python \
+    investigate/logging-to-file/verify_implementation.py
 
 # The drift proof: seven deliberate breaks, each caught by the invariant
 # it attacks.
-self-development/.venv/bin/python \
-    self-development/investigate/logging-to-file/verify_implementation_catches_regressions.py
+.venv/bin/python \
+    investigate/logging-to-file/verify_implementation_catches_regressions.py
 
 # The unit tests.
-self-development/.venv/bin/python -m pytest self-development/tests/test_file_logging.py -q
+.venv/bin/python -m pytest tests/test_file_logging.py -q
 ```
 
 The investigation that started all of this — the report, the prototype and

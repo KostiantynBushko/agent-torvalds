@@ -11,8 +11,8 @@ invariant the drift attacks.
 
 Run it:
 
-    self-development/.venv/bin/python \\
-        self-development/investigate/logging-to-file/verify_harness_catches_regressions.py
+    .venv/bin/python \\
+        investigate/logging-to-file/verify_harness_catches_regressions.py
 """
 
 from __future__ import annotations

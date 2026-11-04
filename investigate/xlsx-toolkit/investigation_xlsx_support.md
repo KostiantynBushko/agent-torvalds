@@ -2,7 +2,7 @@
 
 **Date:** 2026-01-28  
 **Environment:** Python 3.14.4, Linux (Debian-based)  
-**Location:** `~/ai-agent-investigate/agent-torvalds/self-development`
+**Location:** `~/ai-agent-investigate/agent-torvalds`
 
 ---
 
@@ -19,7 +19,7 @@ python3 -c "import openpyxl"  # ❌ ModuleNotFoundError
 python3 -c "import pandas"     # ❌ ModuleNotFoundError
 ```
 
-**No XLSX-related Python packages are currently installed** in the self-development environment.
+**No XLSX-related Python packages are currently installed** in the project environment.
 
 ---
 
@@ -164,4 +164,4 @@ df.to_excel('output.xlsx', index=False)
 
 ---
 
-*Investigation conducted in: `~/ai-agent-investigate/agent-torvalds/self-development`*
+*Investigation conducted in: `~/ai-agent-investigate/agent-torvalds`*

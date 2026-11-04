@@ -93,7 +93,7 @@ the project's own footer:
 ```
 
 The originals are kept, so the change is reversible, in
-`self-development/pr-body-backup-2026-10-27/`:
+`pr-body-backup-2026-10-27/`:
 
 | File | What it holds |
 |---|---|
@@ -125,7 +125,7 @@ content does not change — only the commit messages and therefore the SHAs.
 
 ### 6.1 The tool
 
-`self-development/investigate/claude-contributor-purge/`
+`investigate/claude-contributor-purge/`
 
 | File | Role |
 |---|---|
@@ -224,7 +224,7 @@ not resolve.
 
 ### 7.3 The SHAs recorded in the documentation go stale
 
-`SELF_DEVELOPMENT_RULES.md` records **85** commit SHAs, and the other
+`DEVELOPMENT_RULES.md` records **85** commit SHAs, and the other
 markdown files record another ~94. The ones pointing at commits from the
 shodan subtree onward will name commits that no longer exist.
 
@@ -255,7 +255,7 @@ is refreshing the SHAs in the documentation.
 
 The sequence, each step verified before the next:
 
-1. **Commit** the tooling on the self-development branch
+1. **Commit** the tooling on the branch
    `feature/purge-claude-contributor`.
 2. **Push** the 29 rewritten branches (`purge_claude_contributor.sh --apply`).
 3. **Verify** with `verify_no_claude.py` — both sides PASS.
@@ -306,14 +306,14 @@ no longer contribute to the contributor list.
 
 ```bash
 # The two halves of the finding
-python3 self-development/investigate/claude-contributor-purge/verify_no_claude.py
+python3 investigate/claude-contributor-purge/verify_no_claude.py
 
 # The callback
-python3 self-development/investigate/claude-contributor-purge/check_strip_claude_trailer.py
+python3 investigate/claude-contributor-purge/check_strip_claude_trailer.py
 
 # The one offending commit, across every ref
 git log --all --regexp-ignore-case --fixed-strings --grep=claude --format='%H %s'
 
 # The rewrite, dry run (no push)
-bash self-development/investigate/claude-contributor-purge/purge_claude_contributor.sh
+bash investigate/claude-contributor-purge/purge_claude_contributor.sh
 ```
