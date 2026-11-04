@@ -51,11 +51,11 @@ All notable changes to this project are documented in this file.
 
   The chat now says what actually went wrong:
 
-  > The model server failed (HTTP 500). The request reached Ollama, and
-  > the server could not answer it. The usual causes are a model that
-  > crashed and a model that ran out of memory - `ollama ps` shows
-  > whether a model is loaded, and the server log says why it died.
-  > Reference: 5da53c14-e0ba-41ea-9ae5-3fec8c43ef64.
+  > The Ollama server failed (HTTP 500). The request went to
+  > http://localhost:11434. The usual causes are a model that crashed
+  > and a model that ran out of memory - `ollama ps` shows whether a
+  > model is loaded, and the server log says why it died. Reference:
+  > 5da53c14-e0ba-41ea-9ae5-3fec8c43ef64.
 
   The traceback is not lost - it goes to the log, where it belongs.
 
@@ -64,6 +64,61 @@ All notable changes to this project are documented in this file.
   server that cannot be reached at all, and the request that timed out.
   An error nobody knows is still shown as it is - just without the
   frames.
+
+- **The wording named Ollama whatever failed.**  The message was the
+  words of one backend, so a failure of another one was described in
+  words that were wrong for it: a rejected key would have been
+  answered with "the model was not found - pull it with `ollama pull`".
+
+  The wording now follows the backend the failure came from - Ollama,
+  the Anthropic API or the OpenAI API - and the backend is found twice:
+  from the failure itself, which is the better witness, and from the
+  LLM the agent holds, which is the fallback for the failures that say
+  nothing.  Ollama turns a refused connection into a plain
+  `ConnectionError`, and that failure names nobody.
+
+  Each backend is told what to do about the failure it gave:
+
+  > The Anthropic API refused the request (HTTP 401). The request went
+  > to https://api.anthropic.com. Anthropic wants an API key: set
+  > `ANTHROPIC_API_KEY`, and check that it belongs to the account that
+  > may use the model. Reference: req_abc123.
+
+  A failure that names no backend at all is described in the words of
+  any backend, and no backend is named.
+
+  The module depends on no provider package - not even on the one that
+  raised the error - so it reads a failure the way every HTTP client
+  reports it: a status code, a text and a class name.
+
+- **`components/ollama_config.py` learned to name the endpoint of
+  whatever serves the model.**  `get_configured_base_url(default)`
+  resolves the endpoint of any backend, and `get_ollama_base_url()` is
+  kept, as the name the rest of the agent already uses.
+
+- **The wording reached two entry points of four.**  The agent is run
+  in four ways, and each of them answers a failed request: the classic
+  console, the panel of the multi-window console, the chat of the
+  multi-window console and the llama.cpp console.  The wording was put
+  in the first two, and the other two kept the traceback:
+
+  ```
+  Error: Internal Server Error (ref: 5da53c14-...)
+  Traceback (most recent call last):
+    File ".../agent-torvalds-mw.py", line 1055, in prompt_handler
+      import traceback
+    ...
+  ```
+
+  The chat of the multi-window console is the one the operator meets
+  most often, and it is the one that kept pasting the frames of the
+  agent into the chat.  It says now what the other two say, and the
+  llama.cpp console says it too.
+
+  A wording that reaches some of the entry points and not the others is
+  a wording that is there by accident, so the tests hold every entry
+  point to it: the chat of each of them carries the message, and not
+  the frames.  The tests were broken once on purpose, and they failed.
 
 #### The rule about stray test files named a folder that no longer exists
 

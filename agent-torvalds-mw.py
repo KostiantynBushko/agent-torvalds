@@ -1051,13 +1051,26 @@ async def prompt_handler(
         return response_text, None
 
     except Exception as e:
-        import traceback
+        from components.llm_errors import (
+            describe,
+            log_failure,
+            provider_of_the_llm,
+        )
+
+        # The traceback goes to the log; the chat gets a message that
+        # says what actually went wrong.  A traceback in the chat shows
+        # the frames of the agent and hides the failure of the server.
+        log_failure(e)
         log_error(str(e))
+
+        message = describe(e, provider_of_the_llm(getattr(agent, "llm", None)))
+
         if stats_handler:
             stats = stats_handler.finalize()
             stats.errors.append(str(e))
-            return f"Error: {e}\n{traceback.format_exc()}", stats
-        return f"Error: {e}\n{traceback.format_exc()}", None
+            return message, stats
+
+        return message, None
 
 
 def render_stats_summary(summary: dict) -> None:
