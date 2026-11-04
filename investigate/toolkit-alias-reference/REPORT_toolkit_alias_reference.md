@@ -12,7 +12,7 @@ WARNINGS:
 1. Cannot find reference 'shodan_toolkit' in '__init__.py'
 ```
 
-**Branch:** `fix/toolkit-alias-reference` (in `self-development/`)
+**Branch:** `fix/toolkit-alias-reference`
 **Status:** implemented, verified, **not committed** — awaiting operator approval.
 
 ---
@@ -279,5 +279,5 @@ toolkits/shodan-toolkit/src/shodan_toolkit/__init__.py  |  11 ++++++
 tests/test_toolkit_alias_contract.py                   | 232 ++++++++++++++ (new)
 ```
 
-All changes are inside the `self-development/` clone, on branch
-`fix/toolkit-alias-reference`. The main repository is untouched.
+All changes are on branch `fix/toolkit-alias-reference`. The main
+repository is untouched.

@@ -3,7 +3,7 @@
 **Date:** 2026-01-28  
 **Author:** Torvalds Agent  
 **Repository:** `KostiantynBushko/agent-torvalds`  
-**Branch:** `self-development/master`  
+**Branch:** `master`  
 **Based on:** `investigation_xlsx_support.md`
 
 ---
@@ -214,4 +214,4 @@ pandas>=2.0.0
 ---
 
 *Proposal based on investigation: `investigate/investigation_xlsx_support.md`*  
-*Created in: `~/ai-agent-investigate/agent-torvalds/self-development`*
+*Created in: `~/ai-agent-investigate/agent-torvalds`*

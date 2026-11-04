@@ -146,7 +146,7 @@ The four that are left are the paragraph breaks — they carry meaning.
 The wall of six at the end of the system prompt is gone.
 
 ```bash
-self-development/.venv/bin/python self-development/investigate/context-window-proof/replay_the_operator_log.py
+.venv/bin/python investigate/context-window-proof/replay_the_operator_log.py
 ```
 
 ## What was added
@@ -163,9 +163,9 @@ self-development/.venv/bin/python self-development/investigate/context-window-pr
 ## Verifying it
 
 ```bash
-self-development/.venv/bin/python -m pytest self-development/tests/test_chat_message.py -q
-self-development/.venv/bin/python self-development/investigate/chat-message-debug/verify_chat_message.py
-self-development/.venv/bin/python self-development/investigate/chat-message-debug/verify_harness_catches_regressions.py
+.venv/bin/python -m pytest tests/test_chat_message.py -q
+.venv/bin/python investigate/chat-message-debug/verify_chat_message.py
+.venv/bin/python investigate/chat-message-debug/verify_harness_catches_regressions.py
 ```
 
 26 tests pass, the four invariants hold, and every deliberate drift is

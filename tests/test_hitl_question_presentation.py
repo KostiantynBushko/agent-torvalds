@@ -72,7 +72,7 @@ from components.state_handler import StateHandler  # noqa: E402
 #: saw ``Enter password: `` instead of the question.
 REPORT_PAYLOAD = """## Done — investigation and proposal delivered
 
-**Deliverables** (in `self-development/investigate/Voice-Output/`):
+**Deliverables** (in `investigate/Voice-Output/`):
 
 - `INVESTIGATION_REPORT.md` (683 lines)
 - `PROPOSAL_voice_output.md` (883 lines)

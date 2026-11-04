@@ -222,8 +222,8 @@ hyphen.
 ## 7. Verification
 
 ```bash
-self-development/.venv/bin/python -m pytest self-development/toolkits/db-toolkit/tests -q
-self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+.venv/bin/python -m pytest toolkits/db-toolkit/tests -q
+.venv/bin/python scripts/ci_test_gate.py
 ```
 
 **85 passed**, and the CI gate reports **no new failure**: 40 known
@@ -234,7 +234,7 @@ changed path.
 The mechanical check:
 
 ```bash
-self-development/.venv/bin/python self-development/investigate/db-toolkit-module/verify_split.py
+.venv/bin/python investigate/db-toolkit-module/verify_split.py
 ```
 
 reports *The split is behaviour-neutral.* — 3 operations compared, 2

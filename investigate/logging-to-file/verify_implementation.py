@@ -12,8 +12,8 @@ same assertions — against ``components/file_logging.py``.
 
 Run it:
 
-    self-development/.venv/bin/python \\
-        self-development/investigate/logging-to-file/verify_implementation.py
+    .venv/bin/python \\
+        investigate/logging-to-file/verify_implementation.py
 """
 
 from __future__ import annotations

@@ -5,7 +5,7 @@
 **Status:** Proposal  
 **Date:** 2026-09-13  
 **Author:** Torvalds AI Agent  
-**Location:** `self-development/investigate/signal-handling/`  
+**Location:** `investigate/signal-handling/`  
 
 ---
 

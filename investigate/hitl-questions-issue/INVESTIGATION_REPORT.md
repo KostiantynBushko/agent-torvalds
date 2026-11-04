@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-24
 **Status**: Investigation complete — 7 defects found, all reproduced empirically
-**Location**: `self-development/investigate/hitl-questions-issue/`
+**Location**: `investigate/hitl-questions-issue/`
 **Reported by**: the operator, in `~/torvald-log/hitl_questions_issue/`
 **Affected components**: `components/hitl_agent.py`, `components/event_consumer.py`, `components/console_input_module.py`, `components/human_loop_handler.py`
 **Base commit**: `16bbd83` (master)
@@ -392,10 +392,9 @@ So the answer is not lost, and the agent is not asked twice. Only the
 
 ## 5. Reproduction
 
-Everything in this report is reproducible from the `self-development` clone:
+Everything in this report is reproducible from the repository root:
 
 ```bash
-cd self-development
 .venv/bin/python investigate/hitl-questions-issue/diag_input_type.py
 .venv/bin/python investigate/hitl-questions-issue/diag_duplicate_prompt.py
 .venv/bin/python investigate/hitl-questions-issue/diag_roundtrip.py

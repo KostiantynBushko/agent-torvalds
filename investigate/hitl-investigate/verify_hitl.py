@@ -27,7 +27,7 @@ asserts that every defect is **gone**.
 
 No network access required.
 
-Run from the repository root (self-development/):
+Run from the repository root:
     python investigate/hitl-investigate/verify_hitl.py
 """
 from __future__ import annotations

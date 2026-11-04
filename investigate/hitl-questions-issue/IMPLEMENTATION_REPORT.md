@@ -1,7 +1,7 @@
 # Implementation report — the HITL question must be a question, and shown once
 
 **Date**: 2026-10-24
-**Branch**: `investigate/hitl-questions-issue` (in the `self-development` clone)
+**Branch**: `investigate/hitl-questions-issue`
 **Status**: implemented, verified — **not committed** (Rule 4: awaiting the operator's approval)
 **Companion to**: `INVESTIGATION_REPORT.md`, `PROPOSAL_hitl_question_presentation.md`
 
@@ -142,7 +142,6 @@ reaches the terminal as the one block the agent wrote.
 ### The acceptance harness
 
 ```bash
-cd self-development
 .venv/bin/python investigate/hitl-questions-issue/verify_hitl_question_presentation.py
 ```
 
@@ -231,7 +230,6 @@ The change is **not committed** (Rule 4). The operator's review is
 requested:
 
 ```bash
-cd self-development
 git status
 git diff
 ```

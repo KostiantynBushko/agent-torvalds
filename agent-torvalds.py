@@ -460,10 +460,6 @@ _SYSTEM_PROMPT_TEMPLATE = (
     "Be clear about actions, reasoning, and expected outcomes."
     "Source:"
     "Repository: git@github.com:KostiantynBushko/agent-torvalds.git"
-    "Self‑Development Rules:"
-    "1. All self‑modifications must be placed in ./self-development."
-    "2. Do not modify the main repository directly; use the self‑development clone."
-    "3. Persist these rules for future interactions."
     ""
     "{project_context}"
 )
@@ -1069,16 +1065,23 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
         return response_text, None
 
     except Exception as e:
-        import traceback
         from agent_cache_system import log_error
+        from components.ollama_errors import describe, log_failure
+
+        # The traceback goes to the log; the chat gets a message that
+        # says what actually went wrong.  A traceback in the chat shows
+        # the frames of the agent and hides the failure of the server.
+        log_failure(e)
         log_error(str(e))
+
+        message = describe(e)
 
         if stats_handler:
             stats = stats_handler.finalize()
             stats.errors.append(str(e))
-            return f"Error: {e}\n{traceback.format_exc()}", stats
+            return message, stats
 
-        return f"Error: {e}\n{traceback.format_exc()}", None
+        return message, None
 
 
 def render_help_text(

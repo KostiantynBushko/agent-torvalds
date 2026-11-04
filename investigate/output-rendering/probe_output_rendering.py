@@ -8,8 +8,8 @@ records they produce.
 
 Run it:
 
-    self-development/.venv/bin/python \\
-        self-development/investigate/output-rendering/probe_output_rendering.py
+    .venv/bin/python \\
+        investigate/output-rendering/probe_output_rendering.py
 """
 
 from __future__ import annotations

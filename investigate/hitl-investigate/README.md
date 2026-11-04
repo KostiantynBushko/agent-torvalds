@@ -87,11 +87,10 @@ framework contract.
 
 ## Running the diagnostics
 
-All scripts run from the repository root (`self-development/`) and need no
+All scripts run from the repository root  and need no
 network access except `diag_live_hitl.py`.
 
 ```bash
-cd self-development
 
 # Acceptance script — asserts every defect is gone (13/13)
 ../.venv/bin/python investigate/hitl-investigate/verify_hitl.py

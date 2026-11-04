@@ -33,7 +33,7 @@ from typing import Dict
 
 WRONG_QUESTION_TEXT = """## Done — investigation and proposal delivered
 
-**Deliverables** (in `self-development/investigate/Voice-Output/`, per Rule 1; main repo untouched, nothing committed per Rule 4):
+**Deliverables** (in `investigate/Voice-Output/`, per Rule 1; main repo untouched, nothing committed per Rule 4):
 
 - `INVESTIGATION_REPORT.md` (683 lines)
 - `PROPOSAL_voice_output.md` (883 lines)

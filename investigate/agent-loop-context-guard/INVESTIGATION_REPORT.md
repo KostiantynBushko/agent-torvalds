@@ -15,7 +15,7 @@ remote host. The agent read `DEPLOYMENT.md`, checked whether `sshpass` was
 installed — and then asked the same question again, and again, and again:
 
 ```
-11:21:00  read_file called with path: self-development/DEPLOYMENT.md
+11:21:00  read_file called with path: DEPLOYMENT.md
 11:21:00  Context guard: trimmed the prompt from 16 to 4 messages (head 2 / tail 2, ~3343 tokens, budget 3343)
 11:30:30  POST http://localhost:11434/api/chat
 11:35:22  check_command_exists called with command: sshpass

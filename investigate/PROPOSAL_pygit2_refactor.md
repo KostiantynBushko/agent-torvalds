@@ -221,7 +221,7 @@ STATUS_MAP = {
 ## Next Steps
 
 1. Review and approve this proposal
-2. Begin implementation in `feature/pygit2-refactor` branch under the self-development directory
+2. Begin implementation in `feature/pygit2-refactor` branch in the repository
 3. Implement in phases (Tier 1 → Tier 4) with testing at each phase
 4. Create pull request for review after all phases complete
 

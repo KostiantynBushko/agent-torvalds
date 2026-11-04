@@ -24,7 +24,7 @@ agent-torvalds/
         └──implementation-plan/         # Step-by-step implementation guide
 ```
 
-> **Note:** Do **not** place `project_scanner.py`, `workspace_config.py`, or `agent_project_manager.py` in the self-development root. All project manager code lives inside the `project-manager` folder as a proper Python module.
+> **Note:** Do **not** place `project_scanner.py`, `workspace_config.py`, or `agent_project_manager.py` in the repository root. All project manager code lives inside the `project-manager` folder as a proper Python module.
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Date**: 2025-01-13  
 **Status**: Investigation Phase 1 — Requirements Analysis  
-**Location**: `self-development/investigate/deployment-script/`
+**Location**: `investigate/deployment-script/`
 
 ---
 

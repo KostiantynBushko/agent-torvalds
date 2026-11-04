@@ -623,5 +623,109 @@ class TestConfigValidation:
         assert "workspace_path" in migrated
 
 
+class TestFoundIndicators:
+    """The registration records the indicators that were FOUND.
+
+    The declared indicator list of a type names every file that could
+    have identified it.  A project with a ``requirements.txt`` and
+    nothing else does not have a ``Pipfile``, a ``poetry.lock`` or a
+    ``setup.cfg`` - and the configuration that shows those files claims
+    a project layout that is not there.
+    """
+
+    def test_only_the_files_that_exist_are_reported(self, temp_workspace):
+        project_dir = Path(temp_workspace) / "a-python-project"
+        project_dir.mkdir()
+        (project_dir / "requirements.txt").write_text("pytest\n")
+        (project_dir / "main.py").write_text("print('hello')\n")
+
+        scanner = ProjectScanner()
+        found = scanner.get_found_indicators(str(project_dir), "Python")
+
+        assert found == ["requirements.txt"]
+
+    def test_a_file_that_is_not_there_is_not_reported(self, temp_workspace):
+        project_dir = Path(temp_workspace) / "another-python-project"
+        project_dir.mkdir()
+        (project_dir / "requirements.txt").write_text("pytest\n")
+
+        scanner = ProjectScanner()
+        found = scanner.get_found_indicators(str(project_dir), "Python")
+
+        for phantom in ("setup.py", "Pipfile", "poetry.lock", "setup.cfg",
+                        "tox.ini", "pyrightconfig.json", ".python-version"):
+            assert phantom not in found
+
+    def test_an_indicator_in_a_subdirectory_is_found(self, temp_workspace):
+        project_dir = Path(temp_workspace) / "a-nested-python-project"
+        (project_dir / "toolkits" / "math-toolkit").mkdir(parents=True)
+        (project_dir / "toolkits" / "math-toolkit" / "pyproject.toml").write_text("[x]\n")
+
+        scanner = ProjectScanner()
+        found = scanner.get_found_indicators(str(project_dir), "Python")
+
+        assert "pyproject.toml" in found
+
+    def test_the_registration_records_the_found_indicators(self, temp_workspace):
+        """A registered project records the files that are really there.
+
+        The fixture carries enough indicator files for the scanner to
+        detect the type on its own.  That is a limitation of the
+        scanner's confidence normalisation - a project with only a
+        ``requirements.txt`` scores below the threshold - and it is a
+        known failure of its own, recorded in the CI baseline.  This test
+        is about the indicators that are recorded, not about the score.
+        """
+        project_dir = Path(temp_workspace) / "a-registered-python-project"
+        project_dir.mkdir()
+        for name in ("pyproject.toml", "setup.py", "requirements.txt",
+                     "setup.cfg", "tox.ini", "pytest.ini"):
+            (project_dir / name).write_text("[x]\n")
+        (project_dir / "main.py").write_text("print('hello')\n")
+
+        manager = ProjectManager(temp_workspace)
+        project = manager.discover_and_register(
+            str(project_dir), name="registered"
+        )
+
+        assert project is not None
+        assert project["type"] == "Python"
+        assert project["indicators_found"] == [
+            "pyproject.toml",
+            "setup.py",
+            "requirements.txt",
+            "setup.cfg",
+            "tox.ini",
+            "pytest.ini",
+        ]
+
+    def test_a_file_that_is_absent_is_not_recorded(self, temp_workspace):
+        """The declared indicators that are absent stay out."""
+        project_dir = Path(temp_workspace) / "a-partly-identified-project"
+        project_dir.mkdir()
+        for name in ("pyproject.toml", "setup.py", "requirements.txt",
+                     "setup.cfg", "tox.ini", "pytest.ini"):
+            (project_dir / name).write_text("[x]\n")
+        (project_dir / "main.py").write_text("print('hello')\n")
+
+        manager = ProjectManager(temp_workspace)
+        project = manager.discover_and_register(
+            str(project_dir), name="partly-identified"
+        )
+
+        assert project is not None
+        for phantom in ("Pipfile", "poetry.lock", "pyrightconfig.json",
+                        ".python-version"):
+            assert phantom not in project["indicators_found"]
+
+    def test_the_declared_list_is_still_available(self):
+        """The declared list is what the scanner matches against."""
+        scanner = ProjectScanner()
+        declared = scanner.get_project_indicators("Python")
+
+        assert ("requirements.txt", 0.7) in declared
+        assert ("Pipfile", 0.6) in declared
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

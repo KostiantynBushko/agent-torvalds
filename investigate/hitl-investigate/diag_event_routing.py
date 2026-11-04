@@ -29,7 +29,7 @@ which events actually appear on ``stream_events()``.
 
 No network access required.
 
-Run from the repository root (self-development/):
+Run from the repository root:
     python investigate/hitl-investigate/diag_event_routing.py
 """
 from __future__ import annotations

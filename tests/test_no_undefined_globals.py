@@ -30,6 +30,21 @@ sys.path.insert(0, str(ROOT))
 
 ORCHESTRATORS = ("agent-torvalds.py", "agent-torvalds-mw.py")
 
+#: The functions the compiler generates, which have no source the author
+#: wrote.  Python 3.14 gives every module an ``__annotate__`` function
+#: (PEP 649 - the deferred evaluation of annotations).  It is a real
+#: function object, so ``inspect.isfunction`` accepts it and its
+#: ``__module__`` is the module it belongs to - but ``inspect.getsource``
+#: answers with the module **docstring**, because the function has no
+#: source of its own.  Parsing that gives a bare expression, not a
+#: definition, and the check below reads ``.args`` of it.
+#:
+#: The check is about the code somebody wrote, so a generated function is
+#: not part of it.  It is skipped by name, and the general rule - "a
+#: function whose source cannot be read as a definition is not checked" -
+#: is enforced as well.
+COMPILER_GENERATED = {"__annotate__"}
+
 
 def _load(name: str, path: Path):
     """Load a script-style module by path."""
@@ -38,6 +53,25 @@ def _load(name: str, path: Path):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _has_a_readable_definition(function) -> bool:
+    """Whether the source of a function can be read as a definition.
+
+    A function that the compiler generated has no source of its own, and
+    ``inspect.getsource`` answers with something else - the module
+    docstring, for the ``__annotate__`` function of Python 3.14.  Such a
+    function cannot be checked, and it is not the author's code.
+    """
+    try:
+        source = textwrap.dedent(inspect.getsource(function))
+    except (OSError, TypeError):
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    return isinstance(tree.body[0], (ast.FunctionDef, ast.AsyncFunctionDef))
 
 
 def _names_the_function_defines(function) -> set[str]:
@@ -127,6 +161,10 @@ class TestNoUndefinedGlobals(unittest.TestCase):
             if not inspect.isfunction(candidate):
                 continue
             if candidate.__module__ != module.__name__:
+                continue
+            if attribute in COMPILER_GENERATED:
+                continue
+            if not _has_a_readable_definition(candidate):
                 continue
             checked += 1
             missing = _undefined_globals(module, candidate)

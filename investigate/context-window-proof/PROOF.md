@@ -48,8 +48,8 @@ does the agent.
 ## Running it
 
 ```bash
-self-development/.venv/bin/python self-development/investigate/context-window-proof/verify_context_window.py
-self-development/.venv/bin/python self-development/investigate/context-window-proof/verify_harness_catches_regressions.py
+.venv/bin/python investigate/context-window-proof/verify_context_window.py
+.venv/bin/python investigate/context-window-proof/verify_harness_catches_regressions.py
 ```
 
 `replay_the_operator_log.py` replays the log the operator sent with the

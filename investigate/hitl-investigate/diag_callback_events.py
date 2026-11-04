@@ -18,7 +18,7 @@ the way that breaks ``_extract_text()``.
 
 No network access required.
 
-Run from the repository root (self-development/):
+Run from the repository root:
     python investigate/hitl-investigate/diag_callback_events.py
 """
 from __future__ import annotations

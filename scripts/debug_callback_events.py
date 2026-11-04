@@ -9,7 +9,6 @@ This script tests how the agent emits callbacks by:
 4. Verifying all events are properly handled and routed
 
 Usage:
-    cd self-development
     python scripts/debug_callback_events.py
     
     # Or with specific test:

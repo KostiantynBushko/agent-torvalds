@@ -4,7 +4,7 @@ import pytest
 import os
 import sys
 
-# Ensure the self-development directory is in the path
+# Ensure the repository root is in the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 

@@ -27,7 +27,6 @@ The layout and test contracts in `MODULE_SPECIFICATION.md` are not prose — the
 are checked by two scripts that run against the real repository tree:
 
 ```bash
-cd self-development
 .venv/bin/python investigate/MikroTik-RouterOS/verify_layout_contract.py
 .venv/bin/python investigate/MikroTik-RouterOS/verify_test_contract.py
 ```
@@ -151,7 +150,7 @@ setsid /usr/sbin/sshd -f /tmp/sshdtest/sshd_config3 -D -e > /tmp/sshdtest/sshd3.
 Then run the prototypes from the project venv:
 
 ```bash
-cd self-development/investigate/MikroTik-RouterOS
+cd investigate/MikroTik-RouterOS
 PY=../../.venv/bin/python
 
 $PY proto_prompt_regex.py   # V2  - prompt corpus (expect: ALL PASS)
@@ -194,5 +193,4 @@ be confirmed against real hardware** (precondition P6 / open question Q6 in the 
 
 ---
 
-*All work performed in the `self-development` clone per the self-development rules. The main
-repository was not modified.*
+*All work performed on its own branch; the main repository was not modified.*

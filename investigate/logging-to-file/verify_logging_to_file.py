@@ -20,8 +20,8 @@ implementation is refactored.
 
 Run it:
 
-    self-development/.venv/bin/python \\
-        self-development/investigate/logging-to-file/verify_logging_to_file.py
+    .venv/bin/python \\
+        investigate/logging-to-file/verify_logging_to_file.py
 """
 
 from __future__ import annotations

@@ -52,7 +52,7 @@ import os
 import sys
 from typing import List, Optional, Tuple
 
-# The self-development clone is the working copy for every self-modification.
+# The repository root is on the path, so the modules import from the working copy.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from rich.console import Console

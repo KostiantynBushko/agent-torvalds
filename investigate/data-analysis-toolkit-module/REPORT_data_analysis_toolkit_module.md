@@ -194,10 +194,10 @@ branch: 155 tools, md5 db58a70628cfdc6d12faf17d91f159f1
 **Verifying the change**
 
 ```bash
-self-development/.venv/bin/python -m pytest self-development/toolkits/data-analysis-toolkit/tests -q
-self-development/.venv/bin/python self-development/investigate/data-analysis-toolkit-module/verify_split.py
-self-development/.venv/bin/python self-development/investigate/data-analysis-toolkit-module/verify_optional_dependency.py
-self-development/.venv/bin/python self-development/scripts/ci_test_gate.py
+.venv/bin/python -m pytest toolkits/data-analysis-toolkit/tests -q
+.venv/bin/python investigate/data-analysis-toolkit-module/verify_split.py
+.venv/bin/python investigate/data-analysis-toolkit-module/verify_optional_dependency.py
+.venv/bin/python scripts/ci_test_gate.py
 ```
 
 94 passed, the split is behaviour-neutral, the agent still boots without

@@ -23,8 +23,8 @@ The mechanism it proves
 
 Run it:
 
-    self-development/.venv/bin/python \\
-        self-development/investigate/logging-to-file/prototype_file_logging.py
+    .venv/bin/python \\
+        investigate/logging-to-file/prototype_file_logging.py
 """
 
 from __future__ import annotations

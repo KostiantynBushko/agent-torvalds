@@ -879,5 +879,5 @@ These need an operator decision before Phase 3 closes:
 
 ---
 
-*Next step: operator review of this proposal, then Phase 0 in the
-`self-development` clone on a `feature/voice-toolkit` branch.*
+*Next step: operator review of this proposal, then Phase 0 on a
+`feature/voice-toolkit` branch.*

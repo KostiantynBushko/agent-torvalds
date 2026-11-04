@@ -201,7 +201,6 @@ chat memory whenever the metadata database is down.
 ## 6. Verification
 
 ```bash
-cd self-development
 
 # The chat manager suite — 175 passed
 .venv/bin/python -m pytest chat_manager/tests -q
