@@ -1066,7 +1066,11 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
 
     except Exception as e:
         from agent_cache_system import log_error
-        from components.ollama_errors import describe, log_failure
+        from components.llm_errors import (
+            describe,
+            log_failure,
+            provider_of_the_llm,
+        )
 
         # The traceback goes to the log; the chat gets a message that
         # says what actually went wrong.  A traceback in the chat shows
@@ -1074,7 +1078,7 @@ async def prompt_handler(cmd: str, agent: FunctionAgent, enable_stats: bool = Tr
         log_failure(e)
         log_error(str(e))
 
-        message = describe(e)
+        message = describe(e, provider_of_the_llm(getattr(agent, "llm", None)))
 
         if stats_handler:
             stats = stats_handler.finalize()

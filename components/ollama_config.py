@@ -64,19 +64,25 @@ def _normalize_base_url(url: str) -> str:
     return url
 
 
-def get_ollama_base_url() -> str:
-    """Return the Ollama endpoint the agent should connect to.
+def get_configured_base_url(default: str = DEFAULT_OLLAMA_BASE_URL) -> str:
+    """Return the configured endpoint, whichever backend serves it.
+
+    The agent has **one** endpoint setting - ``llm.host`` - and it points
+    at whatever serves the model.  ``default`` is the address of the
+    backend in use, and it is used when nothing is configured.
+
+    Args:
+        default: The address of the backend, when nothing is configured.
 
     Returns:
-        str: The base URL of the Ollama server, e.g.
-        ``http://localhost:11434``.
+        str: The base URL of the model server.
     """
     for var in OLLAMA_HOST_ENV_VARS:
         raw = os.environ.get(var)
         if raw and raw.strip():
             normalized = _normalize_base_url(raw.strip())
             logger.info(
-                "Ollama base URL from environment variable %s: %s",
+                "Model server base URL from environment variable %s: %s",
                 var,
                 normalized,
             )
@@ -88,17 +94,27 @@ def get_ollama_base_url() -> str:
     if from_file and str(from_file).strip():
         normalized = _normalize_base_url(str(from_file).strip())
         logger.info(
-            "Ollama base URL from the configuration file %s: %s",
+            "Model server base URL from the configuration file %s: %s",
             config.path,
             normalized,
         )
         return normalized
 
     logger.info(
-        "No Ollama host environment variable set, using default: %s",
-        DEFAULT_OLLAMA_BASE_URL,
+        "No model server host environment variable set, using default: %s",
+        default,
     )
-    return DEFAULT_OLLAMA_BASE_URL
+    return default
+
+
+def get_ollama_base_url() -> str:
+    """Return the Ollama endpoint the agent should connect to.
+
+    Returns:
+        str: The base URL of the Ollama server, e.g.
+        ``http://localhost:11434``.
+    """
+    return get_configured_base_url(DEFAULT_OLLAMA_BASE_URL)
 
 
 #: Environment variable that overrides the detected context window.

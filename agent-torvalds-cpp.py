@@ -73,7 +73,7 @@ agent = FunctionAgent(
 
 console = Console()
 
-import logging, traceback
+import logging
 logging.basicConfig(level=logging.DEBUG)
 
 async def prompt_handler(cmd: str) -> str:
@@ -85,8 +85,17 @@ async def prompt_handler(cmd: str) -> str:
             return result.get("output") or result.get("text") or str(result)
         return str(result)
     except Exception as e:
-        logging.exception("Agent run failed")
-        return f"Error: {e}\n{traceback.format_exc()}"
+        from components.llm_errors import (
+            describe,
+            log_failure,
+            provider_of_the_llm,
+        )
+
+        # The traceback goes to the log; the chat gets a message that
+        # says what actually went wrong.  A traceback in the chat shows
+        # the frames of the agent and hides the failure of the model.
+        log_failure(e)
+        return describe(e, provider_of_the_llm(getattr(agent, "llm", None)))
 
 async def main():
     console.print("[cyan]Advanced Async Terminal[/cyan]. Type '\\exit' or '\\quit' to terminate.")

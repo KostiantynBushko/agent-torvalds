@@ -400,12 +400,19 @@ class TuiApp:
                     save_request_stats(stats.to_dict())
 
         except Exception as e:
-            from components.ollama_errors import describe, log_failure
+            from components.llm_errors import (
+                describe,
+                log_failure,
+                provider_of_the_llm,
+            )
 
             # The traceback goes to the log; the panel gets a message
             # that says what actually went wrong.
             log_failure(e)
-            self.state.set_markdown_content(f"# Error during execution\n\n{describe(e)}")
+            provider = provider_of_the_llm(getattr(self.agent, "llm", None))
+            self.state.set_markdown_content(
+                f"# Error during execution\n\n{describe(e, provider)}"
+            )
             logger.error("Agent execution failed: %s", e)
         finally:
             self.state.set_busy(False)
