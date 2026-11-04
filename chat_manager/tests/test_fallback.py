@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from chat_manager.manager import ChatHistoryManager
+from chat_manager.stats import HistoryStats
 from chat_manager.storage import CustomDBConnector
 from chat_manager.storage.connector import (
     DEFAULT_FALLBACK_PATH,
@@ -301,6 +302,9 @@ class TestChatInfoShowsTheStorageMode(unittest.TestCase):
         manager.is_initialized = True
         manager.current_user.username = "tester"
         manager.storage_mode = "fallback"
+        manager.get_history_stats.return_value = HistoryStats(
+            message_count=2, total_bytes=64, stored_tokens=12, buffer_tokens=12, token_limit=5000
+        )
         manager.get_active_session.return_value = Session(
             session_id="sess-1",
             user_id="user-1",
@@ -321,6 +325,9 @@ class TestChatInfoShowsTheStorageMode(unittest.TestCase):
         manager.is_initialized = True
         manager.current_user.username = "tester"
         manager.storage_mode = "primary"
+        manager.get_history_stats.return_value = HistoryStats(
+            message_count=2, total_bytes=64, stored_tokens=12, buffer_tokens=12, token_limit=5000
+        )
         manager.get_active_session.return_value = Session(
             session_id="sess-1",
             user_id="user-1",

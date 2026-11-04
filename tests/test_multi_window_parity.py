@@ -22,6 +22,8 @@ from unittest.mock import MagicMock, patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from chat_manager.stats import HistoryStats
+
 
 # ---------------------------------------------------------------------------
 # Load agent-torvalds-mw.py as a module (its filename is not importable)
@@ -485,6 +487,13 @@ class TestChatHistoryView(unittest.TestCase):
         manager.current_user.username = "tester"
         manager.list_sessions.return_value = sessions or []
         manager.get_active_session.return_value = active
+        manager.get_history_stats.return_value = HistoryStats(
+            message_count=3,
+            total_bytes=136,
+            stored_tokens=33,
+            buffer_tokens=33,
+            token_limit=5000,
+        )
         return manager
 
     def _fake_session(self, name="General Chat", sid="sid-1", stype="general"):
@@ -525,6 +534,18 @@ class TestChatHistoryView(unittest.TestCase):
         self.assertIn("General Chat", md)
         self.assertIn("sid-1", md)
         self.assertIn("general", md)
+
+    def test_render_chat_info_markdown_shows_the_size_and_the_tokens(self):
+        """The TUI shows what the session holds, like the classic console."""
+        session = self._fake_session()
+        manager = self._fake_manager(active=session)
+        md = self.view.render_chat_info_markdown(manager)
+
+        self.assertIn("Messages", md)
+        self.assertIn("136 B", md)
+        self.assertIn("stored", md)
+        self.assertIn("buffer", md)
+        self.assertIn("5,000", md)
 
     def test_render_chat_info_markdown_no_session(self):
         manager = self._fake_manager(active=None)
