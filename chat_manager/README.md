@@ -123,6 +123,7 @@ chat_manager/
 ├── user.py                        # User dataclass (domain model)
 ├── session.py                     # Session dataclass + SessionType enum (domain model)
 ├── settings.py                    # User settings — the user's own configuration
+├── stats.py                       # The measurement of the chat history (size, tokens)
 ├── startup.py                     # Global singleton lifecycle + startup hooks
 ├── session_selector.py            # Interactive startup session picker
 ├── backend/                       # Message storage (LlamaIndex chat store)
@@ -138,7 +139,7 @@ chat_manager/
 │   ├── __init__.py
 │   ├── handler.py                 # Dispatch: is_chat_command() / handle_chat_command()
 │   └── cli.py                     # Per-command implementations
-└── tests/                         # 198 unit tests
+└── tests/                         # 224 unit tests
     ├── conftest.py
     ├── test_backend.py
     ├── test_commands.py
@@ -148,6 +149,7 @@ chat_manager/
     ├── test_models.py
     ├── test_session_selector.py
     ├── test_settings.py
+    ├── test_stats.py
     ├── test_startup.py
     ├── test_storage.py
     └── test_user_settings.py
@@ -348,6 +350,20 @@ raw operator input is validated before it reaches the database.
 `cmd_chat_delete`, `cmd_chat_rename`, `cmd_chat_info`, `cmd_chat_clear`, `cmd_chat_user`,
 `cmd_chat_user_get`, `cmd_chat_user_set`, `cmd_chat_user_help`. Each returns a human-readable
 string and never raises for expected error conditions.
+
+### 11. `stats.py` — The Measurement of the History
+
+What the session holds: how many messages, how large they are, and how many tokens they are
+worth. Both renderers — the classic console and the multi-window console — format the numbers
+with the same helpers, so the two views cannot drift apart.
+
+| Symbol | Description |
+|--------|-------------|
+| `HistoryStats` | The measurements: message count, bytes, stored tokens, buffered tokens, the limit, and whether the tokens were estimated. |
+| `count_tokens(messages)` | The tokens of the given messages, and whether they were counted or estimated. |
+| `measure(stored, buffered, token_limit)` | Measure a history from the stored and the buffered messages. |
+| `format_size(total_bytes)` | A size in bytes, kilobytes or megabytes. |
+| `format_tokens(stats)` | The stored tokens, the buffered tokens and the limit, in one line. |
 
 ---
 
@@ -780,7 +796,7 @@ and cannot be triggered by the model.
 | `\chat-create <name> [type]` | — | Create a session. Type is `general`, `project`, or `custom` (default `custom`). **The name must be a single word** — the parser splits on whitespace, so a multi-word name is truncated. Use the startup menu's `new <name>` form (which keeps the full name) or the Python API for multi-word names. |
 | `\chat-delete <session_id>` | — | Delete a session. Refuses to delete the active one. |
 | `\chat-rename <session_id> <new name>` | — | Rename a session. |
-| `\chat-info` | — | Show details of the active session (ID, name, type, chat key, timestamps). |
+| `\chat-info` | — | Show details of the active session (ID, name, type, chat key, timestamps) and what it holds (messages, size, tokens). |
 | `\chat-clear` | — | Delete all messages in the active session, keeping the session. |
 | `\chat-user` | — | Show the current user's settings. |
 | `\chat-user get <key>` | — | Show one setting. |
@@ -809,9 +825,53 @@ Active session for user 'the-operator':
   Chat key: chat-custom-7f2c1a44-6f0e-4a1c-9a3e-2b8d5c1e0f11-3f2a1b9c
   Created:  2026-10-20 10:02
   Updated:  2026-10-20 10:05
+  Messages: 84
+  Size:     61.3 KB
+  Tokens:   ≈15,404 stored, ≈4,980 in the buffer (limit 5,000)
 
 >>> \chat-clear
 Cleared message history for session 'Postgres migration'.
+```
+
+### What the session holds
+
+`\chat-info` measures the session as well as it describes it:
+
+| Line | What it is |
+|------|------------|
+| `Messages:` | How many messages are stored for the session. |
+| `Size:` | The size of the text of those messages — in bytes below a kilobyte, in kilobytes below a megabyte, in megabytes above that. |
+| `Tokens:` | The tokens of the whole stored history, the tokens of the part that survives the chat-token limit, and the limit itself. |
+
+The two token counts are not the same number, and the difference is the point. The stored
+history grows with every turn — the agent never trims it — while the memory buffer keeps
+only the tail that fits into the `chat_token_limit` of the user. A session can hold 15,404
+tokens and still send 4,980 of them to the model.
+
+The tokens are counted with the tokenizer the memory buffer itself uses, so the numbers are
+the numbers the limit is enforced with. That tokenizer counts the tokens of one model
+family; for the local models the agent usually talks to it is an estimate — the `≈` in the
+output says so. If the tokenizer cannot be loaded at all, the count falls back to an
+estimate of four characters per token, and the line says that it is estimated.
+
+The same three lines are shown by the multi-window console, as rows of the same table:
+
+```
+| Messages | 84 |
+| Size | 61.3 KB |
+| Tokens | ≈15,404 stored, ≈4,980 in the buffer (limit 5,000) |
+```
+
+The Python API exposes the numbers as well:
+
+```python
+from chat_manager import ChatHistoryManager
+
+manager = ChatHistoryManager()
+manager.initialize()
+
+stats = manager.get_history_stats()
+print(stats.message_count, stats.total_bytes, stats.stored_tokens, stats.buffer_tokens)
 ```
 
 ### Startup menu
@@ -1076,21 +1136,23 @@ from chat_manager.session_selector import (
 
 ## Testing
 
-The package ships **198 unit tests** across twelve modules, all hermetic — no live database is
+The package ships **224 unit tests** across thirteen modules, all hermetic — no live database is
 required.
 
 | Test module | Tests | Covers |
 |-------------|-------|---------|
 | `test_user_settings.py` | 40 | The settings API, the `\chat-user` command, the renamed field and its compatibility seams |
-| `test_manager.py` | 28 | Initialisation, session CRUD, message buffer, plan-mandated API surface |
-| `test_commands.py` | 22 | Every `\chat-*` command and the dispatcher |
-| `test_settings.py` | 22 | The settings module — validation, aliases, the `UserSettings` snapshot |
+| `test_manager.py` | 32 | Initialisation, session CRUD, message buffer, the measurement of the history, plan-mandated API surface |
+| `test_commands.py` | 25 | Every `\chat-*` command and the dispatcher |
 | `test_fallback.py` | 23 | The local fallback — resolution, degradation, the whole API on the fallback |
+| `test_settings.py` | 22 | The settings module — validation, aliases, the `UserSettings` snapshot |
 | `test_backend.py` | 14 | Backend contract and error handling |
 | `test_storage.py` | 12 | Connector lifecycle, user and session CRUD |
-| `test_migration.py` | 9 | The `token_limit` → `chat_token_limit` column migration |
 | `test_models.py` | 11 | `User` / `Session` dataclasses, `SessionType` |
+| `test_stats.py` | 10 | The measurement of the history — the sizes, the token counts and the estimate |
 | `test_session_selector.py` | 10 | Menu formatting and the interactive selection loop |
+| `test_migration.py` | 9 | The `token_limit` → `chat_token_limit` column migration |
+| `test_startup_memory.py` | 9 | The memory buffer the startup hooks build |
 | `test_startup.py` | 7 | Singleton lifecycle and startup hooks |
 
 ### Running the tests

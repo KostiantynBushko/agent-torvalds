@@ -12,6 +12,7 @@ from chat_manager.commands import (
     cmd_chat_clear,
 )
 from chat_manager.session import Session, SessionType
+from chat_manager.stats import HistoryStats
 from chat_manager.commands.handler import is_chat_command
 
 
@@ -204,24 +205,63 @@ class TestCmdChatRename(unittest.TestCase):
 class TestCmdChatInfo(unittest.TestCase):
     """Tests for \\chat-info command."""
 
-    def test_shows_active_session(self):
-        """Info shows the active session details."""
+    @staticmethod
+    def _manager():
+        """Build a manager whose active session holds three messages."""
         manager = MagicMock()
         manager.is_initialized = True
         manager.current_user.username = "testuser"
-        session = Session(
+        manager.get_active_session.return_value = Session(
             session_id="sess-1",
             user_id="user-1",
             session_name="General Chat",
             session_type=SessionType.GENERAL,
             chat_key="key-1",
         )
-        manager.get_active_session.return_value = session
+        manager.get_history_stats.return_value = HistoryStats(
+            message_count=3,
+            total_bytes=136,
+            stored_tokens=33,
+            buffer_tokens=33,
+            token_limit=5000,
+        )
+        return manager
+
+    def test_shows_active_session(self):
+        """Info shows the active session details."""
+        manager = self._manager()
 
         result = cmd_chat_info(manager)
         self.assertIn("General Chat", result)
         self.assertIn("key-1", result)
         self.assertIn("testuser", result)
+
+    def test_shows_the_size_of_the_history(self):
+        """Info shows how many messages the session holds and how large they are."""
+        manager = self._manager()
+
+        result = cmd_chat_info(manager)
+        self.assertIn("Messages: 3", result)
+        self.assertIn("136 B", result)
+
+    def test_shows_the_tokens_of_the_history(self):
+        """Info shows how many tokens the session holds."""
+        manager = self._manager()
+
+        result = cmd_chat_info(manager)
+        self.assertIn("33", result)
+        self.assertIn("stored", result)
+        self.assertIn("buffer", result)
+        self.assertIn("5,000", result)
+
+    def test_a_history_that_cannot_be_measured_is_not_fatal(self):
+        """A session that cannot be measured is still a session."""
+        manager = self._manager()
+        manager.get_history_stats.side_effect = RuntimeError("the store is gone")
+
+        result = cmd_chat_info(manager)
+        self.assertIn("General Chat", result)
+        self.assertNotIn("Messages:", result)
 
     def test_no_active_session(self):
         """Info without an active session is reported."""

@@ -45,7 +45,7 @@ Capabilities:
 - `\\project-summary` : Show a full workspace summary
 - `\\chat-sessions` : List all chat sessions
 - `\\chat-select <id>` : Switch the active chat session
-- `\\chat-info` : Show details of the active chat session
+- `\\chat-info` : Show details of the active chat session, and what it holds (messages, size, tokens)
 
 *Type your command below and press Enter to begin.*
 """
