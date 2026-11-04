@@ -28,6 +28,44 @@ All notable changes to this project are documented in this file.
   The file is read **once**, when the agent starts: the settings that
   were resolved at the start of the session apply on the **next start**.
 
+#### `\chat-info` shows what the session holds
+
+- **`\chat-info` described the session but never measured it.**  The
+  command named the session — its name, its type, its key, when it was
+  created — and said nothing about what was *in* it.  The operator had
+  no way to see how much of the conversation the agent keeps, and how
+  much of it the model actually receives.
+
+  Three lines were added:
+
+  ```
+  Messages: 84
+  Size:     61.3 KB
+  Tokens:   ≈15,404 stored, ≈4,980 in the buffer (limit 5,000)
+  ```
+
+  The size is the size of the text of the messages — in bytes below a
+  kilobyte, in kilobytes below a megabyte, in megabytes above that.
+
+  The two token counts are not the same number, and the difference is
+  the point.  The **stored** history grows with every turn — the agent
+  never trims it — while the **buffer** keeps only the tail that fits
+  into the `chat_token_limit` of the user.  A session can hold 15,404
+  tokens and still send 4,980 of them to the model, and the operator
+  could not see that before.
+
+  The tokens are counted with the tokenizer the memory buffer itself
+  uses, so the numbers are the numbers the limit is enforced with.  That
+  tokenizer counts the tokens of one model family; for the local models
+  the agent usually talks to it is an estimate — the `≈` says so.  When
+  no tokenizer can be loaded at all, the count falls back to an estimate
+  of four characters per token, and the line says that it is estimated.
+
+  The multi-window console shows the same three lines, as rows of the
+  same table: both views are formatted by the same helpers, so they
+  cannot drift apart.  A session that cannot be measured is still
+  described — the measurement is never worth losing the session over.
+
 ### Fixed
 
 #### A failure of the model server was shown as a stack trace

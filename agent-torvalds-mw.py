@@ -38,7 +38,7 @@ TUI slash commands:
     \\project-summary    Show a full workspace summary
     \\chat-sessions      List chat sessions
     \\chat-select <id>   Switch the active chat session
-    \\chat-info          Show the active chat session
+    \\chat-info          Show the active chat session and what it holds
     \\chat-user          Show or change your own settings
 
 Environment Variables:

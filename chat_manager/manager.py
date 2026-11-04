@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from chat_manager.session import Session, SessionType
+from chat_manager.stats import HistoryStats, measure
 from chat_manager.settings import (
     DEFAULT_CHAT_TOKEN_LIMIT,
     SettingError,
@@ -718,6 +719,32 @@ class ChatHistoryManager:
         # Invalidate the cached buffer so it is rebuilt empty.
         self._invalidate_memory_buffer()
         logger.info(f"Cleared messages for session '{self._active_session.session_name}'")
+
+    def get_history_stats(self) -> HistoryStats:
+        """Measure what the chat history of the active session holds.
+
+        Three numbers are measured: the messages that are *stored* for the
+        session, the tail of them that survives the chat-token limit and
+        reaches the model, and the limit itself.
+
+        The stored history grows with every turn — the agent never trims
+        it — while the buffer holds only what fits.  Both are reported, so
+        the operator can see how much of the session the model actually
+        sees.
+
+        Returns:
+            The measurements of the active session's history.  A session
+            without a backend measures as empty.
+        """
+        limit = self._resolve_chat_token_limit()
+
+        if self._active_session is None or self._backend is None:
+            return HistoryStats(token_limit=limit)
+
+        stored = list(self._backend.get_messages(self._active_session.chat_key))
+        buffered = list(self.get_memory_buffer().get())
+
+        return measure(stored, buffered, limit)
 
     def close(self) -> None:
         """Close all connections — alias for :meth:`shutdown`.

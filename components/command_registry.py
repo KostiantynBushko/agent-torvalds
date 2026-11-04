@@ -310,7 +310,10 @@ COMMAND_SPECS: Tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         name="\\chat-info",
-        description="Show details of the active chat session.",
+        description=(
+            "Show details of the active chat session, and what it holds "
+            "(messages, size, tokens)."
+        ),
         usage="\\chat-info",
         category="Chat",
         feature=FEATURE_CHAT_HISTORY,

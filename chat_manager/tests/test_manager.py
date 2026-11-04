@@ -335,5 +335,71 @@ class TestPlanMandatedApi(unittest.TestCase):
         self.assertEqual(fetched.metadata, {})
 
 
+class TestHistoryStats(unittest.TestCase):
+    """Tests for the measurement of the chat history."""
+
+    def setUp(self):
+        self.manager = ChatHistoryManager(
+            storage_uri="sqlite:///:memory:",
+            llama_uri="sqlite:///:memory:",
+        )
+        with patch.object(ChatHistoryManager, "_get_os_username", return_value="tester"):
+            self.manager.initialize()
+
+    def tearDown(self):
+        try:
+            self.manager.shutdown()
+        except Exception:
+            pass
+
+    def test_an_empty_session_measures_as_empty(self):
+        """A session without messages measures as empty."""
+        stats = self.manager.get_history_stats()
+
+        self.assertEqual(stats.message_count, 0)
+        self.assertEqual(stats.total_bytes, 0)
+        self.assertEqual(stats.stored_tokens, 0)
+        self.assertEqual(stats.token_limit, self.manager.current_user.chat_token_limit)
+
+    def test_the_messages_are_counted_and_measured(self):
+        """The messages of the session are counted, sized and counted in tokens."""
+        self.manager.add_message("the first message of the session", "user")
+        self.manager.add_message("and the second one", "assistant")
+
+        stats = self.manager.get_history_stats()
+
+        self.assertEqual(stats.message_count, 2)
+        self.assertEqual(
+            stats.total_bytes,
+            len("the first message of the session") + len("and the second one"),
+        )
+        self.assertGreater(stats.stored_tokens, 0)
+        self.assertEqual(stats.buffer_tokens, stats.stored_tokens)
+
+    def test_the_buffer_holds_less_than_the_stored_history(self):
+        """A history over the token limit keeps more than the buffer holds."""
+        self.manager.set_chat_token_limit(256)
+        for i in range(20):
+            self.manager.add_message(
+                f"message {i}: " + "the quick brown fox jumps over the lazy dog. " * 12,
+                "user",
+            )
+
+        stats = self.manager.get_history_stats()
+
+        self.assertEqual(stats.message_count, 20)
+        self.assertGreater(stats.stored_tokens, stats.buffer_tokens)
+        self.assertLessEqual(stats.buffer_tokens, 256)
+
+    def test_the_measurement_survives_a_shutdown(self):
+        """A manager without a backend measures as empty instead of raising."""
+        self.manager.shutdown()
+
+        stats = self.manager.get_history_stats()
+
+        self.assertEqual(stats.message_count, 0)
+        self.assertEqual(stats.total_bytes, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

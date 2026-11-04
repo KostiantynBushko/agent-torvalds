@@ -22,6 +22,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from chat_manager.session import SessionType
+from chat_manager.stats import format_size, format_tokens
 from chat_manager.settings import (
     SETTINGS_BY_KEY,
     SettingError,
@@ -190,6 +191,18 @@ def cmd_chat_info(manager: ChatHistoryManager) -> str:
         f"  Created:  {created}",
         f"  Updated:  {updated}",
     ]
+
+    # What the session holds: how many messages, how large they are, and
+    # how many tokens they are worth.  A session that cannot be measured is
+    # still a session — the rest of the information is worth showing, and
+    # the reason is worth a line in the log.
+    try:
+        stats = manager.get_history_stats()
+        lines.append(f"  Messages: {stats.message_count}")
+        lines.append(f"  Size:     {format_size(stats.total_bytes)}")
+        lines.append(f"  Tokens:   {format_tokens(stats)}")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("The chat history of the session could not be measured: %s", exc)
 
     # Where the metadata lives — a local fallback means the history is not
     # shared with the other machines, and the operator should know that.

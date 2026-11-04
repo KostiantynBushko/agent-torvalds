@@ -113,6 +113,19 @@ def render_chat_info_markdown(manager) -> str:
         f"| Updated | {updated} |",
     ]
 
+    # What the session holds: how many messages, how large they are, and
+    # how many tokens they are worth.  The same numbers the classic
+    # console shows, formatted by the same helpers.
+    try:
+        from chat_manager.stats import format_size, format_tokens
+
+        stats = manager.get_history_stats()
+        lines.append(f"| Messages | {stats.message_count} |")
+        lines.append(f"| Size | {format_size(stats.total_bytes)} |")
+        lines.append(f"| Tokens | {format_tokens(stats)} |")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("The chat history of the session could not be measured: %s", exc)
+
     return "\n".join(lines)
 
 
