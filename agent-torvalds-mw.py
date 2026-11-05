@@ -265,6 +265,7 @@ from components.stats_handler import (
 from components.ollama_config import apply_context_window, get_ollama_base_url
 from components.config import config
 from components.config_view import handle_config
+from components.skills_tools import build_skills
 from components.file_logging import (
     LogFileConfig,
     add_logging_arguments,
@@ -345,6 +346,15 @@ CONTEXT_GUARD_ENABLED = config.get("agent.context_guard")
 # (--no-context-log) turns it off; the environment variable and the
 # configuration file turn it off as well.
 CONTEXT_SIZE_LOGGING_ENABLED = config.get("logging.context_size")
+
+# The skills are the procedures the agent loads on demand.  The catalog is
+# **not** put in the prompt: it is fetched with a tool call, so the prompt
+# does not grow with the number of skills.  See components/skills.py and
+# investigate/agent-skills/.
+SKILLS_ENABLED = config.get("skills.enabled")
+SKILLS_DIRS = config.get("skills.dirs") or ""
+SKILLS_CATALOG_IN_PROMPT = config.get("skills.catalog_in_prompt")
+SKILLS_BODY_TOKEN_LIMIT = config.get("skills.body_token_limit")
 
 # ---------------------------------------------------------------------------
 # Active HITL configuration (mutated by the CLI flags in main())
@@ -716,6 +726,22 @@ def create_agent(
     # Use the provided system prompt or build one with project context
     prompt = system_prompt or build_system_prompt()
 
+    # The skills are the procedures the agent loads on demand.  They cost
+    # nothing when there is no skill: no tools, and nothing in the prompt.
+    skill_tools, skill_section, skills = build_skills(
+        enabled=SKILLS_ENABLED,
+        dirs=SKILLS_DIRS,
+        catalog_in_prompt=SKILLS_CATALOG_IN_PROMPT,
+        body_token_limit=SKILLS_BODY_TOKEN_LIMIT,
+    )
+    if skills and not is_tui:
+        console.print(
+            f"[dim]Skills: {len(skills)} available (the catalog is loaded "
+            f"on demand): {', '.join(skill.name for skill in skills)}[/dim]"
+        )
+    if skills:
+        prompt = f"{prompt}\n\n{skill_section}"
+
     if use_retriever:
         from agent_tool_retriever import create_agent_with_retriever
         if not is_tui:
@@ -729,6 +755,7 @@ def create_agent(
             similarity_top_k=top_k,
             callback_manager=callback_manager,
             agent_class=HITLFunctionAgent,
+            tools=skill_tools,
         )
     else:
         if tools is None:
@@ -738,6 +765,10 @@ def create_agent(
         else:
             if not is_tui:
                 console.print(f"[dim]Loading {len(tools)} user-selected tools[/dim]")
+
+        # The skill tools are always there: a skill is loaded on demand,
+        # and the model cannot ask for one it cannot see.
+        tools = list(tools) + skill_tools
 
         agent = HITLFunctionAgent(
             tools=tools,
