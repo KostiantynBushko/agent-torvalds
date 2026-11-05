@@ -6,6 +6,86 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The agent loads skills on demand — and the prompt does not pay for them
+
+- **The Agent Skills feature was measured before it was built, and the
+  measurement changed the design.**  The obvious way to build it is
+  *progressive disclosure*: the prompt carries a catalog of the names and
+  the descriptions of the skills, the model asks for the body of the one
+  it needs, and the body is loaded at that moment.
+
+  On the window of the operator's model (8192 tokens) that catalog is not
+  cheap:
+
+  ```
+  catalog of 20 skills          : 908 tokens   (45 tokens per skill)
+  activation tool schema        : 175 tokens   (the names, as an enum)
+  the fixed cost of the feature : 1083 tokens  16.5% of the prompt budget
+  left for the conversation     : 2260 tokens  (it was 3343)
+  ```
+
+  **That cost is paid on every request**, whether the run touches a skill
+  or not, and it grows by 45 tokens for every skill the operator writes.
+  A third of the room the conversation had left was gone for a feature
+  that most requests never use.
+
+- **The catalog is fetched on demand instead.**  The prompt carries **one
+  line** — and only when there is at least one skill — the activation
+  tool takes a **free string** rather than an enum of the names, and the
+  catalog comes back as a *tool result* when the model calls
+  `list_skills`.
+
+  The fixed cost of the feature is therefore **220 tokens, whatever the
+  number of skills** (3.4% of the budget), and the conversation gets 3123
+  tokens instead of 2260.  The measurement is in
+  `investigate/agent-skills/`, and the probe that produces it is
+  read-only: `investigate/agent-skills/probe_skill_costs.py`.
+
+- **A tool result is the right place for the catalog.**  It costs the
+  runs that ask for it, and it lands in the conversation, where the
+  context guard drops it once it grows old — the guard already knows
+  how to drop the oldest turns.
+
+- **The body of a skill is cut to a token limit** (`skills.body_token_limit`,
+  2000 by default), and the cut is marked, so that the model knows it is
+  reading a part of the procedure and not all of it.
+
+  The limit applies to the **result**, the marker included: the count of
+  the result is not the sum of the counts of its parts — the seam between
+  the body and the marker may merge two tokens into one.  This is the
+  lesson of the context guard, applied to the skills.
+
+- **A skill is a directory with a `SKILL.md` in it** — a frontmatter block
+  (`name`, `description`) and the procedure in the body.  They live in
+  `~/.config/torvalds/skills` (the skills of the operator) and in
+  `<project>/skills` (the skills of the project); the skill of the
+  project overrides the skill of the operator with the same name.
+
+- **The feature costs nothing when it is not used.**  A machine without a
+  skill gets **no tools at all** and nothing in the prompt.
+
+- **The catalog can be put in the prompt after all** — with
+  `skills.catalog_in_prompt = true`, in the compact form (one line per
+  skill, 26 tokens per skill instead of the 45 of the XML shape).  It is
+  off by default, because it is paid by every request.
+
+- **The new settings** are `skills.enabled`, `skills.dirs`,
+  `skills.catalog_in_prompt` and `skills.body_token_limit`, each with its
+  environment variable (`TORVALDS_SKILLS_*`).
+
+- **The tests guard the invariant** the whole change is about: the fixed
+  cost of the feature is the same for one skill and for fifty.  A test
+  that measures the rejected design sits next to it — a check that has
+  never failed proves nothing.
+
+  ```
+  $ .venv/bin/python -m pytest tests/test_skills.py -q
+  40 passed
+  ```
+
+- **The documentation** is `docs/skills.md` — how to write a skill, and
+  what the settings do.
+
 #### The size of the prompt is in the log
 
 - **The operator could not see how big the context was.**  The request asked

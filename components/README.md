@@ -245,6 +245,65 @@ Context: 12 messages, 1,200 tokens, 4.5 KB, 14.6% of the 8,192-token window
 
 ---
 
+### `skills.py`
+The procedures the agent loads on demand — the library half.
+
+**Purpose:** Reads the skills of the operator and of the project, and turns
+them into the catalog and the body the agent hands to the model.
+
+**Features:**
+- A skill is a directory with a `SKILL.md` in it: a frontmatter block
+  (`name`, `description`) and the procedure in the body
+- Two roots: `~/.config/torvalds/skills` and `<project>/skills` — the skill
+  of the project overrides the skill of the operator with the same name
+- The catalog is **one line per skill** — the XML shape of the
+  specification costs ten tokens per skill in tags alone
+- The body is cut to a token limit, and the cut is marked.  The limit
+  applies to the **result**: the count of the result is not the sum of the
+  counts of its parts, so the body is cut until the whole thing fits
+- Nothing here imports LlamaIndex, so the module stays cheap to import
+
+**Usage:**
+```python
+from components.skills import discover_skills, render_prompt_section
+
+skills = discover_skills(default_skill_roots())
+print(render_prompt_section(skills))
+# ### Skills
+#
+# Procedures for tasks that need one are available on this machine. ...
+```
+
+---
+
+### `skills_tools.py`
+The two tools that load a skill — the agent-facing half.
+
+**Purpose:** Turns the skills into `list_skills` and `activate_skill`, the
+tools the model calls.
+
+**Features:**
+- The **catalog is a tool result**, not prompt text: it costs the runs
+  that ask for it, and the context guard drops it once it grows old
+- The name of the skill is a **free string**, not an enum — an enum is paid
+  on every request and grows with every skill
+- A machine **without skills gets no tools at all**: the feature costs
+  nothing when it is not used
+- The body that comes back is cut to `skills.body_token_limit` tokens
+
+**Usage:**
+```python
+from components.skills_tools import build_skills
+
+tools, section, skills = build_skills(dirs="~/.config/torvalds/skills")
+```
+
+The cost of the feature is 220 tokens on every request, whatever the number
+of skills — see
+[`investigate/agent-skills/`](../investigate/agent-skills/INVESTIGATION_REPORT.md).
+
+---
+
 ### `__init__.py`
 Package initialization file.
 
