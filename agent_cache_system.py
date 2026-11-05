@@ -11,13 +11,24 @@ Cache location: ~/.cache/torvalds/agent_cache.json (configurable via TORVALDS_CA
 Category: Infrastructure
 Retriever Keywords: cache, memory, state, persistence, context, session
 """
-import os
+import copy
+import contextlib
 import json
+import logging
+import os
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 from llama_index.core.tools import FunctionTool
+
+try:  # pragma: no cover - Windows has no fcntl
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - the write is not serialised there
+    _fcntl = None
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Cache configuration
@@ -32,6 +43,38 @@ _MAX_ERROR_LOG = 100
 _MAX_SESSIONS = 50
 _MAX_FREQUENT_COMMANDS = 50
 _MAX_REQUEST_STATS = int(os.environ.get("TORVALDS_STATS_MAX_HISTORY", "500"))
+
+# ---------------------------------------------------------------------------
+# Merge rules
+# ---------------------------------------------------------------------------
+
+#: The sections that grow, and the keys that give an entry its identity.
+#:
+#: Two agents can write to the cache at the same time.  The sections that
+#: grow - the error log, the sessions, the request statistics, the frequent
+#: commands - are merged by that identity, so that the entries of both
+#: agents survive.  The identity is what tells "the same entry, written
+#: again" from "another entry".
+_UNION_SECTIONS = {
+    ("error_log",): ("message", "timestamp"),
+    ("sessions",): ("started_at",),
+    ("request_stats",): ("timestamp", "request_id"),
+    ("learnings", "frequent_commands"): ("command",),
+}
+
+#: How many entries each of the growing sections keeps.
+_SECTION_MAX = {
+    ("error_log",): _MAX_ERROR_LOG,
+    ("sessions",): _MAX_SESSIONS,
+    ("request_stats",): _MAX_REQUEST_STATS,
+    ("learnings", "frequent_commands"): _MAX_FREQUENT_COMMANDS,
+}
+
+#: The marker that says "this value could not be held by JSON".
+_DROPPED = object()
+
+#: The marker that says "this key was taken out of the cache".
+_REMOVED = object()
 
 
 def _get_cache_path() -> Path:
@@ -71,52 +114,461 @@ def _get_default_cache() -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Reading and writing the file
+# ---------------------------------------------------------------------------
+
+def _read_cache_file(cache_path: Path) -> tuple:
+    """
+    Read the cache file from disk.
+
+    A file that cannot be read is **reported**, not silently replaced with
+    an empty cache: the file may have been damaged by a crash between the
+    write and the rename, and the operator has to know about it.
+
+    Args:
+        cache_path: The file to read.
+
+    Returns:
+        tuple: (state, warning).  The state is the cache that was read, or
+        a fresh default when the file does not exist.  The warning names
+        the file that could not be read, when there was one.
+    """
+    if not cache_path.exists():
+        return _get_default_cache(), None
+
+    try:
+        with open(cache_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        warning = (
+            f"The cache file {cache_path} cannot be read ({exc}). "
+            "A fresh cache is used; the file is left as it is."
+        )
+        return _get_default_cache(), warning
+
+    if not isinstance(data, dict):
+        warning = (
+            f"The cache file {cache_path} does not hold a cache - it is not "
+            "an object. A fresh cache is used; the file is left as it is."
+        )
+        return _get_default_cache(), warning
+
+    # Validate structure - migrate if needed
+    defaults = _get_default_cache()
+    for key in ("sessions", "context", "learnings", "state", "error_log", "request_stats"):
+        if key not in data:
+            data[key] = defaults[key]
+    return data, None
+
+
+def _record_warning(warning: str) -> None:
+    """
+    Record a warning about the cache file, once.
+
+    The file is read again on every write, so a damaged file would be
+    reported over and over.  It is reported once, and it stays in the
+    status of the cache.
+    """
+    global _load_warnings
+    if warning in _load_warnings:
+        return
+    _load_warnings.append(warning)
+    logger.warning(warning)
+
+
 def _load_cache() -> dict:
     """Load cache from disk, or create a new one if it doesn't exist."""
-    cache_path = _get_cache_path()
-    if cache_path.exists():
+    state, warning = _read_cache_file(_get_cache_path())
+    if warning:
+        _record_warning(warning)
+    return state
+
+
+@contextlib.contextmanager
+def _cache_lock(cache_path: Path) -> Iterator[None]:
+    """
+    Hold an exclusive lock on the cache, so two agents do not write at once.
+
+    The lock is a file of its own: the cache file itself is replaced by a
+    rename, so a lock held on it would not outlive the write that took it.
+
+    Args:
+        cache_path: The cache file the lock belongs to.
+    """
+    if _fcntl is None:  # pragma: no cover - Windows
+        yield
+        return
+
+    lock_path = cache_path.with_name(cache_path.name + ".lock")
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+    except OSError as exc:  # pragma: no cover - a read-only cache folder
+        logger.warning(
+            "The cache lock %s cannot be opened (%s); the write is not serialised.",
+            lock_path,
+            exc,
+        )
+        yield
+        return
+
+    try:
+        _fcntl.flock(fd, _fcntl.LOCK_EX)
         try:
-            with open(cache_path, "r") as f:
-                data = json.load(f)
-            # Validate structure — migrate if needed
-            for key in ("sessions", "context", "learnings", "state", "error_log", "request_stats"):
-                if key not in data:
-                    data[key] = _get_default_cache()[key]
-            return data
-        except (json.JSONDecodeError, OSError):
+            yield
+        finally:
+            _fcntl.flock(fd, _fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _write_atomic(path: Path, payload: str) -> None:
+    """
+    Write *payload* to *path* atomically.
+
+    The temp file belongs to this writer alone: its name is unique, so two
+    writers never share it, and it is removed when the write fails.  The
+    rename is atomic, and the fsync before it makes the rename durable and
+    not only atomic.
+
+    Args:
+        path: The file to write.
+        payload: The text to write.
+    """
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=path.name + ".", suffix=".tmp"
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(payload)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(str(tmp_path), str(path))
+    except BaseException:
+        try:
+            tmp_path.unlink()
+        except OSError:
             pass
-    return _get_default_cache()
+        raise
+
+    # The rename is on the disk now - the directory itself has to be
+    # written out as well, or the rename can be lost in a crash.
+    try:
+        dir_fd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:  # pragma: no cover - not every filesystem allows it
+        pass
 
 
-def _save_cache(cache: dict) -> None:
-    """Save cache to disk atomically (write to temp, then rename)."""
+# ---------------------------------------------------------------------------
+# JSON safety
+# ---------------------------------------------------------------------------
+
+def _json_safe(value: Any, path: tuple = (), dropped: Optional[list] = None) -> Any:
+    """
+    Return a copy of *value* that JSON can hold.
+
+    A value JSON cannot carry - an object, a set, a function - is dropped,
+    and the path it was dropped from is recorded.  The cache keeps working:
+    the copy is written, and the caller is told what was left out.
+
+    Args:
+        value: The value to make JSON-safe.
+        path: The path of *value* inside the cache, for the report.
+        dropped: The list the dropped values are recorded in.
+
+    Returns:
+        The JSON-safe copy, or the _DROPPED marker when the value itself
+        cannot be held.
+    """
+    if dropped is None:
+        dropped = []
+
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+
+    if isinstance(value, dict):
+        safe = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                dropped.append((path + (repr(key),), type(key).__name__))
+                continue
+            item_safe = _json_safe(item, path + (key,), dropped)
+            if item_safe is _DROPPED:
+                continue
+            safe[key] = item_safe
+        return safe
+
+    if isinstance(value, (list, tuple)):
+        safe_list = []
+        for index, item in enumerate(value):
+            item_safe = _json_safe(item, path + (index,), dropped)
+            if item_safe is _DROPPED:
+                continue
+            safe_list.append(item_safe)
+        return safe_list
+
+    dropped.append((path, type(value).__name__))
+    return _DROPPED
+
+
+def _describe_dropped(dropped: list) -> str:
+    """A report of the values that JSON could not hold."""
+    parts = []
+    for path, type_name in dropped:
+        key = ".".join(str(part) for part in path)
+        parts.append(f"the value at '{key}' is a {type_name}, which JSON cannot hold")
+    return "; ".join(parts)
+
+
+def _drop_unholdable(cache: dict) -> None:
+    """
+    Remove the values that JSON cannot hold from *cache*, in place.
+
+    A value that cannot be serialised must not stay in the cache in
+    memory: every later write would carry it and fail again.  The cache
+    that is left is one that can still be written.
+    """
+    dropped = []
+    safe = _json_safe(cache, (), dropped)
+    if dropped and isinstance(safe, dict):
+        cache.clear()
+        cache.update(safe)
+
+
+# ---------------------------------------------------------------------------
+# Merging
+# ---------------------------------------------------------------------------
+
+def _changed_paths(base: Any, current: Any, path: tuple = (), out: Optional[dict] = None) -> dict:
+    """
+    The paths where *current* differs from *base*.
+
+    Two agents hold two copies of the cache.  The copy an agent did not
+    touch is stale, and must not overwrite what the other agent wrote.  The
+    paths are therefore compared against the copy as it was when it was
+    loaded, and only what changed is written.
+
+    Args:
+        base: The cache as it was loaded.
+        current: The cache as it is now.
+        path: The path of *base* inside the cache.
+        out: The dict the changed paths are collected in.
+
+    Returns:
+        dict: The changed paths, mapped to their new value (_REMOVED when
+        the key was taken out).
+    """
+    if out is None:
+        out = {}
+
+    if isinstance(base, dict) and isinstance(current, dict):
+        for key, value in current.items():
+            if key not in base:
+                out[path + (key,)] = value
+            else:
+                _changed_paths(base[key], value, path + (key,), out)
+        for key in base:
+            if key not in current:
+                out[path + (key,)] = _REMOVED
+        return out
+
+    if base != current:
+        out[path] = current
+    return out
+
+
+def _find_identity(items: list, item: Any, identity: tuple) -> Optional[int]:
+    """The index of the item in *items* that carries the same identity."""
+    if isinstance(item, dict) and all(key in item for key in identity):
+        for index, other in enumerate(items):
+            if isinstance(other, dict) and all(other.get(key) == item.get(key) for key in identity):
+                return index
+        return None
+    try:
+        return items.index(item)
+    except ValueError:
+        return None
+
+
+def _merge_section(target: dict, path: tuple, writer_items: Any) -> None:
+    """
+    Merge a growing section: what is on disk first, what the writer adds.
+
+    The entries are matched by their identity, so an entry that was
+    written again - a session that got its end time, a command that was
+    counted once more - replaces its earlier version instead of being
+    added a second time.
+    """
+    obj = target
+    for part in path[:-1]:
+        nxt = obj.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            obj[part] = nxt
+        obj = nxt
+
+    section = path[-1]
+    existing = obj.get(section)
+    merged = list(existing) if isinstance(existing, list) else []
+
+    identity = _UNION_SECTIONS[path]
+    for item in writer_items if isinstance(writer_items, list) else []:
+        index = _find_identity(merged, item, identity)
+        if index is None:
+            merged.append(item)
+        else:
+            merged[index] = item
+
+    limit = _SECTION_MAX.get(path)
+    if limit:
+        merged = merged[-limit:]
+    obj[section] = merged
+
+
+def _set_path(target: dict, path: tuple, value: Any) -> None:
+    """Set the value at *path* in *target*, creating the sections on the way."""
+    obj = target
+    for part in path[:-1]:
+        nxt = obj.get(part)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            obj[part] = nxt
+        obj = nxt
+    obj[path[-1]] = value
+
+
+def _delete_path(target: dict, path: tuple) -> None:
+    """Remove the key at *path* from *target*, if it is there."""
+    obj = target
+    for part in path[:-1]:
+        nxt = obj.get(part)
+        if not isinstance(nxt, dict):
+            return
+        obj = nxt
+    obj.pop(path[-1], None)
+
+
+def _apply_changes(target: dict, changes: dict) -> dict:
+    """Apply the changed paths to the cache that was read from disk."""
+    for path, value in changes.items():
+        if path in _UNION_SECTIONS:
+            _merge_section(target, path, value)
+        elif value is _REMOVED:
+            _delete_path(target, path)
+        else:
+            _set_path(target, path, value)
+    return target
+
+
+# ---------------------------------------------------------------------------
+# The singleton
+# ---------------------------------------------------------------------------
+
+_cache = None            # Module-level singleton
+_cache_snapshot = None   # The singleton as it was loaded or last written
+_load_warnings = []      # The cache files that could not be read
+
+
+def _get_cache() -> dict:
+    """Get (and lazily load) the singleton cache."""
+    global _cache, _cache_snapshot
+    if _cache is None:
+        _cache = _load_cache()
+        _cache_snapshot = copy.deepcopy(_cache)
+    return _cache
+
+
+def _adopt(state: dict) -> None:
+    """
+    Adopt the written state into the singleton.
+
+    The dict itself is updated in place: the callers hold a reference to
+    it, and they have to see what was written.
+    """
+    global _cache, _cache_snapshot
+    if _cache is None:
+        _cache = state
+    else:
+        _cache.clear()
+        _cache.update(state)
+    _cache_snapshot = copy.deepcopy(state)
+
+
+def _save_cache(cache: dict, merge: bool = True) -> list:
+    """
+    Save cache to disk.
+
+    The write is atomic - a temp file that belongs to this writer alone,
+    an fsync, and a rename - and it is merged: the file is read again
+    under a lock and only what this writer changed is applied to it, so two
+    agents that save at the same time do not erase each other's entries.
+
+    Args:
+        cache: The cache to write.
+        merge: When True (the default), the changes of the singleton are
+        merged into the file that is on disk.  When False, the cache is
+        written as it is and the file is replaced.
+
+    Returns:
+        list: The values that could not be held by JSON, and were dropped.
+    """
     cache_path = _get_cache_path()
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache["last_updated"] = datetime.now(timezone.utc).isoformat()
 
-    tmp_path = cache_path.with_suffix(".tmp")
-    with open(tmp_path, "w") as f:
-        json.dump(cache, f, indent=2)
-    os.replace(str(tmp_path), str(cache_path))
+    # The snapshot is the base of the comparison only for the singleton:
+    # it is the copy that was loaded, so it is the copy that says what
+    # this writer changed.
+    base = _cache_snapshot if (merge and cache is _cache) else None
+    dropped: list = []
+
+    try:
+        with _cache_lock(cache_path):
+            if base is None:
+                # The caller hands over a cache of its own: it is written
+                # as it is.
+                target = copy.deepcopy(cache)
+            else:
+                disk, warning = _read_cache_file(cache_path)
+                if warning:
+                    _record_warning(warning)
+                target = _apply_changes(disk, _changed_paths(base, cache))
+
+            dropped = []
+            target = _json_safe(target, (), dropped)
+            if not isinstance(target, dict):  # pragma: no cover - a dict in, a dict out
+                raise TypeError("The cache must be a mapping.")
+
+            target["last_updated"] = datetime.now(timezone.utc).isoformat()
+            payload = json.dumps(target, indent=2)
+            _write_atomic(cache_path, payload)
+    except Exception:
+        # A failed write must not leave a value that cannot be held in
+        # the cache in memory: every later write would carry it and fail
+        # again.
+        _drop_unholdable(cache)
+        raise
+
+    if cache is _cache:
+        _adopt(target)
+    return dropped
 
 
 # ---------------------------------------------------------------------------
 # Public API — cache access functions
 # ---------------------------------------------------------------------------
 
-_cache = None  # Module-level singleton
-
-def _get_cache() -> dict:
-    """Get (and lazily load) the singleton cache."""
-    global _cache
-    if _cache is None:
-        _cache = _load_cache()
-    return _cache
-
-
 def save_to_cache(key: str, value: Any) -> str:
     """
     Store a value in the persistent cache.
+
+    A value JSON cannot hold is reported and dropped: the cache keeps
+    working, and the value does not stay in the cache to break every later
+    write.
 
     Args:
         key: Dot-separated key path (e.g. 'context.current_directory')
@@ -136,7 +588,12 @@ def save_to_cache(key: str, value: Any) -> str:
                 obj[part] = {}
             obj = obj[part]
         obj[parts[-1]] = value
-        _save_cache(cache)
+        dropped = _save_cache(cache)
+        if dropped:
+            return (
+                f"Error saving to cache: {_describe_dropped(dropped)}. "
+                "It was dropped; the cache keeps working."
+            )
         return f"Saved to cache: {key}"
     except Exception as e:
         return f"Error saving to cache: {e}"
@@ -180,7 +637,7 @@ def clear_cache() -> str:
     global _cache
     try:
         _cache = _get_default_cache()
-        _save_cache(_cache)
+        _save_cache(_cache, merge=False)
         return "Cache cleared successfully."
     except Exception as e:
         return f"Error clearing cache: {e}"
@@ -208,6 +665,7 @@ def get_cache_status() -> dict:
             "version": cache.get("version"),
             "created_at": cache.get("created_at"),
             "last_updated": cache.get("last_updated"),
+            "warnings": list(_load_warnings),
             "sections": {
                 "sessions": len(cache.get("sessions", [])),
                 "context_keys": len(cache.get("context", {})),
@@ -516,3 +974,4 @@ def get_all_tools() -> list[FunctionTool]:
 # Auto-load cache on import
 # ---------------------------------------------------------------------------
 _cache = _load_cache()
+_cache_snapshot = copy.deepcopy(_cache)
