@@ -59,7 +59,8 @@ selected actually cost:
 ```console
 $ .venv/bin/python - <<'PY'
 from agent_tool_selection import _discover_tools, group_tools_by_category
-from components.context_guard import get_tokenizer, context_budget
+from components.context_guard import context_budget
+from components.tokens import get_tokenizer
 groups = group_tools_by_category(_discover_tools())
 tools = [t for c in ("System / Package Management", "Operating System", "System")
            for t in groups[c]]                       # the 27 tools of the run

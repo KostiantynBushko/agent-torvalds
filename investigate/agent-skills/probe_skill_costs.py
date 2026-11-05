@@ -35,13 +35,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from components.context_guard import context_budget, get_tokenizer  # noqa: E402
+from components.context_guard import context_budget  # noqa: E402
 from components.skills import (  # noqa: E402
     discover_skills,
     render_catalog,
     render_prompt_section,
 )
 from components.skills_tools import get_skill_tools  # noqa: E402
+from components.tokens import load_tokenizer  # noqa: E402
 
 #: A context window of the size the operator's local model uses.
 CONTEXT_WINDOW = 8192
@@ -139,7 +140,7 @@ def _implemented_cost(count: int, tokenizer) -> tuple[int, int, int]:
 
 
 def main() -> int:
-    tokenizer = get_tokenizer()
+    tokenizer = load_tokenizer()
 
     # ------------------------------------------------------------------
     # 1. The cost of the catalog.

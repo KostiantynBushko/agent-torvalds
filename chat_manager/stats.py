@@ -26,6 +26,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
+from components.tokens import CHARS_PER_TOKEN, count_tokens_of
+
 logger = logging.getLogger(__name__)
 
 #: A kilobyte — the unit a size is shown in below one megabyte.
@@ -33,9 +35,6 @@ BYTES_PER_KB = 1024
 
 #: A megabyte — the unit a size is shown in from one megabyte up.
 BYTES_PER_MB = 1024 * 1024
-
-#: Characters per token in the estimate used when no tokenizer is available.
-CHARS_PER_TOKEN = 4
 
 
 @dataclass(frozen=True)
@@ -76,17 +75,6 @@ def _message_text(message: Any) -> str:
     return str(content)
 
 
-def _load_tokenizer():
-    """Load the tokenizer of the agent.
-
-    Returns:
-        A callable that turns text into a list of tokens.
-    """
-    from llama_index.core.utils import get_tokenizer
-
-    return get_tokenizer()
-
-
 def count_tokens(messages: Sequence[Any]) -> tuple[int, bool]:
     """Count the tokens of the given messages.
 
@@ -105,33 +93,7 @@ def count_tokens(messages: Sequence[Any]) -> tuple[int, bool]:
     if not text:
         return 0, False
 
-    try:
-        tokenizer = _load_tokenizer()
-    except Exception as exc:
-        logger.warning(
-            "The tokenizer of the agent is not available (%s); the tokens "
-            "are estimated",
-            exc,
-        )
-        return _estimate_tokens(text), True
-
-    try:
-        return len(tokenizer(text)), False
-    except Exception as exc:
-        logger.warning("The tokens could not be counted (%s); they are estimated", exc)
-        return _estimate_tokens(text), True
-
-
-def _estimate_tokens(text: str) -> int:
-    """Estimate the tokens of a text without a tokenizer.
-
-    Args:
-        text: The text to estimate.
-
-    Returns:
-        The estimated number of tokens.
-    """
-    return (len(text) + CHARS_PER_TOKEN - 1) // CHARS_PER_TOKEN
+    return count_tokens_of(text)
 
 
 def measure(

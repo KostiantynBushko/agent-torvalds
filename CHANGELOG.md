@@ -200,6 +200,40 @@ All notable changes to this project are documented in this file.
   cannot drift apart.  A session that cannot be measured is still
   described — the measurement is never worth losing the session over.
 
+### Changed
+
+#### The tokenizer of the agent lives in one place now
+
+- **The tokenizer is one thing, and it was reached in four ways.**  The
+  context guard had the canonical one; the skills had a wrapper around
+  it; the agent had a cached one that remembered its failure; the chat
+  history had one that loaded it straight from LlamaIndex — and the
+  "four characters per token" estimate was written out in three of those
+  places.  Two copies of one rule are two rules that can drift apart.
+
+  `components/tokens.py` holds them now, as free functions:
+
+  ```
+  load_tokenizer()    the tokenizer of the agent; it raises
+  get_tokenizer()     the same tokenizer, but None instead of an exception
+  estimate_tokens()   the estimate: four characters per token
+  count_tokens_of()   the count of a text, with the estimate as the fallback
+  ```
+
+- **The numbers did not move.**  It is the same tokenizer — the one the
+  chat memory uses, so the accounting is the one the chat-token limit is
+  enforced with — and the same estimate.  The measurement of the skills
+  feature still reads 908 tokens for a catalog of twenty skills and 16.5%
+  of the prompt budget, and the report of the context loop still reads
+  3211 tokens of tool schemas.
+
+- **A tokenizer that cannot be loaded is still not worth losing a run
+  over.**  The callers that can live without one ask for the safe
+  `get_tokenizer()` and measure with the estimate; the callers that
+  cannot — the context guard, which has to fit the prompt to the window
+  of the model — ask for the raw `load_tokenizer()` and are told when it
+  is not there.
+
 ### Fixed
 
 #### The cache broke under a value it could not hold, and under a second agent

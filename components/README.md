@@ -245,6 +245,29 @@ Context: 12 messages, 1,200 tokens, 4.5 KB, 14.6% of the 8,192-token window
 
 ---
 
+### `tokens.py`
+The tokenizer of the agent, and the counting of tokens.
+
+**Purpose:** Holds the one place where the tokenizer is reached and the one rule that estimates the tokens when there is no tokenizer.  Four modules grew their own way of getting the tokenizer — one wrapped the call in a `try`, one remembered the failure, one loaded it straight from LlamaIndex, and one fell back to an estimate — and the estimate itself was written out in three of them.
+
+**Features:**
+- `load_tokenizer()` — the tokenizer of the agent; it **raises** when it cannot be loaded, for the callers that cannot work without one
+- `get_tokenizer()` — the same tokenizer, but `None` instead of an exception, for the callers that can live without one
+- `estimate_tokens()` — the estimate: **four characters per token**
+- `count_tokens_of()` — the count of a text, with the estimate as the fallback
+- The tokenizer is the one the chat memory uses, so the accounting matches the one the chat-token limit is enforced with
+- **Nothing imports LlamaIndex at import time** — the tokenizer is loaded when it is asked for, so the modules that only need the *estimate* stay cheap to import
+
+**Usage:**
+```python
+from components.tokens import count_tokens_of, get_tokenizer
+
+tokenizer = get_tokenizer()            # None when there is none
+tokens, estimated = count_tokens_of("the prompt", tokenizer)
+```
+
+---
+
 ### `skills.py`
 The procedures the agent loads on demand — the library half.
 
@@ -321,6 +344,7 @@ Package initialization file.
 
 ## Recent Updates
 
+- **2026-11-05**: Added `tokens.py` — the tokenizer of the agent and the count of the tokens, in one place
 - **2026-11-04**: Added `context_metrics.py` — the size of the prompt (tokens, bytes) that is logged with every request to the model
 - **2026-10-29**: Added `config.py` and `config_view.py` — the configuration file and the `\config` command
 - **2026-10-29**: Added `file_logging.py` — the rotating log file, the size parser and the symlink

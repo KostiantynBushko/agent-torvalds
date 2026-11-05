@@ -71,12 +71,9 @@ def make_skills(root: Path, count: int) -> None:
 
 def real_tokenizer():
     """Return the tokenizer of the agent, or ``None`` when there is none."""
-    try:
-        from components.context_guard import get_tokenizer
+    from components.tokens import get_tokenizer
 
-        return get_tokenizer()
-    except Exception:  # noqa: BLE001 - a tokenizer is not always there
-        return None
+    return get_tokenizer()
 
 
 def schema_tokens(tools) -> int:

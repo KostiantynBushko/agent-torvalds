@@ -45,6 +45,7 @@ from components.skills import (
     render_catalog,
     render_prompt_section,
 )
+from components.tokens import get_tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -76,22 +77,6 @@ ACTIVATE_SKILL_SCHEMA = create_model(
         Field(description="The name of the skill to load, as list_skills gave it."),
     ),
 )
-
-
-def _tokenizer() -> Optional[Callable[[str], Sequence[Any]]]:
-    """Return the tokenizer of the agent, or ``None`` when there is none.
-
-    A tokenizer that cannot be loaded is not a reason to lose the feature:
-    the body of a skill is then measured with the estimate of the agent —
-    four characters per token.
-    """
-    try:
-        from components.context_guard import get_tokenizer
-
-        return get_tokenizer()
-    except Exception as exc:  # noqa: BLE001 - a tokenizer is never worth a run
-        logger.debug("No tokenizer for the skills: %s", exc)
-        return None
 
 
 def get_skill_tools(
@@ -135,7 +120,10 @@ def get_skill_tools(
     )
 
     if tokenizer is None:
-        tokenizer = _tokenizer()
+        # A tokenizer that cannot be loaded is not a reason to lose the
+        # feature: the body of a skill is then measured with the estimate
+        # of the agent — four characters per token.
+        tokenizer = get_tokenizer()
 
     def list_skills() -> str:
         """Return the catalog of the skills."""

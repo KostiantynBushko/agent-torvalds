@@ -86,6 +86,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from components.tokens import CHARS_PER_TOKEN, estimate_tokens
+
 logger = logging.getLogger(__name__)
 
 #: The file that holds a skill.
@@ -472,7 +474,7 @@ def truncate_to_tokens(
     if tokenizer is None:
         # Four characters per token is the estimate the agent uses when no
         # tokenizer can be loaded.
-        return text[: limit * 4]
+        return text[: limit * CHARS_PER_TOKEN]
 
     if len(tokenizer(text)) <= limit:
         return text
@@ -511,8 +513,8 @@ def cap_body(
         # Four characters per token is the estimate the agent uses when
         # no tokenizer can be loaded.
         marker = f"\n\n{TRUNCATION_MARKER}"
-        budget = max(limit - (len(marker) + 3) // 4, 1)
-        kept = body[: budget * 4]
+        budget = max(limit - estimate_tokens(marker), 1)
+        kept = body[: budget * CHARS_PER_TOKEN]
         if len(kept) == len(body):
             return body
         return f"{kept}{marker}"

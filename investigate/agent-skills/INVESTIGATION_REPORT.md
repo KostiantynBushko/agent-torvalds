@@ -32,7 +32,7 @@ it can — but:
 ## 2. The measurement
 
 `probe_skill_costs.py` measures the three quantities with the tokenizer the
-agent itself uses (`components.context_guard.get_tokenizer`), so the numbers are
+agent itself uses (`components.tokens.get_tokenizer`), so the numbers are
 the numbers the token limit is enforced with.
 
 ### 2.1 The catalog — 45 tokens per skill
