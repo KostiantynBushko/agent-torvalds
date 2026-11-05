@@ -340,6 +340,12 @@ HITL_RUNTIME_TOGGLE = config.get("hitl.runtime_toggle")
 # asks for it explicitly with --context-guard-on.
 CONTEXT_GUARD_ENABLED = config.get("agent.context_guard")
 
+# The size of the prompt is logged with every request to the model, so the
+# operator sees the context grow before it overflows.  The flag
+# (--no-context-log) turns it off; the environment variable and the
+# configuration file turn it off as well.
+CONTEXT_SIZE_LOGGING_ENABLED = config.get("logging.context_size")
+
 # ---------------------------------------------------------------------------
 # Active HITL configuration (mutated by the CLI flags in main())
 # ---------------------------------------------------------------------------
@@ -356,6 +362,12 @@ hitl_default_answer: str = HITL_DEFAULT_ANSWER
 # Module-level so the agent factory and the runtime loop see the effective
 # configuration.  The CLI flag overrides the environment variable.
 context_guard_enabled: bool = CONTEXT_GUARD_ENABLED
+
+# ---------------------------------------------------------------------------
+# Active context size logging (mutated by the CLI flag in main())
+# ---------------------------------------------------------------------------
+# Module-level so the agent factory sees the effective configuration.
+context_logging_enabled: bool = CONTEXT_SIZE_LOGGING_ENABLED
 
 # TUI Configuration
 TUI_ENABLED_DEFAULT = os.environ.get("TORVALDS_TUI_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -760,6 +772,7 @@ def _apply_agent_config(agent) -> None:
     agent.hitl_default_timeout = hitl_timeout
     agent.hitl_default_answer = hitl_default_answer
     agent.context_guard_enabled = context_guard_enabled
+    agent.context_logging_enabled = context_logging_enabled
 
 
 # ---------------------------------------------------------------------------
@@ -860,6 +873,14 @@ def parse_args():
         help=(
             "Enable the context guard: trim the prompt to the model's context "
             "window, keeping the user request. Off by default."
+        ),
+    )
+    parser.add_argument(
+        "--no-context-log",
+        action="store_true",
+        help=(
+            "Do not log the size of the prompt with every request to the "
+            "model. On by default."
         ),
     )
     # ------------------------------------------------------------------
@@ -1398,6 +1419,11 @@ async def main():
     global context_guard_enabled
 
     context_guard_enabled = CONTEXT_GUARD_ENABLED or args.context_guard_on
+
+    # The size of the prompt is logged with every request to the model.
+    global context_logging_enabled
+
+    context_logging_enabled = CONTEXT_SIZE_LOGGING_ENABLED and not args.no_context_log
 
     # Chat History Manager enabled
     chat_history_enabled = not args.no_chat_history

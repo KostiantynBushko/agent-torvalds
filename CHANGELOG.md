@@ -6,6 +6,60 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The size of the prompt is in the log
+
+- **The operator could not see how big the context was.**  The request asked
+  for it on 2026-11-04:
+
+  > *"I need to see in the log the context size in tokens and size of
+  > bytes.  So when request is made to LLM I want to see current context
+  > size"*
+
+  The agent sent the prompt to the model and said nothing about it.  A
+  prompt that grows silently is a prompt that one day does not fit — and
+  the overflow is reported by the model server, in its own words, long
+  after the moment it could still be prevented.
+
+  Every request to the model is now preceded by one line:
+
+  ```
+  Context: 12 messages, 1,200 tokens, 4.5 KB, 14.6% of the 8,192-token window
+  ```
+
+  The line carries the number of messages, the number of tokens, the size
+  in bytes, and the share of the context window the prompt takes.
+
+- **What is measured is what goes on the wire.**  The prompt is the chat
+  memory plus the scratchpad of the run — the system prompt, the history
+  of the session, the request of the user, and the turns the run produced
+  (the assistant turns that asked for a tool, and the tool results that
+  answered them).  The base class assembles it exactly that way, so the
+  number in the log describes the request that follows it.
+
+- **The tokens are counted with the tokenizer the chat memory itself
+  uses**, so the number is the number the token limit is enforced with.
+  The bytes are the UTF-8 bytes of the text of the prompt.
+
+- **The tool schemas are counted separately.**  They travel with every
+  request and they take up room in the context window, but they are not
+  chat messages — folding them into the message count would hide where
+  the prompt actually goes.
+
+- **The line is written whether the context guard trimmed the prompt or
+  not.**  The guard is opt-in (`--context-guard-on`), and the operator has
+  to see the context grow *before* the guard is needed — that is what
+  tells them when to turn it on.
+
+- **The measurement never takes the agent down.**  A tokenizer that cannot
+  be loaded degrades into an estimate (four characters per token), and the
+  line says that the tokens are estimated; the bytes are always exact.
+  The context window is read from the LLM directly, so the line never
+  costs a round-trip to the model server.
+
+- **The logging can be turned off**: `--no-context-log`, the setting
+  `logging.context_size` in the configuration file, or the environment
+  variable `TORVALDS_LOG_CONTEXT_SIZE`.
+
 #### The configuration is changed from the menu
 
 - **`\config <setting> <value>` writes into the configuration file.**

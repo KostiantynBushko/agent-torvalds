@@ -252,6 +252,9 @@ class HITLFunctionAgent(FunctionAgent):
             ``False`` (the default) the prompt is sent to the model exactly
             as the agent assembled it, and nothing is trimmed.  The guard
             is opt-in, because turning it on changes what the model sees.
+        context_logging_enabled: Whether the size of the prompt is logged
+            with every request.  On by default: the operator asked to see
+            the size of the context when the request is made to the model.
     """
 
     hitl_enabled: bool = True
@@ -265,12 +268,25 @@ class HITLFunctionAgent(FunctionAgent):
     #: model is shown, and that decision belongs to the operator.
     context_guard_enabled: bool = False
 
+    #: Whether the size of the prompt is logged with every request.
+    #:
+    #: The operator asked for it on 2026-11-04: *"I need to see in the log
+    #: the context size in tokens and size of bytes.  So when request is
+    #: made to LLM I want to see current context size"*.  A prompt that
+    #: grows silently is a prompt that one day does not fit, and the
+    #: operator cannot see it coming.
+    context_logging_enabled: bool = True
+
     # Cached context-window information for the context guard.  Reading the
     # LLM metadata costs a round-trip to the Ollama server, so it is done
     # once per agent instance.
     _context_window_cache: Optional[int] = None
     _tokenizer_cache: Optional[Any] = None
     _tool_schema_cache: Optional[int] = None
+
+    # Whether the tokenizer is known to be unavailable.  The failure is
+    # remembered, so it is not retried with every request.
+    _tokenizer_unavailable: bool = False
 
     # ------------------------------------------------------------------
     # Context guard
@@ -283,7 +299,11 @@ class HITLFunctionAgent(FunctionAgent):
         tools: Any,
         memory: Any,
     ) -> Any:
-        """Trim the prompt to the model's context window before the call.
+        """Send the prompt to the model, and say how big it was.
+
+        The prompt is the chat memory plus the scratchpad of the run, and
+        the size of it is logged **before** the request goes out — so the
+        line in the log describes the request that follows it.
 
         ``FunctionAgent`` never trims its scratchpad, so a long tool-using
         run can grow the prompt past the model's context window.  The
@@ -292,32 +312,62 @@ class HITLFunctionAgent(FunctionAgent):
         — and the model template refuses to render a conversation without a
         user message ("No user query found in messages.").
 
-        The guard keeps the request the user made and the most recent turns
-        that still fit.  It also restores the request when the chat memory
-        trimmed it away.
+        The context guard keeps the request the user made and the most
+        recent turns that still fit.  It also restores the request when
+        the chat memory trimmed it away.
 
         The guard is **off by default** (``context_guard_enabled`` is
         ``False``): the prompt is then sent to the model exactly as the
         agent assembled it, and nothing is trimmed.  The operator turns it
         on with ``--context-guard-on`` (or ``TORVALDS_CONTEXT_GUARD=true``).
         """
-        if not self.context_guard_enabled:
-            # The guard stands down: the prompt goes to the model untouched.
-            return await super().take_step(ctx, llm_input, tools, memory)
-
-        from components.context_guard import select_context_window_split
-
         scratchpad: List[ChatMessage] = await ctx.store.get(
             self.scratchpad_key, default=[]
         )
 
+        head, tail = await self._prompt_window(ctx, llm_input, scratchpad, tools)
+
+        # The size of the prompt is logged for every request, whether the
+        # guard trimmed it or not: the operator has to see the context grow
+        # to know that it is about to overflow.
+        self._log_context_size([*head, *tail], tools)
+
+        return await super().take_step(ctx, head, tools, memory)
+
+    async def _prompt_window(
+        self,
+        ctx: Context,
+        llm_input: List[ChatMessage],
+        scratchpad: List[ChatMessage],
+        tools: Any,
+    ) -> tuple[List[ChatMessage], List[ChatMessage]]:
+        """Return the messages that go to the model.
+
+        The result is the pair ``(head, tail)``: *head* holds the messages
+        of the chat memory, *tail* the turns of the run.  The base class
+        assembles the prompt as ``[*llm_input, *scratchpad]``, so the
+        scratchpad has to hold exactly what is sent — otherwise the prompt
+        would grow without bound and the server would truncate it.
+
+        The guard is **off by default**: the window is then the memory and
+        the scratchpad exactly as they are, and nothing is trimmed.  When
+        the guard is on, the window is cut down to the context window of
+        the model, and the scratchpad is rewritten.
+        """
+        if not self.context_guard_enabled:
+            # The guard stands down: the prompt goes to the model untouched.
+            return list(llm_input), list(scratchpad)
+
+        from components.context_guard import select_context_window_split
+
         budget = self._context_budget()
         if budget <= 0:
-            return await super().take_step(ctx, llm_input, tools, memory)
+            return list(llm_input), list(scratchpad)
 
         # The tool schemas are sent with every request and take up prompt
         # space as well, so they have to be part of the budget.
-        budget -= self._tool_schema_tokens(tools)
+        schema_tokens = self._tool_schema_tokens(tools)
+        budget -= schema_tokens
         if budget < MIN_PROMPT_BUDGET:
             # The tool schemas leave so little room that the window could
             # not hold the request and a usable turn.  Cutting into the
@@ -329,10 +379,10 @@ class HITLFunctionAgent(FunctionAgent):
                 "(the tool schemas use %d of %d) — the guard is disabled "
                 "for this run.",
                 budget,
-                self._tool_schema_tokens(tools),
+                schema_tokens,
                 self._context_budget(),
             )
-            return await super().take_step(ctx, llm_input, tools, memory)
+            return list(llm_input), list(scratchpad)
 
         original_request = await ctx.store.get("user_msg_str")
         combined = [*llm_input, *scratchpad]
@@ -346,11 +396,6 @@ class HITLFunctionAgent(FunctionAgent):
         )
 
         if (head, tail) != (list(llm_input), list(scratchpad)):
-            # The base class assembles the prompt as
-            # ``[*llm_input, *scratchpad]``, so the scratchpad has to hold
-            # exactly what is sent — otherwise the prompt would grow
-            # without bound and the server would truncate it.
-            #
             # The window that is written back always ends with the *newest*
             # turn (the context guard keeps the newest turns and drops the
             # oldest ones), so the prompt changes with every iteration.
@@ -361,7 +406,79 @@ class HITLFunctionAgent(FunctionAgent):
             # ``investigate/agent-loop-context-guard/``.
             await ctx.store.set(self.scratchpad_key, tail)
 
-        return await super().take_step(ctx, head, tools, memory)
+        return head, tail
+
+    def _log_context_size(
+        self,
+        messages: List[ChatMessage],
+        tools: Any,
+    ) -> None:
+        """Log the size of the prompt that is about to go to the model.
+
+        The operator asked for it on 2026-11-04: *"I need to see in the log
+        the context size in tokens and size of bytes.  So when request is
+        made to LLM I want to see current context size"*.
+
+        The line carries the number of messages, the number of tokens and
+        the size in bytes — and the share of the context window the prompt
+        takes, when the window is known.
+
+        A measurement is never worth a run: a tokenizer that cannot be
+        loaded, a tool whose schema cannot be read and an exception of any
+        kind leave the agent running, and the line is simply not written.
+        """
+        if not self.context_logging_enabled:
+            return
+
+        from components.context_metrics import describe_context, measure_context
+
+        try:
+            size = measure_context(
+                messages, tools=tools, tokenizer=self._safe_tokenizer()
+            )
+        except Exception as exc:  # noqa: BLE001 - a size is never worth a run
+            logger.debug("Could not measure the context: %s", exc)
+            return
+
+        budget = self._context_budget() if self.context_guard_enabled else 0
+
+        # The window the LLM carries is the one the server really uses.
+        # When the guard is on, the window it read from the LLM is known
+        # as well — it is the fallback for an LLM that does not carry one.
+        window = self._model_context_window() or (self._context_window_cache or 0)
+
+        logger.info(
+            "Context: %s",
+            describe_context(
+                size,
+                window=window or None,
+                budget=budget or None,
+            ),
+        )
+        logger.debug(
+            "Context: %d messages, %d tokens (%d of them in the tool "
+            "schemas), %d bytes (%d of them in the tool schemas)",
+            size.messages,
+            size.total_tokens,
+            size.tool_schema_tokens,
+            size.total_bytes,
+            size.tool_schema_bytes,
+        )
+
+    def _model_context_window(self) -> int:
+        """The context window of the model, or 0 when it is not known.
+
+        The value is read from the LLM **directly** and never through
+        ``llm.metadata``: the metadata asks the model server for the window
+        when the LLM does not carry one, and a line in the log must not
+        cost a round-trip to the server.
+        """
+        window = getattr(self.llm, "context_window", None)
+        try:
+            value = int(window)
+        except (TypeError, ValueError):
+            return 0
+        return value if value > 0 else 0
 
     def _context_budget(self) -> int:
         """Return the number of prompt tokens the agent may use.
@@ -404,13 +521,43 @@ class HITLFunctionAgent(FunctionAgent):
 
         return context_budget(self._context_window_cache)
 
-    def _tokenizer(self):
-        """Return the cached tokenizer used to size the prompt."""
-        if self._tokenizer_cache is None:
-            from components.context_guard import get_tokenizer
+    def _safe_tokenizer(self):
+        """Return the cached tokenizer, or ``None`` when there is none.
 
-            self._tokenizer_cache = get_tokenizer()
+        ``None`` means "no tokenizer": the tokens of the prompt are then
+        *estimated*, and the log line says so.  A tokenizer that cannot be
+        loaded is remembered, so the failure is not retried with every
+        request — and it never takes the agent down.
+        """
+        if self._tokenizer_cache is None and not self._tokenizer_unavailable:
+            try:
+                from components.context_guard import get_tokenizer
+
+                self._tokenizer_cache = get_tokenizer()
+            except Exception as exc:  # noqa: BLE001 - the size degrades
+                self._tokenizer_unavailable = True
+                logger.warning(
+                    "The tokenizer of the agent is not available (%s) — the "
+                    "token counts in the log are estimated.",
+                    exc,
+                )
         return self._tokenizer_cache
+
+    def _tokenizer(self):
+        """Return the cached tokenizer used to size the prompt.
+
+        Raises:
+            RuntimeError: when no tokenizer can be loaded.  The context
+                guard needs a real tokenizer — an estimate would not fit
+                the prompt to the context window of the model.
+        """
+        tokenizer = self._safe_tokenizer()
+        if tokenizer is None:
+            raise RuntimeError(
+                "the tokenizer of the agent is not available — the context "
+                "guard cannot size the prompt"
+            )
+        return tokenizer
 
     def _tool_schema_tokens(self, tools) -> int:
         """Return the number of tokens the tool schemas take up.
@@ -421,18 +568,12 @@ class HITLFunctionAgent(FunctionAgent):
         if not tools:
             return 0
         if self._tool_schema_cache is None:
-            import json
+            from components.context_metrics import count_tokens_of, tool_schema_text
 
-            try:
-                specs = [
-                    tool.metadata.to_openai_tool(skip_length_check=True)
-                    for tool in tools
-                ]
-                blob = json.dumps(specs)
-            except Exception as exc:  # noqa: BLE001 - be forgiving here
-                logger.debug("Could not size the tool schemas: %s", exc)
-                blob = ""
-            self._tool_schema_cache = len(self._tokenizer()(blob))
+            tokens, _ = count_tokens_of(
+                tool_schema_text(tools), self._safe_tokenizer()
+            )
+            self._tool_schema_cache = tokens
         return self._tool_schema_cache
 
     # ------------------------------------------------------------------

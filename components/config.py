@@ -455,6 +455,9 @@ SETTINGS: tuple[Setting, ...] = (
             None, KIND_STRING,
             "The name of the symlink to the live log file.",
             example="agent-current.log"),
+    Setting("logging.context_size", "TORVALDS_LOG_CONTEXT_SIZE",
+            True, KIND_BOOLEAN,
+            "Log the size of the prompt with every request to the model."),
 )
 
 
