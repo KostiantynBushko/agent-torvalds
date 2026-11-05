@@ -122,6 +122,63 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The cache broke under a value it could not hold, and under a second agent
+
+- **One value that JSON could not hold broke the cache for the rest of
+  the session.**  `save_to_cache` takes any value the tool call hands
+  it.  Give it one that JSON cannot carry, and the value stayed in the
+  cache in memory — so every later write carried it and failed again:
+
+  ```
+  save_to_cache("context.custom", object())
+    -> "Error saving to cache: Object of type object is not JSON serializable"
+
+  log_error("boom")  -> TypeError: Object of type object is not JSON serializable
+  start_session()    -> TypeError: Object of type object is not JSON serializable
+  ```
+
+  `log_error` is called from the `except` handler of the model call in
+  `agent-torvalds.py` and `agent-torvalds-mw.py`, so a poisoned cache
+  turned an ordinary failure of the model into an unhandled exception
+  in the error path of the agent.
+
+  The value is now dropped, and reported.  The cache is serialised as a
+  *copy*, the copy is what is written, and the copy — without the value
+  — is what the cache holds afterwards.  The caller is told what was
+  left out, and the later writes go through.
+
+- **Two agents at once crashed on the same temp file.**  The temp file
+  had a fixed name — `agent_cache.tmp` — so every writer, in every
+  process, wrote to the same one, and one writer's rename left the
+  other with nothing to rename:
+
+  ```
+  FileNotFoundError: [Errno 2] No such file or directory:
+      '~/.cache/torvalds/agent_cache.tmp' -> '~/.cache/torvalds/agent_cache.json'
+  ```
+
+  The temp file now belongs to the writer alone (`tempfile.mkstemp` in
+  the folder of the cache), and it is removed when the write fails.  The
+  write is serialised by a lock, and an `fsync` before the rename makes
+  the rename durable, and not only atomic.
+
+- **A save wiped what another agent had written.**  The whole file was
+  rewritten from the writer's own copy in memory, so the second of two
+  agents erased the entries of the first one — the errors, the
+  sessions, the git repos, the request statistics.
+
+  The file is now read again under the lock, and only what *this*
+  writer changed since it loaded the cache is applied to it.  The
+  sections that grow — the error log, the sessions, the request
+  statistics, the frequent commands — are merged by identity, so the
+  entries of both agents survive, and an entry that was written again
+  replaces its earlier version instead of being added a second time.
+
+- **A damaged cache file was silent.**  A file that could not be read
+  was replaced with an empty cache, and nothing said so.  The file that
+  cannot be read is now reported — in the log, and in the status of the
+  cache — and it is left as it is.
+
 #### A failure of the model server was shown as a stack trace
 
 - **The chat showed a traceback when the model server failed.**  The
