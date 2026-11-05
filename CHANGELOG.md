@@ -200,6 +200,43 @@ All notable changes to this project are documented in this file.
   cannot drift apart.  A session that cannot be measured is still
   described — the measurement is never worth losing the session over.
 
+#### The project carries skills of its own
+
+- **A feature that ships with nothing to load is a feature that cannot be
+  tried out.**  The skills of this project now live in `skills/`, next to
+  the code they describe:
+
+  | skill | what it is for |
+  |---|---|
+  | `run-tests` | how to run the suite, and how to read a run that ends in "39 failed" |
+  | `release` | the release checklist, and the two files that declare the version |
+  | `investigate` | the shape of an investigation folder, and the rule that the probe is read-only |
+  | `add-toolkit` | the layout of a toolkit, and the four steps nobody skips |
+
+  They are found by the second default root, so they are loaded whenever the
+  agent works in this repository.
+
+- **Each of them carries a fact that is easy to get wrong.**  The suite of
+  this project does not pass — it carries 40 known failures — and a run that
+  ends in "39 failed" is the normal state of the repository, not a
+  regression.  The version of a release is *read* from two declarations
+  (`deploy/deploy-torvalds.sh` and `project_manager/__init__.py`), not
+  chosen.  The tests of a new toolkit are invisible to the CI gate until
+  their directory is added to `testpaths` in `pytest.ini`.  A probe that
+  changes something cannot be run twice.
+
+- **The skills are guarded by a test.**  The feature skips a skill that
+  cannot be read, and a skill without a name is skipped too — the right
+  behaviour for a skill the operator writes on the machine, but it makes a
+  broken skill in the **repository** invisible: nothing fails, nothing
+  warns, and the procedure is simply never loaded.
+
+  `tests/test_project_skills.py` is the eyes for that case.  It checks that
+  every skill is found, that each one has a name and a description, that the
+  description says *when* the skill is worth loading, that the body fits
+  into the limit the feature cuts it to, and that no skill carries the path
+  of a home directory.
+
 ### Changed
 
 #### The tokenizer of the agent lives in one place now

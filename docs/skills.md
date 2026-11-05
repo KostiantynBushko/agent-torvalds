@@ -68,6 +68,31 @@ dirs = "~/.config/torvalds/skills:./skills:/opt/shared/skills"
 
 ---
 
+## The skills of this project
+
+This repository carries four skills of its own, under `skills/`.  They are
+the procedures of this project — the ones that are too long to keep in the
+prompt and too rare to be worth a tool:
+
+| skill | what it is for |
+|---|---|
+| `run-tests` | how to run the suite, and how to read a run that ends in "39 failed" |
+| `release` | the release checklist, and the two files that declare the version |
+| `investigate` | the shape of an investigation folder, and the rule that the probe is read-only |
+| `add-toolkit` | the layout of a toolkit, and the four steps nobody skips |
+
+They are found by the second default root, so they are loaded whenever the
+agent works in this repository.  A skill of the operator with the same name
+is overridden by them: the procedure of the project is the one that
+describes the project.
+
+`tests/test_project_skills.py` guards them.  The feature skips a skill that
+cannot be read — the right behaviour for a skill the operator writes on the
+machine, but it makes a broken skill in the **repository** invisible.  The
+tests are the eyes for that case.
+
+---
+
 ## How the agent uses them
 
 The agent gets two tools:
