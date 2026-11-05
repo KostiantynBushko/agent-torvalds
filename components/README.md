@@ -206,6 +206,45 @@ See [`docs/logging.md`](../docs/logging.md) for the full documentation.
 
 ---
 
+### `context_metrics.py`
+The size of the prompt that goes to the model — in tokens and in bytes.
+
+**Purpose:** Measures the prompt that is sent to the model and renders it
+the way the operator reads a size.
+
+**What "the context" is:** the prompt is **chat messages** — the chat
+memory (the system prompt, the history of the session, the request of the
+user) plus the scratchpad of the run (the assistant turns that asked for a
+tool, and the tool results that answered them).  The tool schemas travel
+with every request too, and they are counted **separately**, because they
+are not messages.
+
+**Features:**
+- The tokens are counted with the tokenizer the chat memory itself uses,
+  so the number is the number the token limit is enforced with
+- The bytes are the UTF-8 bytes of the text of the prompt
+- The tool schemas are measured on their own, so it is visible where the
+  prompt goes
+- A tokenizer that cannot be loaded **degrades**: the tokens are then
+  estimated and the log line says so — the bytes are always exact
+
+**Usage:**
+```python
+from components.context_metrics import describe_context, measure_context
+
+size = measure_context(messages, tools=agent.tools)
+print(describe_context(size, window=8192))
+# 12 messages, 1,200 tokens, 4.5 KB, 14.6% of the 8,192-token window
+```
+
+The agent writes the line itself, before every request to the model:
+
+```
+Context: 12 messages, 1,200 tokens, 4.5 KB, 14.6% of the 8,192-token window
+```
+
+---
+
 ### `__init__.py`
 Package initialization file.
 
@@ -223,6 +262,7 @@ Package initialization file.
 
 ## Recent Updates
 
+- **2026-11-04**: Added `context_metrics.py` — the size of the prompt (tokens, bytes) that is logged with every request to the model
 - **2026-10-29**: Added `config.py` and `config_view.py` — the configuration file and the `\config` command
 - **2026-10-29**: Added `file_logging.py` — the rotating log file, the size parser and the symlink
 - **PR #5**: Moved `agent_stats_handler.py` to `components/stats_handler.py` for better organization

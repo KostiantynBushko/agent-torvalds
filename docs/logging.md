@@ -26,6 +26,7 @@ The operator asked for it on 2026-10-27:
 9. [What degrades and what does not](#9-what-degrades-and-what-does-not)
 10. [The known limitations](#10-the-known-limitations)
 11. [Verifying the installation](#11-verifying-the-installation)
+12. [The size of the context](#12-the-size-of-the-context)
 
 ---
 
@@ -255,3 +256,42 @@ take the agent down.
 
 The investigation that started all of this — the report, the prototype and
 the proofs — is in `investigate/logging-to-file/`.
+
+---
+
+## 12. The size of the context
+
+Every request the agent makes to the model is preceded by one line that
+says how big the prompt was:
+
+```
+Context: 12 messages, 1,200 tokens, 4.5 KB, 14.6% of the 8,192-token window
+```
+
+The operator asked for it on 2026-11-04:
+
+> *"I need to see in the log the context size in tokens and size of bytes.
+> So when request is made to LLM I want to see current context size"*
+
+The prompt is **chat messages** — the chat memory (the system prompt, the
+history of the session, the request of the user) plus the scratchpad of
+the run (the assistant turns that asked for a tool, and the tool results
+that answered them).  The tool schemas travel with every request too, and
+they are counted separately, because they are not messages.
+
+The tokens are counted with the tokenizer the chat memory itself uses, so
+the number is the number the token limit is enforced with.  The bytes are
+the UTF-8 bytes of the text of the prompt.
+
+The line is written whether the context guard trimmed the prompt or not:
+the operator has to see the context grow *before* the guard is needed.
+
+| Setting | How |
+|---|---|
+| Off | `--no-context-log` |
+| Off | `logging.context_size = false` in the configuration file |
+| Off | `TORVALDS_LOG_CONTEXT_SIZE=false` |
+
+A tokenizer that cannot be loaded is not a reason to lose the line: the
+tokens are then estimated and the line says so.  The bytes are always
+exact.
