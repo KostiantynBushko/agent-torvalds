@@ -813,6 +813,38 @@ All notable changes to this project are documented in this file.
   machine from a shell — the same discovery, without a model and without
   a token.
 
+#### How the agent carries a skill — the tools, and the price of the body
+
+- **`docs/skills-in-the-agent.md` is new.**  It says what the agent does
+  with a skill once it has one: where the two tools live, what the body of a
+  skill costs, and when it is paid.
+
+- **The retriever is asked twice per turn, and the second question is the
+  name of the tool.**  `run_agent_step()` asks it with the question of the
+  user — that is where the eight tools are picked — but `call_tool()` asks it
+  with the **name** of the tool that is being called.  A retriever that
+  matches on meaning does not match on a name, so a tool that is only in the
+  retriever is not found when it is called.  A skill tool therefore has to be
+  in `agent.tools`, which is how both orchestrators already build it.
+
+- **The body of a skill is paid again by every request that follows.**
+  `finalize()` writes the whole scratchpad into the memory of the session, so
+  the body is carried along: on the request after the activation it was 85%
+  of the prompt.  It leaves the prompt when the context guard drops it as the
+  oldest turn of a conversation that has grown — round 18, on the synthetic
+  growth of the probe.
+
+- **The transient channel is measured, not shipped.**  A body dropped as soon
+  as the model has read it pays off only when the run *continues* past the
+  body; a run that ends with the body pays the same as without it.
+
+- **`investigate/skills-in-function-agent/INVESTIGATION_REPORT.md`** holds the
+  evidence, and
+  **`investigate/skills-in-function-agent/probe_skills_in_function_agent.py`**
+  the read-only probe that prints it.  The probe measures the transient
+  channel in the two cases that differ — a run that ends with the body, and a
+  run that continues past it.
+
 ## [1.0.0] - 2026-10-29
 
 ### Added

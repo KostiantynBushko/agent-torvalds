@@ -342,11 +342,17 @@ always there, because the model cannot ask for a skill it cannot see.  The two
 lists are merged, and the cost of the skill tools is counted with the other
 tool schemas by the context guard.
 
+Why the skill tools cannot be picked by the retriever, and what the body of a
+skill costs once it is loaded, are in
+[`docs/skills-in-the-agent.md`](skills-in-the-agent.md).
+
 ---
 
 ## See also
 
+* [`docs/skills-in-the-agent.md`](skills-in-the-agent.md) — how the agent carries a skill, and what its body costs
 * [`investigate/agent-skills/INVESTIGATION_REPORT.md`](../investigate/agent-skills/INVESTIGATION_REPORT.md) — the measurement, and the design
 * [`investigate/agent-skills/PROPOSAL.md`](../investigate/agent-skills/PROPOSAL.md) — what the change does
+* [`investigate/skills-in-function-agent/INVESTIGATION_REPORT.md`](../investigate/skills-in-function-agent/INVESTIGATION_REPORT.md) — where a skill has to live, and what it costs
 * [`components/skills.py`](../components/skills.py) — the library half
 * [`components/skills_tools.py`](../components/skills_tools.py) — the two tools
