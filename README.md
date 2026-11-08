@@ -320,9 +320,9 @@ describe.  A plain `git clone` leaves the directory empty;
 ### 15. Chat History Manager (`chat_manager/`)
 - Multi-user, multi-session chat history with a backend-agnostic storage interface
 - Session lifecycle: create, list, select, rename, delete, clear
-- Session export: `\chat-export [--buffer|--store] [path]` prints the content of the active
-  session, or writes it to a file — the stored history by default, the buffered tail
-  (what the model sees) with `--buffer`
+- Session export: `\chat-export [--buffer|--store] [--json|--text] [path]` prints the content
+  of the active session, or writes it to a file — the stored history by default, the buffered
+  tail (what the model sees) with `--buffer`, and the JSON a program reads with `--json`
 - Per-session message isolation — each session maps to its own LlamaIndex `chat_key`
 - Automatic user identification from the OS login with on-demand provisioning
 - Active session persisted in the database and restored on the next startup
@@ -1210,7 +1210,8 @@ manager.shutdown()
 # \chat-info                  - Show the active session
 # \chat-clear                 - Clear the active session's message history
 # \chat-export [path]         - Print the content of the active session, or write it to a file
-#                              (--buffer for the tail of it that reaches the model)
+#                              (--buffer for the tail of it that reaches the model,
+#                              --json for the machine-readable form)
 # \chat-user                  - Show your own settings
 # \chat-user get <key>        - Show one setting
 # \chat-user set <key> <val>  - Change one setting

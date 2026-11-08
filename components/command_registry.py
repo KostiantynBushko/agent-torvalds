@@ -330,9 +330,10 @@ COMMAND_SPECS: Tuple[CommandSpec, ...] = (
         description=(
             "Print the content of the active session, or write it to a file. "
             "The stored history is exported by default; --buffer exports the "
-            "tail of it that reaches the model."
+            "tail of it that reaches the model. --json writes the export as "
+            "JSON, for a program that has to read it."
         ),
-        usage="\\chat-export [--buffer|--store] [path]",
+        usage="\\chat-export [--buffer|--store] [--json|--text] [path]",
         category="Chat",
         feature=FEATURE_CHAT_HISTORY,
     ),

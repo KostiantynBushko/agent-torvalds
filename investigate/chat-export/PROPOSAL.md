@@ -34,11 +34,15 @@ sizes in the header of the export itself.
 \chat-export --buffer             the buffered tail, on stdout
 \chat-export --buffer <path>      the buffered tail, in a file
 \chat-export --store              the stored history, said out loud
+\chat-export --json               the JSON of the session, on stdout
+\chat-export --json <path>        the JSON of the session, in a file
+\chat-export --json --buffer      the JSON of the buffer
 ```
 
-One command, one optional argument, one optional source.  No format flag:
-the text is the text, the same rendering the log uses
-(`components/chat_message.to_string`).
+One command, one optional argument, one optional source, one optional
+format.  The text is the text — the same rendering the log uses
+(`components/chat_message.to_string`) — and the JSON is the same export
+with the parts of a message turned into fields.
 
 ### The source
 
@@ -56,6 +60,42 @@ half — it is what a report about a runaway context needs to quote.
 The options come first and the path is what is left, kept verbatim, so a
 path with a space in it survives.  An unknown option, the same option
 twice and two sources at once are reported with the usage line.
+
+### The format
+
+| | what it carries | who reads it |
+|---|---|---|
+| `--text` (the default) | the rendering of the log — one message per line | a person |
+| `--json` | the same messages, with the role, the content, the thinking and the tool calls as fields | a program |
+
+The JSON is not the text with brackets around it.  A consumer that has to
+read a session does not have to parse a line to learn what a message is:
+
+```json
+{
+  "session": {"id": "sess-1", "name": "General Chat", "type": "general",
+              "created_at": "2026-11-08T14:00:00",
+              "updated_at": "2026-11-08T14:42:12"},
+  "source": "stored",
+  "message_count": 2,
+  "size_bytes": 27,
+  "tokens": 4,
+  "tokens_estimated": false,
+  "messages": [
+    {"role": "user", "content": "hello", "thinking": null,
+     "tool_calls": [], "metadata": {}}
+  ]
+}
+```
+
+The document says the same things the text says: the session, the source,
+the count, the size and the tokens — the size and the tokens of the
+**exported** messages, and `tokens_estimated` says whether the tokenizer
+was there to count them.
+
+The source and the format are independent groups of options: `--buffer`
+chooses which half of the session, `--json` chooses how it is written.
+Each group takes one option.
 
 ### The text
 
@@ -126,8 +166,9 @@ session is printed **verbatim**, and the colour of the output is kept.
 
 ## What is **not** in this change
 
-* **No format flag.**  Not text, not markdown, not JSON.  The command does
-  what was asked: it prints the session, or writes it to a file.
+* **No format but two.**  Not text, not markdown, not JSON — the text the
+  log uses, and the JSON a program reads.  A third format would be a
+  format nobody asked for.
 * **No export of the buffer of *another* session.**  The command works on
   the active session; `--buffer` chooses which part of it is exported.
 * **No export of another session.**  The command exports the *active*

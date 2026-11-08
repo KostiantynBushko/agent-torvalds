@@ -8,7 +8,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from chat_manager.export import SOURCE_BUFFER, SOURCE_STORED
+from chat_manager.export import (
+    FORMAT_JSON,
+    FORMAT_TEXT,
+    SOURCE_BUFFER,
+    SOURCE_STORED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +41,19 @@ CHAT_COMMANDS = {
 # Prefixes of the commands that accept an argument.
 CHAT_COMMAND_PREFIXES = tuple(f"{cmd} " for cmd in CHAT_COMMANDS)
 
-#: The usage of \chat-export — it carries a source and an optional path.
-EXPORT_USAGE = "Usage: \\chat-export [--buffer|--store] [path]"
+#: The usage of \chat-export — it carries a source, a format and a path.
+EXPORT_USAGE = "Usage: \\chat-export [--buffer|--store] [--json|--text] [path]"
 
 #: The options that choose the part of the session that is exported.
 EXPORT_SOURCE_OPTIONS = {
     "--buffer": SOURCE_BUFFER,
     "--store": SOURCE_STORED,
+}
+
+#: The options that choose the format of the export.
+EXPORT_FORMAT_OPTIONS = {
+    "--json": FORMAT_JSON,
+    "--text": FORMAT_TEXT,
 }
 
 
@@ -67,6 +78,56 @@ def _split_export_options(rest: str) -> tuple[list[str], str]:
         remainder = tail.lstrip() if separator else ""
 
     return options, remainder
+
+
+def _parse_export_options(options: list[str]) -> tuple[str, str]:
+    """Return the source and the format of an export.
+
+    The options come in two groups: the source — which half of the
+    session is exported — and the format — the text a person reads or
+    the JSON a program reads.  A group takes one option, and the two
+    groups are independent: ``--buffer --json`` is a buffer in JSON.
+
+    Args:
+        options: The options the operator wrote.
+
+    Returns:
+        The source and the format of the export.
+
+    Raises:
+        ValueError: An option is unknown, given twice, or two options of
+            the same group were given.
+    """
+    source = SOURCE_STORED
+    output_format = FORMAT_TEXT
+
+    sources: list[str] = []
+    formats: list[str] = []
+
+    for option in options:
+        if option in EXPORT_SOURCE_OPTIONS:
+            sources.append(option)
+        elif option in EXPORT_FORMAT_OPTIONS:
+            formats.append(option)
+        else:
+            raise ValueError(f"Unknown option '{option}'.")
+
+    if len(set(sources)) > 1:
+        raise ValueError("Only one source can be exported.")
+    if len(sources) > len(set(sources)):
+        raise ValueError(f"'{sources[0]}' is given twice.")
+
+    if len(set(formats)) > 1:
+        raise ValueError("Only one format can be exported.")
+    if len(formats) > len(set(formats)):
+        raise ValueError(f"'{formats[0]}' is given twice.")
+
+    if sources:
+        source = EXPORT_SOURCE_OPTIONS[sources[0]]
+    if formats:
+        output_format = EXPORT_FORMAT_OPTIONS[formats[0]]
+
+    return source, output_format
 
 
 def is_chat_command(cmd: str) -> bool:
@@ -161,7 +222,7 @@ def handle_chat_command(cmd: str) -> str | None:
     if cmd_lower == "\\chat-clear":
         return cmd_chat_clear(manager)
 
-    # \chat-export [--buffer|--store] [path]
+    # \chat-export [--buffer|--store] [--json|--text] [path]
     if cmd_lower == "\\chat-export":
         return cmd_chat_export(manager)
 
@@ -169,22 +230,17 @@ def handle_chat_command(cmd: str) -> str | None:
         rest = cmd.strip()[len("\\chat-export"):].strip()
         options, path = _split_export_options(rest)
 
-        source = SOURCE_STORED
-        seen_options: set[str] = set()
-        for option in options:
-            if option not in EXPORT_SOURCE_OPTIONS:
-                return f"Unknown option '{option}'.\n{EXPORT_USAGE}"
-            if option in seen_options:
-                return f"'{option}' is given twice.\n{EXPORT_USAGE}"
-            seen_options.add(option)
+        try:
+            source, output_format = _parse_export_options(options)
+        except ValueError as exc:
+            return f"{exc}\n{EXPORT_USAGE}"
 
-        if len(seen_options) > 1:
-            return f"Only one source can be exported.\n{EXPORT_USAGE}"
-
-        if "--buffer" in seen_options:
-            source = SOURCE_BUFFER
-
-        return cmd_chat_export(manager, path=path or None, source=source)
+        return cmd_chat_export(
+            manager,
+            path=path or None,
+            source=source,
+            output_format=output_format,
+        )
 
     # \chat-user [get <key> | set <key> <value> | help]
     if cmd_lower == "\\chat-user":

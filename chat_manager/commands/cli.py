@@ -23,6 +23,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from chat_manager.export import (
+    FORMAT_JSON,
+    FORMAT_TEXT,
     SOURCE_BUFFER,
     SOURCE_NOUN,
     SOURCE_STORED,
@@ -252,6 +254,7 @@ def cmd_chat_export(
     manager: ChatHistoryManager,
     path: str | None = None,
     source: str = SOURCE_STORED,
+    output_format: str = FORMAT_TEXT,
 ) -> str:
     """Print the content of the active session, or write it to a file.
 
@@ -266,6 +269,9 @@ def cmd_chat_export(
     The header of the export says which one it carries, so a file is
     never a mystery.
 
+    And it can be written in two formats: the text a person reads, and
+    the JSON a program reads.
+
     Without a path the content is returned, and the caller prints it.
     With one it is written to that file, and the caller is told where.
 
@@ -273,6 +279,8 @@ def cmd_chat_export(
         manager: The ChatHistoryManager instance.
         path: The file to write the export to.  ``None`` prints it.
         source: Which part of the session to export.
+        output_format: The format of the export — ``FORMAT_TEXT`` or
+            ``FORMAT_JSON``.
 
     Returns:
         The content of the session, or a status message.
@@ -292,7 +300,7 @@ def cmd_chat_export(
     else:
         messages = manager.get_stored_messages()
 
-    text = render_session(session, messages, source)
+    text = render_session(session, messages, source, output_format)
 
     if path is None:
         return text
@@ -305,8 +313,10 @@ def cmd_chat_export(
         return f"Could not write '{target}': {exc}"
 
     noun = SOURCE_NOUN.get(source, "messages")
+    as_json = "as JSON " if output_format == FORMAT_JSON else ""
+
     return (
-        f"Wrote {len(messages)} {noun} ({format_size(written)}) "
+        f"Wrote {len(messages)} {noun} {as_json}({format_size(written)}) "
         f"to '{target}'."
     )
 

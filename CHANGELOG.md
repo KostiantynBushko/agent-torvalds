@@ -6,6 +6,80 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The export of a session, as JSON
+
+- **The operator asked for a JSON export on 2026-11-08:**
+
+  > *"can we export chat history as json?"*
+
+  The text export is for a person to read.  A program that has to read
+  the same session was left with a transcript and a problem: the role,
+  the text, the thinking and the tool calls were all inside one line,
+  separated by `|` and `:`.
+
+- **`\chat-export --json` writes the same export as a JSON document.**
+
+  ```
+  \chat-export --json                 the JSON of the session, on stdout
+  \chat-export --json <path>          the JSON of the session, in a file
+  \chat-export --json --buffer        the JSON of the buffer
+  ```
+
+  It is not the text with brackets around it.  The role, the content, the
+  thinking and the tool calls are **fields**:
+
+  ```json
+  {
+    "session": {
+      "id": "sess-1",
+      "name": "General Chat",
+      "type": "general",
+      "created_at": "2026-11-08T14:00:00",
+      "updated_at": "2026-11-08T14:42:12"
+    },
+    "source": "stored",
+    "message_count": 2,
+    "size_bytes": 27,
+    "tokens": 4,
+    "tokens_estimated": false,
+    "messages": [
+      {
+        "role": "user",
+        "content": "first message",
+        "thinking": null,
+        "tool_calls": [],
+        "metadata": {}
+      }
+    ]
+  }
+  ```
+
+- **The document says the same things the text says.**  The session, the
+  source, the count, the size and the tokens are all there — a consumer
+  of the JSON learns what a reader of the text learns.  The size and the
+  tokens are the ones of the **exported** messages, and `tokens_estimated`
+  says whether the tokenizer was there to count them.
+
+- **The source and the format are independent.**  `--buffer` chooses
+  which half of the session is exported, `--json` chooses how it is
+  written, and the two can be combined: `--buffer --json` is the buffer
+  in JSON.  Each group takes one option, and two options of the same
+  group are reported with the usage line.
+
+- **The characters of the session survive.**  The JSON is written with
+  `ensure_ascii=False`, so the text of a session is the text of a
+  session — in Cyrillic, in Japanese, in emoji — and not a wall of
+  `\uXXXX`.  The file is UTF-8, like the text export.
+
+- **The tests** are in `chat_manager/tests/test_export.py` — the
+  document, the fields of a message, the thinking, the tool calls, the
+  characters, and the dispatch of the two groups of options.
+
+  ```
+  $ .venv/bin/python -m pytest chat_manager/tests/test_export.py -q
+  65 passed
+  ```
+
 #### The content of a session, printed or written to a file
 
 - **The operator had no way to keep a copy of a session.**  The request

@@ -16,6 +16,7 @@ Run with:
     pytest chat_manager/tests/test_export.py -v
 """
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,10 +25,15 @@ from unittest.mock import MagicMock, patch
 from chat_manager.commands import cmd_chat_export
 from chat_manager.commands.handler import handle_chat_command, is_chat_command
 from chat_manager.export import (
+    FORMAT_JSON,
+    FORMAT_TEXT,
     SOURCE_BUFFER,
     SOURCE_STORED,
+    message_to_dict,
     render_header,
+    render_json,
     render_session,
+    render_text,
     render_transcript,
     resolve_path,
     write_export,
@@ -45,6 +51,31 @@ def _message(role, content):
         "system": MessageRole.SYSTEM,
     }
     return ChatMessage(role=roles[role], content=content)
+
+
+def _rich_message(role, content, thinking=None, tool_calls=None):
+    """Return a message that carries blocks, the way the agent stores one."""
+    from llama_index.core.base.llms.types import (
+        ChatMessage,
+        MessageRole,
+        TextBlock,
+        ThinkingBlock,
+        ToolCallBlock,
+    )
+
+    roles = {
+        "user": MessageRole.USER,
+        "assistant": MessageRole.ASSISTANT,
+        "system": MessageRole.SYSTEM,
+    }
+
+    blocks = [TextBlock(text=content)]
+    if thinking:
+        blocks.append(ThinkingBlock(content=thinking))
+    for name, arguments in tool_calls or []:
+        blocks.append(ToolCallBlock(tool_name=name, tool_kwargs=arguments))
+
+    return ChatMessage(role=roles[role], blocks=blocks)
 
 
 def _session():
@@ -159,6 +190,132 @@ class TestRenderSession(unittest.TestCase):
     def test_an_empty_session_says_so(self):
         text = render_session(_session(), [])
         self.assertIn("no messages", text)
+
+
+# ---------------------------------------------------------------------------
+# The JSON
+# ---------------------------------------------------------------------------
+
+
+class TestRenderJson(unittest.TestCase):
+    """The JSON export is the same export, in a shape a program reads."""
+
+    def test_it_is_json(self):
+        document = json.loads(render_json(_session(), [_message("user", "hello")]))
+        self.assertIsInstance(document, dict)
+
+    def test_it_carries_the_session(self):
+        document = json.loads(render_json(_session(), []))
+
+        self.assertEqual(document["session"]["id"], "sess-1")
+        self.assertEqual(document["session"]["name"], "General Chat")
+        self.assertEqual(document["session"]["type"], "general")
+
+    def test_it_carries_the_source(self):
+        """A file that does not say what it is, is a mystery file."""
+        document = json.loads(render_json(_session(), [], SOURCE_BUFFER))
+        self.assertEqual(document["source"], "buffer")
+
+        document = json.loads(render_json(_session(), [], SOURCE_STORED))
+        self.assertEqual(document["source"], "stored")
+
+    def test_it_carries_the_measurements(self):
+        document = json.loads(render_json(_session(), [_message("user", "hello")]))
+
+        self.assertEqual(document["message_count"], 1)
+        self.assertEqual(document["size_bytes"], 5)
+        self.assertIn("tokens", document)
+        self.assertIn("tokens_estimated", document)
+
+    def test_it_carries_the_messages(self):
+        messages = [_message("user", "hello"), _message("assistant", "hi")]
+        document = json.loads(render_json(_session(), messages))
+
+        self.assertEqual(len(document["messages"]), 2)
+        self.assertEqual(document["messages"][0]["role"], "user")
+        self.assertEqual(document["messages"][0]["content"], "hello")
+        self.assertEqual(document["messages"][1]["role"], "assistant")
+        self.assertEqual(document["messages"][1]["content"], "hi")
+
+    def test_the_content_is_verbatim(self):
+        """Square brackets in the session are not markup."""
+        messages = [_message("user", "a [b] c and a [/nope] tag")]
+        document = json.loads(render_json(_session(), messages))
+
+        self.assertEqual(
+            document["messages"][0]["content"], "a [b] c and a [/nope] tag"
+        )
+
+    def test_the_characters_of_the_session_survive(self):
+        messages = [_message("user", "привіт, 日本語 ✓")]
+        document = json.loads(render_json(_session(), messages))
+
+        self.assertEqual(document["messages"][0]["content"], "привіт, 日本語 ✓")
+
+    def test_the_thinking_is_carried(self):
+        messages = [_rich_message("assistant", "the answer", thinking="the reasoning")]
+        document = json.loads(render_json(_session(), messages))
+
+        self.assertEqual(document["messages"][0]["thinking"], "the reasoning")
+        self.assertEqual(document["messages"][0]["content"], "the answer")
+
+    def test_the_tool_calls_are_carried(self):
+        messages = [
+            _rich_message(
+                "assistant",
+                "the answer",
+                tool_calls=[("pwd", {"path": "/"})],
+            )
+        ]
+        document = json.loads(render_json(_session(), messages))
+
+        calls = document["messages"][0]["tool_calls"]
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["name"], "pwd")
+        self.assertEqual(calls[0]["arguments"], {"path": "/"})
+
+    def test_an_empty_session_is_exported_as_empty(self):
+        document = json.loads(render_json(_session(), []))
+
+        self.assertEqual(document["messages"], [])
+        self.assertEqual(document["message_count"], 0)
+
+    def test_the_message_helper_stands_alone(self):
+        message = _message("user", "hello")
+        self.assertEqual(
+            message_to_dict(message),
+            {
+                "role": "user",
+                "content": "hello",
+                "thinking": None,
+                "tool_calls": [],
+                "metadata": {},
+            },
+        )
+
+
+class TestRenderSessionFormats(unittest.TestCase):
+    """The format is chosen, and the text is the default."""
+
+    def test_the_text_is_the_default(self):
+        text = render_session(_session(), [_message("user", "hello")])
+        self.assertTrue(text.startswith("Session: General Chat"))
+
+    def test_the_text_can_be_asked_for(self):
+        text = render_session(
+            _session(), [_message("user", "hello")], SOURCE_STORED, FORMAT_TEXT
+        )
+        self.assertTrue(text.startswith("Session: General Chat"))
+
+    def test_the_json_can_be_asked_for(self):
+        text = render_session(
+            _session(), [_message("user", "hello")], SOURCE_STORED, FORMAT_JSON
+        )
+        self.assertEqual(json.loads(text)["messages"][0]["content"], "hello")
+
+    def test_the_text_renderer_is_reachable_on_its_own(self):
+        text = render_text(_session(), [_message("user", "hello")])
+        self.assertIn("user: hello", text)
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +458,47 @@ class TestCmdChatExport(unittest.TestCase):
         self.assertIn("no messages", result)
 
 
+class TestCmdChatExportJson(unittest.TestCase):
+    """The command writes the JSON when it is asked for."""
+
+    def test_it_prints_json(self):
+        manager = _manager([_message("user", "hello")])
+
+        result = cmd_chat_export(manager, output_format=FORMAT_JSON)
+
+        document = json.loads(result)
+        self.assertEqual(document["messages"][0]["content"], "hello")
+        self.assertEqual(document["source"], "stored")
+
+    def test_the_file_is_json(self):
+        manager = _manager([_message("user", "hello")])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "session.json"
+            result = cmd_chat_export(
+                manager, path=str(target), output_format=FORMAT_JSON
+            )
+
+            self.assertIn("as JSON", result)
+
+            document = json.loads(target.read_text(encoding="utf-8"))
+            self.assertEqual(document["messages"][0]["role"], "user")
+
+    def test_the_buffer_can_be_exported_as_json(self):
+        manager = _manager(
+            messages=[_message("user", "the whole session")],
+            buffered=[_message("user", "only the tail")],
+        )
+
+        result = cmd_chat_export(
+            manager, source=SOURCE_BUFFER, output_format=FORMAT_JSON
+        )
+
+        document = json.loads(result)
+        self.assertEqual(document["source"], "buffer")
+        self.assertEqual(document["messages"][0]["content"], "only the tail")
+
+
 # ---------------------------------------------------------------------------
 # The dispatch
 # ---------------------------------------------------------------------------
@@ -385,6 +583,65 @@ class TestExportDispatch(unittest.TestCase):
                 handle_chat_command(f"\\chat-export {target}")
 
             self.assertTrue(target.exists())
+
+    def test_the_json_option_is_dispatched(self):
+        manager = _manager([_message("user", "hello")])
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            result = handle_chat_command("\\chat-export --json")
+
+        document = json.loads(result)
+        self.assertEqual(document["messages"][0]["content"], "hello")
+
+    def test_the_json_option_joins_the_source(self):
+        """The source and the format are independent."""
+        manager = _manager(
+            messages=[_message("user", "the whole session")],
+            buffered=[_message("user", "only the tail")],
+        )
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            result = handle_chat_command("\\chat-export --buffer --json")
+
+        document = json.loads(result)
+        self.assertEqual(document["source"], "buffer")
+        self.assertEqual(document["messages"][0]["content"], "only the tail")
+
+    def test_the_json_option_comes_before_the_path(self):
+        manager = _manager([_message("user", "hello")])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "session.json"
+
+            with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+                handle_chat_command(f"\\chat-export --json {target}")
+
+            document = json.loads(target.read_text(encoding="utf-8"))
+            self.assertEqual(document["messages"][0]["content"], "hello")
+
+    def test_the_text_option_is_the_default(self):
+        manager = _manager([_message("user", "hello")])
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            result = handle_chat_command("\\chat-export --text")
+
+        self.assertTrue(result.startswith("Session: General Chat"))
+
+    def test_two_formats_are_reported(self):
+        manager = _manager([_message("user", "hello")])
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            result = handle_chat_command("\\chat-export --json --text")
+
+        self.assertIn("Only one format", result)
+
+    def test_the_same_format_twice_is_reported(self):
+        manager = _manager([_message("user", "hello")])
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            result = handle_chat_command("\\chat-export --json --json")
+
+        self.assertIn("twice", result)
 
     def test_an_unknown_option_is_reported(self):
         manager = _manager([_message("user", "hello")])
