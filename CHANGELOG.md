@@ -34,13 +34,28 @@ All notable changes to this project are documented in this file.
   size, because an export that does not say where it came from is a
   mystery file.
 
-- **The export carries every *stored* message, not only the tail that
-  survives the chat-token limit.**  Two things are called "the session":
-  the messages the session keeps — they grow with every turn and are never
-  trimmed — and the tail of them that reaches the model.  An export that
-  silently dropped the older half of a conversation would be a trap, and
-  the header carries both sizes, so the operator sees what the model sees
-  and what the session keeps.
+- **The export can carry either half of the session, and the operator
+  says which.**
+
+  ```
+  \chat-export                      the stored history — every message
+  \chat-export --buffer             the buffered tail — what the model sees
+  \chat-export --store              the stored history, said out loud
+  \chat-export --buffer <path>      the buffered tail, in a file
+  ```
+
+  Two things are called "the session": the messages the session keeps —
+  they grow with every turn and are never trimmed — and the tail of them
+  that reaches the model.  The stored history is the default, because an
+  export that silently dropped the older half of a conversation would be
+  a trap.  The buffer is the other half, and it is worth having on its
+  own: it is what the model was shown, and it is what a report about a
+  runaway context needs to quote.
+
+  The header of the export names the source — `Source: stored` or
+  `Source: buffer` — so a file is never a mystery, and the size and the
+  tokens in it are the ones of the **exported** messages, not of the
+  session behind them.
 
 - **The file is written as UTF-8 and overwritten** — an export is a copy
   of a session, not a log to append to.  `~` is expanded, a relative path
@@ -83,6 +98,12 @@ All notable changes to this project are documented in this file.
 - **The design** is in `investigate/chat-export/PROPOSAL.md`, and it says
   what is **not** in this change: no format flag, no export of another
   session, no new setting, and no change to the history itself.
+
+- **The options are parsed by hand, and the path is kept verbatim.**  The
+  options come first, and what is left is the path — so a path with a
+  space in it survives.  An unknown option, the same option twice, and
+  two sources at once are all reported with the usage line, not guessed
+  at.
 
 #### The agent loads skills on demand — and the prompt does not pay for them
 

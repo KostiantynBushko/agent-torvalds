@@ -11,10 +11,8 @@ Two things are called "the session", and they are not the same size:
 * the **buffered** messages — the tail of the history that survives the
   chat-token limit, and is what the model is actually sent.
 
-The export takes the **stored** messages.  An export that silently dropped
-the older half of a conversation would be a trap, and the header carries
-both sizes, so the operator sees what the model sees and what the session
-keeps.
+An export can carry either one, and the header says which — an export
+that does not say where it came from is a mystery file.
 
 The messages themselves are rendered by :func:`components.chat_message.to_string`
 — the renderer the log already uses — so the text of a session reads the
@@ -29,12 +27,27 @@ import logging
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
-from chat_manager.stats import HistoryStats, format_size, format_tokens
+from chat_manager.stats import count_tokens, format_size, message_text
 from components.chat_message import to_string
 
 logger = logging.getLogger(__name__)
 
+#: The source of an export — everything the session keeps.
+SOURCE_STORED = "stored"
+
+#: The source of an export — the tail of the history that reaches the model.
+SOURCE_BUFFER = "buffer"
+
+#: How the sources are named in the words of the command.
+SOURCE_NOUN = {
+    SOURCE_STORED: "stored messages",
+    SOURCE_BUFFER: "buffered messages",
+}
+
 __all__ = [
+    "SOURCE_BUFFER",
+    "SOURCE_NOUN",
+    "SOURCE_STORED",
     "render_transcript",
     "render_header",
     "render_session",
@@ -64,20 +77,44 @@ def render_transcript(messages: Sequence[Any]) -> str:
     return "\n".join(to_string(message) for message in messages)
 
 
+def _size_of(messages: Sequence[Any]) -> int:
+    """Return the size of the text of the given messages, in bytes."""
+    return sum(len(message_text(message).encode("utf-8")) for message in messages)
+
+
+def _tokens_of(messages: Sequence[Any]) -> str:
+    """Return the tokens of the given messages, as they are shown."""
+    if not messages:
+        return "0"
+
+    tokens, estimated = count_tokens(messages)
+    text = f"≈{tokens:,}"
+    if estimated:
+        text += " — estimated, the tokenizer is not available"
+    return text
+
+
 def render_header(
     session: Any,
-    message_count: int,
-    stats: Optional[HistoryStats] = None,
+    messages: Sequence[Any],
+    source: str = SOURCE_STORED,
 ) -> str:
     """Render the header of an export.
 
-    The header says which session the export came from and how big it is.
-    An export that does not say where it came from is a mystery file.
+    The header says which session the export came from, **which part of
+    it** was exported, and how big that part is.  An export that does not
+    say where it came from is a mystery file, and one that does not say
+    whether it carries the whole session or only what the model sees is
+    half a mystery file.
+
+    The size and the tokens are the ones of the **exported** messages, so
+    they describe what was exported and not the session behind it.
 
     Args:
         session: The session the export is of.
-        message_count: How many messages the export carries.
-        stats: The measurements of the session, when they could be taken.
+        messages: The messages the export carries.
+        source: Where the messages came from — ``SOURCE_STORED`` or
+            ``SOURCE_BUFFER``.
 
     Returns:
         The header of the export.
@@ -87,39 +124,34 @@ def render_header(
     session_type = getattr(session, "session_type", None)
     type_name = getattr(session_type, "value", session_type)
 
-    lines = [
+    return "\n".join([
         f"Session: {name} ({session_id})",
         f"Type: {type_name}",
-    ]
-
-    if stats is None:
-        lines.append(f"Messages: {message_count}")
-    else:
-        lines.append(
-            f"Messages: {stats.message_count} | "
-            f"Size: {format_size(stats.total_bytes)} | "
-            f"Tokens: {format_tokens(stats)}"
-        )
-
-    return "\n".join(lines)
+        (
+            f"Source: {source} | Messages: {len(messages)} | "
+            f"Size: {format_size(_size_of(messages))} | "
+            f"Tokens: {_tokens_of(messages)}"
+        ),
+    ])
 
 
 def render_session(
     session: Any,
     messages: Sequence[Any],
-    stats: Optional[HistoryStats] = None,
+    source: str = SOURCE_STORED,
 ) -> str:
     """Render the whole export of a session.
 
     Args:
         session: The session the export is of.
-        messages: The stored messages of the session.
-        stats: The measurements of the session, when they could be taken.
+        messages: The messages of the export.
+        source: Where the messages came from — ``SOURCE_STORED`` or
+            ``SOURCE_BUFFER``.
 
     Returns:
         The header of the export, a blank line, and the transcript.
     """
-    header = render_header(session, len(messages), stats)
+    header = render_header(session, messages, source)
 
     if not messages:
         return f"{header}\n\nThe session holds no messages."

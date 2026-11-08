@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from chat_manager.export import SOURCE_BUFFER, SOURCE_STORED
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -33,6 +35,38 @@ CHAT_COMMANDS = {
 
 # Prefixes of the commands that accept an argument.
 CHAT_COMMAND_PREFIXES = tuple(f"{cmd} " for cmd in CHAT_COMMANDS)
+
+#: The usage of \chat-export — it carries a source and an optional path.
+EXPORT_USAGE = "Usage: \\chat-export [--buffer|--store] [path]"
+
+#: The options that choose the part of the session that is exported.
+EXPORT_SOURCE_OPTIONS = {
+    "--buffer": SOURCE_BUFFER,
+    "--store": SOURCE_STORED,
+}
+
+
+def _split_export_options(rest: str) -> tuple[list[str], str]:
+    """Split the options of an export from its path.
+
+    The options come first, and the path is what is left — kept verbatim,
+    so a path with a space in it survives.
+
+    Args:
+        rest: What the operator wrote after ``\\chat-export``.
+
+    Returns:
+        The options, and the path that is left.
+    """
+    options: list[str] = []
+    remainder = rest
+
+    while remainder.startswith("--"):
+        token, separator, tail = remainder.partition(" ")
+        options.append(token.lower())
+        remainder = tail.lstrip() if separator else ""
+
+    return options, remainder
 
 
 def is_chat_command(cmd: str) -> bool:
@@ -127,15 +161,30 @@ def handle_chat_command(cmd: str) -> str | None:
     if cmd_lower == "\\chat-clear":
         return cmd_chat_clear(manager)
 
-    # \chat-export [path]
+    # \chat-export [--buffer|--store] [path]
     if cmd_lower == "\\chat-export":
         return cmd_chat_export(manager)
 
     if cmd_lower.startswith("\\chat-export "):
-        path = cmd.strip().split(maxsplit=1)[1].strip()
-        if not path:
-            return "Usage: \\chat-export [path]"
-        return cmd_chat_export(manager, path=path)
+        rest = cmd.strip()[len("\\chat-export"):].strip()
+        options, path = _split_export_options(rest)
+
+        source = SOURCE_STORED
+        seen_options: set[str] = set()
+        for option in options:
+            if option not in EXPORT_SOURCE_OPTIONS:
+                return f"Unknown option '{option}'.\n{EXPORT_USAGE}"
+            if option in seen_options:
+                return f"'{option}' is given twice.\n{EXPORT_USAGE}"
+            seen_options.add(option)
+
+        if len(seen_options) > 1:
+            return f"Only one source can be exported.\n{EXPORT_USAGE}"
+
+        if "--buffer" in seen_options:
+            source = SOURCE_BUFFER
+
+        return cmd_chat_export(manager, path=path or None, source=source)
 
     # \chat-user [get <key> | set <key> <value> | help]
     if cmd_lower == "\\chat-user":

@@ -23,6 +23,9 @@ import logging
 from typing import TYPE_CHECKING
 
 from chat_manager.export import (
+    SOURCE_BUFFER,
+    SOURCE_NOUN,
+    SOURCE_STORED,
     render_session,
     resolve_path,
     write_export,
@@ -245,13 +248,23 @@ def cmd_chat_clear(manager: ChatHistoryManager) -> str:
     return f"Cleared message history for session '{session.session_name}'."
 
 
-def cmd_chat_export(manager: ChatHistoryManager, path: str | None = None) -> str:
+def cmd_chat_export(
+    manager: ChatHistoryManager,
+    path: str | None = None,
+    source: str = SOURCE_STORED,
+) -> str:
     """Print the content of the active session, or write it to a file.
 
-    The content is what the session *stores* — every message of it, and
-    not only the tail that survives the chat-token limit.  The header of
-    the export carries both sizes, so the operator sees what the model
-    sees and what the session keeps.
+    Two things are called "the session", and the export can carry either
+    one:
+
+    * ``SOURCE_STORED`` — everything the session keeps.  It grows with
+      every turn and is never trimmed;
+    * ``SOURCE_BUFFER`` — the tail of the history that survives the
+      chat-token limit, and is what the model is actually sent.
+
+    The header of the export says which one it carries, so a file is
+    never a mystery.
 
     Without a path the content is returned, and the caller prints it.
     With one it is written to that file, and the caller is told where.
@@ -259,6 +272,7 @@ def cmd_chat_export(manager: ChatHistoryManager, path: str | None = None) -> str
     Args:
         manager: The ChatHistoryManager instance.
         path: The file to write the export to.  ``None`` prints it.
+        source: Which part of the session to export.
 
     Returns:
         The content of the session, or a status message.
@@ -270,17 +284,15 @@ def cmd_chat_export(manager: ChatHistoryManager, path: str | None = None) -> str
     if session is None:
         return "No active session."
 
-    messages = manager.get_stored_messages()
+    if source == SOURCE_BUFFER:
+        try:
+            messages = list(manager.get_messages())
+        except RuntimeError as exc:
+            return f"Could not read the buffer of the session: {exc}"
+    else:
+        messages = manager.get_stored_messages()
 
-    # The measurements are a nicety: a session that cannot be measured is
-    # still a session, and the export is worth making without them.
-    try:
-        stats = manager.get_history_stats()
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning("The chat history of the session could not be measured: %s", exc)
-        stats = None
-
-    text = render_session(session, messages, stats)
+    text = render_session(session, messages, source)
 
     if path is None:
         return text
@@ -292,8 +304,9 @@ def cmd_chat_export(manager: ChatHistoryManager, path: str | None = None) -> str
     except OSError as exc:
         return f"Could not write '{target}': {exc}"
 
+    noun = SOURCE_NOUN.get(source, "messages")
     return (
-        f"Wrote {len(messages)} messages ({format_size(written)}) "
+        f"Wrote {len(messages)} {noun} ({format_size(written)}) "
         f"to '{target}'."
     )
 

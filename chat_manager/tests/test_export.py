@@ -5,8 +5,10 @@ file.  What matters here:
 
 * the content of the session is **verbatim** — the session holds
   arbitrary text, and square brackets in it are not markup;
-* the **stored** messages are exported, not only the tail that survives
-  the chat-token limit;
+* the export carries the **stored** messages by default, and the
+  **buffered** ones — what the model actually sees — on request;
+* the header says which of the two it carries, so a file is never a
+  mystery;
 * a file is written where the operator asked, and a failure to write it
   is reported instead of raised.
 
@@ -22,6 +24,8 @@ from unittest.mock import MagicMock, patch
 from chat_manager.commands import cmd_chat_export
 from chat_manager.commands.handler import handle_chat_command, is_chat_command
 from chat_manager.export import (
+    SOURCE_BUFFER,
+    SOURCE_STORED,
     render_header,
     render_session,
     render_transcript,
@@ -29,7 +33,6 @@ from chat_manager.export import (
     write_export,
 )
 from chat_manager.session import Session, SessionType
-from chat_manager.stats import HistoryStats
 
 
 def _message(role, content):
@@ -44,33 +47,33 @@ def _message(role, content):
     return ChatMessage(role=roles[role], content=content)
 
 
-def _manager(messages=None, stats=None, initialized=True, active=True):
-    """Return a manager that holds *messages*."""
+def _session():
+    """Return the session the exports are of."""
+    return Session(
+        session_id="sess-1",
+        user_id="user-1",
+        session_name="General Chat",
+        session_type=SessionType.GENERAL,
+        chat_key="key-1",
+        is_active=True,
+    )
+
+
+def _manager(messages=None, buffered=None, initialized=True, active=True):
+    """Return a manager that holds *messages*.
+
+    The buffer holds the same messages unless *buffered* says otherwise —
+    the buffer is the tail of the history, and a session that fits in the
+    limit is all of it.
+    """
     manager = MagicMock()
     manager.is_initialized = initialized
 
-    session = None
-    if active:
-        session = Session(
-            session_id="sess-1",
-            user_id="user-1",
-            session_name="General Chat",
-            session_type=SessionType.GENERAL,
-            chat_key="key-1",
-            is_active=True,
-        )
-    manager.get_active_session.return_value = session
+    manager.get_active_session.return_value = _session() if active else None
     manager.get_stored_messages.return_value = list(messages or [])
-
-    if stats is None:
-        stats = HistoryStats(
-            message_count=len(messages or []),
-            total_bytes=136,
-            stored_tokens=42,
-            buffer_tokens=30,
-            token_limit=5000,
-        )
-    manager.get_history_stats.return_value = stats
+    manager.get_messages.return_value = list(
+        buffered if buffered is not None else (messages or [])
+    )
 
     return manager
 
@@ -109,66 +112,52 @@ class TestRenderTranscript(unittest.TestCase):
 
 
 class TestRenderHeader(unittest.TestCase):
-    """The header says which session the export came from."""
-
-    def setUp(self):
-        self.session = Session(
-            session_id="sess-1",
-            user_id="user-1",
-            session_name="General Chat",
-            session_type=SessionType.GENERAL,
-            chat_key="key-1",
-            is_active=True,
-        )
+    """The header says which session the export came from, and of what."""
 
     def test_names_the_session(self):
-        header = render_header(self.session, 3)
+        header = render_header(_session(), [_message("user", "hello")])
         self.assertIn("General Chat", header)
         self.assertIn("sess-1", header)
         self.assertIn("general", header)
 
-    def test_carries_the_measurements(self):
-        stats = HistoryStats(
-            message_count=3,
-            total_bytes=2048,
-            stored_tokens=1234,
-            buffer_tokens=900,
-            token_limit=8192,
-        )
-        header = render_header(self.session, 3, stats)
+    def test_carries_the_measurements_of_the_exported_messages(self):
+        messages = [_message("user", "hello")]
+        header = render_header(_session(), messages)
 
-        self.assertIn("3", header)
-        self.assertIn("2.0 KB", header)
-        self.assertIn("1,234", header)
-        self.assertIn("8,192", header)
+        self.assertIn("Messages: 1", header)
+        self.assertIn("5 B", header)
+        self.assertIn("Tokens:", header)
 
-    def test_without_measurements_the_count_is_still_shown(self):
-        header = render_header(self.session, 7)
-        self.assertIn("7", header)
+    def test_the_stored_source_is_named(self):
+        header = render_header(_session(), [], SOURCE_STORED)
+        self.assertIn("Source: stored", header)
+
+    def test_the_buffer_source_is_named(self):
+        """A file that says nothing of where it came from is a mystery."""
+        header = render_header(_session(), [], SOURCE_BUFFER)
+        self.assertIn("Source: buffer", header)
+
+    def test_the_measurements_are_of_the_export_not_of_the_session(self):
+        """The size and the tokens describe what was exported."""
+        messages = [_message("user", "x" * 100)]
+        header = render_header(_session(), messages, SOURCE_BUFFER)
+
+        self.assertIn("Messages: 1", header)
+        self.assertNotIn("Messages: 5", header)
 
 
 class TestRenderSession(unittest.TestCase):
     """The export is the header, a blank line, and the transcript."""
 
-    def setUp(self):
-        self.session = Session(
-            session_id="sess-1",
-            user_id="user-1",
-            session_name="General Chat",
-            session_type=SessionType.GENERAL,
-            chat_key="key-1",
-            is_active=True,
-        )
-
     def test_header_and_transcript(self):
-        text = render_session(self.session, [_message("user", "hello")])
+        text = render_session(_session(), [_message("user", "hello")])
         lines = text.splitlines()
 
         self.assertTrue(lines[0].startswith("Session: General Chat"))
         self.assertEqual(lines[-1], "user: hello")
 
     def test_an_empty_session_says_so(self):
-        text = render_session(self.session, [])
+        text = render_session(_session(), [])
         self.assertIn("no messages", text)
 
 
@@ -255,6 +244,27 @@ class TestCmdChatExport(unittest.TestCase):
         self.assertIn("[b] c", result)
         self.assertIn("[/nope]", result)
 
+    def test_the_stored_history_is_exported_by_default(self):
+        manager = _manager([_message("user", "the whole session")])
+
+        result = cmd_chat_export(manager)
+
+        self.assertIn("Source: stored", result)
+        self.assertIn("the whole session", result)
+
+    def test_the_buffer_can_be_exported(self):
+        """The buffer is the tail of the history — what the model sees."""
+        manager = _manager(
+            messages=[_message("user", "the whole session")],
+            buffered=[_message("user", "only the tail")],
+        )
+
+        result = cmd_chat_export(manager, source=SOURCE_BUFFER)
+
+        self.assertIn("Source: buffer", result)
+        self.assertIn("only the tail", result)
+        self.assertNotIn("the whole session", result)
+
     def test_writes_the_file(self):
         manager = _manager([_message("user", "hello")])
 
@@ -263,8 +273,18 @@ class TestCmdChatExport(unittest.TestCase):
             result = cmd_chat_export(manager, path=str(target))
 
             self.assertIn(str(target), result)
-            self.assertIn("1 messages", result)
+            self.assertIn("1 stored messages", result)
             self.assertIn("user: hello", target.read_text(encoding="utf-8"))
+
+    def test_the_file_says_which_source_it_carries(self):
+        manager = _manager([_message("user", "hello")])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "session.txt"
+            cmd_chat_export(manager, path=str(target), source=SOURCE_BUFFER)
+
+            written = target.read_text(encoding="utf-8")
+            self.assertIn("Source: buffer", written)
 
     def test_a_missing_directory_is_reported_not_raised(self):
         manager = _manager([_message("user", "hello")])
@@ -290,7 +310,12 @@ class TestExportDispatch(unittest.TestCase):
     """The command reaches the operator through the dispatcher."""
 
     def test_is_a_chat_command(self):
-        for cmd in ("\\chat-export", "\\chat-export /tmp/session.txt"):
+        for cmd in (
+            "\\chat-export",
+            "\\chat-export /tmp/session.txt",
+            "\\chat-export --buffer",
+            "\\chat-export --buffer /tmp/session.txt",
+        ):
             self.assertTrue(is_chat_command(cmd), cmd)
 
     def test_dispatches_to_the_command(self):
@@ -300,6 +325,7 @@ class TestExportDispatch(unittest.TestCase):
             result = handle_chat_command("\\chat-export")
 
         self.assertIn("user: hello", result)
+        self.assertIn("Source: stored", result)
 
     def test_dispatches_with_a_path(self):
         manager = _manager([_message("user", "hello")])
@@ -312,6 +338,78 @@ class TestExportDispatch(unittest.TestCase):
 
             self.assertIn(str(target), result)
             self.assertIn("user: hello", target.read_text(encoding="utf-8"))
+
+    def test_the_buffer_option_is_dispatched(self):
+        manager = _manager(
+            messages=[_message("user", "the whole session")],
+            buffered=[_message("user", "only the tail")],
+        )
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            result = handle_chat_command("\\chat-export --buffer")
+
+        self.assertIn("Source: buffer", result)
+        self.assertIn("only the tail", result)
+
+    def test_the_store_option_is_the_default(self):
+        manager = _manager([_message("user", "hello")])
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            result = handle_chat_command("\\chat-export --store")
+
+        self.assertIn("Source: stored", result)
+
+    def test_the_option_comes_before_the_path(self):
+        manager = _manager([_message("user", "hello")])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "session.txt"
+
+            with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+                result = handle_chat_command(f"\\chat-export --buffer {target}")
+
+            # The status names the source, and the file itself carries it.
+            self.assertIn("buffered messages", result)
+
+            written = target.read_text(encoding="utf-8")
+            self.assertIn("Source: buffer", written)
+            self.assertIn("user: hello", written)
+
+    def test_a_path_with_a_space_in_it_survives(self):
+        manager = _manager([_message("user", "hello")])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "my session.txt"
+
+            with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+                handle_chat_command(f"\\chat-export {target}")
+
+            self.assertTrue(target.exists())
+
+    def test_an_unknown_option_is_reported(self):
+        manager = _manager([_message("user", "hello")])
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            result = handle_chat_command("\\chat-export --everything")
+
+        self.assertIn("Unknown option", result)
+        self.assertIn("Usage:", result)
+
+    def test_two_sources_are_reported(self):
+        manager = _manager([_message("user", "hello")])
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            result = handle_chat_command("\\chat-export --buffer --store")
+
+        self.assertIn("Only one source", result)
+
+    def test_the_same_option_twice_is_reported(self):
+        manager = _manager([_message("user", "hello")])
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            result = handle_chat_command("\\chat-export --buffer --buffer")
+
+        self.assertIn("twice", result)
 
     def test_trailing_whitespace_is_the_bare_command(self):
         """The command is stripped, so the trailing spaces are not a path."""
@@ -357,8 +455,24 @@ class TestExportWithARealManager(unittest.TestCase):
 
         result = cmd_chat_export(self.manager)
 
+        self.assertIn("Source: stored", result)
         self.assertIn("user: hello", result)
         self.assertIn("assistant: hi there", result)
+
+    def test_the_buffer_is_smaller_than_the_store(self):
+        """The buffer is the tail of the history — the model sees less."""
+        self.manager.update_user_settings(chat_token_limit="256")
+
+        # Two messages of about 200 tokens each: the buffer of 256 keeps
+        # one of them, the session keeps both.
+        for index in range(2):
+            self.manager.add_message(f"{index} " + ("word " * 200), "user")
+
+        stored = self.manager.get_stored_messages()
+        buffered = list(self.manager.get_messages())
+
+        self.assertEqual(len(stored), 2)
+        self.assertLess(len(buffered), len(stored))
 
     def test_the_file_carries_the_same_text(self):
         self.manager.add_message("hello", "user")
