@@ -8,6 +8,7 @@ Provides interactive commands for session management:
 - \\chat-rename <id> <new name>: Rename a session
 - \\chat-info: Show details of the active session
 - \\chat-clear: Clear the active session's message history
+- \\chat-export [path]: Print the content of the active session, or write it to a file
 
 and for the user's own configuration:
 - \\chat-user: Show the current user's settings
@@ -21,6 +22,16 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from chat_manager.export import (
+    FORMAT_JSON,
+    FORMAT_TEXT,
+    SOURCE_BUFFER,
+    SOURCE_NOUN,
+    SOURCE_STORED,
+    render_session,
+    resolve_path,
+    write_export,
+)
 from chat_manager.session import SessionType
 from chat_manager.stats import format_size, format_tokens
 from chat_manager.settings import (
@@ -237,6 +248,77 @@ def cmd_chat_clear(manager: ChatHistoryManager) -> str:
         return f"Could not clear messages: {e}"
 
     return f"Cleared message history for session '{session.session_name}'."
+
+
+def cmd_chat_export(
+    manager: ChatHistoryManager,
+    path: str | None = None,
+    source: str = SOURCE_STORED,
+    output_format: str = FORMAT_TEXT,
+) -> str:
+    """Print the content of the active session, or write it to a file.
+
+    Two things are called "the session", and the export can carry either
+    one:
+
+    * ``SOURCE_STORED`` — everything the session keeps.  It grows with
+      every turn and is never trimmed;
+    * ``SOURCE_BUFFER`` — the tail of the history that survives the
+      chat-token limit, and is what the model is actually sent.
+
+    The header of the export says which one it carries, so a file is
+    never a mystery.
+
+    And it can be written in two formats: the text a person reads, and
+    the JSON a program reads.
+
+    Without a path the content is returned, and the caller prints it.
+    With one it is written to that file, and the caller is told where.
+
+    Args:
+        manager: The ChatHistoryManager instance.
+        path: The file to write the export to.  ``None`` prints it.
+        source: Which part of the session to export.
+        output_format: The format of the export — ``FORMAT_TEXT`` or
+            ``FORMAT_JSON``.
+
+    Returns:
+        The content of the session, or a status message.
+    """
+    if not manager.is_initialized:
+        return "ChatHistoryManager not initialized."
+
+    session = manager.get_active_session()
+    if session is None:
+        return "No active session."
+
+    if source == SOURCE_BUFFER:
+        try:
+            messages = list(manager.get_messages())
+        except RuntimeError as exc:
+            return f"Could not read the buffer of the session: {exc}"
+    else:
+        messages = manager.get_stored_messages()
+
+    text = render_session(session, messages, source, output_format)
+
+    if path is None:
+        return text
+
+    target = resolve_path(path)
+
+    try:
+        written = write_export(target, text)
+    except OSError as exc:
+        return f"Could not write '{target}': {exc}"
+
+    noun = SOURCE_NOUN.get(source, "messages")
+    as_json = "as JSON " if output_format == FORMAT_JSON else ""
+
+    return (
+        f"Wrote {len(messages)} {noun} {as_json}({format_size(written)}) "
+        f"to '{target}'."
+    )
 
 
 # ---------------------------------------------------------------------------

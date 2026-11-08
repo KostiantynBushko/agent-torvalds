@@ -6,6 +6,179 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The export of a session, as JSON
+
+- **The operator asked for a JSON export on 2026-11-08:**
+
+  > *"can we export chat history as json?"*
+
+  The text export is for a person to read.  A program that has to read
+  the same session was left with a transcript and a problem: the role,
+  the text, the thinking and the tool calls were all inside one line,
+  separated by `|` and `:`.
+
+- **`\chat-export --json` writes the same export as a JSON document.**
+
+  ```
+  \chat-export --json                 the JSON of the session, on stdout
+  \chat-export --json <path>          the JSON of the session, in a file
+  \chat-export --json --buffer        the JSON of the buffer
+  ```
+
+  It is not the text with brackets around it.  The role, the content, the
+  thinking and the tool calls are **fields**:
+
+  ```json
+  {
+    "session": {
+      "id": "sess-1",
+      "name": "General Chat",
+      "type": "general",
+      "created_at": "2026-11-08T14:00:00",
+      "updated_at": "2026-11-08T14:42:12"
+    },
+    "source": "stored",
+    "message_count": 2,
+    "size_bytes": 27,
+    "tokens": 4,
+    "tokens_estimated": false,
+    "messages": [
+      {
+        "role": "user",
+        "content": "first message",
+        "thinking": null,
+        "tool_calls": [],
+        "metadata": {}
+      }
+    ]
+  }
+  ```
+
+- **The document says the same things the text says.**  The session, the
+  source, the count, the size and the tokens are all there — a consumer
+  of the JSON learns what a reader of the text learns.  The size and the
+  tokens are the ones of the **exported** messages, and `tokens_estimated`
+  says whether the tokenizer was there to count them.
+
+- **The source and the format are independent.**  `--buffer` chooses
+  which half of the session is exported, `--json` chooses how it is
+  written, and the two can be combined: `--buffer --json` is the buffer
+  in JSON.  Each group takes one option, and two options of the same
+  group are reported with the usage line.
+
+- **The characters of the session survive.**  The JSON is written with
+  `ensure_ascii=False`, so the text of a session is the text of a
+  session — in Cyrillic, in Japanese, in emoji — and not a wall of
+  `\uXXXX`.  The file is UTF-8, like the text export.
+
+- **The tests** are in `chat_manager/tests/test_export.py` — the
+  document, the fields of a message, the thinking, the tool calls, the
+  characters, and the dispatch of the two groups of options.
+
+  ```
+  $ .venv/bin/python -m pytest chat_manager/tests/test_export.py -q
+  65 passed
+  ```
+
+#### The content of a session, printed or written to a file
+
+- **The operator had no way to keep a copy of a session.**  The request
+  asked for it on 2026-11-08:
+
+  > *"I want to have a command under 'chat' section to be able to print
+  > current session content into stdout or file"*
+
+  `\chat-info` told the operator how big the session was — how many
+  messages, how many bytes, how many tokens — and not one word of *what*
+  was in it.  A session that cannot be read cannot be kept, cannot be
+  pasted into a bug report, and cannot be read by the person who was not
+  there when it was made.
+
+- **`\chat-export` prints the session, or writes it to a file.**
+
+  ```
+  \chat-export                 the content of the active session, on stdout
+  \chat-export <path>          the content of the active session, in a file
+  ```
+
+  One command, one optional argument.  There is no format flag: the text
+  is the text — the same rendering the log uses
+  (`components/chat_message.to_string`), so a session reads the same
+  everywhere it is shown.  A header names the session and carries its
+  size, because an export that does not say where it came from is a
+  mystery file.
+
+- **The export can carry either half of the session, and the operator
+  says which.**
+
+  ```
+  \chat-export                      the stored history — every message
+  \chat-export --buffer             the buffered tail — what the model sees
+  \chat-export --store              the stored history, said out loud
+  \chat-export --buffer <path>      the buffered tail, in a file
+  ```
+
+  Two things are called "the session": the messages the session keeps —
+  they grow with every turn and are never trimmed — and the tail of them
+  that reaches the model.  The stored history is the default, because an
+  export that silently dropped the older half of a conversation would be
+  a trap.  The buffer is the other half, and it is worth having on its
+  own: it is what the model was shown, and it is what a report about a
+  runaway context needs to quote.
+
+  The header of the export names the source — `Source: stored` or
+  `Source: buffer` — so a file is never a mystery, and the size and the
+  tokens in it are the ones of the **exported** messages, not of the
+  session behind them.
+
+- **The file is written as UTF-8 and overwritten** — an export is a copy
+  of a session, not a log to append to.  `~` is expanded, a relative path
+  is taken from the working directory of the agent, and a directory that
+  does not exist is **not** created: the command says which directory is
+  missing, and the operator decides.
+
+- **The content of a session is arbitrary text, and Rich ate it.**  The
+  result of a chat command was printed with markup:
+
+  ```
+  console.print(f"[cyan]{chat_response}[/cyan]")
+  ```
+
+  and the content of a session is what the operator typed and what the
+  model answered.  Rich reads square brackets as markup, and the effect
+  was never cosmetic:
+
+  ```
+  '[dim]text[/dim]'  ->  'text'           the text is eaten
+  'a [b] c'          ->  'a  c'           the text is eaten
+  '[/nope] broken'   ->  MarkupError      the REPL dies
+  ```
+
+  So the chat commands are printed **verbatim** now
+  (`components/console_output.print_verbatim`): the markup is not
+  interpreted, the text is not highlighted and it is not wrapped.  The
+  colour is kept — the chat commands stay cyan.
+
+- **The tests** are `chat_manager/tests/test_export.py` — the renderer,
+  the command, the dispatch, and the export against the manager the agent
+  really runs — and `tests/test_console_output.py`, where the closing tag
+  that used to raise is a test now.
+
+  ```
+  $ .venv/bin/python -m pytest chat_manager/tests/test_export.py tests/test_console_output.py -q
+  33 passed
+  ```
+
+- **The design** is in `investigate/chat-export/PROPOSAL.md`, and it says
+  what is **not** in this change: no format flag, no export of another
+  session, no new setting, and no change to the history itself.
+
+- **The options are parsed by hand, and the path is kept verbatim.**  The
+  options come first, and what is left is the path — so a path with a
+  space in it survives.  An unknown option, the same option twice, and
+  two sources at once are all reported with the usage line, not guessed
+  at.
+
 #### The agent loads skills on demand — and the prompt does not pay for them
 
 - **The Agent Skills feature was measured before it was built, and the

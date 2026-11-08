@@ -705,6 +705,21 @@ class ChatHistoryManager:
         buffer = self.get_memory_buffer()
         return buffer.get()
 
+    def get_stored_messages(self) -> list:
+        """Get every message stored for the current session.
+
+        The memory buffer holds only the tail of the history that survives
+        the chat-token limit — the part the model is actually sent.  The
+        session itself keeps everything, and this is what it keeps.
+
+        Returns:
+            The stored messages, oldest first.  Empty when there is no
+            active session or no backend.
+        """
+        if self._active_session is None or self._backend is None:
+            return []
+        return list(self._backend.get_messages(self._active_session.chat_key))
+
     def clear_messages(self) -> None:
         """Delete every message stored for the active session.
 

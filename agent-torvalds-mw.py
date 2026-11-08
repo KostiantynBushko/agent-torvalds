@@ -265,6 +265,7 @@ from components.stats_handler import (
 from components.ollama_config import apply_context_window, get_ollama_base_url
 from components.config import config
 from components.config_view import handle_config
+from components.console_output import print_verbatim
 from components.skills_tools import build_skills
 from components.file_logging import (
     LogFileConfig,
@@ -1345,7 +1346,10 @@ async def run_classic_repl(
             except Exception as e:
                 chat_response = f"Error: {e}"
             if chat_response:
-                console.print(f"[cyan]{chat_response}[/cyan]")
+                # The content of a session is arbitrary text — what the
+                # operator typed and what the model answered.  It is
+                # printed verbatim, so Rich does not eat it.
+                print_verbatim(console, chat_response)
             continue
 
         if runtime_toggle_enabled:
