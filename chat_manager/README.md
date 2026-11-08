@@ -104,10 +104,10 @@ persisted as the user's active session.
 
 ### Interactive commands
 
-Eight runtime commands (`\chat-sessions`, `\chat-select`, `\chat-create`, `\chat-delete`,
-`\chat-rename`, `\chat-info`, `\chat-clear`, `\chat-user`) are dispatched by the agent's main
-loop. They are **commands, not agent tools** — the LLM cannot call them, only the human
-operator can.
+Nine runtime commands (`\chat-sessions`, `\chat-select`, `\chat-create`, `\chat-delete`,
+`\chat-rename`, `\chat-info`, `\chat-clear`, `\chat-export`, `\chat-user`) are dispatched by
+the agent's main loop. They are **commands, not agent tools** — the LLM cannot call them,
+only the human operator can.
 
 `\chat-user` is the command over the user's *own configuration* — the preferences stored in
 the `users` table. See [User settings](#user-settings) below.
@@ -798,6 +798,7 @@ and cannot be triggered by the model.
 | `\chat-rename <session_id> <new name>` | — | Rename a session. |
 | `\chat-info` | — | Show details of the active session (ID, name, type, chat key, timestamps) and what it holds (messages, size, tokens). |
 | `\chat-clear` | — | Delete all messages in the active session, keeping the session. |
+| `\chat-export [--buffer|--store] [--json|--text] [path]` | — | Print the content of the active session, or write it to a file. Without a path the content is printed; with one it is written there (UTF-8, overwriting what was there). The **stored** history is exported by default — every message the session keeps; `--buffer` exports the tail of it that survives the chat-token limit, which is what the model actually sees. The export is **text** by default — the rendering the log uses; `--json` writes the same export as a JSON document, where the role, the content, the thinking and the tool calls are fields. The header of the export names the source, and the JSON carries it too, so a file is never a mystery. |
 | `\chat-user` | — | Show the current user's settings. |
 | `\chat-user get <key>` | — | Show one setting. |
 | `\chat-user set <key> <value>` | — | Change one setting. The change is validated, persisted, and applied to the live memory buffer. |

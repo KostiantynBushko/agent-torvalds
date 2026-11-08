@@ -60,7 +60,7 @@ class HistoryStats:
     estimated: bool = False
 
 
-def _message_text(message: Any) -> str:
+def message_text(message: Any) -> str:
     """Return the text of a message.
 
     Args:
@@ -89,7 +89,7 @@ def count_tokens(messages: Sequence[Any]) -> tuple[int, bool]:
         The estimate is used when the tokenizer cannot be loaded — the
         count is then an approximation, and the caller says so.
     """
-    text = " ".join(_message_text(message) for message in messages)
+    text = " ".join(message_text(message) for message in messages)
     if not text:
         return 0, False
 
@@ -112,7 +112,7 @@ def measure(
         The measurements of the history.
     """
     total_bytes = sum(
-        len(_message_text(message).encode("utf-8")) for message in stored_messages
+        len(message_text(message).encode("utf-8")) for message in stored_messages
     )
 
     stored_tokens, stored_estimated = count_tokens(stored_messages)
@@ -172,4 +172,5 @@ __all__ = [
     "format_size",
     "format_tokens",
     "measure",
+    "message_text",
 ]

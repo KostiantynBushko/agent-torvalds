@@ -331,6 +331,8 @@ class TestIsChatCommand(unittest.TestCase):
             "\\chat-rename id name",
             "\\chat-info",
             "\\chat-clear",
+            "\\chat-export",
+            "\\chat-export session.txt",
         ):
             self.assertTrue(is_chat_command(cmd), cmd)
 
