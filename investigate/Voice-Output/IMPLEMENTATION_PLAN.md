@@ -2,18 +2,17 @@
 
 **Date:** 2026-10-22 (reworked)
 **Repository:** agent-torvalds
-**Branch:** `feature/voice-toolkit` (in the `self-development` clone, off `master` @ `e21d97c`)
+**Branch:** `feature/voice-toolkit` (off `master` @ `ccb4322`)
 **Status:** Planned — Phase 0 not yet started
 **Estimated Effort:** ~8.5 working days (was ~9.5 in the toolkit plan)
 **Authoritative design:** [PROPOSAL_voice_output.md](PROPOSAL_voice_output.md)
 **Evidence base:** [INVESTIGATION_REPORT.md](INVESTIGATION_REPORT.md)
 
-> ⚠️ **All work happens in the `self-development` clone only.** The main
-> checkout is the operator's working copy and is read-only for this work
-> (Rule 1 & Rule 2 of `SELF_DEVELOPMENT_RULES.md`). Nothing in this plan may
-> touch the main repository.
+> ⚠️ **All work happens on a branch of this repository.** The change is made
+> in the working copy the agent is running in, on a branch of its own
+> (Rule 1 of `DEVELOPMENT_RULES.md`). The working copy is not read-only.
 >
-> ⚠️ **Commits and pushes require explicit operator approval** (Rule 4). Each
+> ⚠️ **Commits and pushes require explicit operator approval** (Rule 2). Each
 > phase below ends with a "checkpoint" that presents `git status` and
 > `git diff` for review. Do not commit on your own initiative.
 
@@ -271,10 +270,10 @@ The full 54-voice catalogue is documented in `PROPOSAL_voice_output.md` §12.4.
 
 | # | Precondition | Status |
 |---|---|---|
-| P1 | Work happens **only** in the `self-development` clone | ✅ Rule 1 & 2 |
+| P1 | Work happens on a branch of this repository, in the working copy | ✅ Rule 1 |
 | P2 | Dedicated branch off `master` | ✅ `feature/voice-toolkit` created at `e21d97c` |
-| P3 | `requests` importable in `self-development/.venv` | ✅ Verified (2.34.2) |
-| P4 | `pytest` available in `self-development/.venv` | ✅ Verified (9.1.1) |
+| P3 | `requests` importable in `.venv` | ✅ Verified (2.34.2) |
+| P4 | `pytest` available in `.venv` | ✅ Verified (9.1.1) |
 | P5 | `audio.cpp` built and `audiocpp_server` startable | ✅ Verified in the investigation (§7.4) |
 | P6 | TTS weights present (`models/TTS/kokoro-82m-bf16.gguf`) | ✅ Verified (212 MB, 54 preset voices) |
 | P7 | A playback binary available (`ffplay` or `aplay`) | ✅ `ffplay` present; `aplay` present |
@@ -297,7 +296,6 @@ nothing.
 ### Step 0.1 — Record the baseline
 
 ```bash
-cd self-development
 .venv/bin/python -m pytest -q 2>&1 | tail -5
 ```
 
@@ -308,7 +306,6 @@ and blocks the phase.
 ### Step 0.2 — Create the component directory
 
 ```bash
-cd self-development
 mkdir -p components/voice/backends
 ```
 
@@ -376,7 +373,7 @@ problem.
 
 - [ ] `import components.voice` succeeds
 - [ ] `from components.voice import VoiceSessionManager, build_voice_config` works
-- [ ] `self-development/.venv/bin/python -m pytest -q` reports the **same** failure set as the baseline
+- [ ] `.venv/bin/python -m pytest -q` reports the **same** failure set as the baseline
 - [ ] `git status` shows only the new files
 - [ ] Present the diff to the operator; **do not commit** without approval
 
@@ -385,7 +382,7 @@ problem.
 ## 6. Phase 1 — The Text Preparation Layer
 
 **Duration:** 1 day
-**Location:** `self-development/components/voice/text.py`
+**Location:** `components/voice/text.py`
 **Why first:** this is where the quality of the feature lives, it is the
 cheapest thing to test, and it has **zero** dependency on `audio.cpp`.
 
@@ -1196,8 +1193,6 @@ With `audiocpp_server` running and `--voice` passed:
       other components use.
 - [ ] `README.md` — a short "Voice output" section.
 - [ ] `CHANGELOG.md` — an entry under `## [Unreleased]`.
-- [ ] `SELF_DEVELOPMENT_RULES.md` — update the "Current self-development
-      work" table, per Rule 3.
 
 ---
 
@@ -1223,7 +1218,7 @@ With `audiocpp_server` running and `--voice` passed:
 | D16 | The player never writes to the terminal |
 | D17 | **No voice tool exists** — the tool inventory and the `--select` menu are unchanged |
 | D18 | The default voice is `af_heart`; there is no "Torvalds voice" and no clone path |
-| D19 | All work is confined to the `self-development` clone on `feature/voice-toolkit` |
+| D19 | All work is confined to the branch `feature/voice-toolkit` in the working copy |
 | D20 | `docs/voice-component.md` exists and documents every environment variable |
 | D21 | The operator has approved the merge back to the main repository |
 
@@ -1309,7 +1304,6 @@ agent-torvalds.py                          # the flags, the manager, the hook, t
 agent-torvalds-mw.py                       # the same, plus the TUI
 README.md
 CHANGELOG.md
-SELF_DEVELOPMENT_RULES.md
 ```
 
 **Deliberately NOT modified**
@@ -1376,5 +1370,5 @@ except R10 (the toolkit-convention divergence risk), which this rework
 
 *Plan derived from `PROPOSAL_voice_output.md` and `INVESTIGATION_REPORT.md`,
 reworked from the toolkit shape to the component shape.
-All implementation work is to be performed in the `self-development` clone on
-branch `feature/voice-toolkit`.*
+All implementation work is to be performed in the working copy, on branch
+`feature/voice-toolkit`.*

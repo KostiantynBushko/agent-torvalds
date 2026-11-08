@@ -13,8 +13,8 @@
 > it reopens the question the plan currently answers with "No"
 > (`IMPLEMENTATION_PLAN.md` Appendix C, **Q9**).
 >
-> All work remains in the `self-development` clone (Rule 1 & Rule 2 of
-> `SELF_DEVELOPMENT_RULES.md`).
+> All work remains on a branch of this repository, in the working copy the
+> agent is running in (Rule 1 of `DEVELOPMENT_RULES.md`).
 
 ---
 
@@ -253,7 +253,7 @@ ffmpeg -hide_banner -loglevel error -f alsa -i <device> -ar 16000 -ac 1 -c:a pcm
 `arecord` and `pw-record` are the fallbacks, and they exist precisely
 because ALSA's `default` device is not always present on a PipeWire host.
 
-The venv is **Python 3.12** (`self-development/.venv/lib/python3.12`), so
+The venv is **Python 3.12** (`.venv/lib/python3.12`), so
 `audioop` is deprecated-but-present. The capture analysis should use
 `wave` + `array` and compute RMS by hand — no deprecated import, no new
 dependency.
@@ -647,7 +647,6 @@ Every wiring point the input half touches:
 | `docs/voice-component.md` | The input half: the switch, the commands, the devices, the ASR model, the privacy model |
 | `docs/audiocpp-server.json.example` | The ASR model registration and `max_loaded_models: 2` |
 | `README.md`, `CHANGELOG.md` | The input half |
-| `SELF_DEVELOPMENT_RULES.md` | The work table (Rule 3) |
 
 **And what is deliberately NOT touched:**
 
@@ -907,4 +906,5 @@ pending the operator's answers to LQ1–LQ9.
 *Companion documents: [`PROPOSAL_voice_output.md`](./PROPOSAL_voice_output.md) ·
 [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) ·
 [`INVESTIGATION_REPORT.md`](./INVESTIGATION_REPORT.md).
-All implementation work is to be performed in the `self-development` clone.*
+All implementation work is to be performed in the working copy, on a branch of
+its own.*
