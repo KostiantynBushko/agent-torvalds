@@ -570,6 +570,17 @@ class TestChatHistoryView(unittest.TestCase):
         self.assertIn("done", md)
         self.assertIn("\\chat-clear", md)
 
+    def test_handle_chat_command_markdown_shows_the_export(self):
+        """The content of a session reaches the document pane."""
+        with patch(
+            "chat_manager.commands.handler.handle_chat_command",
+            return_value="user: hello",
+        ):
+            md = self.view.handle_chat_command_markdown("\\chat-export")
+
+        self.assertIn("user: hello", md)
+        self.assertIn("\\chat-export", md)
+
 
 # ---------------------------------------------------------------------------
 # TUI state bridge additions

@@ -150,6 +150,7 @@ class TestCommandRegistry(unittest.TestCase):
             "\\chat-rename",
             "\\chat-info",
             "\\chat-clear",
+            "\\chat-export",
         ):
             self.assertIn(command, md, f"{command} missing from help output")
 

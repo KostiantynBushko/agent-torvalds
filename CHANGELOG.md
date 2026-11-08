@@ -6,6 +6,84 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The content of a session, printed or written to a file
+
+- **The operator had no way to keep a copy of a session.**  The request
+  asked for it on 2026-11-08:
+
+  > *"I want to have a command under 'chat' section to be able to print
+  > current session content into stdout or file"*
+
+  `\chat-info` told the operator how big the session was — how many
+  messages, how many bytes, how many tokens — and not one word of *what*
+  was in it.  A session that cannot be read cannot be kept, cannot be
+  pasted into a bug report, and cannot be read by the person who was not
+  there when it was made.
+
+- **`\chat-export` prints the session, or writes it to a file.**
+
+  ```
+  \chat-export                 the content of the active session, on stdout
+  \chat-export <path>          the content of the active session, in a file
+  ```
+
+  One command, one optional argument.  There is no format flag: the text
+  is the text — the same rendering the log uses
+  (`components/chat_message.to_string`), so a session reads the same
+  everywhere it is shown.  A header names the session and carries its
+  size, because an export that does not say where it came from is a
+  mystery file.
+
+- **The export carries every *stored* message, not only the tail that
+  survives the chat-token limit.**  Two things are called "the session":
+  the messages the session keeps — they grow with every turn and are never
+  trimmed — and the tail of them that reaches the model.  An export that
+  silently dropped the older half of a conversation would be a trap, and
+  the header carries both sizes, so the operator sees what the model sees
+  and what the session keeps.
+
+- **The file is written as UTF-8 and overwritten** — an export is a copy
+  of a session, not a log to append to.  `~` is expanded, a relative path
+  is taken from the working directory of the agent, and a directory that
+  does not exist is **not** created: the command says which directory is
+  missing, and the operator decides.
+
+- **The content of a session is arbitrary text, and Rich ate it.**  The
+  result of a chat command was printed with markup:
+
+  ```
+  console.print(f"[cyan]{chat_response}[/cyan]")
+  ```
+
+  and the content of a session is what the operator typed and what the
+  model answered.  Rich reads square brackets as markup, and the effect
+  was never cosmetic:
+
+  ```
+  '[dim]text[/dim]'  ->  'text'           the text is eaten
+  'a [b] c'          ->  'a  c'           the text is eaten
+  '[/nope] broken'   ->  MarkupError      the REPL dies
+  ```
+
+  So the chat commands are printed **verbatim** now
+  (`components/console_output.print_verbatim`): the markup is not
+  interpreted, the text is not highlighted and it is not wrapped.  The
+  colour is kept — the chat commands stay cyan.
+
+- **The tests** are `chat_manager/tests/test_export.py` — the renderer,
+  the command, the dispatch, and the export against the manager the agent
+  really runs — and `tests/test_console_output.py`, where the closing tag
+  that used to raise is a test now.
+
+  ```
+  $ .venv/bin/python -m pytest chat_manager/tests/test_export.py tests/test_console_output.py -q
+  33 passed
+  ```
+
+- **The design** is in `investigate/chat-export/PROPOSAL.md`, and it says
+  what is **not** in this change: no format flag, no export of another
+  session, no new setting, and no change to the history itself.
+
 #### The agent loads skills on demand — and the prompt does not pay for them
 
 - **The Agent Skills feature was measured before it was built, and the

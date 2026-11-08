@@ -8,6 +8,7 @@ Provides interactive commands for session management:
 - \\chat-rename <id> <new name>: Rename a session
 - \\chat-info: Show details of the active session
 - \\chat-clear: Clear the active session's message history
+- \\chat-export [path]: Print the content of the active session, or write it to a file
 
 and for the user's own configuration:
 - \\chat-user: Show the current user's settings
@@ -21,6 +22,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from chat_manager.export import (
+    render_session,
+    resolve_path,
+    write_export,
+)
 from chat_manager.session import SessionType
 from chat_manager.stats import format_size, format_tokens
 from chat_manager.settings import (
@@ -237,6 +243,59 @@ def cmd_chat_clear(manager: ChatHistoryManager) -> str:
         return f"Could not clear messages: {e}"
 
     return f"Cleared message history for session '{session.session_name}'."
+
+
+def cmd_chat_export(manager: ChatHistoryManager, path: str | None = None) -> str:
+    """Print the content of the active session, or write it to a file.
+
+    The content is what the session *stores* — every message of it, and
+    not only the tail that survives the chat-token limit.  The header of
+    the export carries both sizes, so the operator sees what the model
+    sees and what the session keeps.
+
+    Without a path the content is returned, and the caller prints it.
+    With one it is written to that file, and the caller is told where.
+
+    Args:
+        manager: The ChatHistoryManager instance.
+        path: The file to write the export to.  ``None`` prints it.
+
+    Returns:
+        The content of the session, or a status message.
+    """
+    if not manager.is_initialized:
+        return "ChatHistoryManager not initialized."
+
+    session = manager.get_active_session()
+    if session is None:
+        return "No active session."
+
+    messages = manager.get_stored_messages()
+
+    # The measurements are a nicety: a session that cannot be measured is
+    # still a session, and the export is worth making without them.
+    try:
+        stats = manager.get_history_stats()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("The chat history of the session could not be measured: %s", exc)
+        stats = None
+
+    text = render_session(session, messages, stats)
+
+    if path is None:
+        return text
+
+    target = resolve_path(path)
+
+    try:
+        written = write_export(target, text)
+    except OSError as exc:
+        return f"Could not write '{target}': {exc}"
+
+    return (
+        f"Wrote {len(messages)} messages ({format_size(written)}) "
+        f"to '{target}'."
+    )
 
 
 # ---------------------------------------------------------------------------

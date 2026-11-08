@@ -320,6 +320,7 @@ describe.  A plain `git clone` leaves the directory empty;
 ### 15. Chat History Manager (`chat_manager/`)
 - Multi-user, multi-session chat history with a backend-agnostic storage interface
 - Session lifecycle: create, list, select, rename, delete, clear
+- Session export: `\chat-export [path]` prints the content of the active session, or writes it to a file
 - Per-session message isolation — each session maps to its own LlamaIndex `chat_key`
 - Automatic user identification from the OS login with on-demand provisioning
 - Active session persisted in the database and restored on the next startup
@@ -441,7 +442,7 @@ describe.  A plain `git clone` leaves the directory empty;
 | **APT Package Management** | Interactive package installation with sudo handling and multiple password methods |
 | **Chat Memory** | Persistent conversation memory with LlamaIndex integration |
 | **Multi-Session Chat History** | Isolated per-session conversations, multi-user scoping, and database-persisted active session |
-| **Chat Session Commands** | `\chat-sessions`, `\chat-select`, `\chat-create`, `\chat-delete`, `\chat-rename`, `\chat-info`, `\chat-clear` |
+| **Chat Session Commands** | `\chat-sessions`, `\chat-select`, `\chat-create`, `\chat-delete`, `\chat-rename`, `\chat-info`, `\chat-clear`, `\chat-export` |
 | **User Settings Commands** | `\chat-user`, `\chat-user get <key>`, `\chat-user set <key> <value>`, `\chat-user help` |
 | **Interactive Help** | `\help` lists every available command with its description, filtered by the features enabled in the current session |
 | **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
@@ -1206,6 +1207,7 @@ manager.shutdown()
 # \chat-rename <id> <name>    - Rename a session
 # \chat-info                  - Show the active session
 # \chat-clear                 - Clear the active session's message history
+# \chat-export [path]         - Print the content of the active session, or write it to a file
 # \chat-user                  - Show your own settings
 # \chat-user get <key>        - Show one setting
 # \chat-user set <key> <val>  - Change one setting

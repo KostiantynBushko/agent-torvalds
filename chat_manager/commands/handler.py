@@ -27,6 +27,7 @@ CHAT_COMMANDS = {
     "\\chat-rename": "rename",
     "\\chat-info": "info",
     "\\chat-clear": "clear",
+    "\\chat-export": "export",
     "\\chat-user": "user",
 }
 
@@ -67,6 +68,7 @@ def handle_chat_command(cmd: str) -> str | None:
         cmd_chat_rename,
         cmd_chat_info,
         cmd_chat_clear,
+        cmd_chat_export,
         cmd_chat_user,
         cmd_chat_user_get,
         cmd_chat_user_set,
@@ -124,6 +126,16 @@ def handle_chat_command(cmd: str) -> str | None:
     # \chat-clear
     if cmd_lower == "\\chat-clear":
         return cmd_chat_clear(manager)
+
+    # \chat-export [path]
+    if cmd_lower == "\\chat-export":
+        return cmd_chat_export(manager)
+
+    if cmd_lower.startswith("\\chat-export "):
+        path = cmd.strip().split(maxsplit=1)[1].strip()
+        if not path:
+            return "Usage: \\chat-export [path]"
+        return cmd_chat_export(manager, path=path)
 
     # \chat-user [get <key> | set <key> <value> | help]
     if cmd_lower == "\\chat-user":
