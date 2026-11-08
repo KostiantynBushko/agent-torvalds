@@ -60,10 +60,13 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Sequence
 
-logger = logging.getLogger(__name__)
+from components.tokens import (
+    CHARS_PER_TOKEN,
+    count_tokens_of,
+    estimate_tokens,
+)
 
-#: Characters per token in the estimate used when no tokenizer is available.
-CHARS_PER_TOKEN = 4
+logger = logging.getLogger(__name__)
 
 
 __all__ = [
@@ -71,6 +74,7 @@ __all__ = [
     "ContextSize",
     "count_tokens_of",
     "describe_context",
+    "estimate_tokens",
     "measure_context",
     "prompt_text",
     "tool_schema_text",
@@ -170,59 +174,6 @@ def tool_schema_text(tools: Any) -> str:
 # ---------------------------------------------------------------------------
 # The tokens
 # ---------------------------------------------------------------------------
-
-
-def _estimate_tokens(text: str) -> int:
-    """Estimate the tokens of a text without a tokenizer.
-
-    Args:
-        text: The text to estimate.
-
-    Returns:
-        The estimated number of tokens.
-    """
-    return (len(text) + CHARS_PER_TOKEN - 1) // CHARS_PER_TOKEN
-
-
-def count_tokens_of(
-    text: str,
-    tokenizer: Optional[Callable[[str], Any]] = None,
-) -> tuple[int, bool]:
-    """Count the tokens of a text.
-
-    Args:
-        text: The text to count.
-        tokenizer: The tokenizer to count with.  The tokenizer of the
-            agent is loaded when it is not given.
-
-    Returns:
-        A tuple of the number of tokens and whether they were estimated.
-        The estimate is used when no tokenizer can be loaded — the count
-        is then an approximation, and the caller says so.
-    """
-    if not text:
-        return 0, False
-
-    if tokenizer is None:
-        try:
-            from components.context_guard import get_tokenizer
-
-            tokenizer = get_tokenizer()
-        except Exception as exc:  # noqa: BLE001 - the count degrades
-            logger.warning(
-                "The tokenizer of the agent is not available (%s) — the "
-                "tokens are estimated",
-                exc,
-            )
-            return _estimate_tokens(text), True
-
-    try:
-        return len(tokenizer(text)), False
-    except Exception as exc:  # noqa: BLE001 - the count degrades
-        logger.warning(
-            "The tokens could not be counted (%s) — they are estimated", exc
-        )
-        return _estimate_tokens(text), True
 
 
 # ---------------------------------------------------------------------------

@@ -53,6 +53,8 @@ from typing import Any, Callable, List, Optional, Sequence, Tuple
 
 from llama_index.core.base.llms.types import ChatMessage, MessageRole
 
+from components.tokens import load_tokenizer
+
 logger = logging.getLogger(__name__)
 
 #: Fraction of the context window that is kept free for the model's answer.
@@ -126,17 +128,6 @@ def _has_tool_calls(message: ChatMessage) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def get_tokenizer() -> Callable[[str], List[Any]]:
-    """Return the tokenizer used to size the prompt.
-
-    Mirrors ``llama_index.core.utils.get_tokenizer`` so the accounting
-    matches the one ``ChatMemoryBuffer`` uses.
-    """
-    from llama_index.core.utils import get_tokenizer as _get_tokenizer
-
-    return _get_tokenizer()
-
-
 def token_text(message: ChatMessage) -> str:
     """Return everything of *message* that costs tokens.
 
@@ -174,7 +165,7 @@ def count_tokens(
     if not messages:
         return 0
     if tokenizer is None:
-        tokenizer = get_tokenizer()
+        tokenizer = load_tokenizer()
     joined = " ".join(str(token_text(m)) for m in messages)
     return len(tokenizer(joined))
 
@@ -215,7 +206,7 @@ def truncate_message(
     throw away the result the agent just asked for.
     """
     if tokenizer is None:
-        tokenizer = get_tokenizer()
+        tokenizer = load_tokenizer()
     if max_tokens <= 0:
         return message
 
@@ -669,7 +660,7 @@ def select_context_window(
     on its own (a huge tool result) is truncated instead of dropped.
     """
     if tokenizer is None:
-        tokenizer = get_tokenizer()
+        tokenizer = load_tokenizer()
 
     original = list(messages)
     if not original:
@@ -707,7 +698,7 @@ def select_context_window_split(
     holds the messages that came from ``messages[:split_at]``.
     """
     if tokenizer is None:
-        tokenizer = get_tokenizer()
+        tokenizer = load_tokenizer()
 
     original = list(messages)
     if not original:

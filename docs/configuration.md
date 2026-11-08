@@ -170,11 +170,23 @@ dir = "~/.torvalds/logs"
 max_size = "10MB"
 max_files = 5
 symlink = "agent-current.log"
+
+[skills]
+enabled = true
+dirs = "~/.config/torvalds/skills:./skills"
+catalog_in_prompt = false
+body_token_limit = 2000
 ```
 
-Five sections: **`llm`**, **`agent`**, **`hitl`**, **`stats`** and
-**`logging`**. Every setting is documented in `--write-default-config`,
+Six sections: **`llm`**, **`agent`**, **`hitl`**, **`stats`**, **`logging`**
+and **`skills`**. Every setting is documented in `--write-default-config`,
 with the environment variable that overrides it.
+
+The **`skills`** section holds the procedures the agent loads on demand —
+see [`docs/skills.md`](skills.md). The one that matters most is
+`catalog_in_prompt`: it is `false` because the catalog of the skills is
+paid by **every** request, and the agent fetches it with a tool call
+instead.
 
 The names are the dotted names the `\config` command prints: `llm.model`
 is `[llm] model = ...`, and `hitl.timeout` is `[hitl] timeout = ...`.
@@ -382,6 +394,7 @@ and they are still the right place for a secret.
 | `hitl` | `TORVALDS_HITL_ENABLED`, `TORVALDS_HITL_METHOD`, `TORVALDS_HITL_TIMEOUT`, `TORVALDS_HITL_DEFAULT_ANSWER`, `TORVALDS_HITL_RUNTIME_TOGGLE` |
 | `stats` | `TORVALDS_STATS_ENABLED`, `TORVALDS_STATS_FORMAT`, `TORVALDS_STATS_VERBOSE`, `TORVALDS_STATS_PERSIST`, `TORVALDS_STATS_MAX_HISTORY` |
 | `logging` | `TORVALDS_LOG_FILE`, `TORVALDS_LOG_DIR`, `TORVALDS_LOG_MAX_SIZE`, `TORVALDS_LOG_MAX_FILES`, `TORVALDS_LOG_SYMLINK` |
+| `skills` | `TORVALDS_SKILLS_ENABLED`, `TORVALDS_SKILLS_DIRS`, `TORVALDS_SKILLS_CATALOG_IN_PROMPT`, `TORVALDS_SKILLS_BODY_TOKEN_LIMIT` |
 
 ---
 

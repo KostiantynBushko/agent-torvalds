@@ -399,6 +399,21 @@ SETTINGS: tuple[Setting, ...] = (
             False, KIND_BOOLEAN,
             "Trim the prompt to the context window of the model."),
 
+    # -- the skills -------------------------------------------------------
+    Setting("skills.enabled", "TORVALDS_SKILLS_ENABLED",
+            True, KIND_BOOLEAN,
+            "Load the skills of the operator and of the project."),
+    Setting("skills.dirs", "TORVALDS_SKILLS_DIRS",
+            None, KIND_STRING,
+            "The folders the skills are looked for in, separated by a colon.",
+            example="~/.config/torvalds/skills:./skills"),
+    Setting("skills.catalog_in_prompt", "TORVALDS_SKILLS_CATALOG_IN_PROMPT",
+            False, KIND_BOOLEAN,
+            "List the skills in the system prompt instead of on demand."),
+    Setting("skills.body_token_limit", "TORVALDS_SKILLS_BODY_TOKEN_LIMIT",
+            2000, KIND_INTEGER,
+            "How many tokens the body of a skill may take when it is loaded."),
+
     # -- the human in the loop -------------------------------------------
     Setting("hitl.enabled", "TORVALDS_HITL_ENABLED",
             True, KIND_BOOLEAN,

@@ -207,9 +207,9 @@ def write_deployment_doc(directory: Path) -> Path:
     document is therefore measured and grown until it reaches the target
     token count.
     """
-    from components.context_guard import get_tokenizer
+    from components.tokens import load_tokenizer
 
-    tokenizer = get_tokenizer()
+    tokenizer = load_tokenizer()
     path = directory / "DEPLOYMENT.md"
 
     text = DEPLOYMENT_DOC

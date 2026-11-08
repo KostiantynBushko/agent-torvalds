@@ -530,17 +530,11 @@ class HITLFunctionAgent(FunctionAgent):
         request — and it never takes the agent down.
         """
         if self._tokenizer_cache is None and not self._tokenizer_unavailable:
-            try:
-                from components.context_guard import get_tokenizer
+            from components.tokens import get_tokenizer
 
-                self._tokenizer_cache = get_tokenizer()
-            except Exception as exc:  # noqa: BLE001 - the size degrades
+            self._tokenizer_cache = get_tokenizer()
+            if self._tokenizer_cache is None:
                 self._tokenizer_unavailable = True
-                logger.warning(
-                    "The tokenizer of the agent is not available (%s) — the "
-                    "token counts in the log are estimated.",
-                    exc,
-                )
         return self._tokenizer_cache
 
     def _tokenizer(self):

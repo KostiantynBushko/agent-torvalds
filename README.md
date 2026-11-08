@@ -52,10 +52,11 @@ The project documentation:
 | The deployment script — what the `deploy/` folder holds, and its contract | [deploy/README.md](deploy/README.md) |
 | Continuous integration — the CI test gate and the known-failure baseline | [docs/ci.md](docs/ci.md) |
 | Local LLM setup — install Ollama, pull the models, run the agent | [docs/ollama-setup.md](docs/ollama-setup.md) |
+| Agent Skills — the procedures the agent loads on demand, and how to write one | [docs/skills.md](docs/skills.md) |
 | MikroTik RouterOS Toolkit — the end-user reference | [docs/mikrotik-toolkit.md](docs/mikrotik-toolkit.md) |
 | Shodan Toolkit — the end-user reference | [docs/shodan-toolkit.md](docs/shodan-toolkit.md) |
 | The design proposals — the documents the features were designed in | [docs/proposals/](docs/proposals/) |
-| The development rules — how the agent modifies its own code | [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) |
+| The development rules — how a change to this codebase is made | [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) |
 | The CI test gate — the script the build runs | [scripts/ci_test_gate.py](scripts/ci_test_gate.py) |
 | The change log — every change, newest first | [CHANGELOG.md](CHANGELOG.md) |
 
@@ -446,6 +447,7 @@ describe.  A plain `git clone` leaves the directory empty;
 | **Persistent Cache** | Operational context storage across sessions (directory, DBs, repos, errors) |
 | **Per-Request Statistics** | Token usage, timing, tool invocations, error tracking with Rich rendering |
 | **On-Demand Tool Loading** | Semantic tool retrieval to reduce context window pollution |
+| **Agent Skills** | Procedures the agent loads from disk when the task calls for it - the catalog is fetched on demand, so the prompt does not grow with the number of skills |
 | **Optional Context Guard** | `--context-guard-on` trims the prompt to the model's context window, keeping the user request; **off by default** |
 | **Local-First LLM** | Chat and embedding models served by a local Ollama instance - no cloud API, nothing leaves the machine |
 | **Project Path Loading** | `--project-path` flag to load, scan, and register a specific project on startup |
@@ -1242,7 +1244,7 @@ manager.shutdown()
 | CHANGELOG.md                   # Version history
 | DEPLOYMENT.md                  # The deployment guide
 | README.md                      # This file
-| DEVELOPMENT_RULES.md         # The rules the agent follows on its own code
+| DEVELOPMENT_RULES.md         # The rules of a change to this codebase
 | tools_menu_update.md           # The startup tool menu, category by category
 | __pycache__/                  # Python cache
 | .venv/                        # Virtual environment

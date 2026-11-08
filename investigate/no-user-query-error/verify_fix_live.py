@@ -28,11 +28,11 @@ from llama_index.core.base.llms.types import ChatMessage, MessageRole
 from components.context_guard import (
     context_budget,
     count_tokens,
-    get_tokenizer,
     has_user_query,
     select_context_window,
 )
 from components.ollama_config import resolve_context_window
+from components.tokens import load_tokenizer
 
 OLLAMA = "http://localhost:11434"
 MODEL = "richardyoung/qwen3.6-27b-abliterated:Q4_K_M"
@@ -75,7 +75,7 @@ def send(messages, label):
 
 
 def main() -> int:
-    tokenizer = get_tokenizer()
+    tokenizer = load_tokenizer()
 
     # The context window the server really uses — not the model's maximum.
     from llama_index.llms.ollama.base import Ollama

@@ -8,7 +8,7 @@ on the user's query, reducing context window pollution.
 Category: Infrastructure
 Retriever Keywords: retriever, tool loading, lazy, vector index, semantic
 """
-from typing import Optional
+from typing import List, Optional
 
 from llama_index.core import Settings, VectorStoreIndex
 from llama_index.core.callbacks import CallbackManager
@@ -263,6 +263,7 @@ def create_agent_with_retriever(
     similarity_top_k: int = 8,
     callback_manager: Optional[CallbackManager] = None,
     agent_class: type = FunctionAgent,
+    tools: Optional[List[FunctionTool]] = None,
 ) -> FunctionAgent:
     """
     Create a FunctionAgent that uses on-demand tool retrieval.
@@ -284,6 +285,12 @@ def create_agent_with_retriever(
                      ``FunctionAgent``; the HITL-aware orchestrator passes
                      ``components.hitl_agent.HITLFunctionAgent`` so the agent
                      can ask the human and wait for the answer.
+        tools: The tools that are **always** there — the ones that are not
+               retrieved, because the model has to be able to call them
+               whatever the query is.  The skill tools are the ones: a
+               skill is loaded on demand, and the model cannot ask for a
+               skill it cannot see.  The retriever adds its own tools on
+               top of these; the two lists are merged.
 
     Returns:
         FunctionAgent configured with tool_retriever.
@@ -296,6 +303,7 @@ def create_agent_with_retriever(
     agent = agent_class(
         llm=llm,
         tool_retriever=tool_retriever,
+        tools=list(tools) if tools else [],
         memory=memory,
         system_prompt=system_prompt,
         max_iterations=max_iterations,

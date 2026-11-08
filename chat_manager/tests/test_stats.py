@@ -60,7 +60,7 @@ class TestCountTokens(unittest.TestCase):
     def test_an_unavailable_tokenizer_is_estimated(self):
         """Without a tokenizer the tokens are estimated, and it is said."""
         with patch(
-            "chat_manager.stats._load_tokenizer",
+            "components.tokens.load_tokenizer",
             side_effect=ImportError("no tokenizer here"),
         ):
             tokens, estimated = count_tokens([_Message("x" * 400)])

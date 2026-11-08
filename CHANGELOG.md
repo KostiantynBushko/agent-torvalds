@@ -6,6 +6,86 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The agent loads skills on demand — and the prompt does not pay for them
+
+- **The Agent Skills feature was measured before it was built, and the
+  measurement changed the design.**  The obvious way to build it is
+  *progressive disclosure*: the prompt carries a catalog of the names and
+  the descriptions of the skills, the model asks for the body of the one
+  it needs, and the body is loaded at that moment.
+
+  On the window of the operator's model (8192 tokens) that catalog is not
+  cheap:
+
+  ```
+  catalog of 20 skills          : 908 tokens   (45 tokens per skill)
+  activation tool schema        : 175 tokens   (the names, as an enum)
+  the fixed cost of the feature : 1083 tokens  16.5% of the prompt budget
+  left for the conversation     : 2260 tokens  (it was 3343)
+  ```
+
+  **That cost is paid on every request**, whether the run touches a skill
+  or not, and it grows by 45 tokens for every skill the operator writes.
+  A third of the room the conversation had left was gone for a feature
+  that most requests never use.
+
+- **The catalog is fetched on demand instead.**  The prompt carries **one
+  line** — and only when there is at least one skill — the activation
+  tool takes a **free string** rather than an enum of the names, and the
+  catalog comes back as a *tool result* when the model calls
+  `list_skills`.
+
+  The fixed cost of the feature is therefore **220 tokens, whatever the
+  number of skills** (3.4% of the budget), and the conversation gets 3123
+  tokens instead of 2260.  The measurement is in
+  `investigate/agent-skills/`, and the probe that produces it is
+  read-only: `investigate/agent-skills/probe_skill_costs.py`.
+
+- **A tool result is the right place for the catalog.**  It costs the
+  runs that ask for it, and it lands in the conversation, where the
+  context guard drops it once it grows old — the guard already knows
+  how to drop the oldest turns.
+
+- **The body of a skill is cut to a token limit** (`skills.body_token_limit`,
+  2000 by default), and the cut is marked, so that the model knows it is
+  reading a part of the procedure and not all of it.
+
+  The limit applies to the **result**, the marker included: the count of
+  the result is not the sum of the counts of its parts — the seam between
+  the body and the marker may merge two tokens into one.  This is the
+  lesson of the context guard, applied to the skills.
+
+- **A skill is a directory with a `SKILL.md` in it** — a frontmatter block
+  (`name`, `description`) and the procedure in the body.  They live in
+  `~/.config/torvalds/skills` (the skills of the operator) and in
+  `<project>/skills` (the skills of the project); the skill of the
+  project overrides the skill of the operator with the same name.
+
+- **The feature costs nothing when it is not used.**  A machine without a
+  skill gets **no tools at all** and nothing in the prompt.
+
+- **The catalog can be put in the prompt after all** — with
+  `skills.catalog_in_prompt = true`, in the compact form (one line per
+  skill, 26 tokens per skill instead of the 45 of the XML shape).  It is
+  off by default, because it is paid by every request.
+
+- **The new settings** are `skills.enabled`, `skills.dirs`,
+  `skills.catalog_in_prompt` and `skills.body_token_limit`, each with its
+  environment variable (`TORVALDS_SKILLS_*`).
+
+- **The tests guard the invariant** the whole change is about: the fixed
+  cost of the feature is the same for one skill and for fifty.  A test
+  that measures the rejected design sits next to it — a check that has
+  never failed proves nothing.
+
+  ```
+  $ .venv/bin/python -m pytest tests/test_skills.py -q
+  40 passed
+  ```
+
+- **The documentation** is `docs/skills.md` — how to write a skill, and
+  what the settings do.
+
 #### The size of the prompt is in the log
 
 - **The operator could not see how big the context was.**  The request asked
@@ -119,6 +199,147 @@ All notable changes to this project are documented in this file.
   same table: both views are formatted by the same helpers, so they
   cannot drift apart.  A session that cannot be measured is still
   described — the measurement is never worth losing the session over.
+
+#### The project carries skills of its own
+
+- **A feature that ships with nothing to load is a feature that cannot be
+  tried out.**  The skills of this project now live in `skills/`, next to
+  the code they describe:
+
+  | skill | what it is for |
+  |---|---|
+  | `run-tests` | how to run the suite, and how to read a run that ends in "39 failed" |
+  | `release` | the release checklist, and the two files that declare the version |
+  | `investigate` | the shape of an investigation folder, and the rule that the probe is read-only |
+  | `add-toolkit` | the layout of a toolkit, and the four steps nobody skips |
+
+  They are found by the second default root, so they are loaded whenever the
+  agent works in this repository.
+
+- **Each of them carries a fact that is easy to get wrong.**  The suite of
+  this project does not pass — it carries 40 known failures — and a run that
+  ends in "39 failed" is the normal state of the repository, not a
+  regression.  The version of a release is *read* from two declarations
+  (`deploy/deploy-torvalds.sh` and `project_manager/__init__.py`), not
+  chosen.  The tests of a new toolkit are invisible to the CI gate until
+  their directory is added to `testpaths` in `pytest.ini`.  A probe that
+  changes something cannot be run twice.
+
+- **The skills are guarded by a test.**  The feature skips a skill that
+  cannot be read, and a skill without a name is skipped too — the right
+  behaviour for a skill the operator writes on the machine, but it makes a
+  broken skill in the **repository** invisible: nothing fails, nothing
+  warns, and the procedure is simply never loaded.
+
+  `tests/test_project_skills.py` is the eyes for that case.  It checks that
+  every skill is found, that each one has a name and a description, that the
+  description says *when* the skill is worth loading, that the body fits
+  into the limit the feature cuts it to, and that no skill carries the path
+  of a home directory.
+
+#### The process of a change is a skill of its own
+
+- **The project carried the *parts* of the work, and not the *work*.**
+  `run-tests`, `release`, `investigate` and `add-toolkit` are procedures
+  that each cover one part of a change — and nothing carried the order
+  those parts happen in, the branch they happen on, or the approvals that
+  stand between them.  The agent knew *how* to run the gate and not
+  *when*, and the rules that govern a change — the approval, the
+  destructive operations, the privacy of the operator — lived in
+  `DEVELOPMENT_RULES.md`, which is read by hand.
+
+- **`develop` is that procedure.**  It is the order of a change, from the
+  request to the pull request:
+
+  | step | what it holds |
+  |---|---|
+  | 1 | the contract — `DEVELOPMENT_RULES.md` is read first |
+  | 2 | understand before changing — `investigate`, and its read-only probe |
+  | 3 | the branch — `feature/<name>`, off `master` |
+  | 4 | the smallest change that answers the request, with a test that fails without it |
+  | 5 | the gate — `new failures` must be `0` |
+  | 6 | the changelog — what changed, and why |
+  | 7 | the documentation — the docs follow the code |
+  | 8 | the diff, and the approval for the commit |
+  | 9 | the push, the private-path check, and the pull request |
+
+- **It repeats nothing.**  The procedures stay in the skills that carry
+  them; `develop` names them and puts them in order.  A skill that copies
+  a procedure is a skill that drifts from it.
+
+- **The rules are in it, and not only in the file.**  The approval per
+  action, the confirmation of a destructive operation, the privacy of the
+  home folder of the operator and the timeout contract are named at the
+  step where they apply — a rule that is read at the moment it is needed
+  is a rule that is followed.
+
+- **The tests guard it.**  `tests/test_project_skills.py` checks that the
+  description says *when* the skill is worth loading, that the body fits
+  into the limit the feature cuts it to, and that no skill carries the
+  path of a home directory.  The body of `develop` takes **926 tokens**,
+  and the catalog of the five skills takes **209**.
+
+### Changed
+
+#### The develop skill is software development — the "self development" is gone
+
+- **The statements that framed the work as the agent developing *itself*
+  are removed.**  `DEVELOPMENT_RULES.md` announced that the
+  *self-development clone* was gone, `README.md` called the rules "how
+  the agent modifies its own code", `wiki/Contributing.md` called the
+  workflow "the agent's own development workflow", and `.gitignore`
+  carried the entry of the retired clone.  The workflow they described is
+  retired, and the words outlived it — they described a workflow that
+  does not exist, and they described the develop skill as something other
+  than what it is.
+
+- **The develop skill is the procedure for any software development.**
+  Its description said "carry a change through *this project*"; it now
+  says "carry a change through *a software project*".  The body says which
+  of the names belong to this repository — `DEVELOPMENT_RULES.md`,
+  `scripts/ci_test_gate.py`, `investigate/<topic>/` — and which are the
+  steps of every project: read the contract, understand the thing before
+  changing it, branch, implement the smallest change, pass the gate,
+  write the changelog, write the documentation, show the diff and ask,
+  push and open the pull request.
+
+- **The rules read as the rules of a change.**  `DEVELOPMENT_RULES.md`
+  governs "how a change to this codebase is made — by the operator, or by
+  the agent working in it", rule 1 is "the work happens in the working
+  copy", and the note at the top carries the date of the rewrite instead
+  of the history of the clone.
+
+#### The tokenizer of the agent lives in one place now
+
+- **The tokenizer is one thing, and it was reached in four ways.**  The
+  context guard had the canonical one; the skills had a wrapper around
+  it; the agent had a cached one that remembered its failure; the chat
+  history had one that loaded it straight from LlamaIndex — and the
+  "four characters per token" estimate was written out in three of those
+  places.  Two copies of one rule are two rules that can drift apart.
+
+  `components/tokens.py` holds them now, as free functions:
+
+  ```
+  load_tokenizer()    the tokenizer of the agent; it raises
+  get_tokenizer()     the same tokenizer, but None instead of an exception
+  estimate_tokens()   the estimate: four characters per token
+  count_tokens_of()   the count of a text, with the estimate as the fallback
+  ```
+
+- **The numbers did not move.**  It is the same tokenizer — the one the
+  chat memory uses, so the accounting is the one the chat-token limit is
+  enforced with — and the same estimate.  The measurement of the skills
+  feature still reads 908 tokens for a catalog of twenty skills and 16.5%
+  of the prompt budget, and the report of the context loop still reads
+  3211 tokens of tool schemas.
+
+- **A tokenizer that cannot be loaded is still not worth losing a run
+  over.**  The callers that can live without one ask for the safe
+  `get_tokenizer()` and measure with the estimate; the callers that
+  cannot — the context guard, which has to fit the prompt to the window
+  of the model — ask for the raw `load_tokenizer()` and are told when it
+  is not there.
 
 ### Fixed
 
@@ -624,6 +845,75 @@ All notable changes to this project are documented in this file.
 - **`investigate/logging-to-file/verify_implementation_catches_regressions.py`**
   — the proof that the harness catches seven deliberate drifts in the
   implementation.
+
+### Documentation
+
+#### The skills document said what the settings were, and not how to change them
+
+- **`docs/skills.md` listed `skills.enabled`, `skills.dirs`,
+  `skills.catalog_in_prompt` and `skills.body_token_limit` as a table of
+  names.**  A name is not a command: the operator read them as things to
+  run at a shell, and there is no `skills` command to run.  The document
+  now says what they are — the **options** of the `[skills]` section of
+  `~/.config/torvalds/config.toml` — and how they are changed: the
+  environment variable, the file, or the one command that writes the
+  file, `\config skills.body_token_limit 4000`.
+
+- **One option, four names — and only the last one is a command.**  The
+  document now tells the four apart: the line in the file
+  (`body_token_limit`), the dotted name (`skills.body_token_limit`), the
+  environment variable (`TORVALDS_SKILLS_BODY_TOKEN_LIMIT`) and the
+  command (`\config skills.body_token_limit 4000`).  The recipes show the
+  option, the line in the file and the command side by side, so the one
+  that is **typed** is never mistaken for the one that is **read**.
+
+- **The three layers and the moment of the change are written down.**
+  The environment variable wins over the file, the file wins over the
+  default, and the settings of the skills are read when the agent starts
+  — so a change applies on the **next start**.  Four recipes are given:
+  turn the feature off, look in one folder only, put the catalog in the
+  prompt, raise the limit of the body.
+
+- **A section on managing the skills was added.**  A skill is a file, not
+  a command: it is added by making a folder with a `SKILL.md` in it,
+  changed by editing that file, removed by deleting the folder, and
+  overridden by a skill of the project with the same name.  The document
+  also says where the agent announces the skills it found, that a broken
+  skill is skipped rather than fatal, and how to list the skills of the
+  machine from a shell — the same discovery, without a model and without
+  a token.
+
+#### How the agent carries a skill — the tools, and the price of the body
+
+- **`docs/skills-in-the-agent.md` is new.**  It says what the agent does
+  with a skill once it has one: where the two tools live, what the body of a
+  skill costs, and when it is paid.
+
+- **The retriever is asked twice per turn, and the second question is the
+  name of the tool.**  `run_agent_step()` asks it with the question of the
+  user — that is where the eight tools are picked — but `call_tool()` asks it
+  with the **name** of the tool that is being called.  A retriever that
+  matches on meaning does not match on a name, so a tool that is only in the
+  retriever is not found when it is called.  A skill tool therefore has to be
+  in `agent.tools`, which is how both orchestrators already build it.
+
+- **The body of a skill is paid again by every request that follows.**
+  `finalize()` writes the whole scratchpad into the memory of the session, so
+  the body is carried along: on the request after the activation it was 85%
+  of the prompt.  It leaves the prompt when the context guard drops it as the
+  oldest turn of a conversation that has grown — round 18, on the synthetic
+  growth of the probe.
+
+- **The transient channel is measured, not shipped.**  A body dropped as soon
+  as the model has read it pays off only when the run *continues* past the
+  body; a run that ends with the body pays the same as without it.
+
+- **`investigate/skills-in-function-agent/INVESTIGATION_REPORT.md`** holds the
+  evidence, and
+  **`investigate/skills-in-function-agent/probe_skills_in_function_agent.py`**
+  the read-only probe that prints it.  The probe measures the transient
+  channel in the two cases that differ — a run that ends with the body, and a
+  run that continues past it.
 
 ## [1.0.0] - 2026-10-29
 
