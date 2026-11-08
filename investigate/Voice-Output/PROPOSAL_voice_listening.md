@@ -157,7 +157,7 @@ It is the same shape of work as the output half.
 ## 2. What the stack already supports
 
 All of this is from the `audio.cpp` tree at
-`/home/kbush/ai-agent-investiagte/text-to-speach/audio.cpp` — documentation
+`~/ai-agent-investiagte/text-to-speach/audio.cpp` — documentation
 and framework assets, read on 2026-10-22.
 
 ### 2.1 The ASR families (`docs/asr.md`)
@@ -696,7 +696,7 @@ a load/unload churn on each turn.
     {
       "id": "kokoro",
       "family": "kokoro_tts",
-      "path": "/home/kbush/ai-agent-investiagte/models/TTS/kokoro-82m-bf16.gguf",
+      "path": "~/ai-agent-investiagte/models/TTS/kokoro-82m-bf16.gguf",
       "task": "tts",
       "mode": "offline",
       "busy_timeout_ms": 15000
@@ -704,7 +704,7 @@ a load/unload churn on each turn.
     {
       "id": "sensevoice",
       "family": "sense_asr",
-      "path": "/home/kbush/ai-agent-investiagte/models/ASR/SenseVoice-Small-GGUF/sensevoice-small-q8-audiocpp-v1.gguf",
+      "path": "~/ai-agent-investiagte/models/ASR/SenseVoice-Small-GGUF/sensevoice-small-q8-audiocpp-v1.gguf",
       "task": "asr",
       "mode": "offline",
       "busy_timeout_ms": 15000
