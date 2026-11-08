@@ -281,6 +281,34 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+#### The develop skill is software development — the "self development" is gone
+
+- **The statements that framed the work as the agent developing *itself*
+  are removed.**  `DEVELOPMENT_RULES.md` announced that the
+  *self-development clone* was gone, `README.md` called the rules "how
+  the agent modifies its own code", `wiki/Contributing.md` called the
+  workflow "the agent's own development workflow", and `.gitignore`
+  carried the entry of the retired clone.  The workflow they described is
+  retired, and the words outlived it — they described a workflow that
+  does not exist, and they described the develop skill as something other
+  than what it is.
+
+- **The develop skill is the procedure for any software development.**
+  Its description said "carry a change through *this project*"; it now
+  says "carry a change through *a software project*".  The body says which
+  of the names belong to this repository — `DEVELOPMENT_RULES.md`,
+  `scripts/ci_test_gate.py`, `investigate/<topic>/` — and which are the
+  steps of every project: read the contract, understand the thing before
+  changing it, branch, implement the smallest change, pass the gate,
+  write the changelog, write the documentation, show the diff and ask,
+  push and open the pull request.
+
+- **The rules read as the rules of a change.**  `DEVELOPMENT_RULES.md`
+  governs "how a change to this codebase is made — by the operator, or by
+  the agent working in it", rule 1 is "the work happens in the working
+  copy", and the note at the top carries the date of the rewrite instead
+  of the history of the clone.
+
 #### The tokenizer of the agent lives in one place now
 
 - **The tokenizer is one thing, and it was reached in four ways.**  The

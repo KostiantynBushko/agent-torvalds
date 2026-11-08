@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Carry a change through this project, from the request to the pull request. Use it when the user asks for a feature, a fix, or any other change to the code.
+description: Carry a change through a software project, from the request to the pull request. Use it when the user asks for a feature, a fix, or any other change to the code.
 ---
 
 # Develop
@@ -9,15 +9,23 @@ A change is **a branch, a diff, a green gate and a pull request**.  The
 operator merges it.  The agent never merges, and never commits or pushes
 without the approval for that action.
 
-This skill is the **order** of the work.  The procedures live in the skills
-that cover them — `investigate`, `run-tests`, `add-toolkit`, `release` —
-and are loaded when the task calls for them.  Nothing is repeated here.
+This skill is the **order** of the work, for any software project.  The
+procedures live in the skills that cover them — `investigate`, `run-tests`,
+`add-toolkit`, `release` — and are loaded when the task calls for them.
+Nothing is repeated here.
+
+Where a step names a file or a command, the name belongs to the project the
+work is done in: `DEVELOPMENT_RULES.md`, `scripts/ci_test_gate.py` and
+`investigate/<topic>/` are the names of *this* repository.  In another
+project the same steps are carried by that project's own files.
 
 ## 1. Read the contract
 
-`DEVELOPMENT_RULES.md` — the seven rules, read at the start of every
-session that touches the code.  It is the persistence mechanism, and this
-skill does not repeat it.
+The rules of a change — in this repository `DEVELOPMENT_RULES.md` and its
+seven rules — are read at the start of every session that touches the code.
+A project that carries no such file has no contract to read, and the steps
+below are the whole procedure.  The contract is the persistence mechanism,
+and this skill does not repeat it.
 
 ## 2. Understand the thing before changing it
 
@@ -32,7 +40,7 @@ the shape of the thing written down before the code is written.
 ## 3. Branch
 
 ```bash
-git checkout -b feature/<name> master
+git checkout -b feature/<name> <base-branch>
 ```
 
 The name says what the change is, in the words of the request.  The branch

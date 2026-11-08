@@ -1,22 +1,21 @@
 # Development Rules
 
-These rules govern how the Torvalds agent modifies this codebase. They are
-**persisted here** so that they survive across sessions and are available to
-any future agent invocation.
+These rules govern how a change to this codebase is made — by the operator,
+or by the agent working in it. They are **persisted here** so that they
+survive across sessions and are available to any future agent invocation.
 
-**Last updated:** 2026-11-03 — the **self-development clone is gone**. There is no
-second copy of the repository any more: the agent works in the working copy it is
-running in, on a branch of its own, and the operator's tree is the place where the
-work happens. The rules that did not depend on the clone — the approval, the
-destructive operations, the timeout contract and the privacy of the operator's
-home folder — stayed.
+**Last updated:** 2026-11-08 — the rules are written for the working copy: the
+work happens in the copy the agent is running in, on a branch of its own, and
+the operator's tree is the place where the work is reviewed. The rules that
+carry the contract — the approval, the destructive operations, the timeout
+contract and the privacy of the operator's home folder — stayed.
 
 ---
 
-## Rule 1 — The agent works in the current working copy
+## Rule 1 — The work happens in the working copy
 
-There is **no** separate clone. The agent modifies the repository it is running
-in, on a branch of its own:
+The change is made in the repository the agent is running in, on a branch of
+its own:
 
 ```bash
 git checkout -b feature/<name> master

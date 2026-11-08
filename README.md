@@ -56,7 +56,7 @@ The project documentation:
 | MikroTik RouterOS Toolkit — the end-user reference | [docs/mikrotik-toolkit.md](docs/mikrotik-toolkit.md) |
 | Shodan Toolkit — the end-user reference | [docs/shodan-toolkit.md](docs/shodan-toolkit.md) |
 | The design proposals — the documents the features were designed in | [docs/proposals/](docs/proposals/) |
-| The development rules — how the agent modifies its own code | [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) |
+| The development rules — how a change to this codebase is made | [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) |
 | The CI test gate — the script the build runs | [scripts/ci_test_gate.py](scripts/ci_test_gate.py) |
 | The change log — every change, newest first | [CHANGELOG.md](CHANGELOG.md) |
 
@@ -1244,7 +1244,7 @@ manager.shutdown()
 | CHANGELOG.md                   # Version history
 | DEPLOYMENT.md                  # The deployment guide
 | README.md                      # This file
-| DEVELOPMENT_RULES.md         # The rules the agent follows on its own code
+| DEVELOPMENT_RULES.md         # The rules of a change to this codebase
 | tools_menu_update.md           # The startup tool menu, category by category
 | __pycache__/                  # Python cache
 | .venv/                        # Virtual environment
