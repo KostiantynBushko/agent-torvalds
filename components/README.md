@@ -245,6 +245,88 @@ Context: 12 messages, 1,200 tokens, 4.5 KB, 14.6% of the 8,192-token window
 
 ---
 
+### `tokens.py`
+The tokenizer of the agent, and the counting of tokens.
+
+**Purpose:** Holds the one place where the tokenizer is reached and the one rule that estimates the tokens when there is no tokenizer.  Four modules grew their own way of getting the tokenizer — one wrapped the call in a `try`, one remembered the failure, one loaded it straight from LlamaIndex, and one fell back to an estimate — and the estimate itself was written out in three of them.
+
+**Features:**
+- `load_tokenizer()` — the tokenizer of the agent; it **raises** when it cannot be loaded, for the callers that cannot work without one
+- `get_tokenizer()` — the same tokenizer, but `None` instead of an exception, for the callers that can live without one
+- `estimate_tokens()` — the estimate: **four characters per token**
+- `count_tokens_of()` — the count of a text, with the estimate as the fallback
+- The tokenizer is the one the chat memory uses, so the accounting matches the one the chat-token limit is enforced with
+- **Nothing imports LlamaIndex at import time** — the tokenizer is loaded when it is asked for, so the modules that only need the *estimate* stay cheap to import
+
+**Usage:**
+```python
+from components.tokens import count_tokens_of, get_tokenizer
+
+tokenizer = get_tokenizer()            # None when there is none
+tokens, estimated = count_tokens_of("the prompt", tokenizer)
+```
+
+---
+
+### `skills.py`
+The procedures the agent loads on demand — the library half.
+
+**Purpose:** Reads the skills of the operator and of the project, and turns
+them into the catalog and the body the agent hands to the model.
+
+**Features:**
+- A skill is a directory with a `SKILL.md` in it: a frontmatter block
+  (`name`, `description`) and the procedure in the body
+- Two roots: `~/.config/torvalds/skills` and `<project>/skills` — the skill
+  of the project overrides the skill of the operator with the same name
+- The catalog is **one line per skill** — the XML shape of the
+  specification costs ten tokens per skill in tags alone
+- The body is cut to a token limit, and the cut is marked.  The limit
+  applies to the **result**: the count of the result is not the sum of the
+  counts of its parts, so the body is cut until the whole thing fits
+- Nothing here imports LlamaIndex, so the module stays cheap to import
+
+**Usage:**
+```python
+from components.skills import discover_skills, render_prompt_section
+
+skills = discover_skills(default_skill_roots())
+print(render_prompt_section(skills))
+# ### Skills
+#
+# Procedures for tasks that need one are available on this machine. ...
+```
+
+---
+
+### `skills_tools.py`
+The two tools that load a skill — the agent-facing half.
+
+**Purpose:** Turns the skills into `list_skills` and `activate_skill`, the
+tools the model calls.
+
+**Features:**
+- The **catalog is a tool result**, not prompt text: it costs the runs
+  that ask for it, and the context guard drops it once it grows old
+- The name of the skill is a **free string**, not an enum — an enum is paid
+  on every request and grows with every skill
+- A machine **without skills gets no tools at all**: the feature costs
+  nothing when it is not used
+- The body that comes back is cut to `skills.body_token_limit` tokens
+
+**Usage:**
+```python
+from components.skills_tools import build_skills
+
+tools, section, skills = build_skills(dirs="~/.config/torvalds/skills")
+```
+
+The cost of the feature is 220 tokens on every request, whatever the number
+of skills — see
+[`investigate/agent-skills/`](../investigate/agent-skills/INVESTIGATION_REPORT.md).
+
+---
+
 ### `__init__.py`
 Package initialization file.
 
@@ -262,6 +344,7 @@ Package initialization file.
 
 ## Recent Updates
 
+- **2026-11-05**: Added `tokens.py` — the tokenizer of the agent and the count of the tokens, in one place
 - **2026-11-04**: Added `context_metrics.py` — the size of the prompt (tokens, bytes) that is logged with every request to the model
 - **2026-10-29**: Added `config.py` and `config_view.py` — the configuration file and the `\config` command
 - **2026-10-29**: Added `file_logging.py` — the rotating log file, the size parser and the symlink
