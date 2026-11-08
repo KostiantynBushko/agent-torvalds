@@ -4,6 +4,9 @@
 **Date:** 2026-10-22
 **Investigated by:** Torvalds (development session)
 **Status:** Investigation complete — proposal follows in `PROPOSAL_voice_output.md`
+**Codebase verified against:** `master` @ `ccb4322` (2026-11-08) — the file
+locations, line counts and integration points in Part B were re-checked against
+that tree. The measurements in §7 were taken on 2026-10-22 and are unaffected.
 
 > ## Update — the packaging recommendation was superseded
 >
@@ -295,25 +298,26 @@ Two front ends share one core:
 
 | File | Lines | Mode |
 |---|---|---|
-| `agent-torvalds.py` | 1323 | Classic linear REPL. `console.input()` loop, Rich-rendered output. |
-| `agent-torvalds-mw.py` | 1409 | Multi-window TUI. Background asyncio task + Rich Live render loop; falls back to the classic REPL via `--no-tui` or in headless/piped environments. |
+| `agent-torvalds.py` | 1684 | Classic linear REPL. `console.input()` loop, Rich-rendered output. |
+| `agent-torvalds-mw.py` | 1769 | Multi-window TUI. Background asyncio task + Rich Live render loop; falls back to the classic REPL via `--no-tui` or in headless/piped environments. |
 
 Both are built on the same primitives:
 
 - **LLM** — `Ollama` (local, `get_ollama_base_url()`), `temperature=0.0`.
 - **Agent** — `HITLFunctionAgent` (a `FunctionAgent` subclass) with
-  `max_iterations=50`, a `ChatMemoryBuffer` from `agent_chat_memory.py`
-  (PostgreSQL-backed with in-memory fallback), and runtime prompt injection
-  from `project_manager/prompt_engine.py`.
+  `max_iterations=50`, a `ChatMemoryBuffer` from the `chat_manager/` package
+  (PostgreSQL-backed, with an in-memory fallback), and runtime prompt
+  injection from `project_manager/prompt_engine.py`.
 - **Tool loading** — three modes: default (on-demand retriever, top-k=8 via
   `agent_tool_retriever.py`), `--full` (all tools upfront), `--select`
   (interactive category picker via `agent_tool_selection.py`).
-- **Event stream** — `components/event_consumer.py` (957 lines) turns the
+- **Event stream** — `components/event_consumer.py` (1178 lines) turns the
   LlamaIndex workflow event stream into console output, drives the spinner,
   feeds the stats handler and mediates HITL.
-- **HITL** — `components/human_loop_handler.py`, `hitl_agent.py`,
-  `hitl_events.py`, `timeout_manager.py`, `hitl_timeout.py` (no-timeout by
-  default), `hitl_runtime_toggle.py`.
+- **HITL** — `components/human_loop_handler.py`, `components/hitl_agent.py`,
+  `components/hitl_events.py`, `components/timeout_manager.py`,
+  `components/hitl_timeout.py` (no-timeout by default),
+  `components/hitl_runtime_toggle.py`.
 
 ### 4.2 The response path — where a voice hook belongs
 
@@ -322,7 +326,7 @@ This is the single most important structural fact for the feature.
 ```
 user input
    │
-   ├─► prompt_handler(cmd, agent, ...)                       agent-torvalds.py:772
+   ├─► prompt_handler(cmd, agent, ...)                       agent-torvalds.py:1662
    │      │
    │      ├─ builds CallbackManager (stats + human_loop_handler)
    │      ├─ agent.run(cmd, memory=..., max_iterations...)
@@ -337,7 +341,7 @@ user input
 ```
 
 In the TUI the same `prompt_handler` is awaited by `TuiApp._execute_agent_query`
-(`components/tui/tui_app.py:363`), which writes the result into
+(`components/tui/tui_app.py:375`), which writes the result into
 `TuiState.markdown_content`; `components/tui/markdown_view.py` renders it.
 
 **Consequence:** the natural, single, framework-agnostic place to inject voice
@@ -351,13 +355,17 @@ MikroTik RouterOS and Shodan toolkits, and specified in
 `investigate/MikroTik-RouterOS/MODULE_SPECIFICATION.md`):
 
 ```
-toolkits/<hyphenated-name>/      # core library — imports NO LlamaIndex code
-    src/… or flat package
-agent_<name>_toolkit.py          # LlamaIndex adapter — the ONLY LlamaIndex-aware file
+toolkits/<hyphenated-name>/      # the toolkit: core library AND its adapter
+    __init__.py, config.py, …    # core library — imports NO LlamaIndex code
+    agent_<name>_toolkit.py      # LlamaIndex adapter — the ONLY LlamaIndex-aware file
 ```
 
-The adapter rules, restated from `agent_mikrotik_toolkit.py` and
-`agent_shodan_toolkit.py`:
+The adapter used to sit at the repository root. It now lives **inside** the
+toolkit directory, next to the library it adapts.
+
+The adapter rules, restated from
+`toolkits/MikroTik-RouterOS/agent_mikrotik_toolkit.py` and
+`toolkits/shodan-toolkit/agent_shodan_toolkit.py`:
 
 1. **Category tag** — the module docstring ends with `Category: <Name>`, and
    the tool descriptions carry the same tag. `agent_tool_selection._extract_category()`
@@ -429,7 +437,7 @@ Any new interactive command — `\voice` — **must** be registered here.
 | Voice-related config, env vars, CLI flags | **Absent** |
 | Voice-related commands | **Absent** |
 | Voice-related tests | **Absent** |
-| A component slot for it | `components/` has 14 modules; `components/voice/` does not exist |
+| A component slot for it | `components/` has 31 modules; `components/voice/` does not exist |
 | Retriever / `--select` integration points | **Not needed** — the feature is not a tool |
 
 ---
@@ -833,7 +841,7 @@ workflow, the event stream or the memory.
 | **G1** | **No ASR weights are installed.** `models/` holds `TTS/`, `embedding/`, `lapa-llm/` and one LLM GGUF — nothing for ASR. | The input half cannot be exercised until the operator installs one (`python3 tools/model_manager_v2.py install <package>`). |
 | **G2** | **No ASR round-trip has ever been run on this host** — §7.7 said so, and nothing has changed it. | Every latency and accuracy figure for the input half is an **estimate**. |
 | **G3** | **No capture has been exercised.** The tools are present, but nobody has recorded a word here. | The device name (`default` vs. `hw:0,0` vs. a PipeWire source) is unverified. |
-| **G4** | The venv is **Python 3.12**, where `audioop` is deprecated (and gone in 3.13). | The silence detector must use `wave` + `array` and compute the RMS by hand. |
+| **G4** | The project targets **Python 3.12** (the CI version), where `audioop` is deprecated — and 3.13 removed it. | The silence detector must use `wave` + `array` and compute the RMS by hand. |
 
 ### 10.7 The conclusion of the input-side investigation
 

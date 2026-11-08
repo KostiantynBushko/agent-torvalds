@@ -4,6 +4,7 @@
 **Repository:** agent-torvalds
 **Branch:** `feature/voice-toolkit` (off `master` @ `ccb4322`)
 **Status:** Planned — Phase 0 not yet started
+**Integration points verified against:** `master` @ `ccb4322` (2026-11-08).
 **Estimated Effort:** ~8.5 working days (was ~9.5 in the toolkit plan)
 **Authoritative design:** [PROPOSAL_voice_output.md](PROPOSAL_voice_output.md)
 **Evidence base:** [INVESTIGATION_REPORT.md](INVESTIGATION_REPORT.md)

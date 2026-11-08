@@ -253,8 +253,8 @@ ffmpeg -hide_banner -loglevel error -f alsa -i <device> -ar 16000 -ac 1 -c:a pcm
 `arecord` and `pw-record` are the fallbacks, and they exist precisely
 because ALSA's `default` device is not always present on a PipeWire host.
 
-The venv is **Python 3.12** (`.venv/lib/python3.12`), so
-`audioop` is deprecated-but-present. The capture analysis should use
+The project targets **Python 3.12** (the CI version), where `audioop` is
+deprecated-but-present — and 3.13 removed it. The capture analysis should use
 `wave` + `array` and compute RMS by hand — no deprecated import, no new
 dependency.
 
@@ -833,7 +833,7 @@ The output half's register (R1–R13) is unaffected. These are new:
 | **L-R5** | **The capture process corrupts the TUI** by writing to the terminal. | Medium | Medium | stdout/stderr → `DEVNULL`; capture to a file, never to stdout |
 | **L-R6** | **VRAM pressure** with two models resident. | Medium | Low | `max_loaded_models: 2`; `min_free_memory_mb: 2048`; a small ASR model by default; `idle_unload_ms` |
 | **L-R7** | **The server is busy** — the TTS and ASR requests contend for one server. | Low | Medium | `busy_timeout_ms`; `VOICE_SERVER_BUSY` handled as retryable; the status says "busy", not "broken" |
-| **L-R8** | **`audioop` is deprecated** in Python 3.12 and gone in 3.13. | Low | High (if used) | Use `wave` + `array` and compute the RMS by hand |
+| **L-R8** | **`audioop` is deprecated** in the project's Python 3.12 target and gone in 3.13. | Low | High (if used) | Use `wave` + `array` and compute the RMS by hand |
 | **L-R9** | **The capture device name is wrong** (`default` does not exist on a PipeWire-only host). | Medium | Medium | Device detection + `\voice devices`; the `arecord` and `pw-record` fallbacks; a clear `VOICE_NO_INPUT_DEVICE` |
 | **L-R10** | **The model-load tax** after `idle_unload_ms`. | Low | Medium | Measure it in Phase 0; a dedicated second server only if it is painful |
 | **L-R11** | **The recording file leaks.** | Medium | Low | PR6: deleted after transcription, unless explicitly kept |
