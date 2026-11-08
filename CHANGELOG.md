@@ -776,6 +776,43 @@ All notable changes to this project are documented in this file.
   — the proof that the harness catches seven deliberate drifts in the
   implementation.
 
+### Documentation
+
+#### The skills document said what the settings were, and not how to change them
+
+- **`docs/skills.md` listed `skills.enabled`, `skills.dirs`,
+  `skills.catalog_in_prompt` and `skills.body_token_limit` as a table of
+  names.**  A name is not a command: the operator read them as things to
+  run at a shell, and there is no `skills` command to run.  The document
+  now says what they are — the **options** of the `[skills]` section of
+  `~/.config/torvalds/config.toml` — and how they are changed: the
+  environment variable, the file, or the one command that writes the
+  file, `\config skills.body_token_limit 4000`.
+
+- **One option, four names — and only the last one is a command.**  The
+  document now tells the four apart: the line in the file
+  (`body_token_limit`), the dotted name (`skills.body_token_limit`), the
+  environment variable (`TORVALDS_SKILLS_BODY_TOKEN_LIMIT`) and the
+  command (`\config skills.body_token_limit 4000`).  The recipes show the
+  option, the line in the file and the command side by side, so the one
+  that is **typed** is never mistaken for the one that is **read**.
+
+- **The three layers and the moment of the change are written down.**
+  The environment variable wins over the file, the file wins over the
+  default, and the settings of the skills are read when the agent starts
+  — so a change applies on the **next start**.  Four recipes are given:
+  turn the feature off, look in one folder only, put the catalog in the
+  prompt, raise the limit of the body.
+
+- **A section on managing the skills was added.**  A skill is a file, not
+  a command: it is added by making a folder with a `SKILL.md` in it,
+  changed by editing that file, removed by deleting the folder, and
+  overridden by a skill of the project with the same name.  The document
+  also says where the agent announces the skills it found, that a broken
+  skill is skipped rather than fatal, and how to list the skills of the
+  machine from a shell — the same discovery, without a model and without
+  a token.
+
 ## [1.0.0] - 2026-10-29
 
 ### Added
