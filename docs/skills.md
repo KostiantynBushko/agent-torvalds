@@ -71,12 +71,13 @@ dirs = "~/.config/torvalds/skills:./skills:/opt/shared/skills"
 
 ## The skills of this project
 
-This repository carries four skills of its own, under `skills/`.  They are
+This repository carries five skills of its own, under `skills/`.  They are
 the procedures of this project — the ones that are too long to keep in the
 prompt and too rare to be worth a tool:
 
 | skill | what it is for |
 |---|---|
+| `develop` | the order of a change, from the request to the pull request |
 | `run-tests` | how to run the suite, and how to read a run that ends in "39 failed" |
 | `release` | the release checklist, and the two files that declare the version |
 | `investigate` | the shape of an investigation folder, and the rule that the probe is read-only |
@@ -109,7 +110,7 @@ enables it.  It is there, and the agent finds it when it starts.
 **What the agent found** is announced when it starts:
 
 ```
-Skills: 4 available (the catalog is loaded on demand): add-toolkit, investigate, release, run-tests
+Skills: 5 available (the catalog is loaded on demand): add-toolkit, develop, investigate, release, run-tests
 ```
 
 A skill that is missing from that line is not under a root the agent
@@ -126,7 +127,7 @@ token:
 
 ```console
 $ .venv/bin/python -c "from components.skills import discover_skills, default_skill_roots; print([s.name for s in discover_skills(default_skill_roots())])"
-['add-toolkit', 'investigate', 'release', 'run-tests']
+['add-toolkit', 'develop', 'investigate', 'release', 'run-tests']
 ```
 
 The second root is the `skills` folder of the directory the command runs

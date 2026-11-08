@@ -237,6 +237,48 @@ All notable changes to this project are documented in this file.
   into the limit the feature cuts it to, and that no skill carries the path
   of a home directory.
 
+#### The process of a change is a skill of its own
+
+- **The project carried the *parts* of the work, and not the *work*.**
+  `run-tests`, `release`, `investigate` and `add-toolkit` are procedures
+  that each cover one part of a change — and nothing carried the order
+  those parts happen in, the branch they happen on, or the approvals that
+  stand between them.  The agent knew *how* to run the gate and not
+  *when*, and the rules that govern a change — the approval, the
+  destructive operations, the privacy of the operator — lived in
+  `DEVELOPMENT_RULES.md`, which is read by hand.
+
+- **`develop` is that procedure.**  It is the order of a change, from the
+  request to the pull request:
+
+  | step | what it holds |
+  |---|---|
+  | 1 | the contract — `DEVELOPMENT_RULES.md` is read first |
+  | 2 | understand before changing — `investigate`, and its read-only probe |
+  | 3 | the branch — `feature/<name>`, off `master` |
+  | 4 | the smallest change that answers the request, with a test that fails without it |
+  | 5 | the gate — `new failures` must be `0` |
+  | 6 | the changelog — what changed, and why |
+  | 7 | the documentation — the docs follow the code |
+  | 8 | the diff, and the approval for the commit |
+  | 9 | the push, the private-path check, and the pull request |
+
+- **It repeats nothing.**  The procedures stay in the skills that carry
+  them; `develop` names them and puts them in order.  A skill that copies
+  a procedure is a skill that drifts from it.
+
+- **The rules are in it, and not only in the file.**  The approval per
+  action, the confirmation of a destructive operation, the privacy of the
+  home folder of the operator and the timeout contract are named at the
+  step where they apply — a rule that is read at the moment it is needed
+  is a rule that is followed.
+
+- **The tests guard it.**  `tests/test_project_skills.py` checks that the
+  description says *when* the skill is worth loading, that the body fits
+  into the limit the feature cuts it to, and that no skill carries the
+  path of a home directory.  The body of `develop` takes **926 tokens**,
+  and the catalog of the five skills takes **209**.
+
 ### Changed
 
 #### The tokenizer of the agent lives in one place now
