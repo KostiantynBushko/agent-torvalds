@@ -18,6 +18,8 @@ What it measures
 3. **Where the body of a skill ends up** — the lifecycle of one turn, from
    the tool result to the memory that the next request carries.
 4. **The price of each channel** — the same procedure, delivered four ways.
+5. **The transient channel** — a body that is dropped once the model has read
+   it, and the condition under which the drop happens.
 
 Usage::
 
@@ -205,22 +207,33 @@ def _skill_llm(
     tool_name: str = "activate_skill",
     tool_kwargs: Optional[Dict[str, Any]] = None,
     answer: str = "The service is deployed.",
+    tool_calls: int = 1,
 ) -> MockFunctionCallingLLM:
-    """Return an LLM that calls one tool and then answers."""
+    """Return an LLM that calls the tool and then answers.
+
+    ``tool_calls`` is the number of calls the model makes before it
+    answers.  **One call** is the normal run: the tool result lands in
+    the scratchpad, the model reads it, and the run ends there.  **Two
+    calls** are a run that *continues* after the model has read the body
+    — the case the transient channel is about, and the case a single
+    call cannot reach.
+    """
+    state = {"calls": 0}
 
     def generator(messages: Sequence[ChatMessage], **kwargs: Any) -> ChatMessage:
-        if any(message.role == MessageRole.TOOL for message in messages):
-            return ChatMessage(role=MessageRole.ASSISTANT, content=answer)
-        return ChatMessage(
-            role=MessageRole.ASSISTANT,
-            blocks=[
-                ToolCallBlock(
-                    tool_call_id="call-1",
-                    tool_name=tool_name,
-                    tool_kwargs=tool_kwargs or {},
-                )
-            ],
-        )
+        if state["calls"] < tool_calls:
+            state["calls"] += 1
+            return ChatMessage(
+                role=MessageRole.ASSISTANT,
+                blocks=[
+                    ToolCallBlock(
+                        tool_call_id=f"call-{state['calls']}",
+                        tool_name=tool_name,
+                        tool_kwargs=tool_kwargs or {},
+                    )
+                ],
+            )
+        return ChatMessage(role=MessageRole.ASSISTANT, content=answer)
 
     return MockFunctionCallingLLM(response_generator=generator, is_chat_model=True)
 
@@ -471,23 +484,29 @@ class TransientAgent(FunctionAgent):
         return await super().take_step(ctx, llm_input, tools, memory)
 
 
-async def section_transient_channel() -> None:
-    """Compare the channel that keeps the body with the one that drops it."""
-    _rule("5. The transient channel")
-
-    llm = _skill_llm(tool_kwargs={"name": "deploy"})
-    tool = _activate_skill_tool()
-    memory = ChatMemoryBuffer.from_defaults(llm=llm)
-
+async def _run_transient(
+    tool: FunctionTool, tool_calls: int
+) -> "tuple[TransientAgent, ChatMemoryBuffer]":
+    """Run a transient agent and return it with the memory it left behind."""
+    llm = _skill_llm(tool_kwargs={"name": "deploy"}, tool_calls=tool_calls)
     agent = TransientAgent(
         llm=llm,
         tools=[tool],
         streaming=False,
         max_iterations=5,
     )
-
+    memory = ChatMemoryBuffer.from_defaults(llm=llm)
     await agent.run("deploy the service to the remote host", memory=memory)
+    return agent, memory
 
+
+async def section_transient_channel() -> None:
+    """Compare the channel that keeps the body with the one that drops it."""
+    _rule("5. The transient channel")
+
+    tool = _activate_skill_tool()
+
+    # -- the persistent channel: the tool result stays ----------------------
     print("-- the persistent channel (the tool result stays) --")
     agent_persistent = RecordingAgent(
         llm=_skill_llm(tool_kwargs={"name": "deploy"}),
@@ -495,7 +514,9 @@ async def section_transient_channel() -> None:
         streaming=False,
         max_iterations=5,
     )
-    memory_persistent = ChatMemoryBuffer.from_defaults(llm=llm)
+    memory_persistent = ChatMemoryBuffer.from_defaults(
+        llm=_skill_llm(tool_kwargs={"name": "deploy"})
+    )
     await agent_persistent.run(
         "deploy the service to the remote host", memory=memory_persistent
     )
@@ -507,21 +528,41 @@ async def section_transient_channel() -> None:
     print(f"  the memory holds {len(persistent_memory)} messages")
     print()
 
-    print("-- the transient channel (the body is dropped once it was read) --")
-    print(f"  the iterations that carried the body : {agent.delivered}")
-    print(f"  the bodies dropped from the scratchpad : {agent.stripped}")
+    # -- the transient channel, in a run that ENDS with the body ------------
+    print("-- the transient channel, in a run that ENDS with the body --")
+    agent_end, memory_end = await _run_transient(tool, tool_calls=1)
+    end_memory = await memory_end.aget()
+    end_body = sum(1 for message in end_memory if message.role == MessageRole.TOOL)
+    print(f"  the iterations that carried the body : {agent_end.delivered}")
+    print(f"  the bodies dropped from the scratchpad : {agent_end.stripped}")
+    print(f"  the body is in the memory of the next request : {end_body} times")
+    print(f"  the memory holds {len(end_memory)} messages")
+    print()
+    print("  The run ended at the very iteration where the model read the")
+    print("  body, so there was no later iteration to drop it in: the body")
+    print("  is in the memory, exactly as in the persistent channel.  The")
+    print("  transient channel needs one more iteration to pay off.")
+    print()
+
+    # -- the transient channel, in a run that CONTINUES past the body -------
+    print("-- the transient channel, in a run that CONTINUES past the body --")
+    agent, memory = await _run_transient(tool, tool_calls=2)
     transient_memory = await memory.aget()
     transient_body = sum(
         1 for message in transient_memory if message.role == MessageRole.TOOL
     )
+    print(f"  the iterations that carried the body : {agent.delivered}")
+    print(f"  the bodies dropped from the scratchpad : {agent.stripped}")
     print(f"  the body is in the memory of the next request : {transient_body} times")
     print(f"  the memory holds {len(transient_memory)} messages")
     print()
-    print("  The price of the body is paid by the requests that carry it.")
-    print("  The persistent channel keeps it in the memory of the session,")
-    print("  and the memory is in every request that follows, until the guard")
-    print("  drops it.  The transient channel pays the body once, and the model")
-    print("  has to be told again what the procedure was if it is asked again.")
+    print("  The body was dropped from the scratchpad before finalize() put")
+    print("  the scratchpad into the memory, so the memory of the next request")
+    print("  does not carry it.  The price of the body is paid by the requests")
+    print("  that carry it, and by no request after that.")
+    print()
+    print("  The cost of the transient channel: the model has to be told")
+    print("  again what the procedure was if it is asked again.")
 
 
 # ---------------------------------------------------------------------------
