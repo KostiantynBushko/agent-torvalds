@@ -63,7 +63,6 @@ from llama_index.core.base.llms.types import ChatMessage
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.core.tools import FunctionTool
-from llama_index.llms.ollama import Ollama
 from rich import status
 from rich.console import Console
 from rich.markdown import Markdown
@@ -258,6 +257,7 @@ from components.file_logging import (
 from components.spinner_controller import SpinnerController
 from components.state_handler import StateHandler
 from components.event_consumer import EventConsumer
+from components.llm_retry import RetryingOllama
 
 # ---------------------------------------------------------------------------
 # HITL Components (Step 8: Agent Integration)
@@ -295,6 +295,10 @@ from project_manager.prompt_engine import PromptTemplateEngine
 # The command line flag overrides all of them, in main().
 # ---------------------------------------------------------------------------
 REQUEST_TIMEOUT = config.get("llm.request_timeout")
+# How many times a failed model request is sent again, and how long the
+# agent waits before it sends it again.
+MAX_RETRIES = config.get("llm.max_retries")
+RETRY_DELAY = config.get("llm.retry_delay")
 MAX_ITERATIONS = config.get("llm.max_iterations", default=50)
 MODEL = config.get("llm.model")
 # Endpoint of the Ollama server that hosts the chat model.
@@ -716,12 +720,18 @@ def create_agent(
     Returns:
         FunctionAgent instance
     """
-    llm = Ollama(
+    # The LLM asks again when the server fails for a reason that passes -
+    # a model that died, a server that is busy, a connection that was cut.
+    # The request is the same one: the tools that already ran are not run
+    # again, and the conversation is not lost.
+    llm = RetryingOllama(
         model=MODEL,
         base_url=OLLAMA_BASE_URL,
         request_timeout=REQUEST_TIMEOUT,
         temperature=0.0,
         callback_manager=callback_manager,
+        max_retries=MAX_RETRIES,
+        retry_delay=RETRY_DELAY,
     )
 
     # The model's advertised context length is its maximum, not what the

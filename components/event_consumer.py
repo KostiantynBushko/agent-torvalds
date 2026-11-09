@@ -347,7 +347,13 @@ class EventConsumer:
             self.state.add_error("Workflow was cancelled")
             raise
         except Exception as e:
-            logger.error("EventConsumer.consume_events: exception: %s", e, exc_info=True)
+            # The ERROR record says what failed; the frames of the agent
+            # are written under the DEBUG level, where they belong.
+            logger.error("EventConsumer.consume_events: exception: %s", e)
+            logger.debug(
+                "EventConsumer.consume_events: the frames of the failure:",
+                exc_info=True,
+            )
             self.state.set("workflow_running", False)
             self.state.add_error(str(e))
             raise

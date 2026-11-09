@@ -6,6 +6,58 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### A failed model request is sent again when the model server failed
+
+- **The agent stopped when the model server answered 500.**  The failure
+  of the report:
+
+  ```
+  2026-11-09 08:00:29,622 [ERROR] components.event_consumer: EventConsumer.consume_events: exception: Internal Server Error (ref: bc97453e-2f9e-4a09-a5c4-7ee1eb1e6e2a) (status code: 500)
+  ollama._types.ResponseError: Internal Server Error (ref: bc97453e-2f9e-4a09-a5c4-7ee1eb1e6e2a) (status code: 500)
+  ```
+
+  A 500 from Ollama means the **model died** — out of memory, or a crash
+  while it was loading.  The request was fine, and a request that is
+  fine is worth sending again.  The agent sent it once and gave up.
+
+- **The request is now sent again when the failure is worth it.**  The
+  new module `components/llm_retry.py` tells the two kinds of failure
+  apart:
+
+  | The failure | Sent again? |
+  |---|---|
+  | 500, 502, 503, 504, 429, 408 | yes — the server, not the request |
+  | a connection that never came about | yes |
+  | a server that did not answer in time | yes |
+  | 400, 401, 403, 404 | no — it will fail the same way |
+  | an error in the body of the response | no — the server said why |
+
+  `RetryingOllama` is the LLM of the agent with that rule.  It wraps
+  `astream_chat` and `achat`, and sends the request again when the
+  failure passes.
+
+- **The retry is around the request, not around the run.**  The tools
+  that already ran are not run again, the conversation is not lost, and
+  the answer of the attempt that works is the answer of the request.
+
+- **The retry is bounded, and it is a setting.**  `llm.max_retries`
+  (2 by default) and `llm.retry_delay` (2 seconds by default) are in the
+  configuration file, with the environment variables
+  `TORVALDS_MAX_RETRIES` and `TORVALDS_RETRY_DELAY`.  The wait grows
+  with every attempt — 2 seconds and then 4 seconds with the default,
+  which is three attempts in all.  `max_retries = 0` turns the retry
+  off.
+
+- **The failure of a retried request is written to the log as a
+  warning**, so the operator sees that the server stumbled and that the
+  agent carried on.
+
+- **The evidence is in `investigate/llm-server-500/`.**  The probe
+  (`probe_server_500.py`) is read-only and prints what the log holds
+  after one failed request, whether the request is worth sending again,
+  and how many times it is sent.  Before the change: one request, no
+  answer.  After: two requests, an answer.
+
 #### The export of a session, as JSON
 
 - **The operator asked for a JSON export on 2026-11-08:**
@@ -515,6 +567,37 @@ All notable changes to this project are documented in this file.
   is not there.
 
 ### Fixed
+
+#### The frames of the agent were written twice, and at the ERROR level
+
+- **One failed request put two copies of the frames in the log, both at
+  the ERROR level.**  `components/event_consumer.py` logged the failure
+  with `exc_info=True`, and `components/llm_errors.py` logged the same
+  failure with `exc_info=exc`.  The frames say where the failure
+  happened *inside the agent* — they are of no use to anybody who did
+  not write the agent, and they bury the one line that matters, which is
+  what the server said.
+
+  The ERROR record keeps the message — *"The request failed: Internal
+  Server Error (ref: …) (status code: 500)"* — and the frames are
+  written as a second record, under the DEBUG level:
+
+  ```
+  ERROR    components.llm_errors   The request failed: Internal Server Error (ref: bc97453e-…) (status code: 500)
+  DEBUG    components.llm_errors   The request failed — the frames of the agent:
+  Traceback (most recent call last):
+    ...
+  ```
+
+  The operator asks for the frames with `--log-level DEBUG`.
+
+- **The wording of the failure would have lost its provider.**  The
+  retrying LLM lives in a module of its own, and
+  `provider_of_the_llm()` looked at the module of the class of the LLM
+  alone — the failure would have been described as *"The model server
+  failed"* instead of *"The Ollama server failed"*.  The whole line of
+  ancestors of the LLM is looked at now, so a subclass of the LLM of a
+  provider is still that provider.
 
 #### The cache broke under a value it could not hold, and under a second agent
 

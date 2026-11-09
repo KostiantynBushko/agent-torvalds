@@ -264,6 +264,8 @@ TORVALDS_MODEL=qwen2.5-coder:7b python agent-torvalds.py
 | `OLLAMA_HOST` | — | Fallback for `TORVALDS_OLLAMA_HOST` |
 | `TORVALDS_REQUEST_TIMEOUT` | `99999` | LLM request timeout in seconds |
 | `TORVALDS_MAX_ITERATIONS` | `50` | Maximum tool-calling iterations per request |
+| `TORVALDS_MAX_RETRIES` | `2` | How many times a failed model request is sent again |
+| `TORVALDS_RETRY_DELAY` | `2` | Seconds to wait before a failed model request is sent again |
 | `TORVALDS_SIMILARITY_TOP_K` | `8` | Tools retrieved per query in retriever mode |
 
 **Using a different model:**
