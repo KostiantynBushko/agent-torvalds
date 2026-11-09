@@ -64,12 +64,20 @@ def _original_source() -> str:
     return CHECKER.git_show(CHECKER.resolve_original_ref(), CHECKER.ORIGINAL_PATH)
 
 
+#: The commit that made the split - the package as it was committed by
+#: it.  The claim of the script is about that moment in the history, so
+#: the sources it compares are the two committed states and not the
+#: working copy: the toolkit has grown since (a new operation, a new
+#: tool), and every one of those changes was meant to happen.
+PACKAGE_REF = CHECKER.resolve_package_ref()
+
+
 def _operations_source() -> str:
-    return (REPO_ROOT / CHECKER.OPERATIONS_PATH).read_text(encoding="utf-8")
+    return CHECKER.git_show(PACKAGE_REF, CHECKER.OPERATIONS_PATH)
 
 
 def _adapter_source() -> str:
-    return (REPO_ROOT / CHECKER.ADAPTER_PATH).read_text(encoding="utf-8")
+    return CHECKER.git_show(PACKAGE_REF, CHECKER.ADAPTER_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -78,11 +86,23 @@ def _adapter_source() -> str:
 
 
 def test_the_real_split_is_behaviour_neutral():
-    """The committed original and the new files must not differ."""
+    """The committed original and the committed package must not differ.
+
+    The claim is about the split - a moment in the history - so it is
+    checked between the commit before the split and the commit that made
+    it.  The toolkit has grown since, and that growth is not drift.
+    """
     failures = CHECKER.compare(
         _original_source(), _operations_source(), _adapter_source()
     )
     assert failures == [], f"the split is not behaviour-neutral: {failures}"
+
+
+def test_the_package_of_the_split_is_found():
+    """The reference of the package has to be found, not assumed."""
+    assert PACKAGE_REF
+    assert "agent_linux_toolkit.py" not in _original_source()
+    assert "def execute_shell_command" in _operations_source()
 
 
 def test_the_script_itself_reports_success():

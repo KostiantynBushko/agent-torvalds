@@ -6,6 +6,83 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### A command that needs root asks for the password in a window
+
+- **The operator asked for it on 2026-11-09:**
+
+  > *in the linux toolkit we can run a command so we need a solution to
+  > handle 'sudo' in the command please consider "pkexec" it must run UI
+  > window with a request to user to type sudo password*
+
+- **`sudo` reads the password from the terminal, and the terminal of the
+  agent is not a terminal the operator can answer.**  The TUI puts the
+  terminal into cbreak mode — `components/tui/input_reader.py` does it
+  with `tty.setcbreak`, which switches the echo off, because the
+  application draws the screen itself.  A `sudo` prompt written into that
+  terminal is painted over by the next frame, and the keystrokes are read
+  by the input reader of the TUI, which never hands them to `sudo`.  The
+  command hangs until the timeout kills it, and the operator is never
+  asked anything.
+
+- **A `sudo` in a command of the Linux toolkit is escalated through
+  `pkexec`.**  `pkexec` asks **polkit** for the authorisation, and polkit
+  puts the question in a **window** — the window the operator is already
+  looking at.  The password never touches the terminal the agent is
+  drawing on.
+
+  ```
+  sudo systemctl restart nginx
+  → pkexec --keep-cwd systemctl restart nginx
+  ```
+
+  The rewrite is narrow on purpose:
+
+  | Rule | Why |
+  |---|---|
+  | only a `sudo` **in command position** is rewritten | `grep sudo /etc/sudoers` is not an escalation |
+  | `--keep-cwd` is always added | `pkexec` runs a program in the home of the target user, `sudo` does not |
+  | `--disable-internal-agent` is added when the terminal belongs to an application | it stops `pkexec` from asking on the terminal — the thing this is about |
+  | `--user` carries `sudo -u` over | `pkexec --user www-data cmd` runs the program as `www-data` |
+  | the flags `pkexec` cannot express are dropped, and the drop is reported | `sudo -E` keeps the environment; `pkexec` sanitises it anyway |
+  | `sudo -l`, `sudo -v` and `sudo -e` are left alone | they do not run a program, and `pkexec` cannot do them |
+  | everything else is left byte for byte | the redirections, the quotes and the spacing survive |
+
+  The command line is **scanned**, not matched with a regular expression:
+  the scan knows where a shell starts a program and where it does not, so
+  a `sudo` that is only an argument is left alone.
+
+- **The measurements are in
+  `investigate/linux-privilege-escalation/`.**  `pkexec(1)` was read on
+  the machine of the operator, and the behaviour was measured there:
+
+  | What | What it showed |
+  |---|---|
+  | `pkexec --keep-cwd /bin/pwd` | the working directory is kept — without the flag it is the home of the target user |
+  | `pkexec --keep-cwd --user nobody /usr/bin/id` | `sudo -u` carries over, and it needs `--keep-cwd` as well |
+  | `pkexec --disable-internal-agent` | without a graphical agent, `pkexec` **waits** (the command was still running after 8 seconds, and was killed) — so the toolkit only uses `pkexec` when there is a display **and** an agent |
+  | `pkexec --version` → 126 / 127 | 126 is a dismissed dialog, 127 is "not authorised" — both are reported, neither is retried |
+
+- **The password is never handled by the toolkit.**  polkit asks the
+  operator, and the toolkit only ever sees the exit code.  There is
+  nothing to leak, because there is nothing to keep.
+
+- **The agent can say what is going to happen.**
+  `check_privilege_backend()` reports whether a window will open, and the
+  description of the two execution tools tells the model to warn the
+  operator that a window is about to appear.
+
+- **An escalated command gets 300 seconds** instead of the usual thirty:
+  the window stays open until somebody answers it.  A timeout the caller
+  asked for is respected.
+
+- **The library half keeps its dependency profile.**  `privilege.py` is
+  built on the standard library alone — `subprocess`, `os`, `shutil`,
+  `re`, `shlex`, `dataclasses`, `termios` — and the toolkit still has no
+  third-party dependency at all.
+
+- **The tests are in `toolkits/linux-toolkit/tests/test_privilege.py`.**
+  They are offline: no test runs `pkexec`, and no test opens a window.
+
 #### The export of a session, as JSON
 
 - **The operator asked for a JSON export on 2026-11-08:**

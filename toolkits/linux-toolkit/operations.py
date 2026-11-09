@@ -22,11 +22,18 @@ Retriever Keywords: shell, command, linux, execute, system, permissions, environ
 Prerequisites:
     - Linux/Unix-like operating system
     - Appropriate shell access and permissions
+    - ``pkexec`` and a running polkit agent (optional - for the window
+      that asks the operator for a password; see :mod:`privilege`)
 """
 import subprocess
 import os
 import logging
 from typing import Dict, List, Optional, Any
+
+# The privilege half of the toolkit: it decides what happens when a
+# command asks for root.  It is a separate module, because it is a
+# subject of its own - and because it carries no operation.
+from .privilege import plan_privilege, privilege_status
 
 # Logging is configured centrally in agent-torvalds.py.
 # Do NOT call logging.basicConfig() here — it is a no-op after the first call.
@@ -38,39 +45,72 @@ def execute_shell_command(
     timeout: int = 30,
     cwd: Optional[str] = None,
     shell: bool = True,
+    privilege: str = "auto",
 ) -> Dict[str, Any]:
     """
     Execute a shell command and return structured response with stdout, stderr, and return code.
     
     Use this tool for running any shell command, scripting, or system operations.
     Supports timeouts, custom working directories, and non-shell execution.
-    
+
+    A command that asks for root - a ``sudo`` in it - is **escalated
+    through pkexec**: polkit puts the question in a window, and the
+    operator types the password there.  The password never reaches the
+    terminal the agent is drawing on.  See ``privilege`` below.
+
     Args:
         command (str): The shell command to execute
         timeout (int): Timeout in seconds for the command execution (default: 30)
         cwd (str, optional): Working directory for the command
         shell (bool): Whether to use shell (default: True)
-        
+        privilege (str): How a command that asks for root is run:
+            'auto' (default) uses pkexec when it can show the window,
+            'pkexec' insists on it, and 'sudo' runs the command exactly
+            as it was written.
+
     Returns:
-        Dict containing 'stdout', 'stderr', 'returncode', and 'success' keys
-        
+        Dict containing 'stdout', 'stderr', 'returncode', and 'success'
+        keys, plus 'privilege' - what ran the command: 'none', 'pkexec'
+        or 'sudo'.  A command that was escalated carries the notes of
+        the escalation in 'privilege_notes'.
+
     Example:
         >>> execute_shell_command("ls -la")
-        {'stdout': 'total 48\\n...', 'stderr': '', 'returncode': 0, 'success': True}
-        
+        {'stdout': 'total 48\\n...', 'stderr': '', 'returncode': 0, 'success': True, 'privilege': 'none'}
+
         >>> execute_shell_command("ls /nonexistent")
-        {'stdout': '', 'stderr': 'ls: cannot access...', 'returncode': 2, 'success': False}
-        
+        {'stdout': '', 'stderr': 'ls: cannot access...', 'returncode': 2, 'success': False, 'privilege': 'none'}
+
     Keywords: execute, run, shell, command, terminal, bash, stdout, stderr
     """
+    effective_timeout = timeout
+
     try:
-        logger.info(f"Executing command: {command}")
-        
+        plan = plan_privilege(command, privilege, timeout=timeout)
+
+        if plan.error:
+            logger.error(plan.error)
+            return {
+                "stdout": "",
+                "stderr": plan.error,
+                "returncode": -1,
+                "success": False,
+                "privilege": plan.backend,
+            }
+
+        for note in plan.notes:
+            logger.info(note)
+
+        effective_command = plan.command
+        effective_timeout = plan.timeout if plan.timeout is not None else timeout
+
+        logger.info(f"Executing command: {effective_command}")
+
         result = subprocess.run(
-            command,
+            effective_command,
             shell=shell,
             cwd=cwd,
-            timeout=timeout,
+            timeout=effective_timeout,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -81,7 +121,11 @@ def execute_shell_command(
             "stderr": result.stderr.strip() if result.stderr else "",
             "returncode": result.returncode,
             "success": result.returncode == 0,
+            "privilege": plan.backend,
         }
+
+        if plan.notes:
+            response["privilege_notes"] = list(plan.notes)
         
         if response["success"]:
             logger.info(f"Command executed successfully. Return code: {response['returncode']}")
@@ -93,13 +137,14 @@ def execute_shell_command(
         return response
         
     except subprocess.TimeoutExpired:
-        error_msg = f"Command timed out after {timeout} seconds: {command}"
+        error_msg = f"Command timed out after {effective_timeout} seconds: {command}"
         logger.error(error_msg)
         return {
             "stdout": "",
             "stderr": error_msg,
             "returncode": -1,
             "success": False,
+            "privilege": "none",
         }
     except Exception as e:
         error_msg = f"Error executing command '{command}': {str(e)}"
@@ -109,10 +154,15 @@ def execute_shell_command(
             "stderr": error_msg,
             "returncode": -1,
             "success": False,
+            "privilege": "none",
         }
 
 
-def execute_multiple_commands(commands: List[str], timeout: int = 30) -> List[Dict[str, Any]]:
+def execute_multiple_commands(
+    commands: List[str],
+    timeout: int = 30,
+    privilege: str = "auto",
+) -> List[Dict[str, Any]]:
     """
     Execute multiple shell commands sequentially and return results for each.
     
@@ -122,7 +172,9 @@ def execute_multiple_commands(commands: List[str], timeout: int = 30) -> List[Di
     Args:
         commands (List[str]): List of shell commands to execute
         timeout (int): Timeout in seconds for each command execution
-        
+        privilege (str): How a command that asks for root is run:
+            'auto' (default), 'pkexec' or 'sudo'.
+
     Returns:
         List of response dictionaries for each command
         
@@ -135,7 +187,8 @@ def execute_multiple_commands(commands: List[str], timeout: int = 30) -> List[Di
     results = []
     for i, command in enumerate(commands):
         logger.info(f"Executing command {i+1}/{len(commands)}: {command}")
-        result = execute_shell_command(command, timeout)
+        result = execute_shell_command(command, timeout, privilege=privilege)
+
         results.append(result)
     return results
 
@@ -267,37 +320,65 @@ def check_file_permissions(filepath: str) -> Dict[str, Any]:
     }
 
 
-def run_command_with_env(command: str, env_vars: Dict[str, str]) -> Dict[str, Any]:
+def run_command_with_env(
+    command: str,
+    env_vars: Dict[str, str],
+    privilege: str = "auto",
+) -> Dict[str, Any]:
     """
     Execute a shell command with custom environment variables.
     
     Use this tool for running commands with specific environment configurations,
     testing environment-dependent behavior, or setting up isolated execution contexts.
-    
+
+    A command that asks for root is escalated through pkexec, exactly as in
+    :func:`execute_shell_command`.
+
     Args:
         command (str): The shell command to execute
         env_vars (Dict[str, str]): Dictionary of environment variables
-        
+        privilege (str): How a command that asks for root is run:
+            'auto' (default), 'pkexec' or 'sudo'.
+
     Returns:
-        Dictionary with command execution results
-        
+        Dictionary with command execution results, including the 'privilege'
+        key that says what ran the command.
+
     Example:
         >>> run_command_with_env("echo $MY_VAR", {"MY_VAR": "hello"})
-        {'stdout': 'hello', 'stderr': '', 'returncode': 0, 'success': True}
-        
+        {'stdout': 'hello', 'stderr': '', 'returncode': 0, 'success': True, 'privilege': 'none'}
+
     Keywords: environment, env, variables, custom, isolated, context
     """
     try:
+        plan = plan_privilege(command, privilege)
+
+        if plan.error:
+            logger.error(plan.error)
+            return {
+                "stdout": "",
+                "stderr": plan.error,
+                "returncode": -1,
+                "success": False,
+                "privilege": plan.backend,
+            }
+
+        for note in plan.notes:
+            logger.info(note)
+
         env = os.environ.copy()
         env.update(env_vars)
-        
-        logger.info(f"Executing command with custom env: {command}")
-        
+
+        effective_command = plan.command
+        effective_timeout = plan.timeout if plan.timeout is not None else 30
+
+        logger.info(f"Executing command with custom env: {effective_command}")
+
         result = subprocess.run(
-            command,
+            effective_command,
             shell=True,
             env=env,
-            timeout=30,
+            timeout=effective_timeout,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -308,7 +389,11 @@ def run_command_with_env(command: str, env_vars: Dict[str, str]) -> Dict[str, An
             "stderr": result.stderr.strip() if result.stderr else "",
             "returncode": result.returncode,
             "success": result.returncode == 0,
+            "privilege": plan.backend,
         }
+
+        if plan.notes:
+            response["privilege_notes"] = list(plan.notes)
         
         return response
         
@@ -320,6 +405,37 @@ def run_command_with_env(command: str, env_vars: Dict[str, str]) -> Dict[str, An
             "stderr": error_msg,
             "returncode": -1,
             "success": False,
+            "privilege": "none",
         }
 
 
+def check_privilege_backend() -> Dict[str, Any]:
+    """
+    Report how a command that asks for root would be run on this machine.
+
+    Use this tool before a command that needs root, or to tell the operator
+    what to expect.  A command with a ``sudo`` in it is escalated through
+    **pkexec**: polkit opens a window and asks the operator for the
+    password there - the password never reaches the terminal the agent is
+    drawing on.
+
+    Returns:
+        Dictionary with:
+            - 'backend': 'pkexec' or 'sudo' - what would run the command
+            - 'usable': whether the window can be shown
+            - 'pkexec_path': the path of the pkexec program
+            - 'gui_session': whether a graphical session is there
+            - 'polkit_agent': the authentication agent that is running
+            - 'terminal_managed': whether the terminal belongs to an
+              application that draws the screen
+            - 'reason': what is missing, when the window cannot be shown
+
+    Example:
+        >>> check_privilege_backend()
+        {'backend': 'pkexec', 'usable': True, 'polkit_agent': 'gnome-shell', ...}
+
+    Keywords: privilege, sudo, pkexec, polkit, root, password, window, dialog
+    """
+    status = privilege_status()
+    status["success"] = True
+    return status
