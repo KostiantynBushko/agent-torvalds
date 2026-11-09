@@ -516,6 +516,81 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The operator could not see what they typed while the agent asked a question
+
+- **The line the operator types on was not on the screen.**  The
+  operator reported it on 2026-11-09:
+
+  > *after agent response sometime by typint I do not see what is typed
+  > looks like it is hidded even after leaving agent app the typing in
+  > terminal is hidden*
+
+  The text was in the application the whole time — it was never drawn.
+  The footer of the TUI is a partition of the layout with a fixed
+  height of three lines: a border, one line of content, a border.  The
+  command bar fits in one line of content.  The HITL panel does not —
+  it carries the question of the agent *and* the line the answer is
+  typed on — and a panel that is taller than its partition is cropped
+  from the bottom.  The answer is the last line of the panel, so the
+  answer was the first thing to go.
+
+  ```
+  --- the footer of the TUI, with a question waiting ---
+     │ 🤖 AGENT QUESTION: Which file should I read?                            │
+  ```
+
+  The height the panel needs is measured now, and the partition is
+  given that many lines while a question is waiting.  The command bar
+  keeps the height it has always had — it is one line of content, and
+  the hints beside it are as long as they have been.
+
+  ```
+     │ 🤖 AGENT QUESTION: Which file should I read?                                                 │
+     │ Answer: rm -rf [a-z] now                                                  [Enter to confirm] │
+  ```
+
+- **The typed text was read as markup.**  The HITL panel put the typed
+  text into the markup of Rich without escaping it, so Rich read the
+  square brackets as tags and swallowed the text between them:
+
+  | Typed | On the screen |
+  |---|---|
+  | `rm -rf [a-z]` | `Answer: rm -rf` |
+  | `a[b]c` | `Answer: ac` |
+
+  The command bar — the same text, one branch up — escaped it
+  correctly, and so does the HITL panel now.  A bracket that closed a
+  tag Rich never opened also took the panel down with a
+  `MarkupError`; it does not any more.
+
+- **The terminal was left mute when the agent did not exit on its
+  own.**  The reader of the keyboard puts the terminal into cbreak
+  mode, and cbreak switches the echo off — the TUI draws the typed
+  text itself.  That state belongs to the **terminal**, not to the
+  process, so it outlives the agent: a terminal left in cbreak mode
+  shows nothing of what is typed, and it stays that way after the
+  agent is gone.
+
+  The ordinary exits give the terminal back, and they always have:
+  `\exit`, Ctrl-D, Ctrl-C and `kill` all leave the echo on.  What was
+  not covered is an exit that no handler runs — an exception outside
+  the loop, an exit that skips the cleanup.  The reader registers its
+  own `stop()` with `atexit`, so every exit that runs the atexit
+  handlers gives the terminal back.
+
+  A `kill -9` still leaves the terminal mute: SIGKILL cannot be
+  caught, and no program can answer for it.  `stty sane` gives the
+  terminal back.
+
+- **The evidence is in `investigate/tui-hidden-input/`.**  The probe
+  (`probe_hidden_input.py`) renders the TUI the way the app does, and
+  it checks the terminal against a pty of its own, so it never touches
+  the terminal of the operator.  Before the change: *"the operator sees
+  it: NO"*.  After: the typed text is on the screen, and the terminal
+  is given back.  The fourteen tests are in
+  `tests/test_tui_footer.py`.
+
+
 #### The cache broke under a value it could not hold, and under a second agent
 
 - **One value that JSON could not hold broke the cache for the rest of
