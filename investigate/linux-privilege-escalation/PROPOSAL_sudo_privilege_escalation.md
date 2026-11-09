@@ -76,9 +76,9 @@ to be told apart by the text of the error.
 
 ```console
 $ pkexec --keep-cwd /bin/pwd
-/home/the-operator/projects/the-project     # ← with --keep-cwd
+~/projects/the-project     # ← with --keep-cwd
 $ pkexec /bin/pwd
-/root                                       # ← without it
+/root                     # ← without it
 ```
 
 So the rewrite **always** carries `--keep-cwd`.  Without it, `sudo make
