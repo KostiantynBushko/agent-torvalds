@@ -31,6 +31,7 @@ Capabilities:
 - `\\stats` : View request statistics summary
 - `\\toggle-hitl` : Toggle Human-In-The-Loop confirmation at runtime
 - `\\hitl-status` : Inspect HITL settings and question counts
+- `\\question` : Ask a predefined question through the Human-in-the-Loop (a HITL test)
 - `\\clear` : Clear this document viewer pane
 - `\\exit` or `\\quit` : Gracefully terminate agent session
 - `PgUp` / `PgDn` : Scroll up and down through document responses

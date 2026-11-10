@@ -1179,6 +1179,57 @@ python agent-torvalds.py --hitl-disabled
 # \hitl-off      - Disable HITL
 ```
 
+#### The `\question` command — a predefined HITL test
+
+The `\question` command asks a **predefined** question through the
+Human-in-the-Loop.  It is a test of the HITL path itself: **no tool is
+run** and the model is never called, so a failure of the command says
+something about the HITL machinery and nothing about the model or the
+tools.
+
+| Command | What it does |
+|---|---|
+| `\question` | Ask the next predefined question — the bank is walked in turn. |
+| `\question <id>` | Ask that exact question: `text-01`, `yesno-01`, `menu-01`, `password-01`. |
+| `\question list` | List the predefined questions. |
+
+The bank holds one question per input type — `text`, `yesno`, `menu` and
+`password` — so a run of the command covers every kind of prompt the
+HITL path can produce.  The question travels the **real** path: it is
+rendered by the event consumer and the answer is collected by the input
+module, exactly as the answer of an agent question is.
+
+The answer is **processed** against what the question asked for — a
+yes/no is normalised to `yes` or `no`, the answer of a menu is checked
+against the choices — and the outcome is reported:
+
+```
+# HITL question — `yesno-01`
+
+Shall I continue with the deployment?
+
+| | |
+|---|---|
+| Input type | `yesno` |
+| Answer | yes |
+| Timed out | no |
+| Tools run | none |
+```
+
+Two rules the command holds to:
+
+* **a timeout is never reported as an answer** — the report says
+  "nobody answered" when the wait ended without one;
+* **a secret is never echoed** — the passphrase of a `password` question
+  does not appear in the report.
+
+The answer is *not* written into the conversation memory: the command is
+a test of the machinery, and a test answer must not become the context
+of the next turn of the agent.
+
+When the Human-in-the-Loop is off (`\hitl-off`), the command asks
+nothing and says so.
+
 #### Timeout semantics
 
 The default timeout is **`-1`**, which means **no timeout**: the agent waits

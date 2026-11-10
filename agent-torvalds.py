@@ -226,6 +226,10 @@ from components.mikrotik_commands import (
     handle_mikrotik_command,
     is_mikrotik_command,
 )
+from components.hitl_question_command import (
+    is_question_command,
+    run_question_command,
+)
 
 # ---------------------------------------------------------------------------
 # Stats handler
@@ -1620,6 +1624,20 @@ async def main():
             console.print(f"  Questions asked: {hitl_stats['question_count']}")
             console.print(f"  Timeouts: {hitl_stats['timeout_count']}")
             console.print(f"  Toggle count: {status_info['toggle_count']}")
+            continue
+
+        if is_question_command(cmd):
+            # A predefined HITL question: the operator is asked, the
+            # answer comes back, and it is processed.  No tool is run and
+            # the model is not called — the command tests the HITL path
+            # itself.
+            report = await run_question_command(
+                cmd,
+                event_consumer,
+                hitl_enabled=human_loop_handler.is_hitl_enabled(),
+            )
+            if report:
+                console.print(Markdown(report))
             continue
 
         if not cmd:

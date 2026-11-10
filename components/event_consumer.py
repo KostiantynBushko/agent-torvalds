@@ -751,6 +751,90 @@ class EventConsumer:
                      event.response, getattr(event, 'user_name', None))
         self.state.set("last_human_response", event.response)
 
+    async def ask_question(
+        self, event: AgentQuestionEvent
+    ) -> tuple[str, bool]:
+        r"""Ask the operator a question and collect the answer.
+
+        This is the Human-in-the-Loop round trip **without** a workflow:
+        the question is rendered the way an agent question is rendered, the
+        answer is collected the way it is collected, and both are recorded
+        in the HITL history.
+
+        The answer is *not* sent into a workflow — the caller decides what
+        happens with it.  The workflow path uses this method as well (see
+        :meth:`_on_agent_question`), so a question asked by the agent and a
+        question asked by the ``\question`` command travel the same road:
+        the same rendering, the same input module, the same timeout rules.
+
+        Args:
+            event: The question to ask.
+
+        Returns:
+            ``(answer, was_timeout)`` tuple.  A timeout is reported as
+            such — it is never passed off as an answer.
+        """
+        self._hitl_question_count += 1
+        logger.debug(
+            "EventConsumer.ask_question: question_id=%s, input_type=%s, "
+            "question_count=%d",
+            getattr(event, "question_id", ""),
+            getattr(event, "input_type", "text"),
+            self._hitl_question_count,
+        )
+
+        # Pause spinner
+        self.spinner.pause()
+        self.state.set("workflow_paused", True)
+        logger.debug("EventConsumer.ask_question: spinner paused")
+
+        answer = ""
+        was_timeout = False
+        try:
+            # Display the question — exactly once.  The input module only
+            # ever gets a short prompt, so the question cannot reach the
+            # terminal a second time (investigation defect D3).
+            self._render_question(event)
+
+            answer, was_timeout = await self._collect_answer(event)
+
+            if was_timeout:
+                self._hitl_timeout_count += 1
+                logger.debug(
+                    "EventConsumer.ask_question: timeout, timeout_count=%d",
+                    self._hitl_timeout_count,
+                )
+                self.console.print(
+                    "[yellow]⏱️  Timeout — using default answer[/yellow]"
+                )
+            else:
+                logger.debug("EventConsumer.ask_question: valid response")
+
+        except Exception as e:
+            logger.error("EventConsumer.ask_question: error: %s", e, exc_info=True)
+            self.console.print(
+                f"[red]⚠️  Error collecting response: {e}[/red]"
+            )
+            answer = getattr(event, "default_answer", "") or ""
+            was_timeout = True
+
+        # Record the answer for the HITL history.
+        self._record_answer(
+            getattr(event, "question_id", ""),
+            answer,
+            was_timeout,
+            question=getattr(event, "question", ""),
+            timeout=getattr(event, "timeout", None),
+            default_answer=getattr(event, "default_answer", ""),
+        )
+
+        # Resume spinner
+        logger.debug("EventConsumer.ask_question: resuming spinner in finally")
+        self.spinner.resume()
+        self.state.set("workflow_paused", False)
+
+        return answer, was_timeout
+
     async def _on_agent_question(self, event: AgentQuestionEvent) -> None:
         """Handle AgentQuestionEvent — the agent needs human input.
 
@@ -774,64 +858,20 @@ class EventConsumer:
             logger.debug("EventConsumer._on_agent_question: HITL disabled, skipping")
             return
 
-        self._hitl_question_count += 1
-        logger.debug("EventConsumer._on_agent_question: question_count=%d", self._hitl_question_count)
+        # The question is rendered and the answer collected by
+        # ``ask_question`` — the same code the ``\question`` command uses,
+        # so a question asked by the agent and a question asked by the
+        # command travel the same road.
+        answer, was_timeout = await self.ask_question(event)
 
-        # Pause spinner
-        self.spinner.pause()
-        self.state.set("workflow_paused", True)
-        logger.debug("EventConsumer._on_agent_question: spinner paused")
-
-        # Display the question — exactly once.  The input module only ever
-        # gets a short prompt, so the question cannot reach the terminal a
-        # second time (investigation defect D3).
-        self._render_question(event)
-
-        answer = ""
-        was_timeout = False
-        try:
-            answer, was_timeout = await self._collect_answer(event)
-
-            if was_timeout:
-                self._hitl_timeout_count += 1
-                logger.debug(
-                    "EventConsumer._on_agent_question: timeout, timeout_count=%d",
-                    self._hitl_timeout_count,
-                )
-                self.console.print(
-                    "[yellow]⏱️  Timeout — using default answer[/yellow]"
-                )
-            else:
-                logger.debug("EventConsumer._on_agent_question: valid response")
-                self.console.print("[green]✅ Response sent to agent[/green]")
-
-        except Exception as e:
-            logger.error("EventConsumer._on_agent_question: error: %s", e, exc_info=True)
-            self.console.print(
-                f"[red]⚠️  Error collecting response: {e}[/red]"
-            )
-            answer = event.default_answer
-            was_timeout = True
-
-        # Record the answer for the HITL history.
-        self._record_answer(
-            event.question_id,
-            answer,
-            was_timeout,
-            question=getattr(event, "question", ""),
-            timeout=getattr(event, "timeout", None),
-            default_answer=getattr(event, "default_answer", ""),
-        )
+        if not was_timeout:
+            logger.debug("EventConsumer._on_agent_question: valid response")
+            self.console.print("[green]✅ Response sent to agent[/green]")
 
         # Send the answer back into the workflow.  The waiting step accepts
         # AgentAnswerEvent, so the runtime resolves the waiter and replays
         # the step with the answer.
         self._send_answer(event, answer, was_timeout)
-
-        # Resume spinner
-        logger.debug("EventConsumer._on_agent_question: resuming spinner in finally")
-        self.spinner.resume()
-        self.state.set("workflow_paused", False)
 
     def _render_question(self, event: AgentQuestionEvent) -> None:
         """Render the question and its context — once.

@@ -269,6 +269,16 @@ class HumanLoopHandler(BaseCallbackHandler):
             return self.enable_hitl and self.runtime_toggle.is_enabled
         return self.enable_hitl
 
+    def is_hitl_enabled(self) -> bool:
+        """Return ``True`` when the Human-in-the-Loop is active.
+
+        The public counterpart of :meth:`_is_hitl_enabled`.  The
+        orchestrators need the same answer the handler gives — the
+        ``\\question`` command asks nothing when the Human-in-the-Loop is
+        off — and they must not reach into a private method for it.
+        """
+        return self._is_hitl_enabled()
+
     # ------------------------------------------------------------------
     # Question detection
     # ------------------------------------------------------------------

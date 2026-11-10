@@ -186,6 +186,16 @@ COMMAND_SPECS: Tuple[CommandSpec, ...] = (
         category="HITL",
         feature=FEATURE_HITL,
     ),
+    CommandSpec(
+        name="\\question",
+        description=(
+            "Ask a predefined question through the Human-in-the-Loop — a "
+            "HITL test.  No tool is run and the model is not called."
+        ),
+        usage="\\question [id|list]",
+        category="HITL",
+        aliases=("\\q",),
+    ),
 
     # ---- Tool selection -------------------------------------------------
     CommandSpec(
