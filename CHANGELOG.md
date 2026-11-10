@@ -1384,6 +1384,58 @@ All notable changes to this project are documented in this file.
   channel in the two cases that differ — a run that ends with the body, and a
   run that continues past it.
 
+#### The terminal after a privileged command
+
+- **The operator reported that the terminal goes mute after a command
+  that asked for the sudo password in a window**, and pointed at
+  [pyinvoke/invoke#303](https://github.com/pyinvoke/invoke/issues/303) —
+  the same defect in another project: the process that changed the
+  terminal settings died in the middle of the question and never gave
+  them back.
+
+- **The question in a window does not damage the terminal.**  It was
+  measured, in a pty of the probe's own: the echo is still on after a
+  command that was escalated through `pkexec` and polkit.
+
+- **The paths that ask on the terminal do.**  The `sudo` fallback (when
+  there is no polkit agent to ask), the textual agent of `pkexec` (at a
+  console, when no window answers), and the whiptail dialog of the APT
+  toolkit all switch the **echo off** to read the password.  The agent
+  kills the child when the timeout fires — with **SIGKILL**, which
+  cannot be caught — and it kills only the shell, not the `sudo` behind
+  it.  The terminal keeps the echo-off state, and the operator is left
+  typing into a terminal that shows nothing.
+
+  | Measurement | The echo afterwards |
+  |---|---|
+  | the question in a window (`pkexec` + polkit) | **on** |
+  | the question on the terminal (`sudo -v`) | **OFF** |
+  | the mechanism — a child that only switches the echo off | **OFF** |
+
+- **The agent is the one that has to give the terminal back.**  The
+  other two places in the repository that switch the terminal off — the
+  masked password of `components/console_input_module.py` and the reader
+  of `components/tui/input_reader.py` — give it back in a `finally`,
+  with an `atexit` hook behind it.  The privilege path has neither: the
+  agent never takes the terminal, so it cannot give it back.  This is
+  the rule of invoke#303, whose fix upstream (0.12.2) was to tie the IO
+  threads off *before* the exception is re-raised.
+
+- **A mute terminal is baked into the baseline of the next run.**  The
+  reader of the TUI captures the state of the terminal when it starts
+  and restores *that* state when it stops — so a terminal that was
+  already mute stays mute, and the state outlives the agent.
+
+- **The evidence is in `investigate/privilege-terminal-echo/`.**  The
+  probe (`probe_privilege_terminal.py`) runs five measurements against
+  the real code of the repository, in a pty of its own, so it never
+  touches the terminal of the operator.  Before the fix it exits **1** —
+  *"the terminal was left mute"*.  The fix is proposed in
+  `investigate/privilege-terminal-echo/PROPOSAL.md`; it is a change of
+  its own, with its own branch and its own pull request.
+
+- **Until the fix lands:** `stty sane` gives the terminal back.
+
 ## [1.0.0] - 2026-10-29
 
 ### Added
