@@ -119,6 +119,37 @@ base_url = get_ollama_base_url()   # e.g. 'http://localhost:11434'
 
 ---
 
+### `llm_retry.py`
+The retry of a failed model request.
+
+**Purpose:** Sends a request again when the **model server** failed, and
+leaves it alone when the **request** failed. A model that died, a server
+that is busy and a connection that was cut are all worth another attempt;
+a prompt that was too long, a model that is not pulled and a key that is
+wrong will fail the same way every time.
+
+**Features:**
+- `is_transient(exc)` — tells the two kinds of failure apart, from the
+  status code, the class name or the chain of the failure
+- `RetryingOllama` — the LLM of the agent, with a bounded retry and a
+  wait that grows with every attempt
+- The retry happens around the **request**: the tools that already ran are
+  not run again, and the conversation is not lost
+
+**Usage:**
+```python
+from components.llm_retry import RetryingOllama
+
+llm = RetryingOllama(
+    model=MODEL,
+    base_url=OLLAMA_BASE_URL,
+    max_retries=2,     # how many times the request is sent again
+    retry_delay=2.0,   # how long to wait before it is sent again
+)
+```
+
+---
+
 ### `config.py`
 The configuration file — `~/.config/torvalds/config.toml`.
 
@@ -344,6 +375,7 @@ Package initialization file.
 
 ## Recent Updates
 
+- **2026-11-09**: Added `llm_retry.py` — a failed model request is sent again when the server failed, and not when the request failed
 - **2026-11-05**: Added `tokens.py` — the tokenizer of the agent and the count of the tokens, in one place
 - **2026-11-04**: Added `context_metrics.py` — the size of the prompt (tokens, bytes) that is logged with every request to the model
 - **2026-10-29**: Added `config.py` and `config_view.py` — the configuration file and the `\config` command

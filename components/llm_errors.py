@@ -7,7 +7,8 @@ to that: it shows where the failure happened *inside the agent*, and it
 hides the one thing that matters, which is that the **server** failed.
 
 This module says what actually went wrong, in the words of the person who
-has to fix it, and keeps the traceback for the log.
+has to fix it, and keeps the traceback for the log - under the DEBUG
+level, where the frames of the agent belong.
 
 **The wording belongs to the provider.**  A 500 from a local Ollama server
 means the model crashed; a 500 from the Anthropic API means the API had a
@@ -262,6 +263,11 @@ def provider_of_the_llm(llm: object) -> Optional[Provider]:
     ``ConnectionError`` - are still described in the words of the backend
     the agent was talking to.
 
+    The whole **line of ancestors** of the LLM is looked at, not only the
+    class itself: the LLM of the agent is a subclass of the LLM of the
+    provider - ``RetryingOllama`` is an ``Ollama`` - and the subclass
+    lives in a module of its own, which names no provider at all.
+
     Args:
         llm: The LLM the agent holds, or ``None``.
 
@@ -271,10 +277,11 @@ def provider_of_the_llm(llm: object) -> Optional[Provider]:
     if llm is None:
         return None
 
-    module = type(llm).__module__
-    for provider in _PROVIDERS:
-        if any(path in module for path in provider.llm_paths):
-            return provider()
+    for klass in type(llm).__mro__:
+        module = klass.__module__
+        for provider in _PROVIDERS:
+            if any(path in module for path in provider.llm_paths):
+                return provider()
     return None
 
 
@@ -427,10 +434,10 @@ def describe(exc: BaseException, provider: Optional[Provider] = None) -> str:
     if status is not None:
         return _for_a_status(exc, resolved, status)
 
-    if _is_a_connection_failure(exc):
+    if is_a_connection_failure(exc):
         return _the_server_cannot_be_reached(resolved)
 
-    if _is_a_timeout(exc):
+    if is_a_timeout(exc):
         return (
             f"{_subject_of(resolved)} did not answer in time. The request "
             "may be too long for the context window, or the server may "
@@ -447,16 +454,28 @@ def describe(exc: BaseException, provider: Optional[Provider] = None) -> str:
 
 
 def log_failure(exc: BaseException) -> None:
-    """Write the traceback of a failure to the log.
+    """Write a failure to the log.
 
-    The traceback says where the failure happened *inside the agent*.
-    That is what the log is for.  The chat gets the message from
-    :func:`describe`, which says what actually went wrong.
+    Two records are written, and they answer two different questions.
+
+    The **ERROR** record says *what* failed: "The request failed: Internal
+    Server Error (ref: ...) (status code: 500)".  That is the line the
+    operator reads when the agent says that the server failed.
+
+    The **DEBUG** record carries the frames of the agent.  They say where
+    the failure happened *inside the agent*, and they are of no use to
+    anybody who did not write the agent - so they are written under the
+    DEBUG level, where they are found when they are looked for and stay
+    out of the way when they are not.
+
+    The chat gets the message from :func:`describe`, which says what
+    actually went wrong.
 
     Args:
         exc: The exception that ended the request.
     """
-    logger.error("The request failed: %s", exc, exc_info=exc)
+    logger.error("The request failed: %s", exc)
+    logger.debug("The request failed — the frames of the agent:", exc_info=exc)
 
 
 def _for_a_status(
@@ -542,7 +561,7 @@ def _came_in_the_body(exc: BaseException) -> bool:
     return False
 
 
-def _is_a_connection_failure(exc: BaseException) -> bool:
+def is_a_connection_failure(exc: BaseException) -> bool:
     """Whether the failure is a connection that never came about.
 
     Args:
@@ -559,7 +578,7 @@ def _is_a_connection_failure(exc: BaseException) -> bool:
     return False
 
 
-def _is_a_timeout(exc: BaseException) -> bool:
+def is_a_timeout(exc: BaseException) -> bool:
     """Whether the failure is a timeout.
 
     Args:

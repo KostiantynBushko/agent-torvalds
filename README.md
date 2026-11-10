@@ -701,6 +701,8 @@ given inline, e.g. `TORVALDS_MODEL=qwen2.5-coder:7b python agent-torvalds.py`.
 | `OLLAMA_HOST` | - | Fallback for `TORVALDS_OLLAMA_HOST` when the latter is not set |
 | `TORVALDS_REQUEST_TIMEOUT` | `99999` | LLM request timeout in seconds |
 | `TORVALDS_MAX_ITERATIONS` | `50` | Maximum tool-calling iterations per request |
+| `TORVALDS_MAX_RETRIES` | `2` | How many times a failed model request is sent again |
+| `TORVALDS_RETRY_DELAY` | `2` | Seconds to wait before a failed model request is sent again |
 | `TORVALDS_SIMILARITY_TOP_K` | `8` | Number of tools retrieved per query in retriever mode |
 
 See the [Local LLM Setup](#local-llm-setup-ollama) section for the complete
@@ -781,6 +783,21 @@ newlines, or a document that separates its paragraphs with a run of
 blank lines, would otherwise fill the log with empty records.  One
 empty line is kept — it is a paragraph break and it carries meaning —
 and a run of them is reduced to one.
+
+The **frames of a failure** are under the `DEBUG` level as well.  The
+`ERROR` record says *what* failed, in one line, and the frames — which
+say where the failure happened inside the agent — are a second record:
+
+```console
+$ python agent-torvalds.py --log-level DEBUG
+ERROR    components.llm_errors: The request failed: Internal Server Error (ref: bc97453e-…) (status code: 500)
+DEBUG    components.llm_errors: The request failed — the frames of the agent:
+Traceback (most recent call last):
+  ...
+```
+
+A request that the model server failed to answer is **sent again** —
+see [Local LLM Setup](#local-llm-setup-ollama).
 
 ### The Configuration File
 
