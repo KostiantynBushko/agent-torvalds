@@ -63,6 +63,21 @@ finally:
 The restore is in a `finally`, so it runs when the command succeeds,
 when it fails, when it times out, and when the agent is interrupted.
 
+**What was implemented.**  The helper did not become a module of its
+own: it landed in `privilege.py`, next to the code it protects, as the
+context manager `preserved_terminal()`:
+
+```python
+with preserved_terminal():
+    result = _run_command(...)
+```
+
+The restore uses `TCSANOW` and not `TCSADRAIN`: a restore must not wait
+for the output of the terminal to be drained, and a terminal nobody
+reads has a queue that never empties.  It runs in a **thread of its
+own**, and the caller waits for it for two seconds at most - a terminal
+that refuses to give its attributes back cannot hold the agent.
+
 ### 2. The child is killed in a way it can answer
 
 The timeout is handled by the agent, not by `subprocess.run()`:
@@ -77,6 +92,16 @@ The process group is used because the process that holds the terminal is
 not the process that `subprocess.run()` starts.  The child is started
 with `start_new_session=True`, so the group is the agent's own and the
 signal cannot reach the agent itself.
+
+**What was implemented.**  The tree is walked from `/proc` instead of
+being taken from a process group.  A group would have to be made with
+`start_new_session=True`, and that detaches the child from the
+controlling terminal - a `sudo` that has no `/dev/tty` to read the
+password from cannot ask at all, and the toolkit must not change *how*
+a command asks on a terminal the operator chose.  The tree is read from
+`/proc` as it is at that moment: the children are ended first and the
+shell is ended last, so it cannot start anything new while the tree is
+being ended, and the grace period covers the whole tree.
 
 ### 3. The question never lands on the terminal
 

@@ -257,7 +257,7 @@ request.  This report says what it has to do; the proposal is in
    already keep.
 2. **The child is killed in a way it can answer.**  On a timeout:
    SIGTERM first, a short grace period, then SIGKILL — and the whole
-   **process group**, so that the `sudo` behind the shell is killed too.
+   **tree**, so that the `sudo` behind the shell is killed too.
    A child that can catch SIGTERM gives the terminal back itself.
 3. **The question never lands on the terminal.**  `--disable-internal-agent`
    is added **always**, not only when the terminal belongs to an
@@ -277,7 +277,13 @@ request.  This report says what it has to do; the proposal is in
 | `probe_privilege_terminal.py` | exit 1 — *"the terminal was left mute"* | exit 0 — *"the terminal was given back in every measurement"* |
 | measurement 2 (the question on the terminal) | the echo is **OFF** | the echo is **on** |
 | measurement 3 (the mechanism) | the echo is **OFF** | the echo is **on** |
-| measurement 5 (the baseline) | the mute state is baked in | the terminal is given back as it was found |
+| measurement 5 (the baseline) | the mute state is baked in | **unchanged** - the reader of the TUI is not touched by this change |
+
+Measurement 5 is the only one that does not move.  The reader of the
+TUI gives the terminal back the state it found, and a terminal that
+was already mute stays mute.  This change does not touch that reader,
+and the reader is one of the things that are deliberately not in the
+change (§6).
 
 The probe runs against the **real** code of the repository — the real
 `execute_shell_command()`, the real timeout, the real reader of the TUI —
