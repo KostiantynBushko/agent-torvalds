@@ -121,7 +121,12 @@ class TestTheInput(unittest.TestCase):
     """The child of an escalated command does not get the terminal."""
 
     def _run(self, command: str, plan: PrivilegePlan) -> dict:
-        """Run a command with the subprocess call stubbed out."""
+        """Run a command with the running of it stubbed out.
+
+        The helper that starts the process is the one that is stubbed:
+        it is the one that knows what the child is given to read, and it
+        is tested on its own.
+        """
         recorded = {}
 
         def fake_run(cmd, **run_kwargs):
@@ -130,7 +135,7 @@ class TestTheInput(unittest.TestCase):
             return mock.Mock(stdout="ok\n", stderr="", returncode=0)
 
         with mock.patch.object(
-            operations.subprocess, "run", side_effect=fake_run
+            operations, "_run_command", side_effect=fake_run
         ), mock.patch.object(
             operations, "plan_privilege", return_value=plan
         ):

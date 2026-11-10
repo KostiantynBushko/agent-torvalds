@@ -115,10 +115,14 @@ describe.  A plain `git clone` leaves the directory empty;
   password there. The question never lands on a terminal — not on the
   one the TUI is drawing on, and not on any other — and the terminal of
   the operator is given back after the command, whatever the command
-  did to it. `check_privilege_backend()` reports what the machine
-  can do
+  did to it. A command that outlives its timeout takes its whole tree
+  with it. A machine that cannot show the window **refuses** the
+  command with the reason, because a `sudo` would ask for the password
+  on the terminal of the agent, and that terminal cannot give it back.
+  `check_privilege_backend()` reports what the machine can do
 - Built on the **standard library only** — `subprocess`, `os`, `logging`,
-  `shutil`, `re`, `shlex`, `termios`, `threading` and `typing`.  The
+  `shutil`, `re`, `shlex`, `termios`, `threading`, `signal`, `time` and
+  `typing`.  The
   reusable core package in `toolkits/linux-toolkit/` has **no**
   LlamaIndex imports and **no** third-party dependency at all, so it
   works in any Python that exists

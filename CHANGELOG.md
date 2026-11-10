@@ -707,6 +707,80 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The terminal is given back after a privileged command
+
+- **The operator reported that the terminal goes mute after a command
+  that asked for the sudo password in a window**, and pointed at
+  [pyinvoke/invoke#303](https://github.com/pyinvoke/invoke/issues/303) —
+  the same defect in another project: the process that changed the
+  terminal settings died in the middle of the question and never gave
+  them back.
+
+  The evidence is in `investigate/privilege-terminal-echo/` — the report,
+  the proposal and the probe that measures it.
+
+- **The question in a window does not damage the terminal.**  It was
+  measured, in a pty of the probe's own: the echo is still on after a
+  command that was escalated through `pkexec` and polkit.
+
+- **The paths that ask on the terminal do.**  The `sudo` fallback (when
+  there is no polkit agent to ask), the textual agent of `pkexec` (at a
+  console, when no window answers), and the whiptail dialog of the APT
+  toolkit all switch the **echo off** to read the password.  The agent
+  killed the child when the timeout fired — with **SIGKILL**, which
+  cannot be caught — and it killed only the shell, not the `sudo`
+  behind it.  The terminal kept the echo-off state, and the operator was
+  left typing into a terminal that showed nothing.
+
+- **Four changes, and one rule behind them.**
+
+  | The change | What it does |
+  |---|---|
+  | the terminal is held around every command | the attributes are read before the command and written back in a `finally` — whatever the command did to it, and whether the timeout killed it |
+  | the timeout ends the **whole tree** | a SIGTERM first, so a child that can catch it gives the terminal back itself; a SIGKILL after the grace period, for a child that does not care |
+  | the question never lands on the terminal | `--disable-internal-agent` is always passed, and the gate refuses to escalate when no window can be shown |
+  | the `sudo` fallback is gone | a command that needs root on a machine without a polkit agent is **refused with the reason**, instead of being run as a `sudo` that asks on a terminal the agent cannot give back |
+
+- **The rule is the one of invoke#303:** whoever changes the state of
+  the terminal gives it back — and the give-back runs even when the
+  process is interrupted.  The two other places in the project that
+  switch the terminal off — the masked password of
+  `components/console_input_module.py` and the reader of
+  `components/tui/input_reader.py` — already keep it that way.
+
+- **The probe proves it.**
+  `investigate/privilege-terminal-echo/probe_privilege_terminal.py`
+  runs five measurements against the real code of the repository, in a
+  pty of its own, so it never touches the terminal of the operator.
+
+  | | Before | After |
+  |---|---|---|
+  | the probe | exit **1** — *"the terminal was left mute"* | exit **0** — *"the terminal was given back in every measurement"* |
+  | the question on the terminal (`sudo -v`) | the echo is **OFF** | the echo is **on** |
+  | the mechanism — a child that only switches the echo off | the echo is **OFF** | the echo is **on** |
+  | the child after the timeout | the `sudo` behind the shell is **still alive** | the tree is gone |
+
+- **The tests are in `toolkits/linux-toolkit/tests/`** —
+  `test_privilege_timeout.py` (the tree that is ended with the command,
+  the child that is given the chance to end by itself, and the refusal
+  with the reason), `test_privilege_terminal.py` (the question, the
+  input, and the terminal) and `test_privilege.py` (the gate and the
+  rewrite).  They are offline and hermetic: no test runs `pkexec`, no
+  test opens a window, and every check that needs a terminal runs
+  against a pty of its own.
+
+  The new tests were run against the code **before** the change, and
+  they fail there — *"the grandchild outlived the timeout of the
+  command"* — and they pass after it.
+
+- **What is deliberately not in this change:** the whiptail dialog of
+  the APT toolkit has the same defect, and it needs the screen as well
+  as the echo — another component, another contract, another change.
+  The cbreak mode of the TUI is not a defect: the TUI draws the screen
+  itself.  A `kill -9` of the agent cannot be answered by any program,
+  and the textual agent of polkit is upstream's code — the toolkit's
+  job is to stop it from being used, not to repair it.
+
 #### The terminal of the operator was left mute after a command that needed root
 
 - **The operator reported it on 2026-11-10:**
@@ -777,15 +851,13 @@ All notable changes to this project are documented in this file.
   offline and hermetic: no test runs `pkexec`, no test opens a window,
   and every check that needs a terminal runs against a pty of its own.
 
-- **What is deliberately not in this change:** a command that outlives
-  its own timeout — the timeout kills the shell and not necessarily the
-  program the shell started — is a change of its own, and it changes the
-  meaning of every timeout of every command.  The `sudo` that is left
-  alone when no window can be shown still asks on the terminal: that is
-  what `sudo` does, and the toolkit has no password to give it.  The
-  `TCSADRAIN` of the console input module — the other password prompt of
-  the project — carries the same wait, and it is a change in another
-  component.
+- **What was deliberately not in this change, and what became of it:**
+  the timeout of a command and the `sudo` that is left alone when no
+  window can be shown were both changes of their own, and both landed
+  with the change above — *"The terminal is given back after a
+  privileged command"*.  The `TCSADRAIN` of the console input module —
+  the other password prompt of the project — carries the same wait, and
+  it is a change in another component.
 
 #### The operator could not see what they typed while the agent asked a question
 
@@ -1511,10 +1583,14 @@ All notable changes to this project are documented in this file.
   the real code of the repository, in a pty of its own, so it never
   touches the terminal of the operator.  Before the fix it exits **1** —
   *"the terminal was left mute"*.  The fix is proposed in
-  `investigate/privilege-terminal-echo/PROPOSAL.md`; it is a change of
-  its own, with its own branch and its own pull request.
+  `investigate/privilege-terminal-echo/PROPOSAL.md`, and it is in
+  *"The terminal is given back after a privileged command"* above: the
+  probe exits **0** now — *"the terminal was given back in every
+  measurement"*.
 
-- **Until the fix lands:** `stty sane` gives the terminal back.
+- **After the fix:** `stty sane` is not needed any more.  It is still
+  the answer for a terminal that was left mute by a `kill -9` of the
+  agent — SIGKILL cannot be caught, and no program can answer for it.
 
 ## [1.0.0] - 2026-10-29
 

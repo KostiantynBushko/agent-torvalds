@@ -51,8 +51,10 @@ Retriever Keywords: sudo, pkexec, polkit, privilege, root, password, dialog
 
 Prerequisites:
     - Linux/Unix-like operating system
-    - ``pkexec`` and a running polkit agent, for the window (optional -
-      the toolkit falls back to ``sudo`` when they are missing)
+    - ``pkexec`` and a running polkit agent, for the window.  A command
+      that needs root is **refused with the reason** when the window
+      cannot be shown - the question of a privilege escalation belongs
+      in a window, and nowhere else
 
 See also:
     investigate/linux-privilege-escalation/PROPOSAL_sudo_privilege_escalation.md
@@ -85,13 +87,17 @@ logger = logging.getLogger(__name__)
 #: The modes the privilege planner understands.
 #:
 #: ``auto``
-#:     Use ``pkexec`` when it can put the question in a window; leave the
-#:     ``sudo`` alone - and say so - when it cannot.
+#:     Use ``pkexec`` when it can put the question in a window; **refuse
+#:     the command with the reason** when it cannot.  A ``sudo`` that is
+#:     run as it was written asks for the password on the terminal of the
+#:     agent, and the terminal of the agent cannot give it back.
 #: ``pkexec``
 #:     Always use ``pkexec``; refuse the command when ``pkexec`` cannot
 #:     ask the operator, and say why.
 #: ``sudo``
-#:     Never rewrite.  The command runs exactly as it was written.
+#:     Never rewrite.  The command runs exactly as it was written - and
+#:     it asks for the password on the terminal.  That is the operator's
+#:     own choice, and it is the only way to ask for it.
 PRIVILEGE_MODES = ("auto", "pkexec", "sudo")
 
 #: The default timeout of a command, in seconds.
@@ -791,7 +797,10 @@ def privilege_status(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
 
     Returns:
         A dictionary with:
-            - 'backend': 'pkexec' or 'sudo' - what would be used.
+            - 'backend': 'pkexec' or 'none' - what would be used.  A
+              command that needs root is refused when the window
+              cannot be shown; the mode 'sudo' is the way to ask for
+              it anyway.
             - 'usable': whether the window can be shown.
             - 'pkexec_path': the path of the ``pkexec`` program.
             - 'gui_session': whether a display is there.
@@ -803,7 +812,7 @@ def privilege_status(env: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     usable, reason = pkexec_usable(env)
     agent = polkit_agent()
     return {
-        "backend": "pkexec" if usable else "sudo",
+        "backend": "pkexec" if usable else "none",
         "usable": usable,
         "pkexec_path": pkexec_path(),
         "gui_session": gui_session(env),
@@ -1026,18 +1035,23 @@ def plan_privilege(
     usable, reason = pkexec_usable(env)
 
     if not usable:
-        if mode == "pkexec":
-            return PrivilegePlan(
-                command=command,
-                backend="pkexec",
-                escalated=True,
-                error=f"The command needs root and pkexec cannot ask for it: {reason}",
-            )
+        # The question of a privilege escalation belongs in a **window**.
+        # A ``sudo`` that is run as it was written asks for the password
+        # on the terminal of the agent, and the terminal of the agent
+        # cannot give the password back: the operator is left with a
+        # terminal that shows nothing of what they type.
+        #
+        # The command is refused with the reason instead.  The mode
+        # ``sudo`` is the way to ask for it anyway - it is the
+        # operator's own choice, and it is documented as "the command
+        # runs exactly as it was written" - but the *fallback* of the
+        # mode ``auto`` is not: an agent that falls back to it asks a
+        # question on a terminal it cannot give back.
         return PrivilegePlan(
             command=command,
-            backend="sudo",
+            backend="pkexec",
             escalated=True,
-            notes=[f"pkexec was not used: {reason}; the sudo is run as it was written"],
+            error=f"The command needs root and pkexec cannot ask for it: {reason}",
         )
 
     replacements: List[_Replacement] = []
