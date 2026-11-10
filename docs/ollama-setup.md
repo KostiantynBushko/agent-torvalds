@@ -195,6 +195,8 @@ layer. Re-running the command on an already pulled model is a no-op.
 | `OLLAMA_HOST` | - | Fallback for `TORVALDS_OLLAMA_HOST` |
 | `TORVALDS_REQUEST_TIMEOUT` | `99999` | LLM request timeout in seconds |
 | `TORVALDS_MAX_ITERATIONS` | `50` | Maximum tool-calling iterations per request |
+| `TORVALDS_MAX_RETRIES` | `2` | How many times a failed model request is sent again |
+| `TORVALDS_RETRY_DELAY` | `2` | Seconds to wait before a failed model request is sent again |
 | `TORVALDS_SIMILARITY_TOP_K` | `8` | Number of tools retrieved per query |
 
 The default model is the one pulled in step 4, so in the common case nothing
@@ -343,6 +345,34 @@ Check what the agent actually uses:
 
 ```bash
 python -c "from components.ollama_config import get_ollama_base_url; print(get_ollama_base_url())"
+```
+
+### The server answers 500
+
+`Internal Server Error (ref: ...) (status code: 500)` means the **model
+died** — usually because it ran out of memory, or because the server
+crashed while it was loading it. The request was fine; the server was
+not.
+
+The agent sends such a request **again**: a model that died may well
+serve the next request, and the request was never the problem. The retry
+is bounded by two settings:
+
+```toml
+[llm]
+max_retries = 2     # how many times the request is sent again
+retry_delay = 2     # how long to wait before it is sent again, in seconds
+```
+
+The wait grows with every attempt, so the three attempts of the default
+wait 2 seconds and then 4 seconds. `max_retries = 0` turns the retry off.
+
+The frames of the failure are **not** in the chat — the chat says what
+the server said and what to do about it. They are in the log, under the
+DEBUG level:
+
+```bash
+python agent-torvalds.py --log-level DEBUG
 ```
 
 ---

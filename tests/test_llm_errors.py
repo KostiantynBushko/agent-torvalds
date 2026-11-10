@@ -356,10 +356,24 @@ class TestTheHelpers:
         try:
             raise REPORTED
         except ResponseError as exc:
-            with caplog.at_level(logging.ERROR):
+            with caplog.at_level(logging.DEBUG):
                 log_failure(exc)
 
         assert "Traceback" in caplog.text
+        assert "5da53c14" in caplog.text
+
+    def test_the_frames_are_not_at_the_error_level(self, caplog):
+        # The frames of the agent are of no use to anybody who did not
+        # write the agent, so they are written under the DEBUG level.
+        # The ERROR record says what failed, and nothing else.
+        try:
+            raise REPORTED
+        except ResponseError as exc:
+            with caplog.at_level(logging.ERROR):
+                log_failure(exc)
+
+        assert "Traceback" not in caplog.text
+        assert "The request failed" in caplog.text
         assert "5da53c14" in caplog.text
 
 

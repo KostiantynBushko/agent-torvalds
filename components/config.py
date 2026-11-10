@@ -374,6 +374,13 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("llm.request_timeout", "TORVALDS_REQUEST_TIMEOUT",
             99999, KIND_INTEGER,
             "The timeout of one model request, in seconds."),
+    Setting("llm.max_retries", "TORVALDS_MAX_RETRIES",
+            2, KIND_INTEGER,
+            "How many times a failed model request is sent again."),
+    Setting("llm.retry_delay", "TORVALDS_RETRY_DELAY",
+            2, KIND_INTEGER,
+            "How long to wait before a failed model request is sent again, "
+            "in seconds."),
 
     # -- the agent ------------------------------------------------------
     Setting("agent.top_k", "TORVALDS_SIMILARITY_TOP_K",

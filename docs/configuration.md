@@ -139,6 +139,8 @@ host = "http://localhost:11434"
 context_length = 8192
 max_iterations = 2000
 request_timeout = 99999
+max_retries = 2
+retry_delay = 2
 
 [agent]
 top_k = 8
@@ -190,6 +192,12 @@ instead.
 
 The names are the dotted names the `\config` command prints: `llm.model`
 is `[llm] model = ...`, and `hitl.timeout` is `[hitl] timeout = ...`.
+
+The **`llm.max_retries`** and **`llm.retry_delay`** settings hold the
+retry of a failed model request: how many times the request is sent again
+after the model server failed, and how many seconds the agent waits
+before it sends it again. `max_retries = 0` turns the retry off — see
+[`docs/ollama-setup.md`](ollama-setup.md).
 
 Every setting keeps the **environment variable it already had** — the
 file did not rename them, because a variable that existed before the
@@ -389,7 +397,7 @@ and they are still the right place for a secret.
 
 | Section | The variables |
 |---|---|
-| `llm` | `TORVALDS_MODEL`, `TORVALDS_OLLAMA_HOST`, `OLLAMA_HOST`, `TORVALDS_CONTEXT_LENGTH`, `TORVALDS_MAX_ITERATIONS`, `TORVALDS_REQUEST_TIMEOUT` |
+| `llm` | `TORVALDS_MODEL`, `TORVALDS_OLLAMA_HOST`, `OLLAMA_HOST`, `TORVALDS_CONTEXT_LENGTH`, `TORVALDS_MAX_ITERATIONS`, `TORVALDS_REQUEST_TIMEOUT`, `TORVALDS_MAX_RETRIES`, `TORVALDS_RETRY_DELAY` |
 | `agent` | `TORVALDS_SIMILARITY_TOP_K`, `TORVALDS_EVENT_STREAMING`, `TORVALDS_VERBOSE_EVENTS`, `TORVALDS_PROMPT_INJECTION`, `TORVALDS_INCLUDE_RECOMMENDATIONS`, `TORVALDS_PROMPT_TEMPLATE`, `TORVALDS_CONTEXT_GUARD` |
 | `hitl` | `TORVALDS_HITL_ENABLED`, `TORVALDS_HITL_METHOD`, `TORVALDS_HITL_TIMEOUT`, `TORVALDS_HITL_DEFAULT_ANSWER`, `TORVALDS_HITL_RUNTIME_TOGGLE` |
 | `stats` | `TORVALDS_STATS_ENABLED`, `TORVALDS_STATS_FORMAT`, `TORVALDS_STATS_VERBOSE`, `TORVALDS_STATS_PERSIST`, `TORVALDS_STATS_MAX_HISTORY` |
