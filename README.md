@@ -110,16 +110,21 @@ describe.  A plain `git clone` leaves the directory empty;
   shell
 - File permissions, owner and group
 - Running a command with extra environment variables
-- Built on the **standard library only** — `subprocess`, `os`, `logging`
-  and `typing`. The reusable core package in `toolkits/linux-toolkit/`
-  has **no** LlamaIndex imports and **no** third-party dependency at
-  all, so it works in any Python that exists
+- A command that needs root — a `sudo` in it — is escalated through
+  **pkexec**: polkit opens a **window** and asks the operator for the
+  password there, so the question never lands on the terminal the TUI
+  is drawing on. `check_privilege_backend()` reports what the machine
+  can do
+- Built on the **standard library only** — `subprocess`, `os`, `logging`,
+  `shutil`, `re`, `shlex` and `typing`. The reusable core package in
+  `toolkits/linux-toolkit/` has **no** LlamaIndex imports and **no**
+  third-party dependency at all, so it works in any Python that exists
 - The LlamaIndex adapter is the one module that knows about the agent
   framework, and it is imported on demand
 - No tool raises: a failure is reported — a non-zero exit code, or
   `returncode: -1` and the error text in `stderr` — so the model gets a
   message it can reason about
-- The six tools join the **System** category of the startup tool
+- The seven tools join the **System** category of the startup tool
   selection menu (`--select`, and `\tools` / `\tool-select` in the TUI),
   so the whole category can be loaded on its own
 - See the [Linux Toolkit README](toolkits/linux-toolkit/README.md) for the

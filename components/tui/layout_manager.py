@@ -12,11 +12,17 @@ Constructs and manages the hierarchical Rich layout partitions:
 """
 import time
 from typing import Optional
+
+from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from rich.markup import escape
+
+#: The footer partition is three lines tall: a border, one line of
+#: content, a border.  The command bar needs exactly that.
+FOOTER_HEIGHT = 3
 
 
 def build_torvalds_layout() -> Layout:
@@ -42,7 +48,7 @@ def build_torvalds_layout() -> Layout:
     root.split_column(
         Layout(name="header", size=3),
         Layout(name="body", ratio=1),
-        Layout(name="footer", size=3),
+        Layout(name="footer", size=FOOTER_HEIGHT),
     )
 
     # Body horizontal division: Document Pane (65%) vs Sidebar (35%)
@@ -156,7 +162,16 @@ def render_footer(
         cur_char = input_buffer[safe_pos] if safe_pos < len(input_buffer) else " "
         after_cur = input_buffer[safe_pos + 1:] if safe_pos < len(input_buffer) else ""
 
-        cursor_rendered = f"{before_cur}[black on bright_yellow]{cur_char}[/black on bright_yellow]{after_cur}"
+        # The typed text is operator input: it may hold square brackets,
+        # which Rich would read as markup.  Without the escape the text
+        # between the brackets disappears from the screen -- and a
+        # bracket that closes a tag Rich never opened ends the panel
+        # with a MarkupError.
+        cursor_rendered = (
+            f"{escape(before_cur)}"
+            f"[black on bright_yellow]{escape(cur_char)}[/black on bright_yellow]"
+            f"{escape(after_cur)}"
+        )
 
         # The label tells the operator what kind of answer is expected.
         answer_label = {
@@ -220,6 +235,60 @@ def render_footer(
         border_style="green" if not is_busy else "yellow",
         padding=(0, 1),
     )
+
+
+def footer_height(console: Console, panel: Panel) -> int:
+    """The number of terminal lines a footer panel needs.
+
+    A panel that is taller than the partition it lives in is cropped
+    from the bottom, and the bottom of the HITL panel is the line the
+    operator types the answer on.  The height of the panel is therefore
+    measured, not assumed.
+
+    Args:
+        console: The console the panel is rendered into.
+        panel: The footer panel about to be shown.
+
+    Returns:
+        The number of lines the panel occupies.
+    """
+    options = console.options.update(height=None)
+    return len(console.render_lines(panel, options))
+
+
+def fit_footer(
+    layout: Layout,
+    console: Console,
+    panel: Panel,
+    hitl_active: bool = False,
+) -> int:
+    """Give the footer partition the room the panel needs.
+
+    The command bar keeps the height it has always had: one line of
+    content, and the hints beside it may be cut short.
+
+    The HITL panel is never cropped.  It carries the question *and* the
+    line the answer is typed on, and the answer is the last line of the
+    panel -- a panel that is taller than its partition is cut from the
+    bottom, so the answer is the first thing to go.  The partition
+    grows while a question is waiting and shrinks back when the answer
+    is in.
+
+    Args:
+        layout: The TUI layout.
+        console: The console the panel is rendered into.
+        panel: The footer panel about to be shown.
+        hitl_active: Whether a question of the agent is waiting.
+
+    Returns:
+        The height the footer partition was given.
+    """
+    if hitl_active:
+        needed = max(FOOTER_HEIGHT, footer_height(console, panel))
+    else:
+        needed = FOOTER_HEIGHT
+    layout["footer"].size = needed
+    return needed
 
 
 def check_terminal_size(console) -> tuple[bool, int, int]:

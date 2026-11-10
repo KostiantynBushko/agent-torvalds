@@ -6,6 +6,83 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### A command that needs root asks for the password in a window
+
+- **The operator asked for it on 2026-11-09:**
+
+  > *in the linux toolkit we can run a command so we need a solution to
+  > handle 'sudo' in the command please consider "pkexec" it must run UI
+  > window with a request to user to type sudo password*
+
+- **`sudo` reads the password from the terminal, and the terminal of the
+  agent is not a terminal the operator can answer.**  The TUI puts the
+  terminal into cbreak mode — `components/tui/input_reader.py` does it
+  with `tty.setcbreak`, which switches the echo off, because the
+  application draws the screen itself.  A `sudo` prompt written into that
+  terminal is painted over by the next frame, and the keystrokes are read
+  by the input reader of the TUI, which never hands them to `sudo`.  The
+  command hangs until the timeout kills it, and the operator is never
+  asked anything.
+
+- **A `sudo` in a command of the Linux toolkit is escalated through
+  `pkexec`.**  `pkexec` asks **polkit** for the authorisation, and polkit
+  puts the question in a **window** — the window the operator is already
+  looking at.  The password never touches the terminal the agent is
+  drawing on.
+
+  ```
+  sudo systemctl restart nginx
+  → pkexec --keep-cwd systemctl restart nginx
+  ```
+
+  The rewrite is narrow on purpose:
+
+  | Rule | Why |
+  |---|---|
+  | only a `sudo` **in command position** is rewritten | `grep sudo /etc/sudoers` is not an escalation |
+  | `--keep-cwd` is always added | `pkexec` runs a program in the home of the target user, `sudo` does not |
+  | `--disable-internal-agent` is added when the terminal belongs to an application | it stops `pkexec` from asking on the terminal — the thing this is about |
+  | `--user` carries `sudo -u` over | `pkexec --user www-data cmd` runs the program as `www-data` |
+  | the flags `pkexec` cannot express are dropped, and the drop is reported | `sudo -E` keeps the environment; `pkexec` sanitises it anyway |
+  | `sudo -l`, `sudo -v` and `sudo -e` are left alone | they do not run a program, and `pkexec` cannot do them |
+  | everything else is left byte for byte | the redirections, the quotes and the spacing survive |
+
+  The command line is **scanned**, not matched with a regular expression:
+  the scan knows where a shell starts a program and where it does not, so
+  a `sudo` that is only an argument is left alone.
+
+- **The measurements are in
+  `investigate/linux-privilege-escalation/`.**  `pkexec(1)` was read on
+  the machine of the operator, and the behaviour was measured there:
+
+  | What | What it showed |
+  |---|---|
+  | `pkexec --keep-cwd /bin/pwd` | the working directory is kept — without the flag it is the home of the target user |
+  | `pkexec --keep-cwd --user nobody /usr/bin/id` | `sudo -u` carries over, and it needs `--keep-cwd` as well |
+  | `pkexec --disable-internal-agent` | without a graphical agent, `pkexec` **waits** (the command was still running after 8 seconds, and was killed) — so the toolkit only uses `pkexec` when there is a display **and** an agent |
+  | `pkexec --version` → 126 / 127 | 126 is a dismissed dialog, 127 is "not authorised" — both are reported, neither is retried |
+
+- **The password is never handled by the toolkit.**  polkit asks the
+  operator, and the toolkit only ever sees the exit code.  There is
+  nothing to leak, because there is nothing to keep.
+
+- **The agent can say what is going to happen.**
+  `check_privilege_backend()` reports whether a window will open, and the
+  description of the two execution tools tells the model to warn the
+  operator that a window is about to appear.
+
+- **An escalated command gets 300 seconds** instead of the usual thirty:
+  the window stays open until somebody answers it.  A timeout the caller
+  asked for is respected.
+
+- **The library half keeps its dependency profile.**  `privilege.py` is
+  built on the standard library alone — `subprocess`, `os`, `shutil`,
+  `re`, `shlex`, `dataclasses`, `termios` — and the toolkit still has no
+  third-party dependency at all.
+
+- **The tests are in `toolkits/linux-toolkit/tests/test_privilege.py`.**
+  They are offline: no test runs `pkexec`, and no test opens a window.
+
 #### The export of a session, as JSON
 
 - **The operator asked for a JSON export on 2026-11-08:**
@@ -515,6 +592,81 @@ All notable changes to this project are documented in this file.
   is not there.
 
 ### Fixed
+
+#### The operator could not see what they typed while the agent asked a question
+
+- **The line the operator types on was not on the screen.**  The
+  operator reported it on 2026-11-09:
+
+  > *after agent response sometime by typint I do not see what is typed
+  > looks like it is hidded even after leaving agent app the typing in
+  > terminal is hidden*
+
+  The text was in the application the whole time — it was never drawn.
+  The footer of the TUI is a partition of the layout with a fixed
+  height of three lines: a border, one line of content, a border.  The
+  command bar fits in one line of content.  The HITL panel does not —
+  it carries the question of the agent *and* the line the answer is
+  typed on — and a panel that is taller than its partition is cropped
+  from the bottom.  The answer is the last line of the panel, so the
+  answer was the first thing to go.
+
+  ```
+  --- the footer of the TUI, with a question waiting ---
+     │ 🤖 AGENT QUESTION: Which file should I read?                            │
+  ```
+
+  The height the panel needs is measured now, and the partition is
+  given that many lines while a question is waiting.  The command bar
+  keeps the height it has always had — it is one line of content, and
+  the hints beside it are as long as they have been.
+
+  ```
+     │ 🤖 AGENT QUESTION: Which file should I read?                                                 │
+     │ Answer: rm -rf [a-z] now                                                  [Enter to confirm] │
+  ```
+
+- **The typed text was read as markup.**  The HITL panel put the typed
+  text into the markup of Rich without escaping it, so Rich read the
+  square brackets as tags and swallowed the text between them:
+
+  | Typed | On the screen |
+  |---|---|
+  | `rm -rf [a-z]` | `Answer: rm -rf` |
+  | `a[b]c` | `Answer: ac` |
+
+  The command bar — the same text, one branch up — escaped it
+  correctly, and so does the HITL panel now.  A bracket that closed a
+  tag Rich never opened also took the panel down with a
+  `MarkupError`; it does not any more.
+
+- **The terminal was left mute when the agent did not exit on its
+  own.**  The reader of the keyboard puts the terminal into cbreak
+  mode, and cbreak switches the echo off — the TUI draws the typed
+  text itself.  That state belongs to the **terminal**, not to the
+  process, so it outlives the agent: a terminal left in cbreak mode
+  shows nothing of what is typed, and it stays that way after the
+  agent is gone.
+
+  The ordinary exits give the terminal back, and they always have:
+  `\exit`, Ctrl-D, Ctrl-C and `kill` all leave the echo on.  What was
+  not covered is an exit that no handler runs — an exception outside
+  the loop, an exit that skips the cleanup.  The reader registers its
+  own `stop()` with `atexit`, so every exit that runs the atexit
+  handlers gives the terminal back.
+
+  A `kill -9` still leaves the terminal mute: SIGKILL cannot be
+  caught, and no program can answer for it.  `stty sane` gives the
+  terminal back.
+
+- **The evidence is in `investigate/tui-hidden-input/`.**  The probe
+  (`probe_hidden_input.py`) renders the TUI the way the app does, and
+  it checks the terminal against a pty of its own, so it never touches
+  the terminal of the operator.  Before the change: *"the operator sees
+  it: NO"*.  After: the typed text is on the screen, and the terminal
+  is given back.  The fourteen tests are in
+  `tests/test_tui_footer.py`.
+
 
 #### The cache broke under a value it could not hold, and under a second agent
 

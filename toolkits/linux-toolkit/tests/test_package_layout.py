@@ -38,7 +38,15 @@ PKG_TESTS = PKG_DIR / "tests"
 PACKAGE_MODULES = (
     "__init__.py",
     "operations.py",
+    "privilege.py",
     "agent_linux_toolkit.py",
+)
+
+#: The modules of the **library half** - the ones that carry no
+#: LlamaIndex import and no third-party dependency.
+LIBRARY_MODULES = (
+    "operations.py",
+    "privilege.py",
 )
 
 
@@ -389,15 +397,43 @@ ALLOWED_LIBRARY_DEPENDENCIES = frozenset()
 #: The standard-library modules the library half is allowed to use.
 _STDLIB_MODULES = frozenset(
     {
-        "os",
-        "sys",
+        "__future__",
+        "dataclasses",
         "json",
         "logging",
+        "os",
+        "re",
+        "shlex",
         "shutil",
         "subprocess",
+        "sys",
+        "termios",
         "typing",
     }
 )
+
+
+def _absolute_imports(path: Path) -> list[tuple[int, str, int]]:
+    """Return the (line, module, level) of every import statement.
+
+    The *level* is what tells a relative import (a module of this
+    package) from an absolute one (the standard library, or something
+    else).  ``from .privilege import ...`` has level 1 and names a
+    module of the package itself - it is not a dependency.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: list[tuple[int, str, int]] = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                found.append((node.lineno, alias.name, 0))
+        elif isinstance(node, ast.ImportFrom):
+            found.append((node.lineno, node.module or "", node.level))
+
+    return found
 
 
 def test_the_library_half_only_depends_on_the_standard_library():
@@ -407,14 +443,23 @@ def test_the_library_half_only_depends_on_the_standard_library():
     half has no third-party dependency: it is built on ``subprocess``,
     ``os``, ``logging`` and ``typing``.  The shell operations therefore
     work in any Python that exists.
+
+    The check covers **every** module of the library half - the
+    privilege module included - and a relative import (a module of the
+    package itself) is not a dependency.
     """
-    library = PKG_DIR / "operations.py"
-    offenders = [
-        f"{library.name}:{line} -> {module}"
-        for line, module in _module_imports(library)
-        if module.split(".")[0] not in ALLOWED_LIBRARY_DEPENDENCIES
-        and module.split(".")[0] not in _STDLIB_MODULES
-    ]
+    offenders: list[str] = []
+    for name in LIBRARY_MODULES:
+        library = PKG_DIR / name
+        for line, module, level in _absolute_imports(library):
+            if level > 0:
+                # A module of this package.
+                continue
+            if module.split(".")[0] in ALLOWED_LIBRARY_DEPENDENCIES:
+                continue
+            if module.split(".")[0] in _STDLIB_MODULES:
+                continue
+            offenders.append(f"{library.name}:{line} -> {module}")
 
     assert offenders == [], f"unexpected dependencies in the library half: {offenders}"
 
@@ -449,7 +494,7 @@ def test_the_library_half_is_usable_without_the_agent_framework():
 # ---------------------------------------------------------------------------
 
 
-#: The 6 tools the toolkit exposes.  The list is pinned here so that a
+#: The 7 tools the toolkit exposes.  The list is pinned here so that a
 #: tool cannot silently disappear from the adapter.
 EXPECTED_TOOLS = (
     "execute_shell_command",
@@ -457,6 +502,7 @@ EXPECTED_TOOLS = (
     "parse_command_output",
     "get_system_info",
     "check_file_permissions",
+    "check_privilege_backend",
     "run_command_with_env",
 )
 
@@ -512,7 +558,7 @@ def test_the_tool_order_is_stable():
 
 
 def test_every_tool_carries_the_system_category():
-    """The 6 tools share the System category.
+    """The 7 tools share the System category.
 
     The category is what the startup tool selection menu groups by, so a
     tool that lost it would silently drop out of the menu.

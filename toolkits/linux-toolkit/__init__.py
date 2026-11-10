@@ -41,6 +41,12 @@ Output handling
 Inspection
     ``get_system_info`` / ``check_file_permissions``
 
+Privilege
+    ``check_privilege_backend`` - how a command that asks for root is
+    run.  A ``sudo`` in a command is escalated through ``pkexec``: the
+    question is asked in a **window**, not in the terminal the agent is
+    drawing on.
+
 Environment
     ``run_command_with_env``
 
@@ -66,6 +72,9 @@ Layout contract
         |-- operations.py           # the shell and system operations - the
         |                           # library half, no LlamaIndex import
         |                           # in here
+        |-- privilege.py            # the privilege escalation - the sudo of a
+        |                           # command becomes a pkexec, and the
+        |                           # password is asked for in a window
         |-- agent_linux_toolkit.py  # the LlamaIndex adapter - the only
         |                           # LlamaIndex-dependent module in here
         |-- py.typed                # PEP 561 marker
@@ -111,6 +120,7 @@ __toolkit_alias__ = "linux_toolkit"
 # would contain the hyphen and be a SyntaxError.
 from .operations import (
     check_file_permissions,
+    check_privilege_backend,
     execute_multiple_commands,
     execute_shell_command,
     get_system_info,
@@ -118,6 +128,15 @@ from .operations import (
     run_command_with_env,
 )
 from .operations import logger
+
+# The privilege half of the toolkit: it decides what happens when a
+# command asks for root.  It is a part of the library half - it carries
+# no LlamaIndex import either.
+from .privilege import (
+    PRIVILEGE_MODES,
+    plan_privilege,
+    privilege_status,
+)
 
 __version__ = "0.1.0"
 
@@ -132,6 +151,11 @@ __all__ = [
     "check_file_permissions",
     # Environment
     "run_command_with_env",
+    # Privilege
+    "check_privilege_backend",
+    "plan_privilege",
+    "privilege_status",
+    "PRIVILEGE_MODES",
     # Logging
     "logger",
     "__version__",
