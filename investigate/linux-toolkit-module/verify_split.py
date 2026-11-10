@@ -24,17 +24,30 @@ does not reliably notice that "for" became "on", and that is exactly the
 kind of drift this check exists to catch.  So the comparison is made
 mechanically, by parsing both versions and comparing them field by field.
 
-The original is taken from git (``git show <ref>:agent_linux_toolkit.py``),
-so the check compares the *committed* original with the new files - not
-with a copy that might have been edited along the way.
+Both sides of the comparison are taken from git, so the check is about
+the two commits that made the split and not about a copy that might
+have been edited along the way:
 
-The reference is **found, not assumed**.  The original is the file as it
-was committed before it was deleted, so the check asks git where that
+* the **original** - the single module as it was committed before it
+  was deleted (``git show <ref>:agent_linux_toolkit.py``);
+* the **package** - the two files as they were committed by the split
+  (``git show <split>:toolkits/linux-toolkit/...``).
+
+The claim is about the split, and the split is a moment in the history.
+The toolkit keeps growing after it - a new operation, a new tool - and
+a check that compared the working copy with a file that is years old
+would fail on every change that was *meant* to happen.  So the claim is
+checked where it can be checked: between the commit before the split and
+the commit that made it.
+
+The references are **found, not assumed**.  The original is the file as
+it was committed before it was deleted, so the check asks git where that
 still lives: a named ref that still carries the file (``master``,
 ``origin/master``, ...), and otherwise the parent of the commit that
-deleted it.  A hard-coded ``master`` would have been a trap - a CI
-checkout is a detached HEAD without that branch, and the check would
-have failed there for a reason that has nothing to do with the split.
+deleted it.  The package is the commit that added it.  A hard-coded
+``master`` would have been a trap - a CI checkout is a detached HEAD
+without that branch, and the check would have failed there for a reason
+that has nothing to do with the split.
 
 Usage::
 
@@ -59,6 +72,10 @@ ORIGINAL_PATH = "agent_linux_toolkit.py"
 #: The two files the original was split into.
 OPERATIONS_PATH = "toolkits/linux-toolkit/operations.py"
 ADAPTER_PATH = "toolkits/linux-toolkit/agent_linux_toolkit.py"
+
+#: The path of the library half - the file whose addition marks the
+#: commit that made the split.
+PACKAGE_PATH = OPERATIONS_PATH
 
 #: The operations the toolkit exposes, in the order they are exposed.
 EXPECTED_OPERATIONS = (
@@ -143,6 +160,29 @@ def resolve_original_ref(path: str = ORIGINAL_PATH) -> str:
     raise SystemExit(
         f"cannot find {path} in the git history.\n"
         f"Fetch the full history (git fetch --unshallow) and try again."
+    )
+
+
+def resolve_package_ref(path: str = PACKAGE_PATH) -> str:
+    """Return a git reference at which the package *path* exists.
+
+    The package was created by the split, so the commit that added it
+    is the reference.  It is *found*, the same way the original is
+    found, so a CI checkout without a branch still works.
+    """
+    result = git(
+        ["log", "--all", "--diff-filter=A", "--format=%H", "--", path]
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip().splitlines()[0]
+
+    for ref in ("master", "origin/master", "main", "origin/main"):
+        if file_exists_at(ref, path):
+            return ref
+
+    raise SystemExit(
+        f"cannot find {path} in the git history.\n"
+        "Fetch the full history (git fetch --unshallow) and try again."
     )
 
 
@@ -381,17 +421,18 @@ def main() -> int:
     args = parser.parse_args()
 
     ref = args.ref or resolve_original_ref()
+    package_ref = resolve_package_ref()
 
     original_source = git_show(ref, ORIGINAL_PATH)
-    operations_source = (REPO_ROOT / OPERATIONS_PATH).read_text(encoding="utf-8")
-    adapter_source = (REPO_ROOT / ADAPTER_PATH).read_text(encoding="utf-8")
+    operations_source = git_show(package_ref, OPERATIONS_PATH)
+    adapter_source = git_show(package_ref, ADAPTER_PATH)
 
     failures = compare(original_source, operations_source, adapter_source)
 
     # -- the report ----------------------------------------------------------
     print(f"original            : {ref}:{ORIGINAL_PATH}")
-    print(f"library half        : {OPERATIONS_PATH}")
-    print(f"agent adapter       : {ADAPTER_PATH}")
+    print(f"library half        : {package_ref}:{OPERATIONS_PATH}")
+    print(f"agent adapter       : {package_ref}:{ADAPTER_PATH}")
     print()
     print(f"operations compared : {len(EXPECTED_OPERATIONS)}")
     print(f"tools compared      : {len(tool_entries(ast.parse(original_source)))}")

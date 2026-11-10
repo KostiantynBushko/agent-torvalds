@@ -11,6 +11,7 @@ Key mappings normalized:
 - "CTRL_C", "CTRL_D"
 - Regular characters (e.g. 'a', 'Z', '1', '\\', ' ')
 """
+import atexit
 import os
 import sys
 from typing import Optional
@@ -40,6 +41,13 @@ class NonBlockingInputReader:
         self._is_tty = sys.stdin.isatty() if hasattr(sys.stdin, "isatty") else False
         self._pending: str = ""
         self._fd: Optional[int] = None
+        # The reader puts the terminal into cbreak mode: the echo is off,
+        # and the TUI draws the typed text itself.  An exit that does not
+        # go through ``stop()`` would leave the operator with a terminal
+        # that shows nothing of what they type -- and that state belongs
+        # to the terminal, not to the process, so it outlives the agent.
+        # The hook covers every exit that runs the atexit handlers.
+        atexit.register(self.stop)
 
     def start(self) -> None:
         """Initialize non-blocking raw/cbreak terminal mode on POSIX."""

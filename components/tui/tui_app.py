@@ -24,6 +24,7 @@ from components.config import config
 from components.config_view import handle_config_markdown
 from components.tui.layout_manager import (
     build_torvalds_layout,
+    fit_footer,
     render_header,
     render_footer,
     check_terminal_size,
@@ -705,4 +706,9 @@ class TuiApp:
             is_busy=self.state.is_busy,
             hitl_input_type=self.state.hitl_input_type,
         )
+        # The HITL panel is taller than the command bar -- it carries the
+        # question *and* the line the answer is typed on.  The partition
+        # is given the room the panel needs, or the answer is cropped
+        # away and the operator types into the void.
+        fit_footer(self.layout, self.console, footer_panel, self.state.hitl_active)
         self.layout["footer"].update(footer_panel)

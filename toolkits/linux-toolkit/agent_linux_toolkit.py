@@ -23,7 +23,7 @@ The adapter pulls the core package in with a **relative** import
 module objects - there is never a second copy of ``operations.py`` in
 memory.
 
-The adapter also re-exports the six Linux operations, so a star import
+The adapter also re-exports the Linux operations, so a star import
 keeps working the way it did when the toolkit was a single module::
 
     from toolkits.linux_toolkit.agent_linux_toolkit import *
@@ -44,6 +44,7 @@ from llama_index.core.tools import FunctionTool
 # always share one set of module objects.
 from . import (
     check_file_permissions,
+    check_privilege_backend,
     execute_multiple_commands,
     execute_shell_command,
     get_system_info,
@@ -66,6 +67,7 @@ __all__ = [
     "parse_command_output",
     "get_system_info",
     "check_file_permissions",
+    "check_privilege_backend",
     "run_command_with_env",
 ]
 
@@ -82,11 +84,21 @@ def get_all_tools() -> list[FunctionTool]:
     return [
         FunctionTool.from_defaults(
             fn=execute_shell_command,
-            description="Execute a shell command. Use for running any terminal command with timeout and working directory support. Category: System",
+            description=(
+                "Execute a shell command. Use for running any terminal command with "
+                "timeout and working directory support. A command that needs root - "
+                "a 'sudo' in it - is escalated through pkexec: a window opens and the "
+                "user types the password there. Tell the user that a window is about "
+                "to appear. Category: System"
+            ),
         ),
         FunctionTool.from_defaults(
             fn=execute_multiple_commands,
-            description="Execute multiple shell commands sequentially. Use for batch operations and command pipelines. Category: System",
+            description=(
+                "Execute multiple shell commands sequentially. Use for batch operations "
+                "and command pipelines. Commands that need root are escalated through "
+                "pkexec and ask for the password in a window. Category: System"
+            ),
         ),
         FunctionTool.from_defaults(
             fn=parse_command_output,
@@ -99,6 +111,14 @@ def get_all_tools() -> list[FunctionTool]:
         FunctionTool.from_defaults(
             fn=check_file_permissions,
             description="Check file permissions, owner, and group. Use for inspecting file access rights. Category: System",
+        ),
+        FunctionTool.from_defaults(
+            fn=check_privilege_backend,
+            description=(
+                "Report how a command that needs root would be run. Use it before a "
+                "command with a 'sudo' in it, to tell the user whether a window will "
+                "open and ask for the password. Category: System"
+            ),
         ),
         FunctionTool.from_defaults(
             fn=run_command_with_env,
