@@ -302,10 +302,16 @@ class TestRunCommandWithEnv(unittest.TestCase):
         self.assertNotEqual(result["stderr"], "")
 
     def test_the_answer_has_the_same_shape_as_the_other_operations(self):
-        """The same four keys as ``execute_shell_command``."""
+        """The same keys as ``execute_shell_command``.
+
+        The fifth key is 'privilege': it says what ran the command -
+        'none', 'pkexec' or 'sudo'.  The operations of the toolkit
+        answer the same way, whatever they do.
+        """
         result = run_command_with_env("echo hi", {})
         self.assertEqual(
-            sorted(result), ["returncode", "stderr", "stdout", "success"]
+            sorted(result),
+            ["privilege", "returncode", "stderr", "stdout", "success"],
         )
 
     def test_a_timeout_is_reported_with_returncode_minus_one(self):

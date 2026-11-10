@@ -9,6 +9,7 @@ The toolkit is a **module** — a folder, not a loose file:
 toolkits/linux-toolkit/
 ├── __init__.py              # the public API surface
 ├── operations.py            # the shell and system operations — the library half
+├── privilege.py             # the privilege escalation — a sudo becomes a pkexec
 ├── agent_linux_toolkit.py   # the LlamaIndex adapter
 ├── py.typed                 # PEP 561 marker
 └── tests/                   # the module-local tests
@@ -18,7 +19,8 @@ toolkits/linux-toolkit/
 
 | Module | Role | LlamaIndex | Third party |
 |--------|------|------------|-------------|
-| `operations.py` | the 6 shell and system operations | **no** | **none** |
+| `operations.py` | the shell and system operations | **no** | **none** |
+| `privilege.py` | the privilege escalation — a `sudo` becomes a `pkexec` | **no** | **none** |
 | `agent_linux_toolkit.py` | the adapter — `get_all_tools()` | **yes** | `llama-index-core` |
 
 The split is the point. `operations.py` carries **no** LlamaIndex import,
@@ -75,6 +77,7 @@ from toolkits.linux_toolkit.agent_linux_toolkit import *
 | `parse_command_output(output)` | split output into lines and metadata | `dict` |
 | `get_system_info()` | OS, CPU, memory and disk, via shell | `dict` |
 | `check_file_permissions(filepath)` | permissions, owner and group | `dict` |
+| `check_privilege_backend()` | how a command that needs root would be run | `dict` |
 | `run_command_with_env(command, env_vars)` | run a command with extra environment | `dict` |
 
 ## The error contract
@@ -93,6 +96,66 @@ message in `stderr`.
 
 This is the contract the toolkit has always had, and the move preserved it
 exactly.
+
+## A command that needs root
+
+A `sudo` in a command is **escalated through `pkexec`**.  `sudo` reads the
+password from the terminal, and the terminal of the agent belongs to the TUI
+— which draws the screen itself and therefore puts the terminal into cbreak
+mode, with the echo off.  A prompt written into that terminal is painted
+over, and the keystrokes are read by the TUI, never by `sudo`.  The command
+hangs until the timeout kills it, and the operator is never asked anything.
+
+`pkexec` asks **polkit** instead, and polkit puts the question in a
+**window**: the operator types the password there, and the password never
+touches the terminal the agent is drawing on.
+
+```console
+$ sudo systemctl restart nginx
+# becomes
+$ pkexec --keep-cwd systemctl restart nginx
+```
+
+The rewrite is narrow on purpose:
+
+| Rule | Why |
+|---|---|
+| only a `sudo` **in command position** is rewritten | `grep sudo /etc/sudoers` is not an escalation |
+| `--keep-cwd` is always added | `pkexec` runs a program in the home of the target user, `sudo` does not |
+| `--disable-internal-agent` is added when the terminal belongs to an application | it stops `pkexec` from asking on the terminal — the thing this is about |
+| `--user` carries `sudo -u` over | `pkexec --user www-data cmd` runs the program as `www-data` |
+| the flags `pkexec` cannot express are dropped, and the drop is reported | `sudo -E` keeps the environment; `pkexec` sanitises it anyway |
+| `sudo -l`, `sudo -v` and `sudo -e` are left alone | they do not run a program, and `pkexec` cannot do them |
+| everything else is left byte for byte | the redirections, the quotes and the spacing survive |
+
+The password itself is never seen by the toolkit: polkit asks the operator,
+and the toolkit only ever sees the exit code.  There is nothing to leak,
+because there is nothing to keep.
+
+The three modes:
+
+| Mode | What it does |
+|---|---|
+| `auto` (the default) | use `pkexec` when it can show the window; otherwise leave the `sudo` alone, and say so |
+| `pkexec` | use `pkexec`; refuse the command when it cannot ask the operator, and say why |
+| `sudo` | never rewrite — the command runs exactly as it was written |
+
+`check_privilege_backend()` reports what the machine can do, so the agent
+can tell the operator what to expect:
+
+```python
+>>> check_privilege_backend()
+{'backend': 'pkexec', 'usable': True, 'pkexec_path': '/usr/bin/pkexec',
+ 'gui_session': True, 'polkit_agent': 'gnome-shell', 'terminal_managed': False,
+ 'reason': '', 'success': True}
+```
+
+An escalated command gets **300 seconds** instead of the usual thirty: the
+window stays open until somebody answers it.  A timeout the caller asked for
+is respected.
+
+The design, and the measurements behind it, are in
+`investigate/linux-privilege-escalation/PROPOSAL_sudo_privilege_escalation.md`.
 
 ## A note on `get_system_info`
 
@@ -113,6 +176,10 @@ carries the name twice. That duplicate is **pre-existing** — it is on
 These operations run **arbitrary shell commands** as the user the agent
 runs as. `execute_shell_command` and `run_command_with_env` are as powerful
 as the shell itself; there is no allow-list and no sandbox.
+
+A command with a `sudo` in it is run **as root** — through `pkexec`, with
+the authorisation of polkit.  The operator is asked in a window, and the
+agent cannot answer that window on their behalf.
 
 ## Testing
 
