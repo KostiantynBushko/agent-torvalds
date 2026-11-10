@@ -6,6 +6,68 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### A predefined question can be asked with `\question`
+
+- **The operator asked for it on 2026-11-10:**
+
+  > *I also noticed that it may happen after the agent runs HITL and asks
+  > the operator a question, so I need a predefined hardcoded test — when
+  > the operator runs a predefined command, for example `\question`, the
+  > agent must run HITL to ask some predefined question for the operator.
+  > The agent should not run any tools, just ask the question and process
+  > the response.*
+
+- **The HITL path could only be tested through the model.**  Every
+  question the agent asked came out of an answer of the LLM: the model
+  had to decide to ask, and the question had to survive the detection.
+  A report that "the agent never asked me anything" therefore had two
+  possible causes — the model did not ask, or the HITL path did not
+  deliver the question — and nothing told them apart.
+
+- **`\question` asks a question that is known.**  The command takes a
+  question from a bank of **predefined** questions and asks it through
+  the *real* HITL path: the question is rendered by the event consumer
+  and the answer is collected by the input module, exactly as the answer
+  of an agent question is.
+
+  | Command | What it does |
+  |---|---|
+  | `\question` | Ask the next predefined question — the bank is walked in turn. |
+  | `\question <id>` | Ask that exact question: `text-01`, `yesno-01`, `menu-01`, `password-01`. |
+  | `\question list` | List the predefined questions. |
+
+  The bank holds one question per input type — `text`, `yesno`, `menu`
+  and `password` — so a run of the command covers every kind of prompt
+  the HITL path can produce.
+
+- **No tool is run, and the model is never called.**  The command tests
+  the HITL path and nothing else: a failure of the command says
+  something about the machinery, and nothing about the model or the
+  tools.
+
+- **The answer is processed, and the report is honest about it.**
+
+  | Rule | Why |
+  |---|---|
+  | a timeout is reported as "nobody answered", never as an answer | the operator has to be able to tell the two apart — rule 5 of the development rules |
+  | the passphrase of a `password` question is never echoed | a secret does not belong in a report |
+  | the answer is not written into the conversation memory | a test answer must not become the context of the next turn of the agent |
+
+- **The round trip was in one place, and it had to come out of it.**  The
+  rendering of the question and the collection of the answer lived in
+  `EventConsumer._on_agent_question`, which sends the answer into a
+  workflow.  The command has no workflow — there is no agent to answer —
+  so the round trip was pulled out into `EventConsumer.ask_question()`,
+  and the workflow path calls it.  One implementation, two callers: a
+  question asked by the agent and a question asked by the command travel
+  the same road.
+
+- **The tests are in `tests/test_hitl_question_command.py`** — the bank
+  agrees with the rules of the detection, the question travels the HITL
+  path, no tool is run, the answer is processed, a timeout is not an
+  answer, a secret is not echoed, and the command asks nothing when the
+  Human-in-the-Loop is off.
+
 #### A command that needs root asks for the password in a window
 
 - **The operator asked for it on 2026-11-09:**

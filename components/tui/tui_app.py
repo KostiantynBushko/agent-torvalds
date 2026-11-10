@@ -32,6 +32,10 @@ from components.tui.layout_manager import (
 from components.tui.state_bridge import TuiState, TuiEventAdapter, TuiInputModule
 from components.tui.input_reader import NonBlockingInputReader
 from components.hitl_timeout import describe_timeout
+from components.hitl_question_command import (
+    is_question_command,
+    run_question_command,
+)
 from components.tui.markdown_view import MarkdownView
 from components.tui.progress_view import ProgressView
 from components.tui.telemetry_view import TelemetryView
@@ -319,6 +323,13 @@ class TuiApp:
 
         if cmd_lower == "\\hitl-status":
             self._render_hitl_status_to_markdown()
+            return
+
+        if is_question_command(cmd):
+            # A predefined HITL question: the operator is asked in the
+            # command bar, the answer comes back, and it is processed.
+            # No tool is run and the model is not called.
+            asyncio.create_task(self._run_question_command(cmd))
             return
 
         # The remaining HITL commands (\hitl-on, \hitl-off, \hitl-help) are
@@ -629,6 +640,37 @@ class TuiApp:
                 pass
         except Exception:
             pass
+
+    async def _run_question_command(self, cmd: str) -> None:
+        """Ask a predefined HITL question and show the outcome.
+
+        The question is asked through the real HITL path: the answer is
+        collected by the command bar, exactly as the answer of an agent
+        question is.
+
+        Args:
+            cmd: The command line the operator typed.
+        """
+        if not self.event_consumer:
+            self.state.set_markdown_content(
+                "# HITL question\n\n**Error:** the event consumer is not "
+                "available."
+            )
+            return
+
+        try:
+            report = await run_question_command(
+                cmd,
+                self.event_consumer,
+                hitl_enabled=self.state.hitl_enabled,
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            logger.error("The \\question command failed: %s", e, exc_info=True)
+            self.state.set_markdown_content(f"# HITL question\n\n**Error:** {e}")
+            return
+
+        if report:
+            self.state.set_markdown_content(report)
 
     async def _run_hitl_command(self, cmd: str) -> None:
         r"""
