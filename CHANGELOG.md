@@ -6,6 +6,58 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The manual test of the question of the agent and of the password of root
+
+- **The operator asked for it on 2026-11-10:**
+
+  > *now I need a manual test to be able to test hitl and sudo passwrod,
+  > since I have notices that running hitl question to operator and sudo
+  > pkexec with UI Authentication dialog may be related to the issue with
+  > hidded input in terminal*
+
+- **The probes measure the hidden typing *for* the operator.**
+  `investigate/tui-hidden-input/probe_hidden_input.py` and
+  `investigate/privilege-terminal-echo/probe_privilege_terminal.py` render
+  the TUI into a buffer of their own and measure it there — the typed
+  text is on the screen, the terminal is given back.  What they cannot do
+  is put the operator in front of the thing and ask *do you see it?*.
+
+- **`scripts/manual_hitl_privilege_test.py` drives the real components in
+  the terminal of the operator.**  Nothing is simulated: the layout, the
+  panels, the reader and the input module of the TUI are the production
+  ones, and the privilege part runs the production
+  `execute_shell_command` of the Linux toolkit, behind the production
+  gate.
+
+  | Part | What the operator does | What is measured |
+  |---|---|---|
+  | the question of the agent | the real TUI is drawn, and the answer is typed into its footer | the answer arrives; the typed text is on the screen; the answer line is not cropped away; the terminal echoes again afterwards |
+  | the password of root | a `sudo` command is run, and polkit asks for the password **in a window** of the desktop | the window opened; the terminal echoed again afterwards |
+
+- **The two questions are not the same thing, and the script says so.**
+  The question of the agent is asked *in the terminal* — the TUI draws
+  what the operator types, so the text has to be on the screen.  The
+  password of root is asked *in a window*, and the terminal of the
+  operator is not involved in it at all.  What the two share is the
+  state of the terminal: an application that owns the screen switches
+  the echo off, and that state belongs to the **terminal**, not to the
+  process.
+
+- **The comparison is one flag away.**
+  `--privilege-mode sudo` runs the command as it was written: the
+  password is then asked on the terminal, and the terminal hides what is
+  typed while it is read.  That is the path the hidden typing was
+  reported on — and the script measures that the terminal is given back
+  afterwards, even when the timeout kills the `sudo` in the middle of the
+  question.
+
+  ```bash
+  python scripts/manual_hitl_privilege_test.py            # both parts
+  python scripts/manual_hitl_privilege_test.py hitl       # only the question
+  python scripts/manual_hitl_privilege_test.py privilege  # only the password
+  python scripts/manual_hitl_privilege_test.py --privilege-mode sudo
+  ```
+
 #### A predefined question can be asked with `\question`
 
 - **The operator asked for it on 2026-11-10:**
@@ -706,6 +758,93 @@ All notable changes to this project are documented in this file.
   is not there.
 
 ### Fixed
+
+#### The question of the agent never reached the operator in the TUI
+
+- **Since 2026-10-25, every question in the multi-window TUI raised an
+  `AttributeError` before it could wait for an answer.**  The commit
+  `dca06b9` ("make a list of choices a menu, and teach the TUI the
+  answer type") taught the *adapter* of the TUI the kind of answer the
+  pending question wants:
+
+  ```python
+  class TuiEventAdapter:
+      def __init__(self, state: TuiState):
+          self.state = state
+          self._input_type = "text"
+
+      def set_input_type(self, input_type: str) -> None:
+          ...
+  ```
+
+  and changed the **input module** to read that attribute:
+
+  ```python
+  class TuiInputModule:
+      def __init__(self, state: TuiState):
+          self.state = state          # ← no _input_type here
+
+      async def prompt_with_status(self, ...):
+          ...
+          self.state.hitl_input_type = self._input_type   # ← AttributeError
+  ```
+
+  The module never defined it, and the consumer only calls
+  `set_input_type()` when the module has one — so the attribute was
+  never set, and the question died on the way to the operator.
+
+- **What the operator saw was nothing at all.**  The question is
+  rendered into the *silent* console of the TUI, and the footer — the
+  only place the operator can see it — is filled by the module that
+  crashed.  The exception was caught by `EventConsumer.ask_question`,
+  which then answered the agent with the **default answer** and
+  reported it as a timeout.  The agent carried on as if nobody had been
+  asked anything, which is exactly what "the agent never asks me
+  anything" and "what I type is invisible" describe.
+
+- **The fix is the two lines the module was missing.**  The module knows
+  the kind of answer now, and it can be told:
+
+  ```python
+  class TuiInputModule:
+      def __init__(self, state: TuiState):
+          self.state = state
+          self._input_type = "text"
+
+      def set_input_type(self, input_type: str) -> None:
+          """Tell the module what kind of answer the pending question wants."""
+          if input_type:
+              self._input_type = input_type
+  ```
+
+  The footer labels the prompt by the kind of answer again — "Answer:",
+  "Yes/No:", "Option:" or "Password:" — and the question reaches the
+  operator.
+
+- **The proof is `tests/test_tui_input_module.py`** — six tests, and
+  every one of them fails without the fix:
+
+  | | Without the fix | With the fix |
+  |---|---|---|
+  | `tests/test_tui_input_module.py` | **6 failed** | **6 passed** |
+  | the manual test (`scripts/manual_hitl_privilege_test.py`) | the question never arrives | the answer arrives, and the typed text is on the screen |
+  | the CI gate | — | no new failure — the same 40 known failures |
+
+  The gate is the run that decides — `.venv/bin/python
+  scripts/ci_test_gate.py` — and it counts the failures of the whole
+  repository, `tests/` and `toolkits/` alike:
+
+  ```
+  known failures in the baseline : 40
+  failures in this run            : 40
+  new failures                    : 0
+  fixed since the baseline        : 0
+  ```
+
+  **The 40 are the known failures of the repository** — 39 failures and
+  1 error, listed one by one in `tests/ci_baseline.txt`.  They sit in
+  nine files, and not one of them is in this path: the change breaks
+  nothing.
 
 #### The terminal is given back after a privileged command
 

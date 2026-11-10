@@ -1237,6 +1237,47 @@ of the next turn of the agent.
 When the Human-in-the-Loop is off (`\hitl-off`), the command asks
 nothing and says so.
 
+#### The manual test — the question of the agent and the password of root
+
+The probes under `investigate/` measure the hidden typing **for** the
+operator: they render the TUI into a buffer of their own and measure it
+there.  The script below puts the operator in front of the thing and
+asks *do you see it?*:
+
+```bash
+# The whole test: the question of the agent, then the password of root
+python scripts/manual_hitl_privilege_test.py
+
+# One part at a time
+python scripts/manual_hitl_privilege_test.py hitl
+python scripts/manual_hitl_privilege_test.py privilege
+
+# The password asked on the terminal instead of in the window
+python scripts/manual_hitl_privilege_test.py --privilege-mode sudo
+
+# The questions of the bank
+python scripts/manual_hitl_privilege_test.py --list
+```
+
+It drives the **real** components — the layout, the panels, the reader
+and the input module of the TUI, and the `execute_shell_command` of the
+Linux toolkit behind its privilege gate:
+
+| Part | What the operator does | What is measured |
+|---|---|---|
+| the question of the agent | the real TUI is drawn, and the answer is typed into its footer | the answer arrives; the typed text is on the screen; the answer line is not cropped away; the terminal echoes again afterwards |
+| the password of root | a `sudo` command is run, and polkit asks for the password **in a window** of the desktop | the window opened; the terminal echoed again afterwards |
+
+The two questions are not the same thing: the question of the agent is
+asked *in the terminal* — the TUI draws what the operator types, so the
+text has to be on the screen — while the password of root is asked *in a
+window*, and the terminal is not involved in it.  What they share is the
+state of the terminal: an application that owns the screen switches the
+echo off, and that state belongs to the **terminal**, not to the
+process.
+
+The exit code is 0 when every check holds.
+
 #### Timeout semantics
 
 The default timeout is **`-1`**, which means **no timeout**: the agent waits

@@ -354,6 +354,16 @@ class TuiInputModule:
 
     def __init__(self, state: TuiState):
         self.state = state
+        # The kind of answer the pending question wants ("text",
+        # "yesno", "menu", "password").  The consumer tells us through
+        # set_input_type(); without it the footer would label every
+        # question "Answer:".
+        self._input_type = "text"
+
+    def set_input_type(self, input_type: str) -> None:
+        """Tell the module what kind of answer the pending question wants."""
+        if input_type:
+            self._input_type = input_type
 
     async def prompt_with_status(
         self,
