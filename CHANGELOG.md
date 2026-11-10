@@ -707,6 +707,86 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The terminal of the operator was left mute after a command that needed root
+
+- **The operator reported it on 2026-11-10:**
+
+  > *ok I see the same issue with hidden typing, afetr agnet runs pexdec
+  > to ask root password I can notice this issue when the termo=inal does
+  > not show typed characters*
+
+  The same hidden typing as the report of 2026-11-09, this time after
+  the path of the privileged command.
+
+- **The question of a privilege escalation was asked on the terminal of
+  the operator — in one of the two modes.**  `pkexec` falls back to its
+  own textual agent when no graphical agent answers, and that agent asks
+  the password **on the terminal**, through a helper that reads the
+  answer from `/dev/tty` with the **echo off** — the helper changes the
+  attributes of the terminal, and `libpolkit-agent-1` carries
+  `tcsetattr` and `tcgetattr` for exactly that.  The operator typed a
+  password into a terminal that showed nothing of it.
+
+  The flag that stops it, `--disable-internal-agent`, was added **only
+  when the terminal belonged to an application that draws the screen** —
+  a snapshot of the echo, read when the plan was made.  On an ordinary
+  console — the classic REPL, a session over SSH — the echo is on, and
+  the flag was left out.
+
+  The flag is now **always** passed.  The gate of the feature already
+  refuses to escalate when no window can be shown, so the question is
+  asked in the window or not at all.
+
+- **The child of an escalated command inherited the terminal.**  It runs
+  as another user, and it could read the keystrokes of the operator —
+  the input reader of the TUI competes with it for every one of them —
+  and it could ask a question the operator cannot answer.  An escalated
+  command gets `stdin=subprocess.DEVNULL` now; an ordinary command keeps
+  the terminal, as it always did.
+
+- **The terminal was never given back.**  The state of a terminal
+  belongs to the terminal, not to the process: a command that took the
+  terminal over and was killed by the timeout of the command
+  (`subprocess.run` sends `SIGKILL`) left the echo off, and the operator
+  typed into a terminal that showed nothing of it — and that state
+  outlived the agent.
+
+  The toolkit snapshots the controlling terminal before it runs a
+  command and puts it back afterwards, whatever the command did to it.
+  The restore has three guards, because the terminal of the operator is
+  not always willing: nothing is written when the terminal was not
+  changed, `TCSANOW` is used instead of the `TCSADRAIN` that waits for
+  the output of a terminal nobody reads, and the restore runs in a
+  thread of its own — a terminal that refuses to give its attributes
+  back cannot hold the agent.  The block was measured on the terminal of
+  the operator: the same script returned in a thousandth of a second on
+  one run, and never returned on the next.
+
+- **The measurements are in `investigate/pkexec-hidden-typing/`.**  The
+  probe measures the three things that decide it — the flag, the input
+  and the terminal — against a pty of its own:
+
+  | | Before | After |
+  |---|---|---|
+  | the textual agent may ask | **YES** (on an ordinary console) | no |
+  | the standard input of an escalated command | the terminal | nothing |
+  | the terminal after the command | **mute** | as it was found |
+
+  The ten new tests are in
+  `toolkits/linux-toolkit/tests/test_privilege_terminal.py`.  They are
+  offline and hermetic: no test runs `pkexec`, no test opens a window,
+  and every check that needs a terminal runs against a pty of its own.
+
+- **What is deliberately not in this change:** a command that outlives
+  its own timeout — the timeout kills the shell and not necessarily the
+  program the shell started — is a change of its own, and it changes the
+  meaning of every timeout of every command.  The `sudo` that is left
+  alone when no window can be shown still asks on the terminal: that is
+  what `sudo` does, and the toolkit has no password to give it.  The
+  `TCSADRAIN` of the console input module — the other password prompt of
+  the project — carries the same wait, and it is a change in another
+  component.
+
 #### The operator could not see what they typed while the agent asked a question
 
 - **The line the operator types on was not on the screen.**  The

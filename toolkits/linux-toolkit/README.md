@@ -122,7 +122,7 @@ The rewrite is narrow on purpose:
 |---|---|
 | only a `sudo` **in command position** is rewritten | `grep sudo /etc/sudoers` is not an escalation |
 | `--keep-cwd` is always added | `pkexec` runs a program in the home of the target user, `sudo` does not |
-| `--disable-internal-agent` is added when the terminal belongs to an application | it stops `pkexec` from asking on the terminal — the thing this is about |
+| `--disable-internal-agent` is **always** added | it stops `pkexec` from asking the password **on the terminal** — the question belongs in the window, and only in the window |
 | `--user` carries `sudo -u` over | `pkexec --user www-data cmd` runs the program as `www-data` |
 | the flags `pkexec` cannot express are dropped, and the drop is reported | `sudo -E` keeps the environment; `pkexec` sanitises it anyway |
 | `sudo -l`, `sudo -v` and `sudo -e` are left alone | they do not run a program, and `pkexec` cannot do them |
@@ -131,6 +131,20 @@ The rewrite is narrow on purpose:
 The password itself is never seen by the toolkit: polkit asks the operator,
 and the toolkit only ever sees the exit code.  There is nothing to leak,
 because there is nothing to keep.
+
+The terminal of the operator is **not** part of the escalation:
+
+| | |
+|---|---|
+| the question | is asked in the window, never on the terminal |
+| the child of an escalated command | gets no standard input at all — it runs as another user, and it cannot read the keystrokes of the operator |
+| the terminal | is given back after the command, whatever the command did to it and whether the timeout killed it |
+
+The last one matters because the state of a terminal belongs to the
+terminal, not to the process: a command that was killed while it held the
+echo off would leave the operator with a terminal that shows nothing of
+what they type, and that state outlives the agent.  The measurements are
+in `investigate/pkexec-hidden-typing/`.
 
 The three modes:
 

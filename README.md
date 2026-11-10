@@ -112,13 +112,16 @@ describe.  A plain `git clone` leaves the directory empty;
 - Running a command with extra environment variables
 - A command that needs root — a `sudo` in it — is escalated through
   **pkexec**: polkit opens a **window** and asks the operator for the
-  password there, so the question never lands on the terminal the TUI
-  is drawing on. `check_privilege_backend()` reports what the machine
+  password there. The question never lands on a terminal — not on the
+  one the TUI is drawing on, and not on any other — and the terminal of
+  the operator is given back after the command, whatever the command
+  did to it. `check_privilege_backend()` reports what the machine
   can do
 - Built on the **standard library only** — `subprocess`, `os`, `logging`,
-  `shutil`, `re`, `shlex` and `typing`. The reusable core package in
-  `toolkits/linux-toolkit/` has **no** LlamaIndex imports and **no**
-  third-party dependency at all, so it works in any Python that exists
+  `shutil`, `re`, `shlex`, `termios`, `threading` and `typing`.  The
+  reusable core package in `toolkits/linux-toolkit/` has **no**
+  LlamaIndex imports and **no** third-party dependency at all, so it
+  works in any Python that exists
 - The LlamaIndex adapter is the one module that knows about the agent
   framework, and it is imported on demand
 - No tool raises: a failure is reported — a non-zero exit code, or

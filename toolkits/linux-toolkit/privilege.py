@@ -65,8 +65,10 @@ import os
 import re
 import shlex
 import shutil
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 try:  # pragma: no cover - the toolkit is POSIX only
     import termios
@@ -609,8 +611,13 @@ def terminal_is_managed() -> bool:
     the echo on is an ordinary console: a question asked on it is read
     by the human in front of it.
 
+    The state is **reported**, not acted upon.  The question of a
+    privilege escalation is asked in a window, whatever the terminal
+    looks like - see :func:`_pkexec_prefix`.
+
     Returns:
-        ``True`` when the terminal must not be used for a question.
+        ``True`` when the terminal belongs to an application that draws
+        the screen.
     """
     if termios is None:  # pragma: no cover - not POSIX
         return True
@@ -630,6 +637,130 @@ def terminal_is_managed() -> bool:
 
     lflag = attributes[3]
     return not bool(lflag & termios.ECHO)
+
+
+def terminal_attributes() -> Optional[List[Any]]:
+    """The attributes of the controlling terminal.
+
+    The terminal is the one thing a command can take over: ``sudo`` and
+    the helper of the textual agent of ``pkexec`` turn the **echo off**
+    on ``/dev/tty`` while they read a password.
+
+    Returns:
+        The attributes of the terminal, or ``None`` when there is no
+        terminal to speak of - a service, a test harness, a container
+        without one.
+    """
+    if termios is None:  # pragma: no cover - not POSIX
+        return None
+
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+    except OSError:
+        # There is no terminal.
+        return None
+
+    try:
+        return termios.tcgetattr(fd)
+    except Exception:  # pragma: no cover - defensive
+        return None
+    finally:
+        os.close(fd)
+
+
+def _terminal_unchanged(state: Optional[List[Any]]) -> bool:
+    """Whether the terminal still has the attributes it was found with.
+
+    Args:
+        state: The attributes from :func:`terminal_attributes`.
+
+    Returns:
+        ``True`` when there is nothing to give back.
+    """
+    current = terminal_attributes()
+    if current is None or state is None:
+        return True
+    return current == state
+
+
+def _restore_terminal(state: List[Any]) -> None:
+    """Put the attributes back on the terminal.
+
+    Args:
+        state: The attributes from :func:`terminal_attributes`.
+    """
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR | os.O_NOCTTY)
+    except OSError:
+        return
+
+    try:
+        # TCSANOW, and not TCSADRAIN: a restore must not wait for the
+        # output of the terminal to be drained.  A terminal nobody
+        # reads - the output of the agent is piped somewhere - has a
+        # queue that never empties, and a restore that waits for it
+        # never returns.
+        termios.tcsetattr(fd, termios.TCSANOW, state)
+    except Exception:  # pragma: no cover - defensive
+        pass
+    finally:
+        os.close(fd)
+
+
+def restore_terminal(state: Optional[List[Any]], timeout: float = 2.0) -> bool:
+    """Put the terminal back the way it was found.
+
+    The restore runs in a **thread of its own**, and the caller waits
+    for it for *timeout* seconds at most.  A terminal can refuse to
+    give its attributes back - the operator's own terminal was measured
+    doing it, for minutes - and the agent must not be held by a
+    terminal.
+
+    Args:
+        state: The attributes from :func:`terminal_attributes`.
+        timeout: The seconds the caller waits for the restore.
+
+    Returns:
+        ``True`` when the terminal is as it was found.
+    """
+    if state is None or termios is None:
+        return False
+
+    if _terminal_unchanged(state):
+        # Nothing was taken from the terminal - and there is no chance
+        # of a wait.
+        return True
+
+    worker = threading.Thread(
+        target=_restore_terminal,
+        args=(state,),
+        name="torvalds-terminal-restore",
+        daemon=True,
+    )
+    worker.start()
+    worker.join(timeout)
+    return not worker.is_alive()
+
+
+@contextmanager
+def preserved_terminal() -> Iterator[None]:
+    """Give the terminal back exactly as it was found.
+
+    A command may change the attributes of the terminal it inherits,
+    and the state belongs to the **terminal**, not to the process: a
+    command that is killed while it holds the echo off - and the timeout
+    of a command kills it with ``SIGKILL`` - leaves the operator with a
+    terminal that shows nothing of what they type, and that state
+    outlives the agent.
+
+    The terminal is given back here, whatever the command did to it and
+    whether it was killed by its timeout.
+    """
+    state = terminal_attributes()
+    try:
+        yield
+    finally:
+        restore_terminal(state)
 
 
 def pkexec_usable(env: Optional[Dict[str, str]] = None) -> Tuple[bool, str]:
@@ -712,7 +843,7 @@ class _Replacement:
         return self.prefix + self.program + command[self.copy_from : self.copy_to]
 
 
-def _pkexec_prefix(user: Optional[str], disable_internal_agent: bool) -> str:
+def _pkexec_prefix(user: Optional[str]) -> str:
     """The text that replaces the ``sudo`` and its flags.
 
     ``--keep-cwd`` keeps the working directory: ``pkexec`` runs a program
@@ -721,13 +852,20 @@ def _pkexec_prefix(user: Optional[str], disable_internal_agent: bool) -> str:
     install into the wrong place.
 
     ``--disable-internal-agent`` stops ``pkexec`` from falling back to
-    its own textual agent when no graphical agent answers - that agent
-    asks on the terminal, which is the thing this module exists to
-    prevent.  It is only passed when the terminal must not be used.
+    its own textual agent when no graphical agent answers.  That agent
+    asks the password **on the terminal**, and it asks it through a
+    helper that turns the **echo off** on ``/dev/tty`` while it reads
+    the answer - so the operator types a password that is shown
+    nowhere, into a terminal the agent is drawing on, and the terminal
+    is left mute when the helper is killed.
+
+    The flag is therefore **always** passed.  The question of a
+    privilege escalation belongs in a window, and the gate below
+    refuses to escalate at all when no window can be shown - so the
+    textual agent is never the answer to a question that has to be
+    asked.
     """
-    parts = ["pkexec", "--keep-cwd"]
-    if disable_internal_agent:
-        parts.append("--disable-internal-agent")
+    parts = ["pkexec", "--keep-cwd", "--disable-internal-agent"]
     if user:
         parts.extend(["--user", shlex.quote(user)])
     return " ".join(parts) + " "
@@ -747,7 +885,6 @@ def _program_is_executable(value: str) -> bool:
 def _replacement_for(
     command: str,
     invocation: SudoInvocation,
-    disable_internal_agent: bool,
 ) -> Optional[_Replacement]:
     """Build the replacement of one ``sudo``, if it can be rewritten."""
     if invocation.blocked or invocation.program is None:
@@ -759,7 +896,7 @@ def _replacement_for(
         # there is no honest way to rewrite that.
         return None
 
-    prefix = _pkexec_prefix(invocation.user, disable_internal_agent)
+    prefix = _pkexec_prefix(invocation.user)
 
     # sudo VAR=value cmd - the assignment has to be set for the program
     # itself, and the program has to be a program that sets it: env.
@@ -903,16 +1040,12 @@ def plan_privilege(
             notes=[f"pkexec was not used: {reason}; the sudo is run as it was written"],
         )
 
-    # The terminal must not be used for a question when an application
-    # is drawing on it.
-    disable_internal_agent = terminal_is_managed()
-
     replacements: List[_Replacement] = []
     rewrites: List[Dict[str, Any]] = []
     notes: List[str] = []
 
     for invocation in invocations:
-        replacement = _replacement_for(command, invocation, disable_internal_agent)
+        replacement = _replacement_for(command, invocation)
         if replacement is None:
             notes.append(
                 f"the sudo was left as it was written: {invocation.blocked or 'it cannot be rewritten'}"
@@ -969,8 +1102,11 @@ __all__ = [
     "pkexec_usable",
     "plan_privilege",
     "polkit_agent",
+    "preserved_terminal",
     "privilege_status",
+    "restore_terminal",
     "running_processes",
     "scan",
+    "terminal_attributes",
     "terminal_is_managed",
 ]

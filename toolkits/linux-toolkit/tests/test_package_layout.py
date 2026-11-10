@@ -389,8 +389,9 @@ def test_r5_importing_toolkits_never_raises():
 #: The third-party modules the library half is allowed to depend on.
 #:
 #: There are **none**.  The Linux toolkit is built on the standard
-#: library - ``subprocess``, ``os``, ``logging`` and ``typing`` - and on
-#: nothing else, so the shell operations work in any Python that exists.
+#: library - ``subprocess``, ``os``, ``logging``, ``termios``,
+#: ``threading`` and ``typing`` - and on nothing else, so the shell
+#: operations work in any Python that exists.
 ALLOWED_LIBRARY_DEPENDENCIES = frozenset()
 
 
@@ -398,6 +399,7 @@ ALLOWED_LIBRARY_DEPENDENCIES = frozenset()
 _STDLIB_MODULES = frozenset(
     {
         "__future__",
+        "contextlib",
         "dataclasses",
         "json",
         "logging",
@@ -408,6 +410,7 @@ _STDLIB_MODULES = frozenset(
         "subprocess",
         "sys",
         "termios",
+        "threading",
         "typing",
     }
 )

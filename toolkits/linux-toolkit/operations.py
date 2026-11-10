@@ -33,11 +33,34 @@ from typing import Dict, List, Optional, Any
 # The privilege half of the toolkit: it decides what happens when a
 # command asks for root.  It is a separate module, because it is a
 # subject of its own - and because it carries no operation.
-from .privilege import plan_privilege, privilege_status
+from .privilege import plan_privilege, preserved_terminal, privilege_status
 
 # Logging is configured centrally in agent-torvalds.py.
 # Do NOT call logging.basicConfig() here — it is a no-op after the first call.
 logger = logging.getLogger(__name__)
+
+
+def _stdin_for(plan) -> Optional[Any]:
+    """The standard input of the child of a command.
+
+    An **escalated** command gets nothing to read.  The child of a
+    privilege escalation runs as another user, and it must not be able
+    to take the terminal of the operator over: it cannot read the
+    keystrokes the operator types, and it cannot ask a question that
+    the operator cannot answer.
+
+    An ordinary command keeps the terminal, as it always did.
+
+    Args:
+        plan: The plan of the command.
+
+    Returns:
+        ``subprocess.DEVNULL`` for an escalated command, and ``None``
+        (the terminal is inherited) for an ordinary one.
+    """
+    if getattr(plan, "escalated", False):
+        return subprocess.DEVNULL
+    return None
 
 
 def execute_shell_command(
@@ -106,16 +129,21 @@ def execute_shell_command(
 
         logger.info(f"Executing command: {effective_command}")
 
-        result = subprocess.run(
-            effective_command,
-            shell=shell,
-            cwd=cwd,
-            timeout=effective_timeout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        
+        # The terminal is given back exactly as it was found, whatever
+        # the command did to it - and whether the timeout killed it
+        # while it held the echo off.
+        with preserved_terminal():
+            result = subprocess.run(
+                effective_command,
+                shell=shell,
+                cwd=cwd,
+                timeout=effective_timeout,
+                stdin=_stdin_for(plan),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
         response = {
             "stdout": result.stdout.strip() if result.stdout else "",
             "stderr": result.stderr.strip() if result.stderr else "",
@@ -374,16 +402,18 @@ def run_command_with_env(
 
         logger.info(f"Executing command with custom env: {effective_command}")
 
-        result = subprocess.run(
-            effective_command,
-            shell=True,
-            env=env,
-            timeout=effective_timeout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        
+        with preserved_terminal():
+            result = subprocess.run(
+                effective_command,
+                shell=True,
+                env=env,
+                timeout=effective_timeout,
+                stdin=_stdin_for(plan),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
         response = {
             "stdout": result.stdout.strip() if result.stdout else "",
             "stderr": result.stderr.strip() if result.stderr else "",
