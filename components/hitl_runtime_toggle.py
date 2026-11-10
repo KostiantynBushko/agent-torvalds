@@ -220,7 +220,8 @@ class HITLRuntimeToggle:
                 "  \\hitl-status  — Show current status\n"
                 "  \\hitl-on      — Enable HITL\n"
                 "  \\hitl-off     — Disable HITL\n"
-                "  \\hitl-help    — Show this help"
+                "  \\hitl-help    — Show this help\n"
+                "  \\question     — Ask a predefined question (a HITL test)"
             )
 
         return None
