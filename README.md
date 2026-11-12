@@ -112,13 +112,20 @@ describe.  A plain `git clone` leaves the directory empty;
 - Running a command with extra environment variables
 - A command that needs root — a `sudo` in it — is escalated through
   **pkexec**: polkit opens a **window** and asks the operator for the
-  password there, so the question never lands on the terminal the TUI
-  is drawing on. `check_privilege_backend()` reports what the machine
-  can do
+  password there. The question never lands on a terminal — not on the
+  one the TUI is drawing on, and not on any other — and the terminal of
+  the operator is given back after the command, whatever the command
+  did to it. A command that outlives its timeout takes its whole tree
+  with it. A machine that cannot show the window **refuses** the
+  command with the reason, because a `sudo` would ask for the password
+  on the terminal of the agent, and that terminal cannot give it back.
+  `check_privilege_backend()` reports what the machine can do
 - Built on the **standard library only** — `subprocess`, `os`, `logging`,
-  `shutil`, `re`, `shlex` and `typing`. The reusable core package in
-  `toolkits/linux-toolkit/` has **no** LlamaIndex imports and **no**
-  third-party dependency at all, so it works in any Python that exists
+  `shutil`, `re`, `shlex`, `termios`, `threading`, `signal`, `time` and
+  `typing`.  The
+  reusable core package in `toolkits/linux-toolkit/` has **no**
+  LlamaIndex imports and **no** third-party dependency at all, so it
+  works in any Python that exists
 - The LlamaIndex adapter is the one module that knows about the agent
   framework, and it is imported on demand
 - No tool raises: a failure is reported — a non-zero exit code, or
@@ -1229,6 +1236,47 @@ of the next turn of the agent.
 
 When the Human-in-the-Loop is off (`\hitl-off`), the command asks
 nothing and says so.
+
+#### The manual test — the question of the agent and the password of root
+
+The probes under `investigate/` measure the hidden typing **for** the
+operator: they render the TUI into a buffer of their own and measure it
+there.  The script below puts the operator in front of the thing and
+asks *do you see it?*:
+
+```bash
+# The whole test: the question of the agent, then the password of root
+python scripts/manual_hitl_privilege_test.py
+
+# One part at a time
+python scripts/manual_hitl_privilege_test.py hitl
+python scripts/manual_hitl_privilege_test.py privilege
+
+# The password asked on the terminal instead of in the window
+python scripts/manual_hitl_privilege_test.py --privilege-mode sudo
+
+# The questions of the bank
+python scripts/manual_hitl_privilege_test.py --list
+```
+
+It drives the **real** components — the layout, the panels, the reader
+and the input module of the TUI, and the `execute_shell_command` of the
+Linux toolkit behind its privilege gate:
+
+| Part | What the operator does | What is measured |
+|---|---|---|
+| the question of the agent | the real TUI is drawn, and the answer is typed into its footer | the answer arrives; the typed text is on the screen; the answer line is not cropped away; the terminal echoes again afterwards |
+| the password of root | a `sudo` command is run, and polkit asks for the password **in a window** of the desktop | the window opened; the terminal echoed again afterwards |
+
+The two questions are not the same thing: the question of the agent is
+asked *in the terminal* — the TUI draws what the operator types, so the
+text has to be on the screen — while the password of root is asked *in a
+window*, and the terminal is not involved in it.  What they share is the
+state of the terminal: an application that owns the screen switches the
+echo off, and that state belongs to the **terminal**, not to the
+process.
+
+The exit code is 0 when every check holds.
 
 #### Timeout semantics
 

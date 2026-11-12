@@ -30,7 +30,8 @@ framework, and it is imported on demand. Importing the toolkit therefore
 never pulls LlamaIndex into the process.
 
 Like the OS toolkit, this toolkit's **library half has no third-party
-dependency at all**. It is built on `subprocess`, `os`, `logging` and
+dependency at all**. It is built on `subprocess`, `os`, `logging`,
+`shutil`, `re`, `shlex`, `termios`, `threading`, `signal`, `time` and
 `typing` — the standard library. The operations are usable in any Python
 that exists.
 
@@ -122,7 +123,7 @@ The rewrite is narrow on purpose:
 |---|---|
 | only a `sudo` **in command position** is rewritten | `grep sudo /etc/sudoers` is not an escalation |
 | `--keep-cwd` is always added | `pkexec` runs a program in the home of the target user, `sudo` does not |
-| `--disable-internal-agent` is added when the terminal belongs to an application | it stops `pkexec` from asking on the terminal — the thing this is about |
+| `--disable-internal-agent` is **always** added | it stops `pkexec` from asking the password **on the terminal** — the question belongs in the window, and only in the window |
 | `--user` carries `sudo -u` over | `pkexec --user www-data cmd` runs the program as `www-data` |
 | the flags `pkexec` cannot express are dropped, and the drop is reported | `sudo -E` keeps the environment; `pkexec` sanitises it anyway |
 | `sudo -l`, `sudo -v` and `sudo -e` are left alone | they do not run a program, and `pkexec` cannot do them |
@@ -132,13 +133,44 @@ The password itself is never seen by the toolkit: polkit asks the operator,
 and the toolkit only ever sees the exit code.  There is nothing to leak,
 because there is nothing to keep.
 
+The terminal of the operator is **not** part of the escalation:
+
+| | |
+|---|---|
+| the question | is asked in the window, never on the terminal |
+| the child of an escalated command | gets no standard input at all — it runs as another user, and it cannot read the keystrokes of the operator |
+| the terminal | is given back after the command, whatever the command did to it and whether the timeout killed it |
+| a command that outlives its timeout | takes its **whole tree** with it — the program behind the shell does not outlive the timeout |
+
+The last one matters because the state of a terminal belongs to the
+terminal, not to the process: a command that was killed while it held the
+echo off would leave the operator with a terminal that shows nothing of
+what they type, and that state outlives the agent.  The measurements are
+in `investigate/pkexec-hidden-typing/` and in
+`investigate/privilege-terminal-echo/`.
+
+The timeout of a command ends the tree the way a program is meant to be
+ended: a **SIGTERM** first — so a child that can catch it gives the
+terminal back by itself — and a **SIGKILL** after the grace period, for
+a child that does not care.  The shell alone is not enough: the program
+behind the shell is the one that holds the terminal, and it is the
+grandchild of the process the timeout used to kill.
+
 The three modes:
 
 | Mode | What it does |
 |---|---|
-| `auto` (the default) | use `pkexec` when it can show the window; otherwise leave the `sudo` alone, and say so |
+| `auto` (the default) | use `pkexec` when it can show the window; otherwise **refuse the command with the reason** |
 | `pkexec` | use `pkexec`; refuse the command when it cannot ask the operator, and say why |
 | `sudo` | never rewrite — the command runs exactly as it was written |
+
+The refusal of the mode `auto` is deliberate.  A `sudo` that is run as
+it was written asks for the password **on the terminal of the agent**,
+and the terminal of the agent cannot give it back — the operator is left
+typing into a terminal that shows nothing of what they type.  The
+question of a privilege escalation belongs in a window, and in nowhere
+else.  The mode `sudo` still asks for it on the terminal: that is the
+operator's own choice, and the terminal is given back afterwards.
 
 `check_privilege_backend()` reports what the machine can do, so the agent
 can tell the operator what to expect:
@@ -153,6 +185,10 @@ can tell the operator what to expect:
 An escalated command gets **300 seconds** instead of the usual thirty: the
 window stays open until somebody answers it.  A timeout the caller asked for
 is respected.
+
+The backend of the status is `none` when the machine cannot show the
+window — there is nothing to ask with, and the command that needs root is
+refused with the reason.
 
 The design, and the measurements behind it, are in
 `investigate/linux-privilege-escalation/PROPOSAL_sudo_privilege_escalation.md`.
