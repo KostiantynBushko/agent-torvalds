@@ -20,6 +20,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from .. import operations, privilege
 from ..operations import check_privilege_backend, execute_shell_command
 from ..privilege import (
     DEFAULT_TIMEOUT,
@@ -36,11 +37,18 @@ from ..privilege import (
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _usable(value: bool = True):
-    """A stub for ``pkexec_usable`` that answers *value*."""
-    return mock.patch(
-        "toolkits.linux_toolkit.privilege.pkexec_usable",
-        return_value=(value, "" if value else "pkexec is not installed"),
+def _usable(value: bool = True, reason: str = "pkexec is not installed"):
+    """A stub for ``pkexec_usable`` that answers *value*.
+
+    The module is patched by **object** and not by name: the toolkit
+    lives in a directory with a hyphen in its name, and the package is
+    registered twice under two names - a patch that goes by name can
+    land on the other copy.
+    """
+    return mock.patch.object(
+        privilege,
+        "pkexec_usable",
+        return_value=(value, "" if value else reason),
     )
 
 
@@ -115,8 +123,9 @@ class TestTheRewrite(unittest.TestCase):
     """What the ``sudo`` becomes."""
 
     def _plan(self, command, mode="auto", usable=True):
-        with _usable(usable), mock.patch(
-            "toolkits.linux_toolkit.privilege.terminal_is_managed",
+        with _usable(usable), mock.patch.object(
+            privilege,
+            "terminal_is_managed",
             return_value=True,
         ):
             return plan_privilege(command, mode)
@@ -193,12 +202,26 @@ class TestTheGate(unittest.TestCase):
             plan = plan_privilege("sudo make install")
         self.assertEqual(plan.backend, "pkexec")
 
-    def test_auto_leaves_the_sudo_alone_when_pkexec_cannot_ask(self):
+    def test_auto_refuses_the_command_when_pkexec_cannot_ask(self):
+        """The question belongs in a window, and there is no window.
+
+        The command is refused with the reason.  It is **not** run as a
+        ``sudo``: a ``sudo`` asks for the password on the terminal of
+        the agent, and the terminal of the agent cannot give it back -
+        the operator is left with a terminal that shows nothing of what
+        they type.
+        """
         with _usable(False):
             plan = plan_privilege("sudo make install")
-        self.assertEqual(plan.command, "sudo make install")
-        self.assertEqual(plan.backend, "sudo")
-        self.assertTrue(plan.notes)
+        self.assertIsNotNone(plan.error)
+        self.assertFalse(plan.success)
+        self.assertIn("pkexec", plan.error)
+
+    def test_the_reason_is_in_the_error(self):
+        """The refusal says what is missing."""
+        with _usable(False, "no polkit authentication agent is running"):
+            plan = plan_privilege("sudo make install")
+        self.assertIn("no polkit authentication agent is running", plan.error)
 
     def test_pkexec_refuses_the_command_when_it_cannot_ask(self):
         """The mode that insists on pkexec does not fall back silently."""
@@ -206,6 +229,20 @@ class TestTheGate(unittest.TestCase):
             plan = plan_privilege("sudo make install", "pkexec")
         self.assertIsNotNone(plan.error)
         self.assertFalse(plan.success)
+
+    def test_the_sudo_mode_still_asks_on_the_terminal(self):
+        """The mode is the operator's own choice, and it is documented.
+
+        It is the only way to ask for the password on the terminal -
+        and the terminal is given back afterwards, whatever the command
+        did to it.
+        """
+        with _usable(False):
+            plan = plan_privilege("sudo make install", "sudo")
+        self.assertIsNone(plan.error)
+        self.assertTrue(plan.success)
+        self.assertEqual(plan.command, "sudo make install")
+        self.assertEqual(plan.backend, "sudo")
 
     def test_sudo_never_rewrites(self):
         with _usable(True):
@@ -308,10 +345,12 @@ class TestTheOperations(unittest.TestCase):
     """The operations that use the plan."""
 
     def _run(self, command, **kwargs):
-        """Run a command with the subprocess call stubbed out.
+        """Run a command with the running of it stubbed out.
 
         The stub records what would have been run, so the test never
-        starts pkexec and never opens a window.
+        starts pkexec and never opens a window.  The helper that runs
+        the command is the one that is stubbed - it is the one that
+        starts a process, and it is tested on its own.
         """
         recorded = {}
 
@@ -319,16 +358,18 @@ class TestTheOperations(unittest.TestCase):
             recorded["command"] = cmd
             recorded["timeout"] = run_kwargs.get("timeout")
             recorded["env"] = run_kwargs.get("env")
+            recorded["stdin"] = run_kwargs.get("stdin")
             return mock.Mock(
                 stdout="ok\n",
                 stderr="",
                 returncode=0,
             )
 
-        with mock.patch(
-            "toolkits.linux_toolkit.operations.subprocess.run", side_effect=fake_run
-        ), _usable(True), mock.patch(
-            "toolkits.linux_toolkit.privilege.terminal_is_managed",
+        with mock.patch.object(
+            operations, "_run_command", side_effect=fake_run
+        ), _usable(True), mock.patch.object(
+            privilege,
+            "terminal_is_managed",
             return_value=True,
         ):
             result = execute_shell_command(command, **kwargs)
@@ -363,19 +404,36 @@ class TestTheOperations(unittest.TestCase):
         self.assertTrue(any("-E" in note for note in result["privilege_notes"]))
 
     def test_a_command_that_cannot_be_asked_for_is_reported_and_not_raised(self):
-        with mock.patch(
-            "toolkits.linux_toolkit.operations.subprocess.run"
+        """Nothing is run when the question cannot be asked."""
+        with mock.patch.object(
+            operations, "_run_command"
         ) as run, _usable(False):
             result = execute_shell_command("sudo make install", privilege="pkexec")
         run.assert_not_called()
         self.assertFalse(result["success"])
         self.assertNotEqual(result["stderr"], "")
 
+    def test_a_command_that_needs_root_is_refused_when_there_is_no_window(self):
+        """The fallback of the mode ``auto`` is gone.
+
+        The command is refused with the reason, and nothing is run: a
+        pkexec --keep-cwd /bin/sh -c 'that is run as it was written asks for the password on'
+        the terminal of the agent, and the terminal of the agent cannot
+        give it back.
+        """
+        with mock.patch.object(
+            operations, "_run_command"
+        ) as run, _usable(False):
+            result = execute_shell_command("sudo make install")
+        run.assert_not_called()
+        self.assertFalse(result["success"])
+        self.assertIn("pkexec", result["stderr"])
+
     def test_the_privilege_backend_can_be_reported(self):
         status = check_privilege_backend()
         for key in ("backend", "usable", "pkexec_path", "gui_session", "polkit_agent"):
             self.assertIn(key, status)
-        self.assertIn(status["backend"], ("pkexec", "sudo"))
+        self.assertIn(status["backend"], ("pkexec", "none"))
 
 
 if __name__ == "__main__":  # pragma: no cover

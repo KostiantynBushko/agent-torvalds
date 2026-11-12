@@ -22,6 +22,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from .. import operations
 from ..operations import (
     check_file_permissions,
     execute_multiple_commands,
@@ -325,8 +326,9 @@ class TestRunCommandWithEnv(unittest.TestCase):
         import subprocess
         import unittest.mock as mock
 
-        with mock.patch(
-            "toolkits.linux_toolkit.operations.subprocess.run",
+        with mock.patch.object(
+            operations,
+            "_run_command",
             side_effect=subprocess.TimeoutExpired(cmd="sleep 60", timeout=30),
         ):
             result = run_command_with_env("sleep 60", {})
@@ -343,9 +345,7 @@ class TestRunCommandWithEnv(unittest.TestCase):
         """
         import unittest.mock as mock
 
-        with mock.patch(
-            "toolkits.linux_toolkit.operations.subprocess.run"
-        ) as run:
+        with mock.patch.object(operations, "_run_command") as run:
             run.return_value = mock.Mock(
                 stdout="", stderr="", returncode=0
             )

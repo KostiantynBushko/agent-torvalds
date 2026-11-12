@@ -28,16 +28,258 @@ Prerequisites:
 import subprocess
 import os
 import logging
+import signal
+import time
 from typing import Dict, List, Optional, Any
 
 # The privilege half of the toolkit: it decides what happens when a
 # command asks for root.  It is a separate module, because it is a
 # subject of its own - and because it carries no operation.
-from .privilege import plan_privilege, privilege_status
+from .privilege import plan_privilege, preserved_terminal, privilege_status
 
 # Logging is configured centrally in agent-torvalds.py.
 # Do NOT call logging.basicConfig() here — it is a no-op after the first call.
 logger = logging.getLogger(__name__)
+
+
+#: The seconds a command that outlived its timeout is given to end by
+#: itself, before it is killed outright.
+KILL_GRACE = 2.0
+
+#: The seconds between two checks of whether a killed command is gone.
+KILL_POLL = 0.05
+
+
+def _is_zombie(pid: int) -> bool:
+    """Whether a process has ended and only waits to be reaped.
+
+    A zombie holds nothing: it cannot answer a signal, it cannot read
+    the terminal, and it cannot keep a command alive.  It only waits for
+    the process that has to reap it.
+
+    Args:
+        pid: The pid of the process.
+
+    Returns:
+        ``True`` when the process is a zombie.
+    """
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as handle:
+            stat = handle.read()
+    except OSError:
+        return False
+
+    # The command name is in brackets and may hold spaces, so the
+    # fields after it are found from the last bracket.  The first of
+    # them is the state of the process.
+    fields = stat[stat.rfind(")") + 2:].split()
+    return bool(fields) and fields[0] == "Z"
+
+
+def _alive(pid: int) -> bool:
+    """Whether a process is still running.
+
+    Args:
+        pid: The pid of the process.
+
+    Returns:
+        ``True`` when the process is running.
+    """
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # It is there; it belongs to somebody else.
+        return True
+    except OSError:
+        return False
+
+    return not _is_zombie(pid)
+
+
+def _descendants(pid: int) -> List[int]:
+    """The processes below *pid* - what the command started.
+
+    The process that holds the terminal is not the process that is
+    started: the shell is the child, and the program behind the shell -
+    the ``sudo`` that asks for the password on the terminal - is its
+    grandchild.  The tree is read from ``/proc``, so it is the tree as
+    it is right now.
+
+    Args:
+        pid: The pid of the process.
+
+    Returns:
+        The pids of the processes below *pid*.
+    """
+    children: Dict[int, List[int]] = {}
+
+    try:
+        entries = os.listdir("/proc")
+    except OSError:  # pragma: no cover - /proc is always there on Linux
+        return []
+
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/stat", encoding="utf-8",
+                      errors="replace") as handle:
+                stat = handle.read()
+        except OSError:
+            continue
+
+        fields = stat[stat.rfind(")") + 2:].split()
+        if len(fields) < 2:
+            continue
+        try:
+            parent = int(fields[1])
+        except ValueError:
+            continue
+        children.setdefault(parent, []).append(int(entry))
+
+    found: List[int] = []
+    pending = list(children.get(pid, []))
+    while pending:
+        current = pending.pop()
+        if current in found:
+            continue
+        found.append(current)
+        pending.extend(children.get(current, []))
+
+    return found
+
+
+def _kill_tree(pid: int, grace: float = KILL_GRACE) -> List[int]:
+    """End a command that outlived its timeout, and everything it started.
+
+    The timeout of a command used to kill the shell and nothing else:
+    the program behind the shell - the ``sudo`` that asks for the
+    password on the terminal - survived the timeout and kept the
+    terminal with the echo off.
+
+    The tree is ended the way a program is meant to be ended: a
+    ``SIGTERM`` first, so a child that can catch it gives the terminal
+    back itself, and a ``SIGKILL`` after the grace period, for a child
+    that does not care.
+
+    Args:
+        pid: The pid of the process to end.
+        grace: The seconds the tree is given to end by itself.
+
+    Returns:
+        The pids that had to be killed outright.
+    """
+    descendants = _descendants(pid)
+    tree = descendants + [pid]
+
+    # The children first: the shell is ended last, so it cannot start
+    # anything new while the tree is being ended.
+    for target in tree:
+        try:
+            os.kill(target, signal.SIGTERM)
+        except OSError:
+            continue
+
+    # The grace period covers the **whole** tree, and not only the
+    # children of the shell: the shell itself is a process that can
+    # catch a SIGTERM, and a child that is given no time to react is a
+    # child that is killed instead of being asked.
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        if not any(_alive(target) for target in tree):
+            break
+        time.sleep(KILL_POLL)
+
+    survivors = [target for target in tree if _alive(target)]
+    for target in survivors:
+        try:
+            os.kill(target, signal.SIGKILL)
+        except OSError:
+            continue
+
+    return survivors
+
+
+def _run_command(
+    command: str,
+    timeout: int,
+    shell: bool = True,
+    cwd: Optional[str] = None,
+    env: Optional[Dict[str, str]] = None,
+    stdin: Optional[Any] = None,
+) -> subprocess.CompletedProcess:
+    """Run a command, and end it with everything it started on a timeout.
+
+    ``subprocess.run(timeout=...)`` kills the **shell** it started and
+    nothing else, so the program behind the shell outlives the timeout
+    of the command.  The timeout here ends the whole tree.
+
+    Args:
+        command: The command line.
+        timeout: The seconds the command is given.
+        shell: Whether the command is run through a shell.
+        cwd: The working directory of the command.
+        env: The environment of the command.
+        stdin: The standard input of the command.
+
+    Returns:
+        The completed process: its output and its return code.
+
+    Raises:
+        subprocess.TimeoutExpired: when the command outlived its timeout.
+    """
+    process = subprocess.Popen(
+        command,
+        shell=shell,
+        cwd=cwd,
+        env=env,
+        stdin=stdin,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        survivors = _kill_tree(process.pid)
+        if survivors:
+            logger.warning(
+                "the command did not end by itself; %d process(es) were killed",
+                len(survivors),
+            )
+        # The output the command produced before it was ended.
+        stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(
+            command, timeout, output=stdout, stderr=stderr
+        )
+
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def _stdin_for(plan) -> Optional[Any]:
+    """The standard input of the child of a command.
+
+    An **escalated** command gets nothing to read.  The child of a
+    privilege escalation runs as another user, and it must not be able
+    to take the terminal of the operator over: it cannot read the
+    keystrokes the operator types, and it cannot ask a question that
+    the operator cannot answer.
+
+    An ordinary command keeps the terminal, as it always did.
+
+    Args:
+        plan: The plan of the command.
+
+    Returns:
+        ``subprocess.DEVNULL`` for an escalated command, and ``None``
+        (the terminal is inherited) for an ordinary one.
+    """
+    if getattr(plan, "escalated", False):
+        return subprocess.DEVNULL
+    return None
 
 
 def execute_shell_command(
@@ -84,9 +326,11 @@ def execute_shell_command(
     Keywords: execute, run, shell, command, terminal, bash, stdout, stderr
     """
     effective_timeout = timeout
+    backend = "none"
 
     try:
         plan = plan_privilege(command, privilege, timeout=timeout)
+        backend = plan.backend
 
         if plan.error:
             logger.error(plan.error)
@@ -106,16 +350,18 @@ def execute_shell_command(
 
         logger.info(f"Executing command: {effective_command}")
 
-        result = subprocess.run(
-            effective_command,
-            shell=shell,
-            cwd=cwd,
-            timeout=effective_timeout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        
+        # The terminal is given back exactly as it was found, whatever
+        # the command did to it - and whether the timeout killed it
+        # while it held the echo off.
+        with preserved_terminal():
+            result = _run_command(
+                effective_command,
+                timeout=effective_timeout,
+                shell=shell,
+                cwd=cwd,
+                stdin=_stdin_for(plan),
+            )
+
         response = {
             "stdout": result.stdout.strip() if result.stdout else "",
             "stderr": result.stderr.strip() if result.stderr else "",
@@ -144,7 +390,7 @@ def execute_shell_command(
             "stderr": error_msg,
             "returncode": -1,
             "success": False,
-            "privilege": "none",
+            "privilege": backend,
         }
     except Exception as e:
         error_msg = f"Error executing command '{command}': {str(e)}"
@@ -154,7 +400,7 @@ def execute_shell_command(
             "stderr": error_msg,
             "returncode": -1,
             "success": False,
-            "privilege": "none",
+            "privilege": backend,
         }
 
 
@@ -350,8 +596,11 @@ def run_command_with_env(
 
     Keywords: environment, env, variables, custom, isolated, context
     """
+    backend = "none"
+
     try:
         plan = plan_privilege(command, privilege)
+        backend = plan.backend
 
         if plan.error:
             logger.error(plan.error)
@@ -374,16 +623,15 @@ def run_command_with_env(
 
         logger.info(f"Executing command with custom env: {effective_command}")
 
-        result = subprocess.run(
-            effective_command,
-            shell=True,
-            env=env,
-            timeout=effective_timeout,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        
+        with preserved_terminal():
+            result = _run_command(
+                effective_command,
+                timeout=effective_timeout,
+                shell=True,
+                env=env,
+                stdin=_stdin_for(plan),
+            )
+
         response = {
             "stdout": result.stdout.strip() if result.stdout else "",
             "stderr": result.stderr.strip() if result.stderr else "",
@@ -405,7 +653,7 @@ def run_command_with_env(
             "stderr": error_msg,
             "returncode": -1,
             "success": False,
-            "privilege": "none",
+            "privilege": backend,
         }
 
 

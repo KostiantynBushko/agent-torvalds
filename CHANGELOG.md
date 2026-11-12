@@ -6,6 +6,58 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The manual test of the question of the agent and of the password of root
+
+- **The operator asked for it on 2026-11-10:**
+
+  > *now I need a manual test to be able to test hitl and sudo passwrod,
+  > since I have notices that running hitl question to operator and sudo
+  > pkexec with UI Authentication dialog may be related to the issue with
+  > hidded input in terminal*
+
+- **The probes measure the hidden typing *for* the operator.**
+  `investigate/tui-hidden-input/probe_hidden_input.py` and
+  `investigate/privilege-terminal-echo/probe_privilege_terminal.py` render
+  the TUI into a buffer of their own and measure it there — the typed
+  text is on the screen, the terminal is given back.  What they cannot do
+  is put the operator in front of the thing and ask *do you see it?*.
+
+- **`scripts/manual_hitl_privilege_test.py` drives the real components in
+  the terminal of the operator.**  Nothing is simulated: the layout, the
+  panels, the reader and the input module of the TUI are the production
+  ones, and the privilege part runs the production
+  `execute_shell_command` of the Linux toolkit, behind the production
+  gate.
+
+  | Part | What the operator does | What is measured |
+  |---|---|---|
+  | the question of the agent | the real TUI is drawn, and the answer is typed into its footer | the answer arrives; the typed text is on the screen; the answer line is not cropped away; the terminal echoes again afterwards |
+  | the password of root | a `sudo` command is run, and polkit asks for the password **in a window** of the desktop | the window opened; the terminal echoed again afterwards |
+
+- **The two questions are not the same thing, and the script says so.**
+  The question of the agent is asked *in the terminal* — the TUI draws
+  what the operator types, so the text has to be on the screen.  The
+  password of root is asked *in a window*, and the terminal of the
+  operator is not involved in it at all.  What the two share is the
+  state of the terminal: an application that owns the screen switches
+  the echo off, and that state belongs to the **terminal**, not to the
+  process.
+
+- **The comparison is one flag away.**
+  `--privilege-mode sudo` runs the command as it was written: the
+  password is then asked on the terminal, and the terminal hides what is
+  typed while it is read.  That is the path the hidden typing was
+  reported on — and the script measures that the terminal is given back
+  afterwards, even when the timeout kills the `sudo` in the middle of the
+  question.
+
+  ```bash
+  python scripts/manual_hitl_privilege_test.py            # both parts
+  python scripts/manual_hitl_privilege_test.py hitl       # only the question
+  python scripts/manual_hitl_privilege_test.py privilege  # only the password
+  python scripts/manual_hitl_privilege_test.py --privilege-mode sudo
+  ```
+
 #### A predefined question can be asked with `\question`
 
 - **The operator asked for it on 2026-11-10:**
@@ -707,6 +759,245 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The question of the agent never reached the operator in the TUI
+
+- **Since 2026-10-25, every question in the multi-window TUI raised an
+  `AttributeError` before it could wait for an answer.**  The commit
+  `dca06b9` ("make a list of choices a menu, and teach the TUI the
+  answer type") taught the *adapter* of the TUI the kind of answer the
+  pending question wants:
+
+  ```python
+  class TuiEventAdapter:
+      def __init__(self, state: TuiState):
+          self.state = state
+          self._input_type = "text"
+
+      def set_input_type(self, input_type: str) -> None:
+          ...
+  ```
+
+  and changed the **input module** to read that attribute:
+
+  ```python
+  class TuiInputModule:
+      def __init__(self, state: TuiState):
+          self.state = state          # ← no _input_type here
+
+      async def prompt_with_status(self, ...):
+          ...
+          self.state.hitl_input_type = self._input_type   # ← AttributeError
+  ```
+
+  The module never defined it, and the consumer only calls
+  `set_input_type()` when the module has one — so the attribute was
+  never set, and the question died on the way to the operator.
+
+- **What the operator saw was nothing at all.**  The question is
+  rendered into the *silent* console of the TUI, and the footer — the
+  only place the operator can see it — is filled by the module that
+  crashed.  The exception was caught by `EventConsumer.ask_question`,
+  which then answered the agent with the **default answer** and
+  reported it as a timeout.  The agent carried on as if nobody had been
+  asked anything, which is exactly what "the agent never asks me
+  anything" and "what I type is invisible" describe.
+
+- **The fix is the two lines the module was missing.**  The module knows
+  the kind of answer now, and it can be told:
+
+  ```python
+  class TuiInputModule:
+      def __init__(self, state: TuiState):
+          self.state = state
+          self._input_type = "text"
+
+      def set_input_type(self, input_type: str) -> None:
+          """Tell the module what kind of answer the pending question wants."""
+          if input_type:
+              self._input_type = input_type
+  ```
+
+  The footer labels the prompt by the kind of answer again — "Answer:",
+  "Yes/No:", "Option:" or "Password:" — and the question reaches the
+  operator.
+
+- **The proof is `tests/test_tui_input_module.py`** — six tests, and
+  every one of them fails without the fix:
+
+  | | Without the fix | With the fix |
+  |---|---|---|
+  | `tests/test_tui_input_module.py` | **6 failed** | **6 passed** |
+  | the manual test (`scripts/manual_hitl_privilege_test.py`) | the question never arrives | the answer arrives, and the typed text is on the screen |
+  | the CI gate | — | no new failure — the same 40 known failures |
+
+  The gate is the run that decides — `.venv/bin/python
+  scripts/ci_test_gate.py` — and it counts the failures of the whole
+  repository, `tests/` and `toolkits/` alike:
+
+  ```
+  known failures in the baseline : 40
+  failures in this run            : 40
+  new failures                    : 0
+  fixed since the baseline        : 0
+  ```
+
+  **The 40 are the known failures of the repository** — 39 failures and
+  1 error, listed one by one in `tests/ci_baseline.txt`.  They sit in
+  nine files, and not one of them is in this path: the change breaks
+  nothing.
+
+#### The terminal is given back after a privileged command
+
+- **The operator reported that the terminal goes mute after a command
+  that asked for the sudo password in a window**, and pointed at
+  [pyinvoke/invoke#303](https://github.com/pyinvoke/invoke/issues/303) —
+  the same defect in another project: the process that changed the
+  terminal settings died in the middle of the question and never gave
+  them back.
+
+  The evidence is in `investigate/privilege-terminal-echo/` — the report,
+  the proposal and the probe that measures it.
+
+- **The question in a window does not damage the terminal.**  It was
+  measured, in a pty of the probe's own: the echo is still on after a
+  command that was escalated through `pkexec` and polkit.
+
+- **The paths that ask on the terminal do.**  The `sudo` fallback (when
+  there is no polkit agent to ask), the textual agent of `pkexec` (at a
+  console, when no window answers), and the whiptail dialog of the APT
+  toolkit all switch the **echo off** to read the password.  The agent
+  killed the child when the timeout fired — with **SIGKILL**, which
+  cannot be caught — and it killed only the shell, not the `sudo`
+  behind it.  The terminal kept the echo-off state, and the operator was
+  left typing into a terminal that showed nothing.
+
+- **Four changes, and one rule behind them.**
+
+  | The change | What it does |
+  |---|---|
+  | the terminal is held around every command | the attributes are read before the command and written back in a `finally` — whatever the command did to it, and whether the timeout killed it |
+  | the timeout ends the **whole tree** | a SIGTERM first, so a child that can catch it gives the terminal back itself; a SIGKILL after the grace period, for a child that does not care |
+  | the question never lands on the terminal | `--disable-internal-agent` is always passed, and the gate refuses to escalate when no window can be shown |
+  | the `sudo` fallback is gone | a command that needs root on a machine without a polkit agent is **refused with the reason**, instead of being run as a `sudo` that asks on a terminal the agent cannot give back |
+
+- **The rule is the one of invoke#303:** whoever changes the state of
+  the terminal gives it back — and the give-back runs even when the
+  process is interrupted.  The two other places in the project that
+  switch the terminal off — the masked password of
+  `components/console_input_module.py` and the reader of
+  `components/tui/input_reader.py` — already keep it that way.
+
+- **The probe proves it.**
+  `investigate/privilege-terminal-echo/probe_privilege_terminal.py`
+  runs five measurements against the real code of the repository, in a
+  pty of its own, so it never touches the terminal of the operator.
+
+  | | Before | After |
+  |---|---|---|
+  | the probe | exit **1** — *"the terminal was left mute"* | exit **0** — *"the terminal was given back in every measurement"* |
+  | the question on the terminal (`sudo -v`) | the echo is **OFF** | the echo is **on** |
+  | the mechanism — a child that only switches the echo off | the echo is **OFF** | the echo is **on** |
+  | the child after the timeout | the `sudo` behind the shell is **still alive** | the tree is gone |
+
+- **The tests are in `toolkits/linux-toolkit/tests/`** —
+  `test_privilege_timeout.py` (the tree that is ended with the command,
+  the child that is given the chance to end by itself, and the refusal
+  with the reason), `test_privilege_terminal.py` (the question, the
+  input, and the terminal) and `test_privilege.py` (the gate and the
+  rewrite).  They are offline and hermetic: no test runs `pkexec`, no
+  test opens a window, and every check that needs a terminal runs
+  against a pty of its own.
+
+  The new tests were run against the code **before** the change, and
+  they fail there — *"the grandchild outlived the timeout of the
+  command"* — and they pass after it.
+
+- **What is deliberately not in this change:** the whiptail dialog of
+  the APT toolkit has the same defect, and it needs the screen as well
+  as the echo — another component, another contract, another change.
+  The cbreak mode of the TUI is not a defect: the TUI draws the screen
+  itself.  A `kill -9` of the agent cannot be answered by any program,
+  and the textual agent of polkit is upstream's code — the toolkit's
+  job is to stop it from being used, not to repair it.
+
+#### The terminal of the operator was left mute after a command that needed root
+
+- **The operator reported it on 2026-11-10:**
+
+  > *ok I see the same issue with hidden typing, afetr agnet runs pexdec
+  > to ask root password I can notice this issue when the termo=inal does
+  > not show typed characters*
+
+  The same hidden typing as the report of 2026-11-09, this time after
+  the path of the privileged command.
+
+- **The question of a privilege escalation was asked on the terminal of
+  the operator — in one of the two modes.**  `pkexec` falls back to its
+  own textual agent when no graphical agent answers, and that agent asks
+  the password **on the terminal**, through a helper that reads the
+  answer from `/dev/tty` with the **echo off** — the helper changes the
+  attributes of the terminal, and `libpolkit-agent-1` carries
+  `tcsetattr` and `tcgetattr` for exactly that.  The operator typed a
+  password into a terminal that showed nothing of it.
+
+  The flag that stops it, `--disable-internal-agent`, was added **only
+  when the terminal belonged to an application that draws the screen** —
+  a snapshot of the echo, read when the plan was made.  On an ordinary
+  console — the classic REPL, a session over SSH — the echo is on, and
+  the flag was left out.
+
+  The flag is now **always** passed.  The gate of the feature already
+  refuses to escalate when no window can be shown, so the question is
+  asked in the window or not at all.
+
+- **The child of an escalated command inherited the terminal.**  It runs
+  as another user, and it could read the keystrokes of the operator —
+  the input reader of the TUI competes with it for every one of them —
+  and it could ask a question the operator cannot answer.  An escalated
+  command gets `stdin=subprocess.DEVNULL` now; an ordinary command keeps
+  the terminal, as it always did.
+
+- **The terminal was never given back.**  The state of a terminal
+  belongs to the terminal, not to the process: a command that took the
+  terminal over and was killed by the timeout of the command
+  (`subprocess.run` sends `SIGKILL`) left the echo off, and the operator
+  typed into a terminal that showed nothing of it — and that state
+  outlived the agent.
+
+  The toolkit snapshots the controlling terminal before it runs a
+  command and puts it back afterwards, whatever the command did to it.
+  The restore has three guards, because the terminal of the operator is
+  not always willing: nothing is written when the terminal was not
+  changed, `TCSANOW` is used instead of the `TCSADRAIN` that waits for
+  the output of a terminal nobody reads, and the restore runs in a
+  thread of its own — a terminal that refuses to give its attributes
+  back cannot hold the agent.  The block was measured on the terminal of
+  the operator: the same script returned in a thousandth of a second on
+  one run, and never returned on the next.
+
+- **The measurements are in `investigate/pkexec-hidden-typing/`.**  The
+  probe measures the three things that decide it — the flag, the input
+  and the terminal — against a pty of its own:
+
+  | | Before | After |
+  |---|---|---|
+  | the textual agent may ask | **YES** (on an ordinary console) | no |
+  | the standard input of an escalated command | the terminal | nothing |
+  | the terminal after the command | **mute** | as it was found |
+
+  The ten new tests are in
+  `toolkits/linux-toolkit/tests/test_privilege_terminal.py`.  They are
+  offline and hermetic: no test runs `pkexec`, no test opens a window,
+  and every check that needs a terminal runs against a pty of its own.
+
+- **What was deliberately not in this change, and what became of it:**
+  the timeout of a command and the `sudo` that is left alone when no
+  window can be shown were both changes of their own, and both landed
+  with the change above — *"The terminal is given back after a
+  privileged command"*.  The `TCSADRAIN` of the console input module —
+  the other password prompt of the project — carries the same wait, and
+  it is a change in another component.
+
 #### The operator could not see what they typed while the agent asked a question
 
 - **The line the operator types on was not on the screen.**  The
@@ -1383,6 +1674,62 @@ All notable changes to this project are documented in this file.
   the read-only probe that prints it.  The probe measures the transient
   channel in the two cases that differ — a run that ends with the body, and a
   run that continues past it.
+
+#### The terminal after a privileged command
+
+- **The operator reported that the terminal goes mute after a command
+  that asked for the sudo password in a window**, and pointed at
+  [pyinvoke/invoke#303](https://github.com/pyinvoke/invoke/issues/303) —
+  the same defect in another project: the process that changed the
+  terminal settings died in the middle of the question and never gave
+  them back.
+
+- **The question in a window does not damage the terminal.**  It was
+  measured, in a pty of the probe's own: the echo is still on after a
+  command that was escalated through `pkexec` and polkit.
+
+- **The paths that ask on the terminal do.**  The `sudo` fallback (when
+  there is no polkit agent to ask), the textual agent of `pkexec` (at a
+  console, when no window answers), and the whiptail dialog of the APT
+  toolkit all switch the **echo off** to read the password.  The agent
+  kills the child when the timeout fires — with **SIGKILL**, which
+  cannot be caught — and it kills only the shell, not the `sudo` behind
+  it.  The terminal keeps the echo-off state, and the operator is left
+  typing into a terminal that shows nothing.
+
+  | Measurement | The echo afterwards |
+  |---|---|
+  | the question in a window (`pkexec` + polkit) | **on** |
+  | the question on the terminal (`sudo -v`) | **OFF** |
+  | the mechanism — a child that only switches the echo off | **OFF** |
+
+- **The agent is the one that has to give the terminal back.**  The
+  other two places in the repository that switch the terminal off — the
+  masked password of `components/console_input_module.py` and the reader
+  of `components/tui/input_reader.py` — give it back in a `finally`,
+  with an `atexit` hook behind it.  The privilege path has neither: the
+  agent never takes the terminal, so it cannot give it back.  This is
+  the rule of invoke#303, whose fix upstream (0.12.2) was to tie the IO
+  threads off *before* the exception is re-raised.
+
+- **A mute terminal is baked into the baseline of the next run.**  The
+  reader of the TUI captures the state of the terminal when it starts
+  and restores *that* state when it stops — so a terminal that was
+  already mute stays mute, and the state outlives the agent.
+
+- **The evidence is in `investigate/privilege-terminal-echo/`.**  The
+  probe (`probe_privilege_terminal.py`) runs five measurements against
+  the real code of the repository, in a pty of its own, so it never
+  touches the terminal of the operator.  Before the fix it exits **1** —
+  *"the terminal was left mute"*.  The fix is proposed in
+  `investigate/privilege-terminal-echo/PROPOSAL.md`, and it is in
+  *"The terminal is given back after a privileged command"* above: the
+  probe exits **0** now — *"the terminal was given back in every
+  measurement"*.
+
+- **After the fix:** `stty sane` is not needed any more.  It is still
+  the answer for a terminal that was left mute by a `kill -9` of the
+  agent — SIGKILL cannot be caught, and no program can answer for it.
 
 ## [1.0.0] - 2026-10-29
 
