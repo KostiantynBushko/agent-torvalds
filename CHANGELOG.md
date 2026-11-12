@@ -759,6 +759,81 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The selection picked up the wrong pane, and the screen blinked
+
+- **The operator reported it on 2026-11-13:**
+
+  > *Please check the copied text from as you can see it is not posible to
+  > select test from main window only, it also selects content from
+  > "Workflow & Tools Progress" window.*
+
+  and, separately:
+
+  > *I have notised that the an entire screen is blinking diring processing
+  > request*
+
+- **Rich believes the terminal is a different size than it is.**  Rich
+  reads `COLUMNS` and `LINES` from the environment *before* it asks the
+  terminal, and the shell exports them as a snapshot of the size the
+  terminal had when the shell started:
+
+  ```python
+  # rich/console.py - Console.size
+          columns = self._environ.get("COLUMNS")
+          if columns is not None and columns.isdigit():
+              width = int(columns)          # ← the environment wins
+          lines = self._environ.get("LINES")
+          if lines is not None and lines.isdigit():
+              height = int(lines)            # ← the environment wins
+  ```
+
+  The TUI therefore laid itself out for a terminal that is not there.
+  The frame was wider than the screen, the terminal folded it, the panes
+  left their columns — and the screen scrolled 26 rows on every one of
+  the 15 frames a second.  A selection is made by *column*, so the
+  border of the progress pane was standing in the answer of the agent,
+  and the operator copied both.
+
+- **The console of the TUI asks the terminal now.**
+  `components/tui/terminal_size.py` builds the console with an
+  environment that carries no `COLUMNS` and no `LINES`, so
+  `Console.size` falls through to `os.get_terminal_size()` — the size
+  that is true *now*, and that follows a resize.
+
+- **The log of the agent landed on the alternate screen.**  The handler
+  of the root logger writes to `stderr`, and the agent logs on every
+  iteration of its loop (`components/hitl_agent.py`, `logger.info("Context:
+  %s", ...)`).  With `Live(screen=True, redirect_stderr=False)` that
+  line was written straight onto the layout and scrolled it — the part
+  of the blink that showed exactly while a request ran.
+
+  The operator decided: *"the log must go into file, not painted
+  over"*.  `components/tui/log_routing.py` takes the terminal handlers
+  of the root logger away for the time of the TUI, and a file handler
+  takes their place: the file the operator configured
+  (`--log-file`), or the default of the project
+  (`~/.torvalds/logs/agent.log`).  It rotates, and it is private
+  (`0600`) — the log carries the prompts, the tool output and the
+  answers of the model.
+
+  | terminal 120×40, 2.5 s of the TUI | before | after |
+  |---|---|---|
+  | the size Rich believes | 229×33 | **120×40** |
+  | the frame overflows the terminal | yes | **no** |
+  | screen scrolls | **988** | **0** |
+  | the pane separator on the screen | column 27 | **column 77** |
+  | rows with the panes misplaced | **14** | **0** |
+  | the log of the agent on the screen | 6 lines | **0 lines** |
+  | the log of the agent in the file | — | **6 lines** |
+
+- **The probe never touches the terminal of the operator.**
+  `investigate/tui-selection-and-flicker/probe_selection_and_flicker.py`
+  runs the TUI four times in a pty of its own and replays the byte
+  stream through a terminal emulator
+  (`investigate/tui-selection-and-flicker/repro/term_emulator.py`).
+  The investigation is in
+  `investigate/tui-selection-and-flicker/investigation_tui_selection_and_flicker.md`.
+
 #### The question of the agent never reached the operator in the TUI
 
 - **Since 2026-10-25, every question in the multi-window TUI raised an
