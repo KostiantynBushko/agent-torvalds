@@ -1,14 +1,17 @@
 # Proposal: the TUI must offer the chats of the database — and let the operator pick one
 
 **Date**: 2026-11-13
-**Status**: **Decided** — the operator approved the recommended option on
-2026-11-13: *"ok go ahead with your preferred choice"*
+**Status**: **Decided and implemented** — the operator approved the
+recommended option on 2026-11-13 (*"ok go ahead with your preferred
+choice"*), and revised the shape of the startup on the same day (*"go
+ahead and make this small change"*).
 **Companion to**: `investigation_tui_session_selection.md`,
 `probe_session_selection.py`
 **Branch**: `fix/tui-rendering` (merges into `fix/tui-terminal-size`)
-**Scope**: `agent-torvalds-mw.py`, `chat_manager/commands/cli.py`,
-`chat_manager/commands/handler.py`, `components/tui/chat_history_view.py`,
-`components/tui/tui_app.py`, `components/command_registry.py`,
+**Scope**: `agent-torvalds-mw.py`, `chat_manager/session_selector.py`,
+`chat_manager/commands/cli.py`, `chat_manager/commands/handler.py`,
+`components/tui/chat_history_view.py`, `components/tui/tui_app.py`,
+`components/command_registry.py`,
 `tests/test_tui_session_selection.py` (new)
 
 ---
@@ -23,16 +26,8 @@ remedy for both:
 
 | | Defect | The remedy |
 | :--- | :--- | :--- |
-| **D1** | the TUI never proposes the startup choice — one condition skips it | the menu runs before the layout takes the screen |
-| **D2** | inside the TUI a session can only be chosen by typing a 36-character UUID | a numbered picker, like `\tools` |
-
-The operator chose the recommended option, which is **1(a) + 2(b)**:
-
-* **at startup** — the plain console menu of the classic REPL, printed
-  before the Rich layout takes the screen;
-* **while the TUI is up** — `\chat-select` without an argument opens a
-  numbered list in the document pane, and `\chat-select <number>`
-  switches to it.
+| **D1** | the TUI never proposes the choice — one condition skips it | the TUI asks **inside its own layout**, and the agent waits for the answer |
+| **D2** | inside the TUI a session can only be chosen by typing a 36-character id | a numbered picker, like `\tools` |
 
 ---
 
@@ -40,17 +35,32 @@ The operator chose the recommended option, which is **1(a) + 2(b)**:
 
 ```
    ┌──────────────────────────────────────────────────────────────┐
-   │ 1. The startup choice (D1)                                   │
+   │ 1. The question (D1)                                          │
    │                                                              │
-   │   before:  TUI  →  loads the last session, says nothing      │
-   │   after:   menu → operator picks → TUI opens on that session│
+   │   The classic console asks in the terminal, before the REPL: │
    │                                                              │
-   │   The menu runs BEFORE the Live display takes the screen, so │
-   │   the terminal is still an ordinary console.                 │
+   │     Session selection:                                       │
+   │     Available sessions:                                      │
+   │       1. objective-control-001  (created 2026-11-09 10:40)   │
+   │       ...                                                    │
+   │     Select a session [1-27], 'new <name>' to create one...   │
+   │                                                              │
+   │   The TUI asks inside its own layout:                       │
+   │                                                              │
+   │     ┌─ 📄 Markdown Document Viewer ────────────────────┐     │
+   │     │          💬 Select a Chat Session                │     │
+   │     │  How to select:                                  │     │
+   │     │   • Type the number of the session and press Enter│    │
+   │     │   #  Session            Type     Created        │     │
+   │     │   1  objective-control…  custom   2026-11-09 10:40│     │
+   │     └──────────────────────────────────────────────────┘     │
+   │                                                              │
+   │   The agent WAITS.  A question typed before the choice would │
+   │   run in the session that was active last - the defect.     │
    └──────────────────────────────────────────────────────────────┘
 
    ┌──────────────────────────────────────────────────────────────┐
-   │ 2. The choice inside the TUI (D2)                            │
+   │ 2. The answer (D2)                                           │
    │                                                              │
    │   before:  \chat-select <36-char-uuid>       (copy/paste)    │
    │   after:   \chat-select        → numbered list in the pane  │
@@ -62,118 +72,131 @@ The operator chose the recommended option, which is **1(a) + 2(b)**:
    └──────────────────────────────────────────────────────────────┘
 ```
 
-The two halves are independent: the first is about *when* the operator is
-asked, the second about *how* the answer is given.
+The two halves are independent: the first is about *when* and *where*
+the operator is asked, the second about *how* the answer is given.
 
 ---
 
-## 3. D1 — the startup menu in the TUI
+## 3. The question — where it is asked
 
-### 3.1 The change
+### 3.1 The rules live in one place
 
-One condition, in `agent-torvalds-mw.py`:
+Two front-ends ask the same question: the classic console, which blocks
+on the terminal, and the TUI, which asks in its command bar.  They must
+mean the same thing by the same numbers.
+
+The rules therefore live in `chat_manager.session_selector`:
 
 ```python
-# before
-if not args.no_session_select and not use_tui:
-
-# after
-if not args.no_session_select:
+def apply_session_answer(manager, answer) -> tuple[Optional[Session], str]:
 ```
 
-Nothing else moves.  The menu is the **same menu** the classic
-orchestrator shows — `chat_manager.session_selector`, which is already
-covered by `chat_manager/tests/test_session_selector.py`.
+* a **number** → the session at that position in the list;
+* `new <name>` → a new session, created and activated;
+* **nothing** → the session that is already active is kept;
+* anything else → the menu asks again, and says why.
 
-### 3.2 Why it is safe
+`select_session_interactively` — the loop of the classic console — uses
+it, so there is one implementation of the menu and not two.
 
-The reason a blocking console prompt is avoided in TUI mode is that the
-TUI owns the terminal.  **That reason does not apply here**: the menu
-runs at line 1656 and the TUI takes the alternate screen at line 1802.
-At menu time the terminal is still an ordinary console.
+### 3.2 The classic console asks in the terminal
 
-The same file already blocks on `input()` in front of the TUI — the
-`--select` tool picker runs in both modes with no guard at all.
+Unchanged, and it stays the plain console menu it has always been:
 
-### 3.3 What the operator sees
-
-```
-$ python agent-torvalds-mw.py
-
-Initializing chat history manager...
-Chat session: <the session that was active last>
-Session selection:
-Available sessions:
-  * 1. <the session that was active last> [custom] (created 2026-11-08 12:15)
-    2. <another session> [custom] (created 2026-11-09 10:40)
-    ...
-Select a session [1-27], 'new <name>' to create one, or Enter to keep the current one:
-> 2
-Active chat session: <another session>
-
-        ← the layout now takes the whole screen
+```python
+if not use_tui:
+    if chat_history_enabled and not args.no_session_select and chat_manager is not None:
+        console.print("[cyan]Session selection:[/cyan]")
+        select_startup_session(...)
 ```
 
-Pressing Enter keeps the session that was active — the behaviour of
-today, for the operator who does not want to choose.
+The condition lives **inside** the classic branch, and not next to it:
+the TUI is not an exception of the classic menu, it is a different
+front-end.
 
-The session that was picked is the one the agent binds to: the memory
-buffer is built from the active session's `chat_key` **after** the menu
-(`create_agent` → `get_memory_buffer`), and `switch_session()` drops
-the cached buffer, so the picked session is the one that is loaded.
+### 3.3 The TUI asks inside its layout
+
+The TUI opens on the picker, in the document pane, and the agent waits:
+
+```python
+app = TuiApp(
+    ...,
+    select_session_at_startup=not args.no_session_select,
+)
+```
+
+While the choice is pending, what the operator types **is** the answer
+to the picker — it never reaches the agent.  A question typed before
+the choice would run in the session that was active last, which is
+the defect the picker came to close.
+
+### 3.4 Why it is asked in the layout, and not in the terminal
+
+The first shape of the fix asked in the terminal, before the layout —
+the menu of the classic console, and then the layout.  The operator
+asked for the other shape on 2026-11-13.
+
+The reason is the **two phases**: the operator sees a console menu, and
+then the screen changes and the menu is gone.  The layout is the place
+the operator works, and the question belongs there:
+
+* the picker is in the **document pane**, where the answer of the agent
+  goes — the same place `\tools` puts its menu;
+* the instructions come **before** the table, because the table of a
+  user with many sessions is longer than the pane, and an instruction
+  below the fold is an instruction nobody reads;
+* the wording follows the context: at the startup the operator types
+  the **number alone**, in the middle of a session he types the whole
+  command.
 
 ---
 
-## 4. D2 — a numbered picker inside the TUI
+## 4. The answer — a numbered picker inside the TUI
 
 ### 4.1 The numbering
 
 `manager.list_sessions()` returns the sessions of the user ordered by
-`created_at` descending.  The classic startup menu already numbers them
-in that order.  **The same order is used everywhere**, so the number the
-operator sees in one list is the number in every other list.
+`created_at` descending, and the classic startup menu already numbers
+them in that order.  **The same order is used everywhere**, so the
+number the operator sees in one list is the number in every other list.
 
-### 4.2 `\chat-select` without an argument
+### 4.2 The picker
 
-The command opens the picker in the document pane — the same place
-`\tools` puts its menu, and the same way it asks for the answer:
+`\chat-select` without an argument opens the picker in the document
+pane — the same place `\tools` puts its menu, and the same way it asks
+for the answer:
 
 ```
 # 💬 Select a Chat Session
 
 **Sessions:** 27  •  the active one is marked ★
 
+**How to select:**
+- Type `\chat-select <number>` in the command bar and press Enter.
+- `\chat-select <session_id>` also works — the id is in `\chat-sessions`.
+
 | # | Session | Type | Created |
 | ---: | :--- | :--- | :--- |
 | 1 | objective-control-001 | custom | 2026-11-09 10:40 |
-| 2 | ★ agent-torvald-project-002 | custom | 2026-11-08 12:15 |
 | ... |
-
-**How to select:**
-- Type `\chat-select <number>` in the command bar and press Enter.
-- `\chat-select <id>` also works — the id is in `\chat-sessions`.
 ```
 
-The picker is **compact on purpose**: the table of `\chat-sessions`
-carries the full UUID of every session, and its rows are 97 characters
-long in a document pane that is 74 characters wide — the id is folded
-in the middle and has to be copied by hand.  The picker leaves the UUID
-out and fits.
+The picker is **compact on purpose**: it leaves the id out.  A row of
+`\chat-sessions` is 121 characters long in a document pane that is 74
+characters wide — the id is folded in the middle of it, and it is
+exactly that id that had to be copied by hand.
 
-### 4.3 `\chat-select <number>`
+### 4.3 The resolution
 
-The reference is resolved to a session **before** the switch:
+The reference is resolved **before** the switch, in the shared command
+layer (`chat_manager/commands/cli.py`):
 
 * a **number** → the session at that position in `list_sessions()`;
-* anything else → the session id, exactly as today.
+* anything else → the session id, **exactly as today**.
 
-The resolution lives in the shared command layer
-(`chat_manager/commands/cli.py`), so the classic REPL accepts a number
-too — the parity the commit that introduced the gap was aiming at.
-
-The id path is **not** touched: the reference is passed to
-`switch_session()` unchanged, so an id that does not belong to the user
-is still refused by the manager, and the message stays the same.
+The id path is **not** touched: the reference is handed to
+`switch_session()` unchanged, so the manager remains the one that
+decides whether the session exists and belongs to the user.
 
 ---
 
@@ -181,11 +204,12 @@ is still refused by the manager, and the message stays the same.
 
 | Path | Change |
 | :--- | :--- |
-| `agent-torvalds-mw.py` | the `not use_tui` condition is dropped; the hint text of the classic REPL mentions the number |
-| `chat_manager/commands/cli.py` | `cmd_chat_select` resolves a number; a new `resolve_session_reference` helper |
+| `agent-torvalds-mw.py` | the menu of the classic console moves into the classic branch; the TUI is told to ask |
+| `chat_manager/session_selector.py` | a new `apply_session_answer` — the rules of the menu, in one place |
+| `chat_manager/commands/cli.py` | a new `resolve_session_reference`; `cmd_chat_select` takes a number; the session list carries a `#` column |
 | `chat_manager/commands/handler.py` | a bare `\chat-select` prints the numbered list |
-| `components/tui/chat_history_view.py` | a new `render_session_picker_markdown`; the `#` column in the session list; the bare `\chat-select` opens the picker |
-| `components/tui/tui_app.py` | the notification that tells the operator to type the number |
+| `components/tui/chat_history_view.py` | a new `render_session_picker_markdown`; a new `render_session_chosen_markdown`; the `#` column in the session list; the bare `\chat-select` opens the picker |
+| `components/tui/tui_app.py` | the mode in which the agent waits for the session; the picker; the confirmation |
 | `components/command_registry.py` | the help text of `\chat-select` |
 | `tests/test_tui_session_selection.py` | **new** — the proof of both halves |
 
@@ -195,24 +219,30 @@ is still refused by the manager, and the message stays the same.
 
 | Check | Result |
 | :--- | :--- |
-| `tests/test_tui_session_selection.py` | the new tests |
-| `chat_manager/tests/test_commands.py` | the existing tests of `\chat-select` still pass — the id path is unchanged |
-| `tests/test_multi_window_parity.py` | the existing parity tests still pass |
-| `investigate/tui-session-selection/probe_session_selection.py` | the end-to-end proof: the TUI offers the menu, the REPL offers it, both load the same session |
+| `tests/test_tui_session_selection.py` | **32 passed** |
+| `chat_manager/tests/` | the tests of the classic selector — unchanged, and they pass |
+| `scripts/ci_test_gate.py` | **0 new failures** |
+| `investigate/tui-session-selection/probe_session_selection.py` | the end-to-end proof: the real agent, on a pty, asked and answered |
 
 The probe is the proof that matters: it runs the **real**
-`agent-torvalds-mw.py` on a pty and looks for the markers of the menu
-in the byte stream the operator receives.
+`agent-torvalds-mw.py` and the real `agent-torvalds.py` on a pty of
+their own, waits for the question to appear on the screen, answers it
+with the number of a session, and looks for the outcome in the byte
+stream the operator receives.
 
 ---
 
 ## 7. What is left alone
 
-* **The classic REPL.**  It proposes the menu today, and it keeps it.
-* **The 27 sessions in the database.**  They are the operator's history.
-  The probe reads; it never writes.
-* **`\chat-sessions`.**  It keeps the full UUID of every session — the
+* **The classic REPL.**  It asks in the terminal today, and it keeps
+  asking.  It gains the number as a second way to name a session.
+* **The sessions in the database.**  They are the operator's history.
+  The probe answers with the number of the session that is **already
+  active**, so it leaves the active session the way it found it; the
+  activation bumps the `updated_at` of the sessions and changes nothing
+  else.
+* **`\chat-sessions`.**  It keeps the full id of every session — the
   operator needs it for `\chat-rename` and `\chat-delete`.  It gains the
   `#` column, so the numbering of the picker is visible there too.
-* **The `--no-session-select` flag.**  It still skips the menu, in both
-  modes.
+* **The `--no-session-select` flag.**  It still skips the question, in
+  both front-ends.

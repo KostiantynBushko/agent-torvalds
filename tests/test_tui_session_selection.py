@@ -20,10 +20,13 @@ Run with:
 import argparse
 import asyncio
 import importlib.util
+import io
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from rich.console import Console
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -83,6 +86,7 @@ def _manager(sessions, active=None) -> MagicMock:
     """
     manager = MagicMock()
     manager.is_initialized = True
+    manager.is_degraded = False
     manager.list_sessions.return_value = list(sessions)
     manager.get_session.side_effect = lambda sid: next(
         (s for s in sessions if s.session_id == sid), None
@@ -91,6 +95,14 @@ def _manager(sessions, active=None) -> MagicMock:
     manager.switch_session.side_effect = lambda sid: next(
         (s for s in sessions if s.session_id == sid), None
     )
+
+    def _create(name, session_type="custom"):
+        """Create a session, and put it in the list of the user."""
+        created = _session(name, f"sess-new-{len(sessions) + 1}")
+        sessions.append(created)
+        return created
+
+    manager.create_session.side_effect = _create
     return manager
 
 
@@ -378,16 +390,170 @@ class TestTheAgentFollowsThePickedSession(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# D1 - the TUI asks inside its layout, and the agent waits
+# ---------------------------------------------------------------------------
+
+class TestTheTuiHoldsTheAgentUntilTheSessionIsChosen(unittest.TestCase):
+    """The picker is in the document pane, and the agent waits.
+
+    A question typed before the session was chosen would run in the
+    session that was active last - the defect the picker came to close.
+    The agent must not work until the operator has answered.
+    """
+
+    def _app(self, manager):
+        """A TUI that asks for the session at startup."""
+        from components.tui.state_bridge import TuiState
+        from components.tui.tui_app import TuiApp
+
+        return TuiApp(
+            agent=MagicMock(),
+            prompt_handler_fn=AsyncMock(),
+            state=TuiState(),
+            console=Console(file=io.StringIO()),
+            select_session_at_startup=True,
+        )
+
+    def _sessions(self):
+        return [
+            _session("First", "sess-1", active=True),
+            _session("Second", "sess-2"),
+            _session("Third", "sess-3"),
+        ]
+
+    def _type(self, app, text):
+        """Type *text* into the command bar and press Enter."""
+        app.state.input_buffer = text
+        app._handle_enter_pressed()
+
+    def test_the_picker_is_in_the_document_pane(self):
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+        app = self._app(manager)
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            app._show_session_picker()
+
+        self.assertIn("Select a Chat Session", app.state.markdown_content)
+        self.assertIn("Second", app.state.markdown_content)
+
+    def test_a_question_does_not_reach_the_agent(self):
+        """The agent waits for the choice."""
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+        app = self._app(manager)
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            self._type(app, "what is the weather?")
+
+        app.prompt_handler_fn.assert_not_called()
+        self.assertTrue(app._awaiting_session)
+        self.assertIn("Select a Chat Session", app.state.markdown_content)
+
+    def test_a_number_switches_the_session(self):
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+        app = self._app(manager)
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            self._type(app, "2")
+
+        manager.switch_session.assert_called_once_with("sess-2")
+        self.assertFalse(app._awaiting_session)
+
+    def test_the_choice_is_confirmed_in_the_document_pane(self):
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+        app = self._app(manager)
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            self._type(app, "2")
+
+        self.assertIn("Second", app.state.markdown_content)
+
+    def test_an_empty_answer_keeps_the_current_session(self):
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+        app = self._app(manager)
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            self._type(app, "")
+
+        manager.switch_session.assert_not_called()
+        self.assertFalse(app._awaiting_session)
+
+    def test_an_answer_that_is_not_understood_asks_again(self):
+        """The picker stays, and it says what it wants."""
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+        app = self._app(manager)
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            self._type(app, "abc")
+
+        manager.switch_session.assert_not_called()
+        self.assertTrue(app._awaiting_session)
+        self.assertIn("Select a Chat Session", app.state.markdown_content)
+
+    def test_a_number_outside_the_list_asks_again(self):
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+        app = self._app(manager)
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            self._type(app, "99")
+
+        manager.switch_session.assert_not_called()
+        self.assertTrue(app._awaiting_session)
+
+    def test_new_creates_a_session(self):
+        """The rules are the rules of the classic console."""
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+        manager.create_session.return_value = _session("Brand New", "sess-new")
+
+        app = self._app(manager)
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            self._type(app, "new Brand New")
+
+        manager.create_session.assert_called_once()
+        self.assertFalse(app._awaiting_session)
+
+    def test_the_agent_works_after_the_choice(self):
+        """Once the session is chosen, the agent is live again."""
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+        app = self._app(manager)
+
+        with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+            self._type(app, "2")
+
+        self.assertFalse(app._awaiting_session)
+        # The query is now handed to the agent.
+        async def _run():
+            app.state.input_buffer = "hello"
+            app._handle_enter_pressed()
+            await asyncio.sleep(0.01)
+
+        asyncio.run(_run())
+        app.prompt_handler_fn.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # D1 - the TUI proposes the choice at startup
 # ---------------------------------------------------------------------------
 
 class TestStartupSessionProposal(unittest.TestCase):
-    """The TUI must offer the sessions of the user at startup.
+    """The operator must be asked which session to work in.
 
-    The menu runs before the layout takes the screen, so the terminal is
-    an ordinary console at that point - there is nothing that stops the
-    TUI from asking.  The startup tool picker (``--select``) already
-    asks the operator the same way, in front of the TUI.
+    The classic console asks in the terminal, before the REPL starts.
+    The multi-window TUI asks **inside its own layout**: the picker of
+    the sessions is in the document pane, and the agent waits for the
+    answer.
+
+    Both front-ends use the same rules and the same numbering - see
+    ``chat_manager.session_selector.apply_session_answer``.
     """
 
     def _args(self, tui: bool = True) -> argparse.Namespace:
@@ -445,6 +611,7 @@ class TestStartupSessionProposal(unittest.TestCase):
         stdin.isatty.return_value = True
 
         selector = MagicMock()
+        app_call = {}
 
         with patch.object(mw, "parse_args", return_value=args), \
                 patch.object(mw, "_setup_signal_handlers"), \
@@ -461,50 +628,49 @@ class TestStartupSessionProposal(unittest.TestCase):
                 patch.object(mw, "end_session"), \
                 patch.object(mw, "_shutdown_chat_manager"), \
                 patch.object(mw, "run_classic_repl", new=AsyncMock()), \
-                patch.object(mw, "TuiApp", return_value=app), \
+                patch.object(mw, "TuiApp", side_effect=lambda **kw: app_call.update(kw) or app), \
                 patch.object(mw.config, "ensure_default"), \
                 patch.object(sys, "stdin", stdin):
             asyncio.run(mw.main())
 
-        return selector
+        return selector, app_call
 
-    def test_the_tui_offers_the_sessions_at_startup(self):
-        """The defect: the TUI loaded the last session and said nothing."""
-        selector = self._run_main(self._args(tui=True))
+    def test_the_tui_asks_inside_its_layout(self):
+        """The TUI does not block the terminal - it asks in the pane."""
+        selector, app_kwargs = self._run_main(self._args(tui=True))
+
+        # The blocking menu of the terminal is for the classic console.
+        selector.assert_not_called()
+        # The TUI is told to ask.
+        self.assertTrue(app_kwargs["select_session_at_startup"])
+
+    def test_the_classic_console_asks_in_the_terminal(self):
+        """The parity: both modes ask, each in its own way."""
+        selector, app_kwargs = self._run_main(self._args(tui=False))
 
         selector.assert_called_once()
+        # The classic console has no layout to ask in, so the TUI is
+        # never even built.
+        self.assertEqual(app_kwargs, {})
 
-    def test_the_menu_is_skipped_when_the_operator_asks_for_it(self):
+    def test_the_question_is_skipped_when_the_operator_asks_for_it(self):
+        """--no-session-select still means no question at all."""
         args = self._args(tui=True)
         args.no_session_select = True
 
-        selector = self._run_main(args)
+        selector, app_kwargs = self._run_main(args)
 
         selector.assert_not_called()
+        self.assertFalse(app_kwargs["select_session_at_startup"])
 
-    def test_the_classic_console_offers_the_sessions_too(self):
-        """The parity: both modes ask."""
-        selector = self._run_main(self._args(tui=False))
-
-        selector.assert_called_once()
-
-    def test_the_menu_is_asked_before_the_layout_takes_the_screen(self):
-        """The menu runs while the terminal is still an ordinary console.
-
-        The Live display is started at the end of ``main()``.  If the
-        menu ran after it, the operator would be typing into the
-        alternate screen of the layout.
-        """
-        args = self._args(tui=True)
+    def test_the_classic_console_asks_before_the_repl_starts(self):
+        """The menu of the terminal runs before the REPL is entered."""
+        args = self._args(tui=False)
 
         order = []
 
-        app = MagicMock()
-
-        async def _run():
-            order.append("layout")
-
-        app.run = _run
+        async def _repl(*args, **kwargs):
+            order.append("repl")
 
         manager = _manager([_session("First", "sess-1", active=True)])
         stdin = MagicMock()
@@ -527,13 +693,13 @@ class TestStartupSessionProposal(unittest.TestCase):
                 patch.object(mw, "start_session"), \
                 patch.object(mw, "end_session"), \
                 patch.object(mw, "_shutdown_chat_manager"), \
-                patch.object(mw, "run_classic_repl", new=AsyncMock()), \
-                patch.object(mw, "TuiApp", return_value=app), \
+                patch.object(mw, "run_classic_repl", new=_repl), \
+                patch.object(mw, "TuiApp", return_value=MagicMock()), \
                 patch.object(mw.config, "ensure_default"), \
                 patch.object(sys, "stdin", stdin):
             asyncio.run(mw.main())
 
-        self.assertEqual(order, ["menu", "layout"])
+        self.assertEqual(order, ["menu", "repl"])
 
 
 if __name__ == "__main__":

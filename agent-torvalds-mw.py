@@ -1653,31 +1653,30 @@ async def main():
                     f"({active.session_type.value})[/dim]"
                 )
 
-            # The operator is asked which session to work in - in the
-            # TUI as well as in the classic console.
-            #
-            # The TUI owns the terminal, but not yet: the menu runs here,
-            # before the Live display takes the alternate screen (the
-            # Live display is started at the end of main(), in app.run()).
-            # The terminal is an ordinary console at this point, and the
-            # startup tool picker above already asks the operator the
-            # same way.  Without the menu the agent silently loads the
-            # session that was active last, and the operator never gets
-            # to choose.
-            if not args.no_session_select:
-                console.print("[cyan]Session selection:[/cyan]")
-                select_startup_session(
-                    input_func=lambda prompt="": console.input(prompt),
-                    output_func=lambda text: console.print(text),
-                )
-                selected = chat_manager.get_active_session()
-                if selected:
-                    console.print(f"[green]Active chat session: {selected.session_name}[/green]")
         except Exception as e:
             console.print(f"[yellow]Chat history manager unavailable: {e}[/yellow]")
             console.print("[dim]Falling back to the legacy single-session chat memory.[/dim]")
 
     if not use_tui:
+        # The classic console asks the operator which session to work in,
+        # in the terminal, before the REPL starts.
+        #
+        # The multi-window TUI asks the same question inside its own
+        # layout: the picker of the sessions is in the document pane, and
+        # the agent waits for the answer (see TuiApp and
+        # select_session_at_startup below).  Both front-ends use the same
+        # rules and the same numbering - see
+        # chat_manager.session_selector.apply_session_answer.
+        if chat_history_enabled and not args.no_session_select and chat_manager is not None:
+            console.print("[cyan]Session selection:[/cyan]")
+            select_startup_session(
+                input_func=lambda prompt="": console.input(prompt),
+                output_func=lambda text: console.print(text),
+            )
+            selected = chat_manager.get_active_session()
+            if selected:
+                console.print(f"[green]Active chat session: {selected.session_name}[/green]")
+
         # Re-initialize input modules for classic console
         if hitl_method == "whiptail":
             human_loop_handler.whiptail_input = WhiptailInputModule()
@@ -1806,6 +1805,11 @@ async def main():
         # the terminal belongs to the layout.  When the operator did not
         # ask for a log file, the default of the project is used.
         log_config=file_config,
+        # The operator is asked which session to work in, inside the
+        # layout: the picker is in the document pane, and the agent
+        # waits for the answer instead of working in the session that
+        # was active last.
+        select_session_at_startup=not args.no_session_select,
     )
     _active_tui_app = app
 

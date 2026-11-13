@@ -222,20 +222,28 @@ database: no proposal at startup, and no numbered menu afterwards.
 
 ---
 
-## The decision that is open
+## The decision that was taken
 
-Two defects, and they can be closed in two different ways.  The
-operator decides which:
+Two defects, and they can be closed in two different ways.  The operator
+decided on 2026-11-13:
 
-| | D1 — the startup proposal | D2 — choosing inside the TUI |
+| | D1 — the question | D2 — the answer |
 | :--- | :--- | :--- |
-| **A** | run the existing menu before the TUI starts (drop `not use_tui`) | leave as is — `\chat-select <uuid>` still works |
-| **B** | leave as is | a numbered picker in the document pane, like `\tools` |
-| **C** | run the existing menu before the TUI starts | a numbered picker in the document pane, like `\tools` |
+| **taken** | the TUI asks **inside its own layout**, and the agent waits for the answer | a numbered picker in the document pane, like `\tools` |
 
-Option **C** is the one that matches the parity the commit that
-introduced the gap was aiming at: the operator gets the choice at
-startup *and* a usable way to change the session while the TUI is up.
+The classic console keeps asking in the terminal, exactly as it always
+did.  The two front-ends share the rules of the menu and the numbering
+of the sessions — see
+`chat_manager.session_selector.apply_session_answer`.
 
-Nothing has been changed.  This document and the probe are the only
-artefacts of the investigation.
+The shape of D1 was revised on the same day: the first implementation
+asked in the terminal, before the layout, and the operator asked for
+the other shape — *"go ahead and make this small change"*.  The reason
+is the **two phases**: a console menu, and then a screen that is not
+the menu any more.  The layout is where the operator works, and the
+question belongs there.
+
+The proposal and the implementation report are in this folder.
+
+The investigation is over; the probe of this folder is the proof of
+the fix.

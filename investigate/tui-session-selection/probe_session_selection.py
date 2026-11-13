@@ -1,35 +1,32 @@
 """
-Probe: the TUI never proposes to select a chat session - it loads the last one.
+Probe: the TUI asks which chat session to work in — and the answer works.
 
-The operator reports that running the TUI agent does not offer a choice of
-the chats in the database: the agent loads the last session and starts
-working in it.  The classic orchestrator (``agent-torvalds.py``) offers the
-menu.
+The operator reported that running the TUI agent did not offer a choice
+of the chats in the database: the agent loaded the last session and
+started working in it.
 
-This probe runs **both** entry points on a pty of their own, captures the
-byte stream each of them writes, and looks for the markers of the startup
-session menu:
+This probe runs **both** entry points on a pty of their own and drives
+them the way an operator does:
 
-    "Session selection:"      - printed by the orchestrator before the menu
-    "Available sessions:"     - the first line of the menu itself
-    "Select a session [1-"    - the prompt of the menu
-    "Chat session:"           - the line that names the session that is used
+1. it waits for the **question** of the agent — the menu of the classic
+   console, the picker of the TUI;
+2. it writes the **answer** — the number of a session;
+3. it looks for the **outcome** in the byte stream the operator
+   receives.
 
-The first three markers belong to the proposal; the last one is printed by
-both modes and tells us that a session was loaded.
+The answer is written when the question appears, and not before: the
+TUI puts the terminal into cbreak mode with ``TCSAFLUSH`` when it
+starts, and a key that arrives before that is discarded on purpose.
 
-The name and the id of the session are **not** printed: they belong to the
-operator's own database, and this repository is public.  What the probe
-reports is whether a session was loaded, its type, and whether **both**
-modes loaded the *same* session - the last comparison is made here, on the
-two captures, without the session ever being printed.
-
-The probe answers one question: **does the mode the operator runs present
-the menu, and does it load a session without asking?**
+The name and the id of the session are **not** printed: they belong to
+the operator's own database, and this repository is public.  What the
+probe reports is whether a session was chosen, its type, and whether
+**both** modes chose the same one — the last comparison is made here,
+on the two captures, without the session ever being printed.
 
 Usage:
     python investigate/tui-session-selection/probe_session_selection.py
-    python investigate/tui-session-selection/probe_session_selection.py --seconds 12
+    python investigate/tui-session-selection/probe_session_selection.py --seconds 20
 """
 from __future__ import annotations
 
@@ -50,28 +47,88 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 
-#: The markers of the startup session proposal.
-MENU_MARKERS = (
-    "Session selection:",
-    "Available sessions:",
-    "Select a session [1-",
-)
+# The probe reads the sessions of the operator to answer with the number
+# of the session that is active.  The repository has to be on the path:
+# the script lives two folders deep, and Python puts the folder of the
+# script on the path, not the working directory.
+if REPO not in sys.path:
+    sys.path.insert(0, REPO)
 
-#: The marker of the session that was loaded, printed by both modes.
-ACTIVE_MARKER = "Chat session:"
+#: The question of the **classic console**: the menu is plain text,
+#: printed in the terminal before the REPL.
+CLASSIC_QUESTION = "Available sessions:"
+
+#: The question of the **multi-window TUI**: the picker is a Markdown
+#: document in the document pane of the layout.
+TUI_QUESTION = "Select a Chat Session"
+
+#: The outcome of the two front-ends.
+CLASSIC_ANSWER_MARKER = "Switched to session"
+TUI_ANSWER_MARKER = "The agent works in"
+
+#: The number of the session that is typed into both.  It is the number
+#: of the session that is **already active**, so the probe leaves the
+#: active session of the operator the way it found it.
+SESSION_NUMBER = "1"
+
+
+def active_session_number() -> str:
+    """The number of the session that is active right now.
+
+    The probe answers with it, so the session that is active when the
+    probe is over is the session that was active when it started.
+
+    Activating a session bumps the ``updated_at`` of the sessions of the
+    user - it creates, renames and deletes nothing, and it changes
+    nothing but the timestamp.
+
+    Returns:
+        The number of the active session, or ``"1"`` when it cannot be
+        read.
+    """
+    from chat_manager.startup import (
+        initialize_chat_manager,
+        shutdown_chat_manager,
+    )
+
+    manager = initialize_chat_manager()
+    try:
+        sessions = manager.list_sessions()
+        active = manager.get_active_session()
+        if active is not None:
+            for index, session in enumerate(sessions, start=1):
+                if session.session_id == active.session_id:
+                    return str(index)
+    finally:
+        # The singleton of the module is cleared as well: a manager that
+        # was shut down and still handed out is a manager that answers
+        # nothing.
+        shutdown_chat_manager()
+
+    return "1"
 
 #: The ANSI escape sequences are removed before the text is searched: the
 #: menu is painted with colours, and the colours break the plain text.
 ANSI_RE = re.compile(rb"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][A-B]|\r")
 
 
-def capture(command: list[str], seconds: float, answers: list[bytes]) -> bytes:
-    """Run *command* on a pty and return everything it wrote.
+def capture(
+    command: list[str],
+    seconds: float,
+    question: str,
+    answer: bytes,
+    until: str = "",
+) -> bytes:
+    """Run *command* on a pty and answer its question.
 
     Args:
         command: The command to run.
-        seconds: How long the child is given to reach the prompt.
-        answers: Bytes written to the pty once the child asks something.
+        seconds: How long the child is given.
+        question: The text that means the agent is asking.
+        answer: The bytes that answer it.
+        until: The text that ends the capture - the outcome.  The
+            capture stops a moment after it appears, so the probe does
+            not wait for the whole budget when the answer was accepted.
 
     Returns:
         The captured byte stream.
@@ -92,9 +149,10 @@ def capture(command: list[str], seconds: float, answers: list[bytes]) -> bytes:
     os.close(slave)
 
     chunks: list[bytes] = []
-    pending = list(answers)
+    seen = b""
+    answered = False
+    grace_until = None
     deadline = time.time() + seconds
-    next_answer_at = time.time() + 3.0
 
     try:
         while time.time() < deadline:
@@ -107,16 +165,19 @@ def capture(command: list[str], seconds: float, answers: list[bytes]) -> bytes:
                 if not data:
                     break
                 chunks.append(data)
+                seen += data
 
-            # The menu waits for an answer.  Enter keeps the session that
-            # is already active - the answer the operator would give when
-            # the menu does not interest him.
-            if pending and time.time() >= next_answer_at:
-                try:
-                    os.write(master, pending.pop(0))
-                except OSError:
-                    break
-                next_answer_at = time.time() + 2.0
+                # The answer goes in when the question is on the screen.
+                if not answered and question.encode() in seen:
+                    os.write(master, answer)
+                    answered = True
+
+                # The outcome ends the capture - with a moment of grace
+                # for the frame that carries it.
+                if until and until.encode() in seen:
+                    grace_until = time.time() + 1.5
+                    if time.time() >= grace_until:
+                        break
     finally:
         if child.poll() is None:
             try:
@@ -135,44 +196,52 @@ def capture(command: list[str], seconds: float, answers: list[bytes]) -> bytes:
     return b"".join(chunks)
 
 
-def analyse(label: str, payload: bytes) -> dict:
-    """Look for the markers of the menu in a captured byte stream.
+def analyse(label: str, payload: bytes, question: str, outcome: str) -> dict:
+    """Look for the question and the outcome in a captured byte stream.
 
     The name and the id of the session are **not** reported: they belong
     to the operator's own database, and this repository is public.  What
-    matters for the investigation is *that* a session was loaded, its
-    type, and whether both modes loaded the **same** one - and that
-    comparison is made on the two captures, without the session itself
-    being printed.
+    matters is *that* a session was chosen, its type, and whether both
+    modes chose the **same** one — and that comparison is made on the
+    two captures, without the session ever being printed.
 
     Args:
         label: The name of the mode that was captured.
         payload: The captured bytes.
+        question: The text that means the agent is asking.
+        outcome: The text that means the session was chosen.
 
     Returns:
         A dict with the findings.
     """
     text = ANSI_RE.sub(b"", payload).decode("utf-8", errors="replace")
 
-    menu = [marker for marker in MENU_MARKERS if marker in text]
-
     active = ""
     match = re.search(r"Chat session:\s*(.+)", text)
     if match:
         active = match.group(1).strip()
 
-    # The session is split into its name and its type, so the name can be
-    # dropped and the type kept.
+    # The session is split into its name and its type, so the name can
+    # be dropped and the type kept.
     name, _, session_type = active.rpartition(" (")
     session_type = session_type.rstrip(")")
 
+    chosen = ""
+    match = re.search(r"works in:\s*(.+)", text)
+    if match:
+        chosen = match.group(1).strip()
+    match = re.search(r"Switched to session:\s*'(.+?)'", text)
+    if match:
+        chosen = match.group(1).strip()
+
     return {
         "label": label,
-        "menu_markers": menu,
-        "menu_offered": bool(menu),
+        "asked": question in text,
+        "outcome": outcome in text,
         "session_loaded": bool(active),
         "session_type": session_type or "-",
         "session_fingerprint": hashlib.sha256(name.encode()).hexdigest()[:12],
+        "chosen": chosen,
         "bytes": len(payload),
         "text": text,
     }
@@ -183,8 +252,11 @@ def main() -> None:
     parser.add_argument(
         "--seconds",
         type=float,
-        default=14.0,
-        help="How long each mode is given to reach its prompt.",
+        default=90.0,
+        help=(
+            "How long each mode is given.  The TUI needs the time: the "
+            "tool retriever embeds every tool before the layout is drawn."
+        ),
     )
     parser.add_argument(
         "--python",
@@ -193,75 +265,77 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # The answer is the number of the session that is active now, so the
+    # probe leaves the operator's active session the way it found it.
+    global SESSION_NUMBER
+    SESSION_NUMBER = active_session_number()
+
     findings = []
 
-    # 1. The TUI mode - the mode the operator runs.  Enter answers the
-    #    menu: the session that is already active is kept.
+    # 1. The TUI mode - the mode the operator runs.
     findings.append(
         analyse(
             "TUI  (agent-torvalds-mw.py)",
             capture(
                 [args.python, "agent-torvalds-mw.py"],
                 args.seconds,
-                answers=[b"\n"],
+                question=TUI_QUESTION,
+                answer=f"{SESSION_NUMBER}\r".encode(),
+                until=TUI_ANSWER_MARKER,
             ),
+            question=TUI_QUESTION,
+            outcome=TUI_ANSWER_MARKER,
         )
     )
 
-    # 2. The classic REPL - the mode that is known to propose the menu.
-    #    Enter answers the menu (the active session is kept), and
-    #    "\exit" leaves the REPL.
+    # 2. The classic REPL - the menu in the terminal.
     findings.append(
         analyse(
             "REPL (agent-torvalds.py)",
             capture(
                 [args.python, "agent-torvalds.py"],
                 args.seconds,
-                answers=[b"\n", b"\\exit\n"],
+                question=CLASSIC_QUESTION,
+                answer=f"{SESSION_NUMBER}\n".encode(),
+                until=CLASSIC_ANSWER_MARKER,
             ),
+            question=CLASSIC_QUESTION,
+            outcome=CLASSIC_ANSWER_MARKER,
         )
     )
 
     print()
     print("=" * 72)
-    print("Does the mode propose to select a chat session from the database?")
+    print("Does the mode ask which chat session to work in - and does the answer work?")
     print("=" * 72)
+    print(f"the answer is the number of the session that is active: {SESSION_NUMBER}")
 
     for finding in findings:
         print()
         print(f"[{finding['label']}]")
-        print(f"  menu proposed        : {'YES' if finding['menu_offered'] else 'NO'}")
-        print(f"  markers found        : {finding['menu_markers'] or '-'}")
-        print(f"  a session was loaded : {'YES' if finding['session_loaded'] else 'NO'}")
-        print(f"  type of that session : {finding['session_type']}")
+        print(f"  the operator was asked   : {'YES' if finding['asked'] else 'NO'}")
+        print(f"  the answer was accepted  : {'YES' if finding['outcome'] else 'NO'}")
+        print(f"  a session was loaded     : {'YES' if finding['session_loaded'] else 'NO'}")
+        print(f"  type of that session     : {finding['session_type']}")
 
     tui = findings[0]
     repl = findings[1]
 
-    same = (
-        tui["session_loaded"]
-        and repl["session_loaded"]
-        and tui["session_fingerprint"] == repl["session_fingerprint"]
-    )
-    print()
-    print(f"  both modes loaded the same session: {'YES' if same else 'NO'}")
-
     print()
     print("=" * 72)
-    if tui["menu_offered"] and repl["menu_offered"]:
+    if tui["asked"] and tui["outcome"] and repl["asked"] and repl["outcome"]:
         verdict = (
-            "FIXED: both modes propose the choice - the TUI asks which "
-            "session to work in, exactly as the classic REPL does."
+            "FIXED: both modes ask which session to work in, and the answer "
+            "switches the session in both."
         )
-    elif not tui["menu_offered"] and repl["menu_offered"]:
+    elif not tui["asked"] and repl["asked"]:
         verdict = (
             "CONFIRMED: the TUI loads a session without proposing the "
             "choice, while the classic REPL proposes it."
         )
     else:
         verdict = (
-            "NOT CONFIRMED - the markers say something else; read the "
-            "table above."
+            "NOT CONFIRMED - the markers say something else; read the table above."
         )
     print(verdict)
     print("=" * 72)

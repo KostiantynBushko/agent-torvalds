@@ -781,32 +781,39 @@ All notable changes to this project are documented in this file.
   pick one.  The classic orchestrator has no such condition, and it
   asks.
 
-- **The guard was not a technical necessity.**  The TUI owns the
-  terminal, but not at that point: the menu runs at line 1656, and the
-  `Live` display takes the alternate screen at line 1802.  At menu
-  time the terminal is still an ordinary console — and the startup
-  tool picker (`--select`) already blocks on `input()` in front of the
-  TUI, in both modes, with no guard at all.
-
-- **The TUI asks now.**  The condition is gone, and both modes offer
-  the same menu, numbered:
+- **The TUI asks now — inside its own layout.**  The picker of the
+  sessions is in the document pane, and **the agent waits for the
+  answer**:
 
   ```
-  Session selection:
-  Active session: 'agent-torvald-project-002'
-  Available sessions:
-      1. objective-control-001  (created 2026-11-09 10:40)
-      2. agent-torvald-ollama-internal-server-error-500  (created 2026-11-09 08:03)
-      ...
-    * 4. agent-torvald-project-002  (created 2026-11-08 12:15)
-      ...
-  Select a session [1-27], 'new <name>' to create one, or Enter to keep the current one:
+  ╭─ 📄 Markdown Document Viewer ─────────────────────────────╮
+  │                    💬 Select a Chat Session                │
+  │                                                             │
+  │  Sessions: 27  •  the active one is marked ★               │
+  │                                                             │
+  │  How to select:                                             │
+  │                                                             │
+  │   • Type the number of the session and press Enter.         │
+  │   • Press Enter alone to keep the session that is active now.│
+  │   • \chat-select <session_id> also works — the id is in     │
+  │     \chat-sessions.                                         │
+  │                                                             │
+  │    #  Session                      Type     Created         │
+  │    1  objective-control-001        custom   2026-11-09 10:40 │
+  │    2  agent-torvald-ollama-intern…  custom   2026-11-09 08:03 │
+  │    4  ★ agent-torvald-project-002  custom   2026-11-08 12:15 │
+  │    ...                                                        │
+  ╰─────────────────────────────────────────────────────────────╯
   ```
 
-  The session that is picked is the one the agent binds to: the memory
-  buffer is built from the `chat_key` of the active session *after* the
-  menu, and `switch_session()` drops the cached buffer, so the history
-  of the picked session is the history the model sees.
+  A question typed before the choice would run in the session that was
+  active last — the defect the picker came to close.  So the agent is
+  held idle until the operator has answered.
+
+  The classic console asks the same question **in the terminal**,
+  before the REPL starts, exactly as it always did.  The two
+  front-ends share the rules and the numbering:
+  `chat_manager.session_selector.apply_session_answer`.
 
 - **Inside the TUI, a session was chosen by a 36-character id.**
   `\chat-select` took a session id, and the id had to be read off
@@ -820,30 +827,42 @@ All notable changes to this project are documented in this file.
   | see the sessions | the table with the ids | `\chat-select` — a numbered picker |
   | the numbering | — | the number of the session in the list — the same number in the startup menu, in `\chat-sessions` and in the picker |
 
-  The picker leaves the id out on purpose: a row of `\chat-sessions` is
+  The picker leaves the id out on purpose.  A row of `\chat-sessions` is
   121 characters long in a document pane that is 74 characters wide,
   and the id in the middle of it is exactly what has to be copied by
   hand.  A *name* may still wrap — that is a name, and it stays
   readable.
 
-- **The classic console answers the same way.**  A bare `\chat-select`
-  lists the sessions there too, so the two modes behave alike.
-
-- **The proof is `tests/test_tui_session_selection.py`** — 23 tests,
-  among them the one that matters most: the buffer of the agent is
-  rebuilt for the session that was picked, and it is bound to the
-  `chat_key` of that session.
-
-  And `investigate/tui-session-selection/probe_session_selection.py`
-  runs the real `agent-torvalds-mw.py` and the real `agent-torvalds.py`
-  on a pty of their own, and looks for the markers of the menu in the
-  byte stream the operator receives.
+- **The measurements, with the probe of the investigation:**
 
   | | before | after |
   |---|---|---|
-  | the TUI proposes the choice | **no** | **yes** |
-  | the classic REPL proposes the choice | yes | yes |
-  | the session that is loaded | the last one | the one that is picked |
+  | the TUI asks the operator | **no** | **yes** |
+  | the answer switches the session | — | **yes** |
+  | the classic console asks the operator | yes | yes |
+  | the answer switches the session | yes | yes |
+
+  `investigate/tui-session-selection/probe_session_selection.py` runs
+  the real `agent-torvalds-mw.py` and the real `agent-torvalds.py` on
+  a pty of their own, waits for the question to appear on the screen,
+  answers it with the number of a session, and looks for the outcome in
+  the byte stream the operator receives.
+
+- **The new tests are in the suite: `tests/test_tui_session_selection.py`**
+  (32).  Among them the one that matters most: the buffer of the agent
+  is rebuilt for the session that was picked, and it is bound to the
+  `chat_key` of that session.
+
+  ```bash
+  .venv/bin/python scripts/ci_test_gate.py
+
+  known failures in the baseline : 40
+  failures in this run            : 40
+  new failures                    : 0
+  fixed since the baseline        : 0
+  ```
+
+  The 40 are the known state of the repository, not a regression.
 
 #### The selection picked up the wrong pane, and the screen blinked
 

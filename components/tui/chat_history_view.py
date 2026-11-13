@@ -80,24 +80,56 @@ def render_chat_sessions_markdown(manager) -> str:
     return "\n".join(lines)
 
 
-def render_session_picker_markdown(manager) -> str:
+#: The contexts the picker is shown in.  The answer of the operator is
+#: the same in both — a number — but what he has to type is not: at the
+#: startup of the TUI he types the number alone, and in the middle of a
+#: session he types the whole command.
+PICKER_CONTEXT_STARTUP = "startup"
+PICKER_CONTEXT_COMMAND = "command"
+
+#: How the answer is given, per context.
+PICKER_INSTRUCTIONS = {
+    PICKER_CONTEXT_STARTUP: [
+        "Type the number of the session and press Enter.",
+        "Press Enter alone to keep the session that is active now.",
+    ],
+    PICKER_CONTEXT_COMMAND: [
+        "Type `\\chat-select <number>` in the command bar and press Enter.",
+    ],
+}
+
+
+def render_session_picker_markdown(
+    manager,
+    note: str = "",
+    context: str = PICKER_CONTEXT_COMMAND,
+) -> str:
     """
     Render the numbered picker of the chat sessions.
 
     The picker is what ``\\chat-select`` opens when the operator names no
-    session.  It is **compact on purpose**: the list of
-    :func:`render_chat_sessions_markdown` carries the full id of every
-    session, and a row of that table is wider than the document pane of
-    the TUI — the id is folded in the middle and has to be copied by
-    hand.  The picker leaves the id out and fits.
+    session, and what the TUI opens on at startup.  It is **compact on
+    purpose**: the list of :func:`render_chat_sessions_markdown` carries
+    the full id of every session, and a row of that table is wider than
+    the document pane of the TUI — the id is folded in the middle and
+    has to be copied by hand.  The picker leaves the id out and fits.
 
     The numbering is the numbering of the list: the sessions come from
     the same call, in the same order.  The number the operator sees here
     is the number the startup menu shows, and the number
     ``\\chat-select <number>`` takes.
 
+    The instructions come **before** the table: the table of a user with
+    many sessions is longer than the pane, and an instruction below the
+    fold is an instruction nobody reads.
+
     Args:
         manager: An initialized ChatHistoryManager instance.
+        note: A line under the header — what went wrong with the answer
+            of the operator, for instance.  Empty when there is nothing
+            to say.
+        context: Where the picker is shown — the startup of the TUI, or
+            the command bar of a running one.
 
     Returns:
         str: Markdown document with the picker.
@@ -114,9 +146,23 @@ def render_session_picker_markdown(manager) -> str:
         "",
         f"**Sessions:** {len(sessions)}  •  the active one is marked ★",
         "",
+    ]
+
+    if note:
+        lines.extend([f"**{note}**", ""])
+
+    lines.append("**How to select:**")
+    for instruction in PICKER_INSTRUCTIONS.get(
+        context, PICKER_INSTRUCTIONS[PICKER_CONTEXT_COMMAND]
+    ):
+        lines.append(f"- {instruction}")
+    lines.append("- `\\chat-select <session_id>` also works — the id is in "
+                 "`\\chat-sessions`.")
+    lines.extend([
+        "",
         "| # | Session | Type | Created |",
         "| ---: | :--- | :--- | :--- |",
-    ]
+    ])
 
     for index, session in enumerate(sessions, start=1):
         marker = "★ " if session.is_active else ""
@@ -128,14 +174,6 @@ def render_session_picker_markdown(manager) -> str:
             f"| {index} | {marker}{session.session_name} "
             f"| {session.session_type.value} | {created} |"
         )
-
-    lines.extend([
-        "",
-        "**How to select:**",
-        "- Type `\\chat-select <number>` in the command bar and press Enter.",
-        "- `\\chat-select <session_id>` also works — the id is in "
-        "`\\chat-sessions`.",
-    ])
 
     return "\n".join(lines)
 
@@ -235,6 +273,38 @@ def render_chat_user_markdown(manager) -> str:
     return "\n".join(lines)
 
 
+def render_session_chosen_markdown(session) -> str:
+    """
+    Render the confirmation of a session that was chosen.
+
+    Args:
+        session: The session that is active now.
+
+    Returns:
+        str: Markdown document with the confirmation.
+    """
+    if session is None:
+        return "# 💬 Chat Session\n\nNo active session."
+
+    created = (
+        session.created_at.strftime("%Y-%m-%d %H:%M")
+        if session.created_at else "N/A"
+    )
+
+    return "\n".join([
+        "# 💬 Chat Session",
+        "",
+        f"**The agent works in:** {session.session_name} "
+        f"({session.session_type.value})",
+        "",
+        f"- **Created:** {created}",
+        f"- **Id:** `{session.session_id}`",
+        "",
+        "Type `\\chat-info` to see what the session holds, "
+        "`\\chat-select` to choose another one.",
+    ])
+
+
 def render_command_result_markdown(command: str, result: Optional[str]) -> str:
     """
     Render the outcome of a chat command as Markdown.
@@ -310,8 +380,11 @@ def handle_chat_command_markdown(cmd: str) -> Optional[str]:
 
 
 __all__ = [
+    "PICKER_CONTEXT_STARTUP",
+    "PICKER_CONTEXT_COMMAND",
     "render_chat_sessions_markdown",
     "render_session_picker_markdown",
+    "render_session_chosen_markdown",
     "render_chat_info_markdown",
     "render_chat_user_markdown",
     "render_command_result_markdown",
