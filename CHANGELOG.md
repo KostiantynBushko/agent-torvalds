@@ -1911,6 +1911,25 @@ All notable changes to this project are documented in this file.
   the answer for a terminal that was left mute by a `kill -9` of the
   agent — SIGKILL cannot be caught, and no program can answer for it.
 
+#### The status lines of two reports were older than the merge
+
+- **The reports of the TUI work still said that the work was not
+  committed.**  Both of them — the terminal size and the session
+  selection — carried *"not committed (Rule 2: awaiting the operator's
+  approval)"*, and so did the README of the first.  The work was
+  merged: PR #95 and PR #96 are in `master`.
+
+  A status line is read by the next person who opens the report, and
+  this one answered *"is this committed?"* with *"no, it waits for an
+  approval that has already been given"*.  The line now says what is
+  true: the operator approved the commit, and the fix is in `master`.
+
+  | | |
+  |---|---|
+  | `investigate/tui-selection-and-flicker/IMPLEMENTATION_REPORT.md` | PR #95, `1f8c52e` |
+  | `investigate/tui-selection-and-flicker/README.md` | PR #95, `1f8c52e` |
+  | `investigate/tui-session-selection/IMPLEMENTATION_REPORT.md` | PR #96, `e031ebf` |
+
 ## [1.0.0] - 2026-10-29
 
 ### Added

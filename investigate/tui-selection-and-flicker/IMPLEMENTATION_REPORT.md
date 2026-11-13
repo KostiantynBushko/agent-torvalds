@@ -2,7 +2,9 @@
 
 **Date**: 2026-11-13
 **Branch**: `fix/tui-terminal-size`
-**Status**: implemented, verified — **not committed** (Rule 2: awaiting the operator's approval)
+**Status**: implemented, verified — **merged**.  The operator approved the
+commit and merged it as **PR #95**, which squash-merged the fix into
+`master` as `1f8c52e` on 2026-11-13.
 **Companion to**: `investigation_tui_selection_and_flicker.md`, `PROPOSAL_tui_terminal_size.md`
 
 ---
