@@ -759,6 +759,99 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The choice of the chat session froze the TUI, and the digit arrived too late
+
+- **The operator reported it on 2026-11-13:**
+
+  > *ok here is issue with chat session selection, by typing numeber and press
+  > enter the agent hangs about a aouple of second and the digit after session
+  > is loaded*
+
+  > *we have an issue with chat session selection, first of all it takes a couple
+  > of seonds to load session, the agent hangs for this time can we run it in
+  > background as background job*
+
+- **The answer was applied in the loop that paints the layout.**  The
+  terminal is in cbreak mode — the echo of the terminal is off and the
+  TUI draws what the operator types.  A character that is typed is put
+  into the buffer of the state and painted by the **next frame**.  The
+  work of the answer was done in that same loop, so there was no next
+  frame until the work was done: the digit the operator typed showed up
+  together with the confirmation, and it looked as if the answer had
+  come *after* the session was loaded.
+
+- **The answer is taken at once, and the work is a job.**  The answer
+  leaves the command bar the moment the operator presses Enter, and the
+  pane says what is being done:
+
+  ```
+  ╭─ 📄 Markdown Document Viewer ─────────────────────────────╮
+  │                    💬 Select a Chat Session                │
+  │                                                             │
+  │  **Answer:** `2`                                            │
+  │                                                             │
+  │  ⏳ Loading the session…                                    │
+  ╰─────────────────────────────────────────────────────────────╯
+  ```
+
+  The database and the tokenizer are touched in a **thread**
+  (`asyncio.to_thread`), so the event loop keeps painting while they
+  work.  The rules of the answer are not touched: the number, the
+  `new <name>` and the empty answer mean what they meant before — see
+  `chat_manager/session_selector.py`, which both front-ends share.
+
+- **The seconds came from the count of the messages in the header.**
+  The switch of the session takes **16 ms**; the count took **40
+  seconds**.  The memory buffer of LlamaIndex answers that question
+  with a loop that counts the tokens of the **whole window again on
+  every step** — the work is quadratic, and the history of the heaviest
+  session is 15 MB:
+
+  ```python
+  # llama_index/core/memory/chat_memory_buffer.py
+  while token_count > self.token_limit and message_count > 1:
+      message_count -= 1
+      cur_messages = chat_history[-message_count:]
+      token_count = self._token_count_for_messages(cur_messages)   # again
+  ```
+
+  `chat_manager.stats.count_messages_within_limit()` answers the same
+  question by walking the history **once**, from the end, and stopping
+  at the limit.  The answer is the answer of the buffer — the tests
+  compare the two, message by message, for a dozen histories.
+
+  | | the buffer of LlamaIndex | the count of the project |
+  |---|---|---|
+  | 6204 messages (15 MB) | **40.379 s** | **0.568 s** |
+
+- **The measurements, with the probe of the investigation:**
+
+  | | before | after |
+  |---|---|---|
+  | the Enter key cost the loop | 40 364 ms | **0.0 ms** |
+  | the digit is on the screen at once | no | **yes** |
+  | the pane named the session after | 40.36 s | **0.06 s** |
+  | the count of the header arrived after | 40.26 s | **1.59 s** |
+  | the frames painted while it was loaded | 0 | **65** |
+
+  `investigate/tui-session-selection/probe_session_selection_background.py`
+  drives the production `TuiApp` against the database of the operator,
+  picks the session with the longest history, and restores the session
+  that was active before it ran.
+
+- **What the agent sends to the model is not changed.**  The memory
+  buffer is the one of LlamaIndex, and the trimming of the history is
+  the one of the library.  The fast count feeds the **number in the
+  header** — a number for the operator, not a decision.
+
+- **The new tests are in the suite:**
+  `tests/test_tui_session_selection.py` (the answer is on the screen at
+  once, the loop is not blocked while the job works, a second answer is
+  ignored, the chat commands run in the background),
+  `chat_manager/tests/test_stats.py` (the count is the answer of the
+  memory buffer) and `chat_manager/tests/test_manager.py` (the manager
+  counts the messages of the buffer).
+
 #### The TUI loaded the last chat session and never asked which one
 
 - **The operator reported it on 2026-11-13:**

@@ -273,6 +273,41 @@ def render_chat_user_markdown(manager) -> str:
     return "\n".join(lines)
 
 
+def render_session_loading_markdown(answer: str = "") -> str:
+    """
+    Render the pane that is shown while the session is being loaded.
+
+    The answer of the operator is shown here, and not only in the
+    command bar: the job that applies it runs in the background, and
+    the operator must see that his answer was taken — the digit he
+    typed must not wait for the session to be loaded.
+
+    Args:
+        answer: What the operator typed into the command bar.
+
+    Returns:
+        str: Markdown document with the answer and the state of the work.
+    """
+    given = (answer or "").strip()
+    if given:
+        answer_line = f"**Answer:** `{given}`"
+    else:
+        answer_line = (
+            "**Answer:** *(Enter — the session that is active now is kept)*"
+        )
+
+    return "\n".join([
+        "# 💬 Select a Chat Session",
+        "",
+        answer_line,
+        "",
+        "⏳ Loading the session…",
+        "",
+        "The work runs in the background: the layout keeps painting while "
+        "the database and the tokenizer do their part.",
+    ])
+
+
 def render_session_chosen_markdown(session) -> str:
     """
     Render the confirmation of a session that was chosen.
@@ -384,6 +419,7 @@ __all__ = [
     "PICKER_CONTEXT_COMMAND",
     "render_chat_sessions_markdown",
     "render_session_picker_markdown",
+    "render_session_loading_markdown",
     "render_session_chosen_markdown",
     "render_chat_info_markdown",
     "render_chat_user_markdown",

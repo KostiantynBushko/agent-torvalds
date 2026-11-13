@@ -238,6 +238,32 @@ class TestManagerMessages(unittest.TestCase):
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0].content, "message for A")
 
+    def test_the_buffered_messages_are_counted(self):
+        """The manager counts the messages the agent holds."""
+        self.manager.add_message("hello there", "user")
+        self.manager.add_message("and the answer", "assistant")
+
+        self.assertEqual(self.manager.count_buffered_messages(), 2)
+
+    def test_the_count_is_the_count_of_the_buffer(self):
+        """The count and the buffer have to agree.
+
+        The count is asked for in one pass, and the buffer of LlamaIndex
+        answers the same question with a quadratic loop.  The two
+        answers have to be the same.
+        """
+        for index in range(10):
+            self.manager.add_message(f"message {index} " * 50, "user")
+
+        self.assertEqual(
+            self.manager.count_buffered_messages(),
+            len(self.manager.get_messages()),
+        )
+
+    def test_an_empty_session_counts_nothing(self):
+        """A session without messages holds none."""
+        self.assertEqual(self.manager.count_buffered_messages(), 0)
+
     def test_clear_messages_empties_active_session(self):
         """clear_messages removes the history of the active session."""
         self.manager.add_message("to be cleared", "user")
