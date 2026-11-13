@@ -759,6 +759,55 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The memory buffer of the agent trimmed the history in quadratic time
+
+- **The finding came out of the work on the session picker (2026-11-13).**
+  The picker was slow because the **count of the messages in the header**
+  was slow, and the count was slow because of the memory buffer of
+  LlamaIndex:
+
+  ```python
+  # llama_index/core/memory/chat_memory_buffer.py
+  while token_count > self.token_limit and message_count > 1:
+      message_count -= 1
+      ...
+      cur_messages = chat_history[-message_count:]
+      token_count = self._token_count_for_messages(cur_messages)   # again
+  ```
+
+  Every step of the loop counts the tokens of the **whole window
+  again**.  The work is quadratic, and the agent pays it on **every
+  turn**: the buffer is asked for its messages every time a request is
+  built.  The history of the heaviest session of the operator is 15 MB
+  — 6204 messages — and the trimming of it takes **forty seconds**.
+
+- **The buffer of the project trims in one pass.**
+  `chat_manager.memory.TrimmingChatMemoryBuffer` is the buffer of
+  LlamaIndex with a `get()` that walks the tail of the history **once**
+  and stops at the limit: the messages are counted one by one, from the
+  end, and only the tail is ever counted.
+
+  | | the buffer of LlamaIndex | the buffer of the project |
+  |---|---|---|
+  | 6204 messages (15 MB) | **39.467 s** | **0.009 s** |
+
+- **The answer is the answer of the library.**  The same messages, in
+  the same order — including the rule that a window may not open with
+  an assistant or a tool message, and the rule that a message longer
+  than the limit is kept on its own.  The tests compare the two, message
+  by message, for a dozen histories, for the roles, and for a hundred
+  random ones.
+
+  ```python
+  # chat_manager/tests/test_memory.py
+  .venv/bin/python -m pytest chat_manager/tests/test_memory.py -v
+  ```
+
+- **What is left of a turn** is the reading of the whole history from
+  the database — 15 MB for the heaviest session.  That is the design of
+  the message store of LlamaIndex: the history of a session is one row,
+  and the buffer asks for it on every turn.
+
 #### The choice of the chat session froze the TUI, and the digit arrived too late
 
 - **The operator reported it on 2026-11-13:**

@@ -16,6 +16,7 @@ the approval of the operator)
 |---|---|---|
 | **D3** | the choice of the session was applied **in the loop that paints the layout** — the layout froze, and the digit the operator typed appeared only when the freeze was over | the answer is taken at once and shown in the pane; the work runs in a **background job**, and the database and the tokenizer are touched in a **thread** |
 | **D4** | the count of the messages of the header was the **quadratic** trim of the memory buffer of LlamaIndex — forty seconds for a history of 6204 messages | the count is asked in **one pass** (`chat_manager.stats.count_messages_within_limit`), and the answer is the answer of the buffer |
+| **D5** | the **agent** paid the same quadratic trim on **every turn** — the buffer is asked for its messages every time a request is built | the buffer of the project (`chat_manager.memory.TrimmingChatMemoryBuffer`) trims in one pass, and the answer is the answer of the library |
 
 ## 2. The change, file by file
 
@@ -49,6 +50,18 @@ picker belongs to the job that is running.
 ### `components/tui/chat_history_view.py`
 
 `render_session_loading_markdown()` — the pane of the work in progress.
+
+### `chat_manager/memory.py` (new)
+
+`TrimmingChatMemoryBuffer` — the memory buffer of the agent, with the
+trimming in one pass.  It is the buffer of LlamaIndex with a `get()`
+that walks the tail of the history once and stops at the limit, instead
+of counting the tokens of the whole window again on every step.
+
+The answer is the answer of the library: the same messages, in the same
+order.  The windows the library visits — the rule that a window may
+not open with an assistant or a tool message — are the windows visited
+here.
 
 ### `chat_manager/stats.py`
 
@@ -85,6 +98,13 @@ operator (6204 messages, 15 MB of history):
 | The pane named the session after | 40.36 s | **0.06 s** |
 | The count of the header arrived after | 40.26 s | **1.59 s** |
 | The frames painted while it was loaded | 0 | **65** |
+| One turn of the agent | ~40 s | **1.70 s** |
+
+The trimming of the history, on its own:
+
+| | The buffer of LlamaIndex | The buffer of the project |
+|---|---|---|
+| 6204 messages (15 MB) | **39.467 s** | **0.009 s** |
 
 The count of the history on its own:
 
@@ -98,7 +118,8 @@ The count of the history on its own:
 |---|---|
 | `tests/test_tui_session_selection.py::TestTheChoiceOfTheSessionRunsInTheBackground` | the answer is on the screen at once; the loop is not blocked while the job works (a heartbeat keeps ticking); the session is switched when the job is done; a second answer is ignored; the chat commands run in the background |
 | `chat_manager/tests/test_stats.py::TestCountMessagesWithinLimit` | the count is the answer of the memory buffer — for a dozen histories, including the assistant/tool roles and the message that is longer than the limit; the count asks the tokenizer for the tail only |
-| `chat_manager/tests/test_manager.py::TestManagerMessages` | the manager counts the messages of the buffer, and the count agrees with the buffer |
+| `chat_manager/tests/test_manager.py::TestManagerMessages` | the manager counts the messages of the buffer, and the count agrees with the buffer; the buffer of the manager is the one of the project |
+| `chat_manager/tests/test_memory.py` (new) | the buffer of the project and the buffer of LlamaIndex answer the same, message by message — for a dozen histories, for the roles, and for a hundred random ones; the tokenizer is asked for the tail only |
 
 The whole suite: **1851 passed**, the same **29 failures** as before the
 change (they are pre-existing and unrelated — the async tests without
@@ -106,37 +127,37 @@ the plugin, the project scanner and the runtime toggle).
 
 ## 5. What was **not** changed
 
-* **What the agent sends to the model.**  The memory buffer is the one
-  of LlamaIndex, and the trimming of the history is the one of the
-  library.  The fast count feeds the **number in the header** — a
-  number for the operator, not a decision.
+* **What the agent sends to the model.**  The messages are the same
+  ones, in the same order: the trimming of the project answers the
+  question of the library.  Only the work it takes to find them is
+  different.
 * **The rules of the picker.**  They live in
   `chat_manager/session_selector.py` and are shared with the classic
   console.  The change is *where* the work is done, not *what* it
   does.
 * **The database.**  Nothing is written that was not written before.
 
-## 6. A finding that is **not** fixed here
+## 6. What is left
 
-The quadratic trim of the memory buffer is paid by the **agent on every
-turn**: the buffer is asked for its messages every time a request is
-built.  The count of the header was only the place where it became
-visible to the operator.
+A turn of the agent still reads the **whole** history of the session
+from the database — 15 MB for the heaviest session of the operator,
+which is what is left of the 1.70 s.  The reading is the design of the
+message store of LlamaIndex: the history of a session is one row, and
+the buffer asks for it on every turn.
 
-A session with thousands of messages therefore makes every turn of the
-agent slow.  The remedy is the same one-pass trimming, applied to the
-buffer itself — a subclass of `ChatMemoryBuffer` that overrides `get()`.
-That changes **what the model is sent**, so it is a change of its own,
-and it is not part of this fix.
+That is a change of the **storage**, not of the trimming, and it is not
+part of this fix.
 
 ## 7. The files of the change
 
 ```
 agent-torvalds-mw.py                        |  35 +++++++---
-chat_manager/manager.py                     |  32 ++++++++
+chat_manager/manager.py                     |  36 +++++++-
+chat_manager/memory.py                      | 258 ++++++++++++++++++++++ (new)
 chat_manager/startup.py                     |  28 ++++++++
 chat_manager/stats.py                       | 104 +++++++++++++++++-
-chat_manager/tests/test_manager.py          |  26 ++++++
+chat_manager/tests/test_manager.py          |  32 ++++++
+chat_manager/tests/test_memory.py           | 213 +++++++++++++++++++++ (new)
 chat_manager/tests/test_stats.py            |  96 +++++++++++++-
 components/tui/chat_history_view.py         |  36 ++++++++
 components/tui/tui_app.py                   | 265 +++++++++++++++++++++--

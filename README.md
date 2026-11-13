@@ -344,6 +344,9 @@ describe.  A plain `git clone` leaves the directory empty;
 - The choice of the session is a **background job**: the layout keeps painting while the
   database and the tokenizer do their part, and the answer of the operator is on the
   screen at once
+- The memory buffer of the agent trims the history of the session in **one pass** — the
+  buffer of LlamaIndex counts the tokens of the whole window again on every step, and the
+  work is quadratic
 - Dual-connector architecture: SQLAlchemy for metadata, LlamaIndex for message bodies
 - Graceful fallback to an in-memory message store when PostgreSQL is unavailable
 - Graceful fallback to a local SQLite database when the metadata database is unreachable —

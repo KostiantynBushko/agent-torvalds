@@ -103,7 +103,16 @@ The session picker is only where it became visible.
 
 D3 is what the operator sees: the freeze, and the digit that arrives
 too late.  D4 is what makes the freeze long — and D5 is what the
-operator pays on every turn of the agent, whether he notices it or not.
+operator pays on every turn of the agent, whether he notices it or not:
+
+```
+count of the whole history: 40.379 s
+```
+
+The history of the heaviest session of the operator is 15 MB — 6204
+messages — and the trimming of it takes **forty seconds**.  The agent
+asks the buffer for its messages every time a request is built, so
+every turn of a long session pays that price.
 
 ## 5. What is *not* the cause
 
