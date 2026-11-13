@@ -4,6 +4,7 @@ from llama_index.core.agent.workflow import FunctionAgent
 from rich.console import Console
 
 from chat_manager.startup import get_memory_buffer
+from components.chat_message import NO_ANSWER, to_answer_string
 
 from toolkits.os_toolkit.agent_os_toolkit import *
 
@@ -79,11 +80,13 @@ logging.basicConfig(level=logging.DEBUG)
 async def prompt_handler(cmd: str) -> str:
     try:
         result = await agent.run(cmd, memory=get_memory_buffer())
-        if hasattr(result, "response"):
-            return result.response
-        elif isinstance(result, dict):
-            return result.get("output") or result.get("text") or str(result)
-        return str(result)
+        # The answer is rendered for the operator: the text of the model,
+        # and — when it wrote none — the fact that it wrote none, with the
+        # thinking it left behind.  ``str(result)`` returned the text and
+        # nothing else, so a turn that carried only a thinking reached the
+        # screen as an empty string.
+        answer = to_answer_string(result)
+        return answer or NO_ANSWER
     except Exception as e:
         from components.llm_errors import (
             describe,
