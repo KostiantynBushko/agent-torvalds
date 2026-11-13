@@ -299,6 +299,7 @@ from components.tui import (
     is_project_command,
     handle_project_command_markdown,
 )
+from components.tui.terminal_size import build_console
 from components.mikrotik_commands import (
     handle_mikrotik_command,
     is_mikrotik_command,
@@ -571,7 +572,15 @@ def configure_logging(
 # Apply default logging configuration
 configure_logging(DEFAULT_LOG_LEVEL)
 
-console = Console()
+# The console asks the terminal for its size.  Rich reads COLUMNS and
+# LINES from the environment before it asks the terminal, and the shell
+# exports them as a snapshot of the size the terminal had when the
+# shell started.  A console that believes them draws the multi-window
+# layout for a terminal that is not there: the frame is folded, the
+# panes leave their columns, and the screen scrolls on every frame.
+# See components/tui/terminal_size.py and
+# investigate/tui-selection-and-flicker/.
+console = build_console()
 stats_renderer = StatsRenderer(console)
 spinner_controller = SpinnerController(console)
 
@@ -1782,6 +1791,10 @@ async def main():
         stats_enabled=stats_enabled,
         chat_history_enabled=chat_history_enabled,
         project_manager_enabled=True,
+        # The log of the agent goes into this file while the TUI is up -
+        # the terminal belongs to the layout.  When the operator did not
+        # ask for a log file, the default of the project is used.
+        log_config=file_config,
     )
     _active_tui_app = app
 
