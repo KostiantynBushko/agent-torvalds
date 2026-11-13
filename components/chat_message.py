@@ -51,7 +51,13 @@ from __future__ import annotations
 
 from typing import Any, List
 
-__all__ = ["to_string", "to_strings", "to_output_string"]
+__all__ = [
+    "NO_ANSWER",
+    "to_answer_string",
+    "to_output_string",
+    "to_string",
+    "to_strings",
+]
 
 
 def _safe_getattr(obj: Any, name: str, default: Any = None) -> Any:
@@ -381,3 +387,135 @@ def to_output_string(output: Any) -> str:
         lines.append(f"retry {index + 1}: {to_string(message)}")
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# The answer the operator reads
+# ---------------------------------------------------------------------------
+
+#: What the operator is told when the model ends the turn without saying
+#: anything.
+NO_ANSWER = (
+    "The model ended the turn without an answer — it wrote no text and "
+    "called no tool."
+)
+
+#: How much of the thinking is shown with a silent answer, in characters.
+#:
+#: The thinking of a long turn runs to tens of thousands of characters,
+#: and the console is not the place for all of it — the log carries the
+#: whole thing.  The *end* of the thinking is what is kept: it is what
+#: the model was about to do.
+THINKING_SHOWN = 4000
+
+
+def _answer_text_and_thinking(response: Any) -> tuple[str, str]:
+    """Return the text and the thinking of an answer, separately.
+
+    Args:
+        response: The message of the model.
+
+    Returns:
+        The pair ``(text, thinking)``.  Both are empty when the message
+        carries neither.
+    """
+    text_parts: List[str] = []
+    thinking_parts: List[str] = []
+
+    for block in _safe_getattr(response, "blocks", None) or []:
+        kind = str(_safe_getattr(block, "block_type", "") or "")
+        if kind == "text":
+            text_parts.append(str(_safe_getattr(block, "text", "") or ""))
+        elif kind == "thinking":
+            thinking_parts.append(str(_safe_getattr(block, "content", "") or ""))
+
+    text = _tidy("\n".join(text_parts))
+    thinking = _tidy("\n".join(thinking_parts))
+
+    if not text:
+        # A message of a chat history written by an older version keeps
+        # its text in ``content`` and carries no blocks at all.
+        content = _safe_getattr(response, "content", None)
+        if content:
+            text = _tidy(str(content))
+
+    return text, thinking
+
+
+def _quoted(text: str) -> str:
+    """Return *text* as a Markdown quote.
+
+    Args:
+        text: The text to quote.
+
+    Returns:
+        The text, one line per line, each of them marked as a quote.
+    """
+    return "\n".join(f"> {line}" for line in text.splitlines())
+
+
+def to_answer_string(output: Any) -> str:
+    """Return the answer of the agent, the way the operator reads it.
+
+    The answer of the agent is the **text** of the model.  A reasoning
+    model leaves a *thinking* behind as well, and the way the answer used
+    to reach the screen — ``str(result)`` — returns the text and nothing
+    else.  An answer that carries nothing but a thinking therefore became
+    an empty string, and the console printed nothing at all: the run
+    ended with an empty box and no hint of what had happened.
+
+    So the answer is rendered here:
+
+    * an answer with text is the text;
+    * an answer without text says so, and shows the thinking of the
+      model under it — the operator sees what the model was about to do
+      instead of nothing at all.
+
+    The answer is **never empty**: a caller that prints it cannot print
+    an empty box, whatever the model did.
+
+    Args:
+        output: The answer — an ``AgentOutput``, the message of the
+            model, a plain string, or a mapping that carries one of
+            them.
+
+    Returns:
+        The answer, ready to be printed.  Never raises: an answer must
+        not be able to break a run.
+    """
+    if output is None:
+        return NO_ANSWER
+
+    if isinstance(output, str):
+        return _tidy(output) or NO_ANSWER
+
+    if isinstance(output, dict):
+        for key in ("response", "output", "text", "answer"):
+            if key in output:
+                return to_answer_string(output[key])
+        return NO_ANSWER
+
+    response = _safe_getattr(output, "response", None)
+    if response is None:
+        response = _safe_getattr(output, "output", None)
+    if response is None:
+        # The message of the model on its own.
+        if _safe_getattr(output, "role", None) is None:
+            return NO_ANSWER
+        response = output
+
+    text, thinking = _answer_text_and_thinking(response)
+
+    if text:
+        return text
+
+    if thinking:
+        if len(thinking) > THINKING_SHOWN:
+            thinking = (
+                f"(the thinking is {len(thinking)} characters long; the "
+                f"last {THINKING_SHOWN} of them are shown)\n\n"
+                f"{thinking[-THINKING_SHOWN:]}"
+            )
+        return f"{NO_ANSWER}\n\nIts last thought:\n\n{_quoted(thinking)}"
+
+    return NO_ANSWER

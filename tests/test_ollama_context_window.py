@@ -18,13 +18,18 @@ import pytest
 
 from components.ollama_config import (
     CONTEXT_LENGTH_ENV_VAR,
+    MIN_CONTEXT_WINDOW,
+    SOURCE_DEFAULT,
     SOURCE_ENVIRONMENT,
     SOURCE_MODELFILE,
     SOURCE_MODEL_MAXIMUM,
     SOURCE_RUNNING_MODEL,
+    UNKNOWN_CONTEXT_WINDOW,
     apply_context_window,
+    fit_context_window,
     resolve_context_window,
     resolve_context_window_with_source,
+    window_for_prompt,
 )
 
 
@@ -212,3 +217,114 @@ class TestInfoLog:
 
         text = "\n".join(record.getMessage() for record in caplog.records)
         assert "Context window: unknown" in text
+
+
+# ---------------------------------------------------------------------------
+# The advertised maximum is not the window of the server
+# ---------------------------------------------------------------------------
+
+
+class TestTheAdvertisedMaximum:
+    """A model that advertises a million tokens must not be sent one.
+
+    The advertised maximum is the **capacity** of the model, not the
+    window the server runs with.  Asking for it is not free: the server
+    gives the model a context of that size, the machine cannot hold it,
+    and the model is pushed off the GPU — measured in the report of
+    ``investigate/agent-empty-answer/``: 3.09 GB of VRAM instead of
+    6.64 GB, and 173 seconds for a request that should have taken
+    seconds.
+    """
+
+    def test_the_advertised_maximum_is_not_applied_to_the_llm(self):
+        """The window of the LLM is not the advertised maximum."""
+        llm = FakeOllama(modelfile=MODELFILE_NO_PARAM)
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            assert apply_context_window(llm) is None
+        assert llm.context_window != 262144, (
+            "the advertised maximum of the model was sent to the server"
+        )
+
+    def test_the_window_is_unknown_when_the_server_says_nothing(self):
+        """The window is unknown, not invented."""
+        llm = FakeOllama(modelfile=MODELFILE_NO_PARAM)
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            apply_context_window(llm)
+        assert llm.context_window == UNKNOWN_CONTEXT_WINDOW
+
+    def test_the_configured_default_is_used_instead(self):
+        """A window the operator configured is a real window."""
+        llm = FakeOllama(modelfile=MODELFILE_NO_PARAM)
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            assert apply_context_window(llm, default=8192) == 8192
+        assert llm.context_window == 8192
+
+    def test_the_log_says_that_the_maximum_was_refused(self, caplog):
+        """The operator sees why the number was not used."""
+        llm = FakeOllama(modelfile=MODELFILE_NO_PARAM)
+        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            with caplog.at_level(
+                logging.INFO, logger="components.ollama_config"
+            ):
+                apply_context_window(llm)
+
+        text = "\n".join(record.getMessage() for record in caplog.records)
+        assert "advertised maximum" in text
+        assert "262144" in text
+
+
+# ---------------------------------------------------------------------------
+# The window is sized to the prompt
+# ---------------------------------------------------------------------------
+
+
+class TestWindowForPrompt:
+    """The window is raised to hold the prompt, and never lowered."""
+
+    def test_the_window_leaves_room_above_the_prompt(self):
+        """The count of the agent is low, so the window is higher."""
+        needed = window_for_prompt(15000)
+
+        assert needed > 15000, "the window does not hold the prompt"
+        assert needed < 15000 * 2, "the window is far bigger than needed"
+
+    def test_the_window_has_a_floor(self):
+        """A tiny prompt still gets a usable window."""
+        assert window_for_prompt(10) >= MIN_CONTEXT_WINDOW
+
+    def test_the_window_is_raised_to_the_prompt(self):
+        """The window of the LLM is raised to hold the prompt."""
+        llm = FakeOllama(modelfile=MODELFILE_8K)
+        llm.context_window = 8192
+
+        fit_context_window(llm, 15000)
+
+        assert llm.context_window >= 15000
+
+    def test_the_window_is_never_lowered(self):
+        """A window that changes in both directions costs the cache."""
+        llm = FakeOllama(modelfile=MODELFILE_8K)
+        llm.context_window = 65536
+
+        fit_context_window(llm, 1000)
+
+        assert llm.context_window == 65536, (
+            "the window was lowered — the server gives the cache back and "
+            "takes it again with every request"
+        )
+
+    def test_an_llm_that_does_not_take_the_window_is_survivable(self):
+        """A window is never worth a run."""
+        class Stubborn:
+            model = "x"
+            base_url = ""
+
+            @property
+            def context_window(self):
+                return 8192
+
+            @context_window.setter
+            def context_window(self, value):
+                raise RuntimeError("no")
+
+        assert fit_context_window(Stubborn(), 15000) == 8192

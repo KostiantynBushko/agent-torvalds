@@ -131,6 +131,30 @@ SOURCE_MODEL_MAXIMUM = "the model's advertised maximum"
 SOURCE_DEFAULT = "the configured default"
 SOURCE_UNKNOWN = "unknown"
 
+#: The window the LLM carries when the server did not report one.
+#:
+#: Zero means "not known".  The context guard stands down against it —
+#: a prompt cannot be sized against a window nobody knows — and the agent
+#: replaces the number with a window that fits the prompt before the
+#: request goes out.
+UNKNOWN_CONTEXT_WINDOW = 0
+
+#: How much room is left above the prompt when the window is sized for
+#: it, as a share of the prompt.
+#:
+#: The prompt is measured with the tokenizer of the agent, which is not
+#: the tokenizer of the model: for the prompt of the operator's own run
+#: the agent counted 15,319 tokens where the server counted 17,241 — the
+#: count of the agent is 11% low.  A quarter is left above the measured
+#: prompt, so the prompt fits even when the count is low.
+CONTEXT_WINDOW_HEADROOM = 0.25
+
+#: The room left for the answer of the model, in tokens.
+CONTEXT_WINDOW_ANSWER_ROOM = 2048
+
+#: The smallest window the agent asks the server for.
+MIN_CONTEXT_WINDOW = 4096
+
 
 def _context_length_from_modelfile(llm) -> int | None:
     """Read ``PARAMETER num_ctx`` from the model's Modelfile.
@@ -366,6 +390,87 @@ def resolve_context_window(llm, default: int | None = None) -> int | None:
     return length
 
 
+def window_for_prompt(prompt_tokens: int) -> int:
+    """Return the window a prompt of that size needs.
+
+    The prompt is measured with the tokenizer of the agent and the
+    server counts with the tokenizer of the model, so the number the
+    agent has is a little low.  The window is therefore a little larger
+    than the prompt, with room for the answer on top of it.
+
+    Args:
+        prompt_tokens: The number of tokens of the prompt.
+
+    Returns:
+        The number of tokens the window has to hold.
+    """
+    needed = (
+        int(prompt_tokens * (1 + CONTEXT_WINDOW_HEADROOM))
+        + CONTEXT_WINDOW_ANSWER_ROOM
+    )
+    return max(needed, MIN_CONTEXT_WINDOW)
+
+
+def fit_context_window(llm, prompt_tokens: int) -> int:
+    """Make the window of *llm* hold a prompt of that size.
+
+    The window is **raised** and never lowered: the server keeps the
+    window it was given, and a window that changes in both directions
+    makes the server give the cache back and take it again with every
+    request.
+
+    Args:
+        llm: The Ollama LLM instance.
+        prompt_tokens: The number of tokens of the prompt that is about
+            to be sent.
+
+    Returns:
+        The window of the LLM after the call.
+    """
+    try:
+        current = int(getattr(llm, "context_window", 0) or 0)
+    except (TypeError, ValueError):
+        current = 0
+
+    needed = window_for_prompt(prompt_tokens)
+    if needed <= current:
+        return current
+
+    try:
+        llm.context_window = needed
+    except Exception as exc:  # noqa: BLE001 — a window is never worth a run
+        logger.info(
+            "Context window: %d tokens — the LLM did not accept it: %s",
+            needed,
+            exc,
+        )
+        return current
+
+    logger.info(
+        "Context window: %d tokens — sized for a prompt of %d tokens.",
+        needed,
+        prompt_tokens,
+    )
+    return needed
+
+
+def _set_window(llm, window: int) -> None:
+    """Set the window of *llm*, and forgive an LLM that does not take it.
+
+    Args:
+        llm: The Ollama LLM instance.
+        window: The window in tokens.
+    """
+    try:
+        llm.context_window = int(window)
+    except Exception as exc:  # noqa: BLE001 — a window is never worth a run
+        logger.info(
+            "Context window: %d tokens — the LLM did not accept it: %s",
+            window,
+            exc,
+        )
+
+
 def apply_context_window(llm, default: int | None = None) -> int | None:
     """Set the LLM's context window to the one the server really uses.
 
@@ -400,6 +505,45 @@ def apply_context_window(llm, default: int | None = None) -> int | None:
             "Context window: unknown — the server did not report one, so "
             "the context guard cannot size the prompt."
         )
+        _set_window(llm, UNKNOWN_CONTEXT_WINDOW)
+        return None
+
+    if source == SOURCE_MODEL_MAXIMUM:
+        # The advertised maximum is the **capacity** of the model, not the
+        # window of the server.  Asking for it is not free: the server
+        # gives the model a context of that size, and the machine cannot
+        # hold it — the model is pushed onto the CPU and every token takes
+        # five times as long.  It is also a number the operator cannot
+        # check: nothing in the request says which window is in use.
+        #
+        # So the number is not asked for.  The window is sized to the
+        # prompt instead, which is a window the server honours and the
+        # machine can hold.
+        if default:
+            # The operator configured a window.  It is a real number, it
+            # is the number the operator wants, and it is a number the
+            # server honours — so it is used, and the advertised
+            # maximum is not.
+            logger.info(
+                "Context window: %d tokens — %s (the advertised maximum of "
+                "the model, %d tokens, is its capacity, not the window of "
+                "the server).",
+                int(default),
+                SOURCE_DEFAULT,
+                length,
+            )
+            _set_window(llm, int(default))
+            return int(default)
+
+        logger.info(
+            "Context window: the server did not report a window — the "
+            "advertised maximum of the model (%d tokens) is its capacity, "
+            "not the window of the server, and asking for it pushes the "
+            "model off the GPU.  The window is sized to the prompt "
+            "instead.",
+            length,
+        )
+        _set_window(llm, UNKNOWN_CONTEXT_WINDOW)
         return None
 
     try:
