@@ -238,6 +238,20 @@ class TestManagerMessages(unittest.TestCase):
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0].content, "message for A")
 
+    def test_the_buffer_is_the_one_of_the_project(self):
+        """The manager trims the history in one pass.
+
+        The buffer of LlamaIndex counts the tokens of the whole window
+        again on every step of its trimming loop, and the work is
+        quadratic — the agent pays it on every turn.
+        """
+        from chat_manager.memory import TrimmingChatMemoryBuffer
+
+        self.assertIsInstance(
+            self.manager.get_memory_buffer(),
+            TrimmingChatMemoryBuffer,
+        )
+
     def test_the_buffered_messages_are_counted(self):
         """The manager counts the messages the agent holds."""
         self.manager.add_message("hello there", "user")

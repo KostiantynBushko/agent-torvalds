@@ -220,13 +220,14 @@ message backend.
 | `select_session(session_id)` | Activate a session (alias of `switch_session`). |
 | `switch_session(session_id)` | Activate a session and invalidate the memory buffer. |
 | `delete_session(session_id)` | Delete an owned, non-active session. |
-| `get_memory_buffer(chat_token_limit)` | Lazily build/cache the `ChatMemoryBuffer` for the active session. Rebuilds the buffer when the effective limit changed. |
+| `get_memory_buffer(chat_token_limit)` | Lazily build/cache the memory buffer for the active session. Rebuilds the buffer when the effective limit changed. |
 | `get_user_settings()` | Return the current user's settings as a `UserSettings` snapshot. |
 | `update_user_settings(**changes)` | Validate, persist and apply a settings change. Drops the cached buffer so a new limit is live immediately. |
 | `set_chat_token_limit(limit)` | Convenience wrapper for the one setting that changes most often. |
 | `add_message(content, role)` | Append a `ChatMessage` to the active session. |
 | `put_message(content, role)` | Alias of `add_message`. |
 | `get_messages()` | Return all `ChatMessage` objects for the active session. |
+| `count_buffered_messages()` | Count the messages the agent holds — the tail that survives the chat-token limit. Counted in one pass; the answer is the answer of the buffer. |
 | `clear_messages()` | Delete all messages of the active session (session itself survives). |
 | `close()` | Alias of `shutdown`. |
 
@@ -351,7 +352,25 @@ raw operator input is validated before it reaches the database.
 `cmd_chat_user_get`, `cmd_chat_user_set`, `cmd_chat_user_help`. Each returns a human-readable
 string and never raises for expected error conditions.
 
-### 11. `stats.py` — The Measurement of the History
+### 11. `memory.py` — The Memory Buffer of the Agent
+
+The buffer of LlamaIndex keeps the tail of the history that fits in the
+chat-token limit, and it finds that tail with a loop that counts the
+tokens of the whole window again on every step — the work is quadratic,
+and a history of 6204 messages takes **forty seconds** to trim.  The
+agent pays that price on every turn.
+
+`TrimmingChatMemoryBuffer` is the buffer of the library with a `get()`
+that walks the tail of the history **once** and stops at the limit.
+The answer is the answer of the library — the same messages, in the same
+order, including the rule that a window may not open with an assistant
+or a tool message.
+
+| Symbol | Description |
+|--------|-------------|
+| `TrimmingChatMemoryBuffer` | The memory buffer of the agent: the buffer of LlamaIndex with the trimming in one pass. |
+
+### 12. `stats.py` — The Measurement of the History
 
 What the session holds: how many messages, how large they are, and how many tokens they are
 worth. Both renderers — the classic console and the multi-window console — format the numbers
@@ -361,6 +380,8 @@ with the same helpers, so the two views cannot drift apart.
 |--------|-------------|
 | `HistoryStats` | The measurements: message count, bytes, stored tokens, buffered tokens, the limit, and whether the tokens were estimated. |
 | `count_tokens(messages)` | The tokens of the given messages, and whether they were counted or estimated. |
+| `count_messages_within_limit(messages, limit)` | The number of the messages of the tail that survive the chat-token limit. One pass over the history — the buffer of LlamaIndex counts the whole window again on every step of its trimming loop. |
+| `message_role(message)` | The role of a message, as a plain string. |
 | `measure(stored, buffered, token_limit)` | Measure a history from the stored and the buffered messages. |
 | `format_size(total_bytes)` | A size in bytes, kilobytes or megabytes. |
 | `format_tokens(stats)` | The stored tokens, the buffered tokens and the limit, in one line. |

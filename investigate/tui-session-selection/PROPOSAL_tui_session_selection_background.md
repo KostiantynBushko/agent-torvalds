@@ -89,12 +89,33 @@ the two, message by message, for a dozen histories.
 |---|---|---|
 | 6204 messages (15 MB) | **40.379 s** | **0.568 s** |
 
+### 2.4 The buffer of the agent trims in one pass
+
+The count was slow because the memory buffer of LlamaIndex trims the
+history with a loop that counts the tokens of the **whole window again
+on every step**.  The work is quadratic, and the agent pays it on
+**every turn** — the buffer is asked for its messages every time a
+request is built.
+
+`chat_manager.memory.TrimmingChatMemoryBuffer` answers the same
+question in one pass: the messages are counted one by one, from the
+end, and the walk stops when they reach the limit.  The windows the
+library visits are the windows visited here, so **the answer is the
+answer of the library** — the same messages, in the same order.
+
+| | the buffer of LlamaIndex | the buffer of the project |
+|---|---|---|
+| 6204 messages (15 MB) | **39.467 s** | **0.009 s** |
+
+The tests compare the two, message by message, for a dozen histories,
+for the roles, and for a hundred random ones.
+
 ## 3. What is *not* changed
 
-* **What the agent sends to the model.**  The memory buffer is the one
-  of LlamaIndex, and the trimming of the history is the one of the
-  library.  The fast count is only used for the **number in the
-  header** — a number for the operator, not a decision.
+* **What the agent sends to the model.**  The messages are the same
+  ones, in the same order: the trimming of the project answers the
+  question of the library.  Only the work it takes to find them is
+  different.
 * **The rules of the picker.**  They live in
   `chat_manager/session_selector.py` and are shared with the classic
   console.  The change is *where* the work is done, not *what* it
@@ -111,6 +132,7 @@ the two, message by message, for a dozen histories.
 | The pane named the session after | 40.36 s | **0.06 s** |
 | The count of the header arrived after | 40.26 s | **1.59 s** |
 | The frames painted while it was loaded | 0 | **65** |
+| One turn of the agent | ~40 s | **1.70 s** |
 
 The numbers are from the probe, on the heaviest session of the
 operator (6204 messages).  What is left of a turn is the reading of

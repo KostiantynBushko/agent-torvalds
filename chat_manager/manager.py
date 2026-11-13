@@ -605,11 +605,15 @@ class ChatHistoryManager:
         *,
         token_limit: int | None = None,
     ) -> Any:
-        """Get the LlamaIndex ChatMemoryBuffer for the active session.
+        """Get the memory buffer of the active session.
 
         Lazily creates and caches the buffer. The buffer is bound to the
         active session's ``chat_key`` so that each session keeps its own,
         isolated message history.
+
+        The buffer is the one of the project, not the one of LlamaIndex:
+        it trims the history in one pass, and the answer is the same
+        answer.  See :mod:`chat_manager.memory`.
 
         The effective limit is the caller's override when one is given, and
         the user's ``chat_token_limit`` preference otherwise.  The buffer is
@@ -623,7 +627,7 @@ class ChatHistoryManager:
                 that existing callers keep working.
 
         Returns:
-            ChatMemoryBuffer instance bound to the active session.
+            The memory buffer bound to the active session.
         """
         if token_limit is not None:
             if chat_token_limit is not None:
@@ -641,9 +645,9 @@ class ChatHistoryManager:
         if self._active_session is None or self._backend is None:
             raise RuntimeError("No active session or backend available")
 
-        from llama_index.core.memory import ChatMemoryBuffer
+        from chat_manager.memory import TrimmingChatMemoryBuffer
 
-        self._memory_buffer = ChatMemoryBuffer.from_defaults(
+        self._memory_buffer = TrimmingChatMemoryBuffer.from_defaults(
             token_limit=limit,
             chat_store=self._backend,
             chat_store_key=self._active_session.chat_key,

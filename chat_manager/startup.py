@@ -151,9 +151,9 @@ def get_in_memory_buffer(chat_token_limit: int | None = None) -> Any:
     if _in_memory_buffer is not None and _in_memory_buffer_limit == limit:
         return _in_memory_buffer
 
-    from llama_index.core.memory import ChatMemoryBuffer
+    from chat_manager.memory import TrimmingChatMemoryBuffer
 
-    _in_memory_buffer = ChatMemoryBuffer.from_defaults(token_limit=limit)
+    _in_memory_buffer = TrimmingChatMemoryBuffer.from_defaults(token_limit=limit)
     _in_memory_buffer_limit = limit
     logger.info(f"Initialized in-memory chat memory (limit={limit})")
 
