@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from components.tui.state_bridge import TuiState
+from components.tui.terminal_size import build_console
 
 # Smooth 10-frame braille spinner
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -58,11 +59,15 @@ class MarkdownView:
     """
 
     def __init__(self, console: Optional[Console] = None):
-        self.console = console or Console()
-        self._capture_console = Console(
+        self.console = console or build_console()
+        # The capture console renders the markdown to text of its own.
+        # Its width is set for every frame, and its height is fixed
+        # here: the LINES of the environment must not reach it either.
+        self._capture_console = build_console(
             color_system="truecolor",
             force_terminal=True,
             width=80,
+            height=200,
         )
 
     def render(self, state: TuiState, max_height: Optional[int] = None) -> Panel:

@@ -7,6 +7,8 @@ Coordinates:
 - Background async query execution while keeping UI responsive
 - Seamless Human-in-the-Loop (HITL) prompt dialogs
 - Terminal screen restoration on shutdown or signal interruption
+- The log of the agent in the file, not on the screen: while the TUI is
+  up the terminal belongs to the layout
 """
 import asyncio
 import logging
@@ -22,6 +24,7 @@ from rich.live import Live
 from components.command_registry import HelpOptions, build_help_markdown, is_help_command
 from components.config import config
 from components.config_view import handle_config_markdown
+from components.file_logging import LogFileConfig
 from components.tui.layout_manager import (
     build_torvalds_layout,
     fit_footer,
@@ -36,9 +39,11 @@ from components.hitl_question_command import (
     is_question_command,
     run_question_command,
 )
+from components.tui.log_routing import log_to_file
 from components.tui.markdown_view import MarkdownView
 from components.tui.progress_view import ProgressView
 from components.tui.telemetry_view import TelemetryView
+from components.tui.terminal_size import build_console
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +80,18 @@ class TuiApp:
         stats_enabled: bool = True,
         chat_history_enabled: bool = True,
         project_manager_enabled: bool = True,
+        log_config: Optional[LogFileConfig] = None,
     ):
-        self.console = console or Console()
+        # The console asks the terminal for its size: the LINES and the
+        # COLUMNS of the environment are a snapshot the shell exported,
+        # and a layout drawn for a terminal that is not there is folded
+        # by the terminal - the panes leave their columns and the
+        # screen scrolls on every frame.
+        # See components/tui/terminal_size.py.
+        self.console = console or build_console()
+        # The log file the agent writes into while the TUI is up.  When
+        # it is None the default of the project is used.
+        self.log_config = log_config
         self.state = state or TuiState()
         self.agent = agent
         self.prompt_handler_fn = prompt_handler_fn
@@ -131,43 +146,48 @@ class TuiApp:
         # Initialize input reader
         self.input_reader.start()
 
-        # Create Live display with screen=True (full terminal takeover)
-        with Live(
-            self.layout,
-            console=self.console,
-            screen=True,
-            auto_refresh=False,
-            redirect_stdout=False,
-            redirect_stderr=False,
-        ) as live:
-            self._live = live
-            tick_interval = 1.0 / self.target_fps
+        # The terminal belongs to the layout while the TUI is up, so the
+        # log of the agent goes into the file.  The operator decided on
+        # 2026-11-13: the log must go into the file, not be painted over.
+        # See components/tui/log_routing.py.
+        with log_to_file(self.log_config):
+            # Create Live display with screen=True (full terminal takeover)
+            with Live(
+                self.layout,
+                console=self.console,
+                screen=True,
+                auto_refresh=False,
+                redirect_stdout=False,
+                redirect_stderr=False,
+            ) as live:
+                self._live = live
+                tick_interval = 1.0 / self.target_fps
 
-            try:
-                while not self.state.exit_requested:
-                    start_tick = time.monotonic()
+                try:
+                    while not self.state.exit_requested:
+                        start_tick = time.monotonic()
 
-                    # 1. Process keyboard inputs
-                    self._process_keyboard_input()
+                        # 1. Process keyboard inputs
+                        self._process_keyboard_input()
 
-                    # 2. Render frame components
-                    self._update_layout_panes()
+                        # 2. Render frame components
+                        self._update_layout_panes()
 
-                    # 3. Refresh display
-                    if not self._is_paused:
-                        live.update(self.layout, refresh=True)
+                        # 3. Refresh display
+                        if not self._is_paused:
+                            live.update(self.layout, refresh=True)
 
-                    # 4. Sleep remainder of frame tick
-                    elapsed = time.monotonic() - start_tick
-                    sleep_time = max(0.005, tick_interval - elapsed)
-                    await asyncio.sleep(sleep_time)
+                        # 4. Sleep remainder of frame tick
+                        elapsed = time.monotonic() - start_tick
+                        sleep_time = max(0.005, tick_interval - elapsed)
+                        await asyncio.sleep(sleep_time)
 
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                logger.info("TUI loop interrupted")
-            finally:
-                self.input_reader.stop()
-                if self._active_query_task and not self._active_query_task.done():
-                    self._active_query_task.cancel()
+                except (KeyboardInterrupt, asyncio.CancelledError):
+                    logger.info("TUI loop interrupted")
+                finally:
+                    self.input_reader.stop()
+                    if self._active_query_task and not self._active_query_task.done():
+                        self._active_query_task.cancel()
 
     def _process_keyboard_input(self) -> None:
         """Read and handle pending keys from the non-blocking input reader."""

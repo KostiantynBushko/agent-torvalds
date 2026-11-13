@@ -12,6 +12,8 @@ Provides a persistent multi-pane terminal workspace for Torvalds AI Agent:
 - Tool Selection View: Startup tool category selection for the TUI
 - Chat History View: Chat session management commands for the TUI
 - Project Manager View: Project/workspace inspection commands for the TUI
+- Terminal Size: A console that asks the terminal for its size
+- Log Routing: The log of the agent in the file, not on the screen
 """
 
 from components.tui.layout_manager import build_torvalds_layout
@@ -20,6 +22,8 @@ from components.tui.input_reader import NonBlockingInputReader
 from components.tui.markdown_view import MarkdownView
 from components.tui.progress_view import ProgressView
 from components.tui.telemetry_view import TelemetryView
+from components.tui.terminal_size import build_console, console_environ
+from components.tui.log_routing import log_to_file, resolve_tui_log_config
 from components.tui.tui_app import TuiApp
 from components.tui.tool_selection_view import (
     discover_all_tools,
@@ -48,6 +52,10 @@ __all__ = [
     "ProgressView",
     "TelemetryView",
     "TuiApp",
+    "build_console",
+    "console_environ",
+    "log_to_file",
+    "resolve_tui_log_config",
     "discover_all_tools",
     "render_categories_markdown",
     "render_tool_list_markdown",
