@@ -395,6 +395,15 @@ class TuiApp:
             if chat_md:
                 self.state.set_markdown_content(chat_md)
                 self._refresh_chat_session_state()
+                if cmd.strip().lower() == "\\chat-select":
+                    # The picker is open: the operator has to be told
+                    # where the answer goes.  The command bar is the only
+                    # place he can type it.
+                    self.state.show_notification(
+                        "Type \\chat-select <number> in the command bar "
+                        "and press Enter.",
+                        duration=8.0,
+                    )
                 return
 
         # Standard agent query: Launch async task

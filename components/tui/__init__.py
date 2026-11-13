@@ -34,6 +34,7 @@ from components.tui.tool_selection_view import (
 )
 from components.tui.chat_history_view import (
     render_chat_sessions_markdown,
+    render_session_picker_markdown,
     render_chat_info_markdown,
     handle_chat_command_markdown,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "select_tools_interactive_tui",
     "is_tool_selection_command",
     "render_chat_sessions_markdown",
+    "render_session_picker_markdown",
     "render_chat_info_markdown",
     "handle_chat_command_markdown",
     "is_project_command",

@@ -1264,7 +1264,7 @@ async def run_classic_repl(
     console.print("[dim]Type '\\project-status' to check the git status.[/dim]")
     if chat_history_enabled:
         console.print("[dim]Type '\\chat-sessions' to list chat sessions.[/dim]")
-        console.print("[dim]Type '\\chat-select <id>' to switch sessions.[/dim]")
+        console.print("[dim]Type '\\chat-select' to list them, '\\chat-select <n>' to switch to the n-th one.[/dim]")
         console.print("[dim]Type '\\chat-info' to show the active session.[/dim]")
         console.print("[dim]Type '\\chat-user' to show or change your own settings.[/dim]")
     if runtime_toggle_enabled:
@@ -1653,7 +1653,18 @@ async def main():
                     f"({active.session_type.value})[/dim]"
                 )
 
-            if not args.no_session_select and not use_tui:
+            # The operator is asked which session to work in - in the
+            # TUI as well as in the classic console.
+            #
+            # The TUI owns the terminal, but not yet: the menu runs here,
+            # before the Live display takes the alternate screen (the
+            # Live display is started at the end of main(), in app.run()).
+            # The terminal is an ordinary console at this point, and the
+            # startup tool picker above already asks the operator the
+            # same way.  Without the menu the agent silently loads the
+            # session that was active last, and the operator never gets
+            # to choose.
+            if not args.no_session_select:
                 console.print("[cyan]Session selection:[/cyan]")
                 select_startup_session(
                     input_func=lambda prompt="": console.input(prompt),

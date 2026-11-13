@@ -759,6 +759,92 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The TUI loaded the last chat session and never asked which one
+
+- **The operator reported it on 2026-11-13:**
+
+  > *by running TUI agent I cannot chose chat from DB the agent does not
+  > propose select one it just loads the last one*
+
+- **The TUI skipped the menu, and nobody missed it.**  The multi-window
+  orchestrator asked the operator which session to work in with one
+  condition:
+
+  ```python
+  # agent-torvalds-mw.py
+  if not args.no_session_select and not use_tui:
+  ```
+
+  `not use_tui` switched the whole block off.  The agent restored the
+  session that was active at the end of the last run and started
+  working in it — with **27 sessions** in the database and no way to
+  pick one.  The classic orchestrator has no such condition, and it
+  asks.
+
+- **The guard was not a technical necessity.**  The TUI owns the
+  terminal, but not at that point: the menu runs at line 1656, and the
+  `Live` display takes the alternate screen at line 1802.  At menu
+  time the terminal is still an ordinary console — and the startup
+  tool picker (`--select`) already blocks on `input()` in front of the
+  TUI, in both modes, with no guard at all.
+
+- **The TUI asks now.**  The condition is gone, and both modes offer
+  the same menu, numbered:
+
+  ```
+  Session selection:
+  Active session: 'agent-torvald-project-002'
+  Available sessions:
+      1. objective-control-001  (created 2026-11-09 10:40)
+      2. agent-torvald-ollama-internal-server-error-500  (created 2026-11-09 08:03)
+      ...
+    * 4. agent-torvald-project-002  (created 2026-11-08 12:15)
+      ...
+  Select a session [1-27], 'new <name>' to create one, or Enter to keep the current one:
+  ```
+
+  The session that is picked is the one the agent binds to: the memory
+  buffer is built from the `chat_key` of the active session *after* the
+  menu, and `switch_session()` drops the cached buffer, so the history
+  of the picked session is the history the model sees.
+
+- **Inside the TUI, a session was chosen by a 36-character id.**
+  `\chat-select` took a session id, and the id had to be read off
+  `\chat-sessions` — a table whose rows are wider than the document
+  pane, so the id was folded in the middle and had to be copied by
+  hand.
+
+  | | before | after |
+  |---|---|---|
+  | choose a session in the TUI | `\chat-select <36-char-uuid>` | `\chat-select 4` |
+  | see the sessions | the table with the ids | `\chat-select` — a numbered picker |
+  | the numbering | — | the number of the session in the list — the same number in the startup menu, in `\chat-sessions` and in the picker |
+
+  The picker leaves the id out on purpose: a row of `\chat-sessions` is
+  121 characters long in a document pane that is 74 characters wide,
+  and the id in the middle of it is exactly what has to be copied by
+  hand.  A *name* may still wrap — that is a name, and it stays
+  readable.
+
+- **The classic console answers the same way.**  A bare `\chat-select`
+  lists the sessions there too, so the two modes behave alike.
+
+- **The proof is `tests/test_tui_session_selection.py`** — 23 tests,
+  among them the one that matters most: the buffer of the agent is
+  rebuilt for the session that was picked, and it is bound to the
+  `chat_key` of that session.
+
+  And `investigate/tui-session-selection/probe_session_selection.py`
+  runs the real `agent-torvalds-mw.py` and the real `agent-torvalds.py`
+  on a pty of their own, and looks for the markers of the menu in the
+  byte stream the operator receives.
+
+  | | before | after |
+  |---|---|---|
+  | the TUI proposes the choice | **no** | **yes** |
+  | the classic REPL proposes the choice | yes | yes |
+  | the session that is loaded | the last one | the one that is picked |
+
 #### The selection picked up the wrong pane, and the screen blinked
 
 - **The operator reported it on 2026-11-13:**
