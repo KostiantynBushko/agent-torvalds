@@ -7,8 +7,9 @@ whole screen blinks while a request is processed.
 
 **Date**: 2026-11-13
 **Status**: Investigated **and implemented** — see `IMPLEMENTATION_REPORT.md`.
-The change is on the branch `fix/tui-terminal-size`, **not committed**
-(Rule 2: awaiting the operator's approval).
+The change was on the branch `fix/tui-terminal-size`, and the operator
+approved the commit and merged it as **PR #95**, which squash-merged the
+fix into `master` as `1f8c52e` on 2026-11-13.
 
 ---
 

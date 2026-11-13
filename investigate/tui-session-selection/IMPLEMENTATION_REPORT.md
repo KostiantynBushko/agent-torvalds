@@ -2,8 +2,9 @@
 
 **Date**: 2026-11-13
 **Branch**: `fix/tui-rendering` (merges into `fix/tui-terminal-size`)
-**Status**: implemented, verified — **not committed** (Rule 2: awaiting the
-operator's approval)
+**Status**: implemented, verified — **merged**.  The operator approved the
+commit and merged it as **PR #96**, which squash-merged the fix into
+`master` as `e031ebf` on 2026-11-13.
 **Companion to**: `investigation_tui_session_selection.md`,
 `PROPOSAL_tui_session_selection.md`, `probe_session_selection.py`
 
