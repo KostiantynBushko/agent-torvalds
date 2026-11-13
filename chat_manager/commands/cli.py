@@ -2,7 +2,7 @@
 
 Provides interactive commands for session management:
 - \\chat-sessions / \\chat-list: List all sessions
-- \\chat-select <id>: Switch to a session
+- \\chat-select <id|n>: Switch to a session, by its id or by its number
 - \\chat-create <name> [type]: Create a new session
 - \\chat-delete <id>: Delete a session
 - \\chat-rename <id> <new name>: Rename a session
@@ -20,7 +20,7 @@ and for the user's own configuration:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from chat_manager.export import (
     FORMAT_JSON,
@@ -32,7 +32,7 @@ from chat_manager.export import (
     resolve_path,
     write_export,
 )
-from chat_manager.session import SessionType
+from chat_manager.session import Session, SessionType
 from chat_manager.stats import format_size, format_tokens
 from chat_manager.settings import (
     SETTINGS_BY_KEY,
@@ -64,26 +64,70 @@ def cmd_chat_sessions(manager: ChatHistoryManager) -> str:
         return "No sessions found."
 
     lines = [f"Sessions for user '{manager.current_user.username}':"]
-    lines.append(f"{'ID':<38} {'Name':<20} {'Type':<10} {'Active':<8} {'Created'}")
-    lines.append("-" * 100)
+    lines.append(
+        f"{'#':<4} {'ID':<38} {'Name':<20} {'Type':<10} {'Active':<8} {'Created'}"
+    )
+    lines.append("-" * 104)
 
-    for s in sessions:
+    for index, s in enumerate(sessions, start=1):
         active_marker = "✓" if s.is_active else " "
         created = s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else "N/A"
         lines.append(
-            f"{s.session_id:<38} {s.session_name:<20} {s.session_type.value:<10} "
-            f"{active_marker:<8} {created}"
+            f"{index:<4} {s.session_id:<38} {s.session_name:<20} "
+            f"{s.session_type.value:<10} {active_marker:<8} {created}"
         )
+
+    lines.append("")
+    lines.append("Switch to a session with \\chat-select <number> (or <id>).")
 
     return "\n".join(lines)
 
 
-def cmd_chat_select(manager: ChatHistoryManager, session_id: str) -> str:
-    """Switch to a different session.
+def resolve_session_reference(
+    manager: ChatHistoryManager, reference: str
+) -> Optional[Session]:
+    """Resolve a reference to a session: its id, or its number in the list.
+
+    The operator is offered the sessions as a numbered list, so the
+    number is what he types - the id is 36 characters long and has to be
+    copied out of a table.  The number is the position in the list of
+    the manager, which is the same list (and the same order) the startup
+    menu shows.
+
+    A reference that is neither a known id nor a number in the list
+    resolves to None.
 
     Args:
         manager: The ChatHistoryManager instance.
-        session_id: The session ID to activate.
+        reference: The id of a session, or its number.
+
+    Returns:
+        The Session the reference points at, or None.
+    """
+    reference = (reference or "").strip()
+    if not reference:
+        return None
+
+    if reference.isdigit():
+        sessions = manager.list_sessions()
+        index = int(reference)
+        if 1 <= index <= len(sessions):
+            return sessions[index - 1]
+        return None
+
+    return manager.get_session(reference)
+
+
+def cmd_chat_select(manager: ChatHistoryManager, reference: str) -> str:
+    """Switch to a different session.
+
+    The session is named by its id, or by its number in the list of the
+    sessions of the user - the number the startup menu and the picker
+    of the TUI show.
+
+    Args:
+        manager: The ChatHistoryManager instance.
+        reference: The id of the session to activate, or its number.
 
     Returns:
         Status message.
@@ -91,11 +135,26 @@ def cmd_chat_select(manager: ChatHistoryManager, session_id: str) -> str:
     if not manager.is_initialized:
         return "ChatHistoryManager not initialized."
 
-    session = manager.switch_session(session_id)
-    if session is None:
-        return f"Session '{session_id}' not found."
+    reference = (reference or "").strip()
 
-    return f"Switched to session: '{session.session_name}' ({session.session_type.value})"
+    if reference.isdigit():
+        session = resolve_session_reference(manager, reference)
+        if session is None:
+            count = len(manager.list_sessions())
+            return (
+                f"There is no session {reference} - "
+                f"the list holds {count} session(s)."
+            )
+        activated = manager.switch_session(session.session_id)
+    else:
+        # The id is passed on untouched: the manager is the one that
+        # decides whether the session exists and belongs to the user.
+        activated = manager.switch_session(reference)
+
+    if activated is None:
+        return f"Session '{reference}' not found."
+
+    return f"Switched to session: '{activated.session_name}' ({activated.session_type.value})"
 
 
 def cmd_chat_create(
