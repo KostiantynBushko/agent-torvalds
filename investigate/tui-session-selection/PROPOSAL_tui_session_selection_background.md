@@ -1,7 +1,9 @@
 # Proposal: the choice of the chat session is a background job
 
 **Date**: 2026-11-13
-**Status**: **Implemented** — see `IMPLEMENTATION_REPORT_background.md`
+**Status**: **Implemented** — the operator approved the commit on
+2026-11-13, and the work is **PR #98**.  See
+`IMPLEMENTATION_REPORT_background.md`
 **Companion to**: `investigation_tui_session_selection_background.md`,
 `probe_session_selection_background.py`
 **Branch**: `fix/tui-session-selection-background`
