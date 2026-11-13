@@ -292,8 +292,12 @@ COMMAND_SPECS: Tuple[CommandSpec, ...] = (
     ),
     CommandSpec(
         name="\\chat-select",
-        description="Switch the active chat session.",
-        usage="\\chat-select <id>",
+        description=(
+            "Switch the active chat session. Without an argument the "
+            "sessions are listed and numbered; with a number or with the "
+            "id of a session, that session is activated."
+        ),
+        usage="\\chat-select [<number>|<id>]",
         category="Chat",
         feature=FEATURE_CHAT_HISTORY,
     ),

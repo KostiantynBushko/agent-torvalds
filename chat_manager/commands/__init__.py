@@ -3,6 +3,7 @@
 from chat_manager.commands.cli import (
     cmd_chat_sessions,
     cmd_chat_select,
+    resolve_session_reference,
     cmd_chat_create,
     cmd_chat_delete,
     cmd_chat_rename,
@@ -18,6 +19,7 @@ from chat_manager.commands.cli import (
 __all__ = [
     "cmd_chat_sessions",
     "cmd_chat_select",
+    "resolve_session_reference",
     "cmd_chat_create",
     "cmd_chat_delete",
     "cmd_chat_rename",

@@ -81,6 +81,7 @@ class TuiApp:
         chat_history_enabled: bool = True,
         project_manager_enabled: bool = True,
         log_config: Optional[LogFileConfig] = None,
+        select_session_at_startup: bool = False,
     ):
         # The console asks the terminal for its size: the LINES and the
         # COLUMNS of the environment are a snapshot the shell exported,
@@ -112,6 +113,12 @@ class TuiApp:
         self._is_paused: bool = False
         self._live: Optional[Live] = None
 
+        # The operator has not chosen the session yet.  The picker is in
+        # the document pane, and the agent waits: a question typed before
+        # the choice would run in the session that was active last, which
+        # is the defect the picker came to close.
+        self._awaiting_session: bool = select_session_at_startup
+
     @contextmanager
     def pause_screen(self):
         """
@@ -142,6 +149,13 @@ class TuiApp:
                 f"TUI will adapt but may appear crowded.[/yellow]"
             )
             await asyncio.sleep(1.0)
+
+        # The operator is asked which session to work in, inside the
+        # layout: the picker is in the document pane, and the agent waits
+        # for the answer.  The classic console asks the same question in
+        # the terminal, before the REPL starts.
+        if self._awaiting_session:
+            self._show_session_picker()
 
         # Initialize input reader
         self.input_reader.start()
@@ -298,6 +312,12 @@ class TuiApp:
             self.state.cursor_pos = 0
             return
 
+        # The session has not been chosen yet: what was typed is the
+        # answer to the picker, and the agent waits for it.
+        if self._awaiting_session:
+            self._handle_session_selection(cmd)
+            return
+
         # Empty command
         if not cmd:
             return
@@ -395,6 +415,15 @@ class TuiApp:
             if chat_md:
                 self.state.set_markdown_content(chat_md)
                 self._refresh_chat_session_state()
+                if cmd.strip().lower() == "\\chat-select":
+                    # The picker is open: the operator has to be told
+                    # where the answer goes.  The command bar is the only
+                    # place he can type it.
+                    self.state.show_notification(
+                        "Type \\chat-select <number> in the command bar "
+                        "and press Enter.",
+                        duration=8.0,
+                    )
                 return
 
         # Standard agent query: Launch async task
@@ -632,6 +661,98 @@ class TuiApp:
     # ------------------------------------------------------------------
     # Chat session state
     # ------------------------------------------------------------------
+
+    def _show_session_picker(self, note: str = "") -> None:
+        """Put the picker of the sessions into the document pane.
+
+        Args:
+            note: A line under the header — what went wrong with the
+                answer of the operator, for instance.
+        """
+        from components.tui.chat_history_view import (
+            PICKER_CONTEXT_STARTUP,
+            render_session_picker_markdown,
+        )
+
+        try:
+            from chat_manager.startup import get_chat_manager
+
+            manager = get_chat_manager()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("The chat manager could not be reached: %s", exc)
+            manager = None
+
+        # At the startup of the TUI the operator types the number alone -
+        # there is no command to repeat.
+        context = (
+            PICKER_CONTEXT_STARTUP
+            if self._awaiting_session
+            else PICKER_CONTEXT_COMMAND
+        )
+
+        self.state.set_markdown_content(
+            render_session_picker_markdown(manager, note=note, context=context)
+        )
+
+    def _handle_session_selection(self, answer: str) -> None:
+        """Apply the answer of the operator to the picker of the sessions.
+
+        The rules are the rules of the classic console: a number picks
+        the session at that position, ``new <name>`` creates one, and an
+        empty answer keeps the session that is already active.
+
+        Args:
+            answer: What the operator typed into the command bar.
+        """
+        from chat_manager.session_selector import apply_session_answer
+
+        try:
+            from chat_manager.startup import get_chat_manager
+
+            manager = get_chat_manager()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("The chat manager could not be reached: %s", exc)
+            manager = None
+
+        if manager is None or not manager.is_initialized:
+            # There is nothing to choose from - the agent works in the
+            # session it has, and the operator is not asked again.
+            self._awaiting_session = False
+            self.state.set_markdown_content(
+                "# 💬 Select a Chat Session\n\n"
+                "ChatHistoryManager is not initialized."
+            )
+            return
+
+        session, message = apply_session_answer(manager, answer)
+
+        if session is None:
+            # The answer was not understood - the picker stays, and says
+            # what it wants.
+            self._show_session_picker(note=message or self._session_hint())
+            self.state.show_notification(
+                message or self._session_hint(), duration=8.0
+            )
+            return
+
+        self._awaiting_session = False
+        self._refresh_chat_session_state()
+
+        from components.tui.chat_history_view import render_session_chosen_markdown
+
+        self.state.set_markdown_content(render_session_chosen_markdown(session))
+        self.state.show_notification(
+            message or f"Working in session '{session.session_name}'.",
+            duration=6.0,
+        )
+
+    @staticmethod
+    def _session_hint() -> str:
+        """The line that tells the operator what the picker wants."""
+        return (
+            "Type the number of a session, 'new <name>' to create one, "
+            "or press Enter to keep the current one."
+        )
 
     def _refresh_chat_session_state(self) -> None:
         """Refresh the active chat session information in the TUI state."""

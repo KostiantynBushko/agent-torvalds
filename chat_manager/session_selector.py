@@ -11,6 +11,13 @@ Implements the startup flow required by the implementation plan:
 
 The selector is intentionally free of terminal dependencies so it can be
 tested headlessly: the input function and the output function are injectable.
+
+The rules of the menu - what a number means, what "new <name>" means,
+what an empty answer means - live in :func:`apply_session_answer`, and
+not in the loop that asks.  Two front-ends ask the same question: this
+one, which blocks on the terminal, and the picker of the multi-window
+TUI, which asks in its command bar.  Both must mean the same thing by
+the same numbers.
 """
 
 from __future__ import annotations
@@ -58,6 +65,63 @@ def format_session_list(sessions: list[Session]) -> str:
 # ---------------------------------------------------------------------------
 # Selection
 # ---------------------------------------------------------------------------
+
+def apply_session_answer(
+    manager,
+    answer: str,
+) -> tuple[Optional[Session], str]:
+    """Apply one answer of the operator to the session menu.
+
+    The answer is one of:
+
+    * a **number** - the session at that position in the list of the
+      sessions of the user;
+    * ``new <name>`` - a new session, created and activated;
+    * **nothing** - the session that is already active is kept.
+
+    Args:
+        manager: An initialized ChatHistoryManager instance.
+        answer: What the operator typed.
+
+    Returns:
+        The session that is active after the answer, and the message
+        that goes with it.  The session is None when the answer was not
+        understood - the menu asks again.
+    """
+    raw = (answer or "").strip()
+    sessions = manager.list_sessions()
+
+    if not raw:
+        # Keep the currently active session (or fall back to the first).
+        active = manager.get_active_session()
+        return (active or (sessions[0] if sessions else None)), ""
+
+    lowered = raw.lower()
+
+    if lowered == "new" or lowered.startswith("new "):
+        name = raw[3:].strip()
+        if not name:
+            return None, "A name is required to create a session."
+        session = _create_session(manager, name)
+        if session is None:
+            return None, f"Could not create the session '{name}'."
+        return session, f"Created and activated session: '{session.session_name}'"
+
+    try:
+        index = int(raw)
+    except ValueError:
+        return None, f"'{raw}' is not a valid selection."
+
+    if not 1 <= index <= len(sessions):
+        return None, f"Please enter a number between 1 and {len(sessions)}."
+
+    chosen = sessions[index - 1]
+    activated = manager.switch_session(chosen.session_id)
+    if activated is None:
+        return None, f"Could not activate session '{chosen.session_name}'."
+
+    return activated, f"Switched to session: '{activated.session_name}'"
+
 
 def select_session_interactively(
     manager,
@@ -116,41 +180,15 @@ def select_session_interactively(
             output_func("\nSelection aborted, keeping the current session.")
             return active
 
-        if not raw:
-            # Keep the currently active session (or fall back to the first).
-            return active or sessions[0]
-
-        lowered = raw.lower()
-
-        if lowered == "new" or lowered.startswith("new "):
-            name = raw[3:].strip()
-            if not name:
-                output_func("A name is required to create a session.")
-                continue
-            session = _create_session(manager, name)
-            if session is not None:
-                output_func(f"Created and activated session: '{session.session_name}'")
-                return session
+        session, message = apply_session_answer(manager, raw)
+        if session is None:
+            # The answer was not understood - the menu asks again.
+            output_func(message)
             continue
 
-        try:
-            index = int(raw)
-        except ValueError:
-            output_func(f"'{raw}' is not a valid selection.")
-            continue
-
-        if not 1 <= index <= len(sessions):
-            output_func(f"Please enter a number between 1 and {len(sessions)}.")
-            continue
-
-        chosen = sessions[index - 1]
-        activated = manager.switch_session(chosen.session_id)
-        if activated is None:
-            output_func(f"Could not activate session '{chosen.session_name}'.")
-            continue
-
-        output_func(f"Switched to session: '{activated.session_name}'")
-        return activated
+        if message:
+            output_func(message)
+        return session
 
 
 def _create_session(manager, name: str) -> Optional[Session]:

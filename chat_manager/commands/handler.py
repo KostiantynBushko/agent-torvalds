@@ -180,12 +180,18 @@ def handle_chat_command(cmd: str) -> str | None:
     if cmd_lower in ("\\chat-sessions", "\\chat-list"):
         return cmd_chat_sessions(manager)
 
-    # \chat-select <session_id>
+    # \chat-select <session_id | number>
     if cmd_lower.startswith("\\chat-select "):
-        session_id = cmd.strip().split(maxsplit=1)[1].strip()
-        if not session_id:
-            return "Usage: \\chat-select <session_id>"
-        return cmd_chat_select(manager, session_id)
+        reference = cmd.strip().split(maxsplit=1)[1].strip()
+        if not reference:
+            return "Usage: \\chat-select <session_id | number>"
+        return cmd_chat_select(manager, reference)
+
+    # \chat-select — without a session the operator is shown the list.
+    # He asked for a session and named none, so the sessions are the
+    # answer: the numbered list is what he picks from.
+    if cmd_lower == "\\chat-select":
+        return cmd_chat_sessions(manager)
 
     # \chat-create <name> [type]
     if cmd_lower.startswith("\\chat-create "):
