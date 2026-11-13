@@ -2,8 +2,10 @@
 
 **Date**: 2026-11-13
 **Branch**: `fix/tui-session-selection-background` (from `master`)
-**Status**: implemented, verified — **not committed yet** (the commit needs
-the approval of the operator)
+**Status**: implemented, verified — **committed**.  The operator approved
+the commit on 2026-11-13, and the work is **PR #98**: `5df0ed0` (the
+choice of the session in the background) and `89fd3a7` (the buffer of the
+agent, in one pass).
 **Companion to**: `investigation_tui_session_selection_background.md`,
 `PROPOSAL_tui_session_selection_background.md`,
 `probe_session_selection_background.py`
@@ -121,7 +123,7 @@ The count of the history on its own:
 | `chat_manager/tests/test_manager.py::TestManagerMessages` | the manager counts the messages of the buffer, and the count agrees with the buffer; the buffer of the manager is the one of the project |
 | `chat_manager/tests/test_memory.py` (new) | the buffer of the project and the buffer of LlamaIndex answer the same, message by message — for a dozen histories, for the roles, and for a hundred random ones; the tokenizer is asked for the tail only |
 
-The whole suite: **1851 passed**, the same **29 failures** as before the
+The whole suite: **1872 passed**, the same **29 failures** as before the
 change (they are pre-existing and unrelated — the async tests without
 the plugin, the project scanner and the runtime toggle).
 
