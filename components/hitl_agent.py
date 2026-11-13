@@ -126,6 +126,20 @@ REPEAT_CALL_THRESHOLD = 3
 #: How many tool results are remembered for the repetition check.
 REPEAT_CALL_HISTORY = 8
 
+#: Key used to remember that the model has already ended a turn without
+#: saying anything in this run.
+_SILENT_TURN_KEY = "hitl_silent_turn"
+
+#: What the agent says to the model when it ended a turn without an
+#: answer.  The empty turn of the model stays in the conversation, so the
+#: note follows it and the model can see what it did.
+SILENT_TURN_NUDGE = (
+    "[Your last turn was empty: it carried no text and no tool call, so "
+    "nothing happened and nothing was said. Carry on with the task — "
+    "call the tools you need, and answer with text when there is "
+    "nothing left to do.]"
+)
+
 
 def _stable_kwargs(kwargs: Any) -> str:
     """Return a stable, comparable representation of tool call arguments.
@@ -137,6 +151,23 @@ def _stable_kwargs(kwargs: Any) -> str:
         return json.dumps(kwargs, sort_keys=True, default=str)
     except (TypeError, ValueError):
         return str(kwargs)
+
+
+def _blocks_of(message: Any) -> List[Any]:
+    """Return the content blocks of *message*, or an empty list.
+
+    Args:
+        message: The message of the model.
+
+    Returns:
+        The blocks of the message.  An empty list when it carries none,
+        or when it is not a message at all.
+    """
+    try:
+        blocks = getattr(message, "blocks", None)
+    except Exception:  # noqa: BLE001 — a payload must not break the run
+        return []
+    return list(blocks or [])
 
 
 def _tool_result_fingerprint(result: Any) -> str:
@@ -240,7 +271,10 @@ class HITLFunctionAgent(FunctionAgent):
 
     Attributes:
         hitl_enabled: Master switch for HITL.  When ``False`` the agent
-            behaves exactly like a plain ``FunctionAgent``.
+            asks the human nothing and behaves like a plain
+            ``FunctionAgent`` — with one exception, which has nothing to
+            do with the human: a turn that says nothing does not end the
+            run (see :meth:`_handle_silent_turn`).
         hitl_default_timeout: Default number of seconds to wait for an
             answer before falling back to ``hitl_default_answer``.  ``-1``
             (the default) means *no timeout*: the agent waits for the
@@ -327,10 +361,21 @@ class HITLFunctionAgent(FunctionAgent):
 
         head, tail = await self._prompt_window(ctx, llm_input, scratchpad, tools)
 
+        # The prompt is measured before the request goes out: the window
+        # the agent asks the server for has to hold it.
+        size = self._measure_context([*head, *tail], tools)
+
+        # The window the server reports is the window it uses by itself.
+        # When it reports none, the window is sized to the prompt — a
+        # window that fits the prompt is a real one, the server honours
+        # it, and it is the only one that is guaranteed to hold the
+        # request.
+        self._fit_window_to_prompt(size)
+
         # The size of the prompt is logged for every request, whether the
         # guard trimmed it or not: the operator has to see the context grow
         # to know that it is about to overflow.
-        self._log_context_size([*head, *tail], tools)
+        self._log_context_size([*head, *tail], tools, size)
 
         return await super().take_step(ctx, head, tools, memory)
 
@@ -408,10 +453,58 @@ class HITLFunctionAgent(FunctionAgent):
 
         return head, tail
 
+    def _measure_context(self, messages: List[ChatMessage], tools: Any) -> Any:
+        """Measure the prompt, or return ``None`` when it cannot be measured.
+
+        A measurement is never worth a run: a tokenizer that cannot be
+        loaded, a tool whose schema cannot be read and an exception of any
+        kind leave the agent running, and the size is simply not there.
+
+        Args:
+            messages: The prompt that is about to be sent.
+            tools: The tools that go with it.
+
+        Returns:
+            The measured size of the prompt, or ``None``.
+        """
+        from components.context_metrics import measure_context
+
+        try:
+            return measure_context(
+                messages, tools=tools, tokenizer=self._safe_tokenizer()
+            )
+        except Exception as exc:  # noqa: BLE001 - a size is never worth a run
+            logger.debug("Could not measure the context: %s", exc)
+            return None
+
+    def _fit_window_to_prompt(self, size: Any) -> None:
+        """Make the window of the LLM hold the prompt that is about to be sent.
+
+        The window is raised and never lowered: the server keeps the
+        window it was given, and a window that changes in both directions
+        makes it give the cache back and take it again with every request.
+
+        Args:
+            size: The measured size of the prompt, or ``None`` when it
+                could not be measured.
+        """
+        if size is None:
+            return
+
+        from components.ollama_config import fit_context_window
+
+        try:
+            fit_context_window(self.llm, size.total_tokens)
+        except Exception as exc:  # noqa: BLE001 - a window is never worth a run
+            logger.debug(
+                "Could not fit the context window to the prompt: %s", exc
+            )
+
     def _log_context_size(
         self,
         messages: List[ChatMessage],
         tools: Any,
+        size: Any = None,
     ) -> None:
         """Log the size of the prompt that is about to go to the model.
 
@@ -430,14 +523,11 @@ class HITLFunctionAgent(FunctionAgent):
         if not self.context_logging_enabled:
             return
 
-        from components.context_metrics import describe_context, measure_context
+        from components.context_metrics import describe_context
 
-        try:
-            size = measure_context(
-                messages, tools=tools, tokenizer=self._safe_tokenizer()
-            )
-        except Exception as exc:  # noqa: BLE001 - a size is never worth a run
-            logger.debug("Could not measure the context: %s", exc)
+        if size is None:
+            size = self._measure_context(messages, tools)
+        if size is None:
             return
 
         budget = self._context_budget() if self.context_guard_enabled else 0
@@ -638,6 +728,13 @@ class HITLFunctionAgent(FunctionAgent):
                 return await self._stop_for_repetition(ctx, ev, repetition)
             return await super().parse_agent_output(ctx, ev)
 
+        # A turn that carries neither text nor a tool call says nothing:
+        # the model ended it without doing anything and without
+        # answering.  The run must not end there — the operator would be
+        # left with an empty box and no idea what had happened.
+        if self._is_silent(ev):
+            return await self._handle_silent_turn(ctx, ev)
+
         if not self.hitl_enabled:
             return await super().parse_agent_output(ctx, ev)
 
@@ -759,6 +856,99 @@ class HITLFunctionAgent(FunctionAgent):
             input=await memory.aget(),
             current_agent_name=self.name,
         )
+
+    # ------------------------------------------------------------------
+    # The turn that says nothing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _is_silent(ev: AgentOutput) -> bool:
+        """Whether the turn of the model says nothing at all.
+
+        A turn is silent when it carries no text and no tool call: the
+        model ended it without doing anything and without answering.
+
+        Args:
+            ev: The output of the model.
+
+        Returns:
+            ``True`` when the turn says nothing.
+        """
+        if ev.tool_calls:
+            return False
+
+        # A tool call that is carried in the message itself counts as
+        # well: the base class looks at ``ev.tool_calls``, but a message
+        # that carries a call is not a silent turn either.
+        for block in _blocks_of(ev.response):
+            if str(getattr(block, "block_type", "") or "") == "tool_call":
+                return False
+
+        return not HITLFunctionAgent._extract_text(ev.response).strip()
+
+    async def _handle_silent_turn(
+        self, ctx: Context, ev: AgentOutput
+    ) -> Union[StopEvent, AgentInput]:
+        """Give the model one more turn when it ends the turn with nothing.
+
+        The model ended the turn without text and without a tool call:
+        nothing happened and nothing was said.  The run ended there with
+        an empty answer — the operator saw an empty box and had no way
+        of telling that from a run that had never started.
+
+        So the model gets one more turn.  Its empty turn is already in
+        the scratchpad — the base class puts it there — and a note that
+        says what went wrong follows it.  A model that has something to
+        say about that says it, and the run carries on.
+
+        One turn, not two.  A model that says nothing once has usually
+        sampled nothing once; a model that says nothing twice will say
+        nothing twice, and every empty turn costs a full round-trip.
+
+        When the model says nothing for the second time, the run ends —
+        and the answer says plainly that the model ended the turn
+        without an answer.
+
+        Args:
+            ctx: The context of the workflow.
+            ev: The output of the model.
+
+        Returns:
+            The input of the next turn, or the end of the run.
+        """
+        retried = await ctx.store.get(_SILENT_TURN_KEY, default=False)
+        if not retried:
+            await ctx.store.set(_SILENT_TURN_KEY, True)
+
+            scratchpad: List[ChatMessage] = await ctx.store.get(
+                self.scratchpad_key, default=[]
+            )
+            scratchpad.append(ChatMessage(role="user", content=SILENT_TURN_NUDGE))
+            await ctx.store.set(self.scratchpad_key, scratchpad)
+
+            memory = await ctx.store.get("memory")
+            if memory is None:
+                logger.warning(
+                    "The model ended the turn without an answer, and there "
+                    "is no memory to continue the conversation with — the "
+                    "run ends."
+                )
+                return await super().parse_agent_output(ctx, ev)
+
+            logger.info(
+                "The model ended the turn without an answer — the agent "
+                "gives it one more turn."
+            )
+            return AgentInput(
+                input=await memory.aget(),
+                current_agent_name=self.name,
+            )
+
+        logger.warning(
+            "The model ended the turn without an answer for the second "
+            "time — the run ends, and the answer says so."
+        )
+        return await super().parse_agent_output(ctx, ev)
 
     # ------------------------------------------------------------------
     # Loop detection

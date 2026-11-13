@@ -262,6 +262,7 @@ from components.stats_handler import (
 # ---------------------------------------------------------------------------
 # Core Components
 # ---------------------------------------------------------------------------
+from components.chat_message import NO_ANSWER, to_answer_string
 from components.ollama_config import apply_context_window, get_ollama_base_url
 from components.config import config
 from components.config_view import handle_config
@@ -1115,11 +1116,14 @@ async def prompt_handler(
         human_loop_handler.event_consumer = event_consumer
         result = await event_consumer.consume_events(workflow_handler, cmd)
 
-        response_text = (
-            result.get("output")
-            if isinstance(result, dict)
-            else str(result)
-        )
+        # The answer is rendered for the operator: the text of the model,
+        # and — when it wrote none — the fact that it wrote none, with the
+        # thinking it left behind.  ``str(result)`` returned the text and
+        # nothing else, so a turn that carried only a thinking reached the
+        # screen as an empty string.
+        response_text = to_answer_string(result)
+        if not response_text:
+            response_text = NO_ANSWER
 
         if stats_handler:
             stats = stats_handler.finalize()

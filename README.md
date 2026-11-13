@@ -949,11 +949,24 @@ which drops the user request.  The sources are tried in this order:
 | `TORVALDS_CONTEXT_LENGTH` | the explicit override |
 | `/api/ps` | the context length of the running model |
 | `PARAMETER num_ctx` | the Modelfile of the model |
-| `llm.metadata.context_window` | the maximum the model advertises |
+| `llm.metadata.context_window` | the maximum the model advertises — **not sent** |
 
 The name of the source is in the log line, because a number on its own
-does not say whether it is the window the server really uses.  With
-the context guard on (`--context-guard-on`), the budget it derives
+does not say whether it is the window the server really uses.
+
+The **advertised maximum is not sent**.  It is the *capacity* of the
+model, not the window of the server, and asking for it is not free: the
+server gives the model a context of that size, the machine cannot hold
+it, and the model is pushed off the GPU — measured in
+`investigate/agent-empty-answer/`: 3.09 GB of VRAM instead of 6.64 GB,
+and 173 seconds for a request that should have taken seconds.  So when
+neither `/api/ps` nor the Modelfile answers, the window is **unknown**,
+the log says so, and the window that is sent is **sized to the prompt**
+that is about to go out — with room above it for the answer, and never
+lowered, because a window that changes in both directions makes the
+server give the cache back and take it again with every request.
+
+With the context guard on (`--context-guard-on`), the budget it derives
 from the window is logged as well:
 
 ```console

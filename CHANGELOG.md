@@ -759,6 +759,77 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The agent answered nothing at all, and the run ended on a turn that said nothing
+
+- **The operator reported it on 2026-11-13.**  Three requests went in.
+  The first one worked for three minutes — twenty-three model calls,
+  thirty-six tool calls, a project scaffolded on disk — and the agent
+  answered **nothing**.  The second request answered **nothing** as
+  well.  The third one answered with a promise: *"Let me complete the
+  implementation first, then update the README to document it
+  accurately."* — and did nothing either.
+
+- **The answer was dropped twice on the way to the screen.**  The console
+  path built the answer with `str(result)`, and `AgentOutput.__str__`
+  returns the **text** of the answer and nothing else — the `thinking`
+  block of the model was dropped there.  An answer that carried nothing
+  but a thinking therefore became an empty string, and
+  `console.print(Markdown(""))` prints **nothing at all**: not an error,
+  not a warning, not a note.
+
+- **The answer the operator reads is rendered now.**
+  `to_answer_string()` in `components/chat_message.py` returns the text
+  of the model, and when there is none it says so and shows the thinking
+  of the model under it — the operator sees what the model was about to
+  do instead of nothing at all.  The function **never returns an empty
+  string**: an answer that cannot be rendered is still an answer, and
+  the operator is told that the model ended the turn without one.
+
+  ```python
+  from components.chat_message import NO_ANSWER, to_answer_string
+
+  answer = to_answer_string(result)
+  ```
+
+- **A turn that says nothing does not end the run.**  The agent ended the
+  workflow on the first turn without a tool call, whatever the model said
+  in it — including a sentence that promises work instead of doing it.
+  A turn with neither text nor a tool call now gets **one more turn**:
+  the empty turn of the model stays in the scratchpad, a note that says
+  what went wrong follows it, and the model can see what it did.  A model
+  that says nothing a second time ends the run — and the answer says
+  plainly that the model ended the turn without an answer.  One turn, not
+  two: every empty turn costs a full round-trip.
+
+- **The window the agent sent was fiction.**  When neither `/api/ps` nor
+  the Modelfile answered, the agent asked the server for the
+  **advertised maximum** of the model — a million tokens.  The server
+  clamps the request to what the hardware allows, and the model stops
+  fitting on the GPU: 3.09 GB of VRAM instead of 6.64 GB, measured.  The
+  advertised maximum is the **capacity** of the model, not the window of
+  the server, and it is not sent any more — the configured window is used
+  when there is one, and the log says that the window is unknown when
+  there is none.  The window that is sent is sized to the prompt that is
+  about to go out, with room above it for the answer, and it is **never
+  lowered**: a window that changes in both directions makes the server
+  give the cache back and take it again with every request.
+
+- **The tests are in `tests/test_silent_turn.py` and
+  `tests/test_ollama_context_window.py`.**  They pin the silent turn,
+  the answer that is never empty, the console that prints a line instead
+  of an empty box, and the window that is not the advertised maximum.
+  The gate of the repository stays green: 40 known failures, 0 new,
+  0 fixed.
+
+  ```bash
+  .venv/bin/pytest tests/test_silent_turn.py tests/test_ollama_context_window.py -v
+  ```
+
+- **The whole story is in `investigate/agent-empty-answer/`.**  The
+  investigation is in `INVESTIGATION_REPORT.md`, the change is in
+  `IMPLEMENTATION_REPORT.md`, and the probes that measured the silence
+  are next to them.
+
 #### The memory buffer of the agent trimmed the history in quadratic time
 
 - **The finding came out of the work on the session picker (2026-11-13).**
