@@ -13,7 +13,11 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from chat_manager.session import Session, SessionType
-from chat_manager.stats import HistoryStats, measure
+from chat_manager.stats import (
+    HistoryStats,
+    count_messages_within_limit,
+    measure,
+)
 from chat_manager.settings import (
     DEFAULT_CHAT_TOKEN_LIMIT,
     SettingError,
@@ -704,6 +708,32 @@ class ChatHistoryManager:
         """
         buffer = self.get_memory_buffer()
         return buffer.get()
+
+    def count_buffered_messages(self) -> int:
+        """Count the messages the agent holds in its memory.
+
+        The count is the count of the *buffer*: the messages that
+        survive the chat-token limit and are sent to the model.
+
+        The memory buffer of LlamaIndex answers this question by
+        counting the tokens of the whole history again on every step of
+        its trimming loop.  For a session with thousands of messages
+        that work is quadratic — a minute for a history of a few
+        thousand messages — and the count here walks the history **once**
+        and stops at the limit.  The answer is the answer of the buffer.
+
+        Returns:
+            The number of the messages that survive the limit, or 0 when
+            there is no active session.
+        """
+        if self._active_session is None or self._backend is None:
+            return 0
+
+        stored = list(self._backend.get_messages(self._active_session.chat_key))
+        return count_messages_within_limit(
+            stored,
+            self._resolve_chat_token_limit(),
+        )
 
     def get_stored_messages(self) -> list:
         """Get every message stored for the current session.

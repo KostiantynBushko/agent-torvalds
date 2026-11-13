@@ -1,7 +1,7 @@
 """
 Tests for the chat session selection of the TUI.
 
-Two defects are covered:
+Three defects are covered:
 
 * **D1** - the TUI never proposed the choice of the session at startup.
   The orchestrator skipped the menu when the TUI was up, so the agent
@@ -9,6 +9,11 @@ Two defects are covered:
 * **D2** - inside the TUI a session could only be chosen by typing a
   36-character id.  The sessions are now numbered, and the number is
   what ``\\chat-select`` takes.
+* **D3** - the choice of the session was applied **in the loop that
+  paints the layout**.  The work touches the database and the tokenizer,
+  and a session with a long history takes seconds: the screen stood
+  still for that time, and the digit the operator typed only appeared
+  when the freeze was over.  The choice is a background job now.
 
 The numbering is the numbering of the list of the manager: the startup
 menu, ``\\chat-sessions`` and the picker all number the sessions the
@@ -22,6 +27,7 @@ import asyncio
 import importlib.util
 import io
 import sys
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -700,6 +706,196 @@ class TestStartupSessionProposal(unittest.TestCase):
             asyncio.run(mw.main())
 
         self.assertEqual(order, ["menu", "repl"])
+
+
+# ---------------------------------------------------------------------------
+# D3 - the choice of the session is a background job
+# ---------------------------------------------------------------------------
+
+class TestTheChoiceOfTheSessionRunsInTheBackground(unittest.TestCase):
+    """The layout must not freeze while the session is loaded.
+
+    The work touches the database and the tokenizer, and a session with
+    a long history takes seconds.  Done in the loop that paints the
+    layout, the screen stands still for that time — and the digit the
+    operator typed only appears when the freeze is over, as if the
+    answer had come *after* the session was loaded.
+    """
+
+    #: How long the mocked database takes to answer.
+    DELAY = 0.3
+
+    def _sessions(self):
+        return [
+            _session("First", "sess-1", active=True),
+            _session("Second", "sess-2"),
+        ]
+
+    def _app(self, asks_for_the_session: bool = True):
+        """A TUI that asks for the session at startup."""
+        from components.tui.state_bridge import TuiState
+        from components.tui.tui_app import TuiApp
+
+        return TuiApp(
+            agent=MagicMock(),
+            prompt_handler_fn=AsyncMock(),
+            state=TuiState(),
+            console=Console(file=io.StringIO()),
+            select_session_at_startup=asks_for_the_session,
+        )
+
+    def _slow_manager(self):
+        """A manager whose database takes its time."""
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+
+        def _slow_switch(session_id):
+            """Switch the session, slowly."""
+            time.sleep(self.DELAY)
+            return next(
+                (s for s in sessions if s.session_id == session_id), None
+            )
+
+        manager.switch_session.side_effect = _slow_switch
+        return manager
+
+    def test_the_answer_is_on_the_screen_at_once(self):
+        """The digit the operator typed must not wait for the session."""
+        manager = self._slow_manager()
+        app = self._app()
+
+        async def scenario():
+            with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+                app.state.input_buffer = "2"
+                app._handle_enter_pressed()
+
+                # The answer is in the document pane, and the command bar
+                # is empty for the next thing the operator types.
+                self.assertIn("**Answer:** `2`", app.state.markdown_content)
+                self.assertEqual(app.state.input_buffer, "")
+
+                await app._session_task
+                if app._state_refresh_task is not None:
+                    await app._state_refresh_task
+
+        asyncio.run(scenario())
+
+    def test_the_layout_keeps_painting_while_the_session_is_loaded(self):
+        """The loop is not blocked while the job works."""
+        manager = self._slow_manager()
+        app = self._app()
+
+        async def scenario():
+            ticks = []
+
+            async def _heartbeat():
+                """A task that runs while the TUI paints its frames."""
+                while True:
+                    ticks.append(time.monotonic())
+                    await asyncio.sleep(0.02)
+
+            beat = asyncio.create_task(_heartbeat())
+            try:
+                with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+                    app.state.input_buffer = "2"
+                    app._handle_enter_pressed()
+
+                    # The job is running in the background.
+                    await app._session_task
+                    if app._state_refresh_task is not None:
+                        await app._state_refresh_task
+            finally:
+                beat.cancel()
+
+            return ticks
+
+        ticks = asyncio.run(scenario())
+
+        # The heartbeat ran while the database was working: the loop was
+        # not held up by it.
+        self.assertGreaterEqual(
+            len(ticks),
+            5,
+            "the event loop was blocked while the session was loaded",
+        )
+
+    def test_the_session_is_switched_when_the_job_is_done(self):
+        """The background job does the work of the answer."""
+        manager = self._slow_manager()
+        app = self._app()
+
+        async def scenario():
+            with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+                app.state.input_buffer = "2"
+                app._handle_enter_pressed()
+                await app._session_task
+                if app._state_refresh_task is not None:
+                    await app._state_refresh_task
+
+        asyncio.run(scenario())
+
+        manager.switch_session.assert_called_once_with("sess-2")
+        self.assertFalse(app._awaiting_session)
+        self.assertIn("Second", app.state.markdown_content)
+
+    def test_a_second_answer_is_ignored_while_the_job_runs(self):
+        """The picker belongs to the job that is running."""
+        manager = self._slow_manager()
+        app = self._app()
+
+        async def scenario():
+            with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+                app.state.input_buffer = "2"
+                app._handle_enter_pressed()
+
+                # The operator types again before the job is done.
+                app.state.input_buffer = "1"
+                app._handle_enter_pressed()
+
+                await app._session_task
+                if app._state_refresh_task is not None:
+                    await app._state_refresh_task
+
+        asyncio.run(scenario())
+
+        manager.switch_session.assert_called_once_with("sess-2")
+
+    def test_the_answer_that_is_not_understood_asks_again(self):
+        """The picker stays, and it says what it wants."""
+        manager = self._slow_manager()
+        app = self._app()
+
+        async def scenario():
+            with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+                app.state.input_buffer = "abc"
+                app._handle_enter_pressed()
+                await app._session_task
+
+        asyncio.run(scenario())
+
+        manager.switch_session.assert_not_called()
+        self.assertTrue(app._awaiting_session)
+        self.assertIn("Select a Chat Session", app.state.markdown_content)
+
+    def test_the_chat_command_runs_in_the_background(self):
+        """\\chat-select must not freeze the layout either."""
+        sessions = self._sessions()
+        manager = _manager(sessions, active=sessions[0])
+        # The session was chosen already: the picker is not in the way.
+        app = self._app(asks_for_the_session=False)
+
+        async def scenario():
+            with patch("chat_manager.startup.get_chat_manager", return_value=manager):
+                app.state.input_buffer = "\\chat-select 2"
+                app._handle_enter_pressed()
+
+                task = app._chat_command_task
+                self.assertIsNotNone(task, "the command was not sent to the background")
+                await task
+
+        asyncio.run(scenario())
+
+        manager.switch_session.assert_called_once_with("sess-2")
 
 
 if __name__ == "__main__":

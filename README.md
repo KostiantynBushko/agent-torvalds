@@ -341,6 +341,9 @@ describe.  A plain `git clone` leaves the directory empty;
 - User settings API (`get_user_settings` / `update_user_settings`) and the `\chat-user` command
   over the user's own preferences — the chat token limit among them
 - Interactive startup session picker plus eight `\chat-*` runtime commands
+- The choice of the session is a **background job**: the layout keeps painting while the
+  database and the tokenizer do their part, and the answer of the operator is on the
+  screen at once
 - Dual-connector architecture: SQLAlchemy for metadata, LlamaIndex for message bodies
 - Graceful fallback to an in-memory message store when PostgreSQL is unavailable
 - Graceful fallback to a local SQLite database when the metadata database is unreachable —

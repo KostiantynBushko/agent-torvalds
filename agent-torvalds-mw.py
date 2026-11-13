@@ -217,6 +217,7 @@ from chat_manager.startup import (
     initialize_chat_manager,
     get_chat_manager,
     get_memory_buffer,
+    count_memory_messages,
     select_startup_session,
 )
 from chat_manager.commands.handler import is_chat_command, handle_chat_command
@@ -1215,6 +1216,28 @@ def render_help_text(
 
 
 # ---------------------------------------------------------------------------
+# Chat Memory Count
+# ---------------------------------------------------------------------------
+
+async def _count_memory_messages(state) -> None:
+    """
+    Count the messages of the chat memory - in the background.
+
+    The history of the session is read and tokenized to be counted, and
+    a session with a long history takes seconds.  The work is done in a
+    thread, so the terminal is not held up by it, and the count reaches
+    the header when it is there.
+
+    Args:
+        state: The state of the TUI the count belongs to.
+    """
+    try:
+        state.memory_msg_count = await asyncio.to_thread(count_memory_messages)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Classic Linear REPL Mode
 # ---------------------------------------------------------------------------
 
@@ -1782,12 +1805,10 @@ async def main():
         system_prompt=system_prompt,
     )
 
-    # Count chat memory messages
-    try:
-        msgs = get_memory_buffer().get()
-        tui_state.memory_msg_count = len(msgs)
-    except Exception:
-        pass
+    # Count chat memory messages.  The count is read in the background:
+    # the history of the session is read and tokenized for it, and that
+    # takes seconds when the session is long.
+    memory_count_task = asyncio.create_task(_count_memory_messages(tui_state))
 
     # Create and run TUI App
     app = TuiApp(
@@ -1816,6 +1837,8 @@ async def main():
     try:
         await app.run()
     finally:
+        if not memory_count_task.done():
+            memory_count_task.cancel()
         end_session()
         _shutdown_chat_manager()
         console.print("[yellow]Torvalds AI Agent session terminated. Goodbye![/yellow]")

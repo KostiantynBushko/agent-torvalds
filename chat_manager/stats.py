@@ -24,9 +24,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Optional, Sequence
 
-from components.tokens import CHARS_PER_TOKEN, count_tokens_of
+from components.tokens import CHARS_PER_TOKEN, count_tokens_of, get_tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +94,104 @@ def count_tokens(messages: Sequence[Any]) -> tuple[int, bool]:
         return 0, False
 
     return count_tokens_of(text)
+
+
+def message_role(message: Any) -> str:
+    """Return the role of a message, as a plain string.
+
+    Args:
+        message: A chat message.
+
+    Returns:
+        The role of the message — ``"user"``, ``"assistant"``,
+        ``"tool"`` or an empty string when the message has no role.
+    """
+    role = getattr(message, "role", "")
+    return str(getattr(role, "value", role)).lower()
+
+
+def count_messages_within_limit(
+    messages: Sequence[Any],
+    token_limit: int,
+    tokenizer: Optional[Callable[[str], Any]] = None,
+) -> int:
+    """Count the messages of the tail that survive the chat-token limit.
+
+    This is the question the memory buffer of LlamaIndex answers with
+    ``ChatMemoryBuffer.get()``, and it answers it with a loop that counts
+    the tokens of the **whole window again on every step**: for a
+    session with thousands of messages that work is quadratic, and it
+    takes a minute.  The count here walks the history **once**, from the
+    end, and stops at the limit.
+
+    The answer is the number of messages the agent holds.  The count of
+    the joined text is not always the sum of the counts of the
+    messages, so the window that the walk finds is counted exactly at
+    the end — the answer is the answer of the buffer down to the
+    message at the boundary.
+
+    Args:
+        messages: The messages of the session, oldest first.
+        token_limit: The chat-token limit in force.
+        tokenizer: The tokenizer to count with.  The tokenizer of the
+            agent is loaded when it is not given.
+
+    Returns:
+        The number of the messages that survive the limit.
+    """
+    if not messages:
+        return 0
+
+    if tokenizer is None:
+        tokenizer = get_tokenizer()
+
+    def _count(window: Sequence[Any]) -> int:
+        """The exact number of the tokens of a window of messages."""
+        text = " ".join(message_text(message) for message in window)
+        if not text:
+            return 0
+        return count_tokens_of(text, tokenizer)[0]
+
+    # The whole history: one count.  A history that fits needs no
+    # further work.
+    if _count(messages) <= token_limit:
+        return len(messages)
+
+    # The tail: the messages are counted one by one, from the end, and
+    # the walk stops when they reach the limit.  Only the tail is
+    # counted — the rest of the history is never looked at.
+    start = len(messages)
+    running = 0
+    while start > 0:
+        tokens = count_tokens_of(message_text(messages[start - 1]), tokenizer)[0]
+        if running + tokens > token_limit:
+            break
+        running += tokens
+        start -= 1
+
+    # The exact count of the window decides the boundary: the joined
+    # text is not always the sum of the counts of the messages.
+    while start > 0 and _count(messages[start - 1:]) <= token_limit:
+        start -= 1
+    while start < len(messages) and _count(messages[start:]) > token_limit:
+        start += 1
+
+    # The window may not begin with an assistant or a tool message: the
+    # model is given the pair, and a tool message without the assistant
+    # message that called it is a history it cannot read.
+    while (
+        start < len(messages)
+        and message_role(messages[start]) in ("assistant", "tool")
+    ):
+        start += 1
+
+    # A message that is longer than the limit is kept on its own: the
+    # model is told that the message is too long, rather than the
+    # history being silently shortened to nothing.
+    if start >= len(messages):
+        start = len(messages) - 1
+
+    return len(messages) - start
 
 
 def measure(
@@ -168,9 +266,11 @@ __all__ = [
     "BYTES_PER_MB",
     "CHARS_PER_TOKEN",
     "HistoryStats",
+    "count_messages_within_limit",
     "count_tokens",
     "format_size",
     "format_tokens",
     "measure",
+    "message_role",
     "message_text",
 ]

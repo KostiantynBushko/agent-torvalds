@@ -160,6 +160,34 @@ def get_in_memory_buffer(chat_token_limit: int | None = None) -> Any:
     return _in_memory_buffer
 
 
+def count_memory_messages() -> int:
+    """Count the messages the agent holds in its memory.
+
+    The count is the count of the *buffer*: the messages that survive
+    the chat-token limit and are sent to the model.  It is counted in
+    one pass — the memory buffer of LlamaIndex trims the history with a
+    loop that counts the tokens of the whole window again on every step,
+    and for a session with thousands of messages that takes a minute.
+
+    Returns:
+        The number of the messages, or 0 when the memory cannot be read.
+    """
+    manager = get_chat_manager()
+
+    if manager is not None and manager.is_initialized:
+        try:
+            return manager.count_buffered_messages()
+        except Exception as e:
+            logger.warning(f"The messages of the memory could not be counted: {e}")
+            return 0
+
+    try:
+        return len(get_memory_buffer().get())
+    except Exception as e:
+        logger.warning(f"The messages of the memory could not be counted: {e}")
+        return 0
+
+
 def get_memory_buffer(chat_token_limit: int | None = None) -> Any:
     """Get the chat memory buffer for the active session.
 

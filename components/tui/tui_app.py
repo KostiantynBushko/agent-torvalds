@@ -113,6 +113,14 @@ class TuiApp:
         self._is_paused: bool = False
         self._live: Optional[Live] = None
 
+        # The jobs that work in the background.  The choice of the session
+        # and the chat commands touch the database and the tokenizer, and
+        # a session with a long history takes seconds to read: done in
+        # the loop that paints the layout, they would freeze it.
+        self._session_task: Optional[asyncio.Task] = None
+        self._chat_command_task: Optional[asyncio.Task] = None
+        self._state_refresh_task: Optional[asyncio.Task] = None
+
         # The operator has not chosen the session yet.  The picker is in
         # the document pane, and the agent waits: a question typed before
         # the choice would run in the session that was active last, which
@@ -200,8 +208,14 @@ class TuiApp:
                     logger.info("TUI loop interrupted")
                 finally:
                     self.input_reader.stop()
-                    if self._active_query_task and not self._active_query_task.done():
-                        self._active_query_task.cancel()
+                    for task in (
+                        self._active_query_task,
+                        self._session_task,
+                        self._chat_command_task,
+                        self._state_refresh_task,
+                    ):
+                        if task and not task.done():
+                            task.cancel()
 
     def _process_keyboard_input(self) -> None:
         """Read and handle pending keys from the non-blocking input reader."""
@@ -405,26 +419,16 @@ class TuiApp:
                 return
 
         # ---- Chat history commands ----
-        if self.chat_history_enabled:
-            from components.tui.chat_history_view import handle_chat_command_markdown
-
-            try:
-                chat_md = handle_chat_command_markdown(cmd)
-            except Exception as e:
-                chat_md = f"# Chat Command\n\n**Error:** {e}"
-            if chat_md:
-                self.state.set_markdown_content(chat_md)
-                self._refresh_chat_session_state()
-                if cmd.strip().lower() == "\\chat-select":
-                    # The picker is open: the operator has to be told
-                    # where the answer goes.  The command bar is the only
-                    # place he can type it.
-                    self.state.show_notification(
-                        "Type \\chat-select <number> in the command bar "
-                        "and press Enter.",
-                        duration=8.0,
-                    )
-                return
+        #
+        # The commands read the database and the history of the session,
+        # and a session with a long history takes seconds to read.  They
+        # run in the background, like the picker of the sessions: in the
+        # loop that paints the layout, they would freeze it.
+        if self.chat_history_enabled and self._is_chat_command(cmd):
+            self._chat_command_task = asyncio.create_task(
+                self._run_chat_command(cmd)
+            )
+            return
 
         # Standard agent query: Launch async task
         if self.state.is_busy:
@@ -669,6 +673,22 @@ class TuiApp:
             note: A line under the header — what went wrong with the
                 answer of the operator, for instance.
         """
+        self.state.set_markdown_content(self._render_session_picker(note))
+
+    def _render_session_picker(self, note: str = "") -> str:
+        """Render the picker of the sessions.
+
+        The sessions are read from the database, so this is the part of
+        the picker that has to run in a thread when the answer of the
+        operator is applied in the background.
+
+        Args:
+            note: A line under the header — what went wrong with the
+                answer of the operator, for instance.
+
+        Returns:
+            The Markdown document of the picker.
+        """
         from components.tui.chat_history_view import (
             PICKER_CONTEXT_STARTUP,
             render_session_picker_markdown,
@@ -690,19 +710,68 @@ class TuiApp:
             else PICKER_CONTEXT_COMMAND
         )
 
-        self.state.set_markdown_content(
-            render_session_picker_markdown(manager, note=note, context=context)
-        )
+        return render_session_picker_markdown(manager, note=note, context=context)
 
     def _handle_session_selection(self, answer: str) -> None:
-        """Apply the answer of the operator to the picker of the sessions.
+        """Take the answer of the operator and apply it in the background.
 
         The rules are the rules of the classic console: a number picks
         the session at that position, ``new <name>`` creates one, and an
         empty answer keeps the session that is already active.
 
+        The work is done by a background job.  It touches the database
+        and the tokenizer, and a session with a long history takes
+        seconds: done in the loop that paints the layout, it would
+        freeze it — and the digit the operator typed would only appear
+        when the freeze was over, as if the answer had come *after* the
+        session was loaded.
+
         Args:
             answer: What the operator typed into the command bar.
+        """
+        from components.tui.chat_history_view import render_session_loading_markdown
+
+        # A job that is still running owns the picker: a second answer
+        # would be applied on top of the first one.
+        if self._session_task is not None and not self._session_task.done():
+            self.state.show_notification(
+                "The session is still being loaded.", duration=3.0
+            )
+            return
+
+        # The answer leaves the command bar at once and is shown in the
+        # document pane: the operator sees that his answer was taken,
+        # and the command bar is empty for the next thing he types.
+        self.state.input_buffer = ""
+        self.state.cursor_pos = 0
+        self.state.set_markdown_content(render_session_loading_markdown(answer))
+
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # No event loop: the caller is not the TUI (a script, a
+            # test).  The work is done here and now, and it is finished
+            # when this returns.
+            asyncio.run(self._apply_session_selection(answer, wait=True))
+            return
+
+        self._session_task = asyncio.create_task(self._apply_session_selection(answer))
+
+    async def _apply_session_selection(
+        self,
+        answer: str,
+        wait: bool = False,
+    ) -> None:
+        """Apply the answer of the operator to the picker of the sessions.
+
+        The database and the tokenizer do their work in a thread, so the
+        layout keeps painting while they are busy.
+
+        Args:
+            answer: What the operator typed into the command bar.
+            wait: Whether the refresh of the header is awaited instead of
+                being left to a background job.  The headless caller
+                wants everything finished when it returns.
         """
         from chat_manager.session_selector import apply_session_answer
 
@@ -724,19 +793,23 @@ class TuiApp:
             )
             return
 
-        session, message = apply_session_answer(manager, answer)
+        # The database is read in a thread: the event loop keeps
+        # painting the layout while the work is done.
+        session, message = await asyncio.to_thread(
+            apply_session_answer, manager, answer
+        )
 
         if session is None:
             # The answer was not understood - the picker stays, and says
             # what it wants.
-            self._show_session_picker(note=message or self._session_hint())
+            picker = await asyncio.to_thread(self._render_session_picker, message)
+            self.state.set_markdown_content(picker)
             self.state.show_notification(
                 message or self._session_hint(), duration=8.0
             )
             return
 
         self._awaiting_session = False
-        self._refresh_chat_session_state()
 
         from components.tui.chat_history_view import render_session_chosen_markdown
 
@@ -745,6 +818,16 @@ class TuiApp:
             message or f"Working in session '{session.session_name}'.",
             duration=6.0,
         )
+
+        # The header follows the session that was picked: its name and
+        # the number of the messages it holds.  Reading the history of a
+        # long session takes seconds, so the count is read in the
+        # background too - the operator does not wait for it.
+        refresh = self._refresh_chat_session_state_async()
+        if wait:
+            await refresh
+        else:
+            self._state_refresh_task = asyncio.create_task(refresh)
 
     @staticmethod
     def _session_hint() -> str:
@@ -756,31 +839,129 @@ class TuiApp:
 
     def _refresh_chat_session_state(self) -> None:
         """Refresh the active chat session information in the TUI state."""
+        info = self._collect_chat_session_state()
+        if info is not None:
+            self._apply_chat_session_state(info)
+
+    async def _refresh_chat_session_state_async(self) -> None:
+        """Refresh the state of the session - in the background.
+
+        Reading the history of a session and counting its messages takes
+        seconds when the session is long, so the work belongs in a
+        thread and not in the loop that paints the layout.
+        """
+        info = await asyncio.to_thread(self._collect_chat_session_state)
+        if info is not None:
+            self._apply_chat_session_state(info)
+
+    def _collect_chat_session_state(
+        self,
+    ) -> Optional[tuple[str, str, str, Optional[int]]]:
+        """Read the state of the active session - the slow part.
+
+        Returns:
+            The name, the type and the id of the active session and the
+            number of the messages it holds, or None when there is no
+            active session.
+        """
         try:
             from chat_manager.startup import get_chat_manager
 
             manager = get_chat_manager()
             if manager is None or not manager.is_initialized:
-                return
+                return None
 
             session = manager.get_active_session()
             if session is None:
-                return
+                return None
 
-            self.state.update_chat_session(
-                session_name=session.session_name,
-                session_type=session.session_type.value,
-                session_id=session.session_id,
+            # The number of the messages the model sees.  The history of
+            # the session is read for it, and that is the expensive part
+            # of the whole refresh.
+            message_count: Optional[int] = None
+            try:
+                message_count = manager.count_buffered_messages()
+            except Exception:
+                message_count = None
+
+            return (
+                session.session_name,
+                session.session_type.value,
+                session.session_id,
+                message_count,
+            )
+        except Exception:
+            return None
+
+    def _apply_chat_session_state(
+        self,
+        info: tuple[str, str, str, Optional[int]],
+    ) -> None:
+        """Put the state of the active session into the TUI state.
+
+        Args:
+            info: The name, the type and the id of the active session and
+                the number of the messages it holds.
+        """
+        session_name, session_type, session_id, message_count = info
+
+        self.state.update_chat_session(
+            session_name=session_name,
+            session_type=session_type,
+            session_id=session_id,
+        )
+
+        if message_count is not None:
+            self.state.memory_msg_count = message_count
+
+    @staticmethod
+    def _is_chat_command(cmd: str) -> bool:
+        """Whether the command is a command of the chat history.
+
+        Args:
+            cmd: The command line the operator typed.
+
+        Returns:
+            True when the command belongs to the chat history.
+        """
+        from chat_manager.commands.handler import is_chat_command
+
+        return is_chat_command(cmd)
+
+    async def _run_chat_command(self, cmd: str) -> None:
+        """Run a command of the chat history - in the background.
+
+        The command reads the database and the history of the session,
+        and a session with a long history takes seconds to read.  The
+        work is done in a thread, so the layout keeps painting.
+
+        Args:
+            cmd: The command line the operator typed.
+        """
+        from components.tui.chat_history_view import handle_chat_command_markdown
+
+        try:
+            chat_md = await asyncio.to_thread(handle_chat_command_markdown, cmd)
+        except Exception as e:
+            chat_md = f"# Chat Command\n\n**Error:** {e}"
+
+        if not chat_md:
+            return
+
+        self.state.set_markdown_content(chat_md)
+
+        if cmd.strip().lower() == "\\chat-select":
+            # The picker is open: the operator has to be told where the
+            # answer goes.  The command bar is the only place he can
+            # type it.  The notification comes before the refresh of the
+            # header, so it is not waited for.
+            self.state.show_notification(
+                "Type \\chat-select <number> in the command bar "
+                "and press Enter.",
+                duration=8.0,
             )
 
-            # Refresh the message count for the (possibly new) session
-            try:
-                msgs = manager.get_messages()
-                self.state.memory_msg_count = len(msgs)
-            except Exception:
-                pass
-        except Exception:
-            pass
+        await self._refresh_chat_session_state_async()
 
     async def _run_question_command(self, cmd: str) -> None:
         """Ask a predefined HITL question and show the outcome.
