@@ -6,6 +6,61 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The size of the context is in the telemetry panel of the TUI
+
+- **The operator asked for the size of the context to be visible while
+  the agent works.**  The log line of 2026-11-04 — *"I need to see in the
+  log the context size in tokens and size of bytes.  So when request is
+  made to LLM I want to see current context size"* — is in a file in
+  another terminal, and the multi-window console has a panel that shows
+  the state of the agent while it works.  The size of the context was not
+  in it.
+
+- **The panel shows the measurement that already exists.**  The agent
+  measures the prompt before every request (`measure_context()` in
+  `components/context_metrics.py`), and the log line is rendered from
+  that measurement.  The panel renders **the same** `ContextSize` — in
+  two lines instead of one:
+
+  ```
+  Context │ 39,691 tok (4.0% of 1M)
+          │ 75 msgs · 155.6 KB
+  ```
+
+  A second measurement would be a second number that can disagree with
+  the first, and the operator would have to work out which one is the
+  truth before acting on it.
+
+- **The share of the window is coloured.**  Green below 50%, yellow from
+  50%, red from 80%: a context that is three quarters full is a context
+  the operator has to know about before the next tool result lands in
+  it.  An estimated number (no tokenizer available) says so with `≈`.
+
+- **The observer is called before the logging flag is checked.**
+  `--no-context-log` turns the **log** off — it does not turn the
+  readout on the screen off.  An operator who does not want the size of
+  the prompt in the log file still wants to see it while the agent
+  works.
+
+- **The agent does not know about the TUI.**  The measurement reaches
+  the panel through an observer (`agent.context_observer`) that the
+  multi-window console installs.  The classic console has no panel, and
+  the observer stays `None`.  An observer that raises never takes the
+  run down: a size is never worth a run.
+
+- **The sidebar was left alone.**  The telemetry pane grew by two lines —
+  four at the width of a narrow terminal, where the value of a row wraps.
+  At 120×40 (the reference size) and at 80×30 the readout is complete
+  and nothing else is lost.  At 80×24 — the smallest supported
+  terminal — the readout keeps its first line, the tokens and the share,
+  and the bottom of the panel is cut, as it was before.  The alternative
+  (the telemetry pane taking two thirds of the sidebar) was measured
+  too: it buys the second line of the readout at 80×24 **only**, and it
+  costs the progress pane its tool tasks at every size — 3 → 0 at 80×24,
+  6 → 2 at 80×30, 6 → 5 at 120×40.
+
+- **The design is in `investigate/tui-context-readout/`.**
+
 #### The manual test of the question of the agent and of the password of root
 
 - **The operator asked for it on 2026-11-10:**
