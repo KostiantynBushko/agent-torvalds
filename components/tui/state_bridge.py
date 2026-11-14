@@ -74,6 +74,16 @@ class TuiState:
         self.memory_msg_count: int = 0
         self.last_stats: Optional[Any] = None
 
+        # The size of the prompt that goes to the model — the context.
+        # The agent measures it before every request and hands the
+        # measurement over; the telemetry panel renders it.
+        self.context_measured: bool = False
+        self.context_tokens: int = 0
+        self.context_messages: int = 0
+        self.context_bytes: int = 0
+        self.context_window: int = 0
+        self.context_estimated: bool = False
+
         # Project management state (active project / workspace)
         self.active_project: str = ""
         self.project_type: str = ""
@@ -221,6 +231,36 @@ class TuiState:
         with self._lock:
             self.cache_hits = hits
             self.cache_total = total
+
+    def update_context_size(
+        self,
+        tokens: int = 0,
+        messages: int = 0,
+        total_bytes: int = 0,
+        window: int = 0,
+        estimated: bool = False,
+    ) -> None:
+        """Update the size of the prompt that goes to the model.
+
+        The agent measures the prompt in the workflow thread and the
+        panel is painted in the render loop: the numbers are written
+        under the lock, so the panel never sees half of a measurement.
+
+        Args:
+            tokens: The tokens of the prompt.
+            messages: The messages of the prompt.
+            total_bytes: The size of the prompt, in bytes.
+            window: The context window of the model, in tokens.
+            estimated: True when the tokens were estimated instead of
+                counted with the tokenizer of the agent.
+        """
+        with self._lock:
+            self.context_measured = True
+            self.context_tokens = max(0, int(tokens))
+            self.context_messages = max(0, int(messages))
+            self.context_bytes = max(0, int(total_bytes))
+            self.context_window = max(0, int(window))
+            self.context_estimated = bool(estimated)
 
     def update_project_context(
         self,

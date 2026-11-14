@@ -295,3 +295,14 @@ the operator has to see the context grow *before* the guard is needed.
 A tokenizer that cannot be loaded is not a reason to lose the line: the
 tokens are then estimated and the line says so.  The bytes are always
 exact.
+
+**The same number is on the screen.**  The multi-window console shows
+the size of the context in its *Agent Telemetry & State* pane, and it is
+the same measurement — the tokens of the prompt, the share of the
+context window, the number of messages and the size of the prompt.  The
+panel and the log never disagree, because there is only one
+measurement.
+
+The switches above turn the **log** off.  They do not turn the panel
+off: an operator who does not want the size of the prompt in the log
+file still wants to see it while the agent works.

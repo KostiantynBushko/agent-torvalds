@@ -1220,6 +1220,31 @@ def render_help_text(
 
 
 # ---------------------------------------------------------------------------
+# Context Size
+# ---------------------------------------------------------------------------
+
+def _put_context_size(state, size, window: int) -> None:
+    """Put the size of the prompt into the state of the TUI.
+
+    The agent measures the prompt before every request to the model.
+    That measurement is what the telemetry panel shows, so the numbers
+    on the screen and the numbers in the log are the same numbers.
+
+    Args:
+        state: The state of the TUI the measurement belongs to.
+        size: The measured size of the prompt.
+        window: The context window of the model, in tokens.
+    """
+    state.update_context_size(
+        tokens=size.total_tokens,
+        messages=size.messages,
+        total_bytes=size.total_bytes,
+        window=window,
+        estimated=size.estimated,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Chat Memory Count
 # ---------------------------------------------------------------------------
 
@@ -1808,6 +1833,16 @@ async def main():
         tools=selected_tools,
         system_prompt=system_prompt,
     )
+
+    # The size of the context reaches the telemetry panel: the agent
+    # measures the prompt before every request, and the observer puts
+    # that measurement into the state of the TUI.  The observer is
+    # installed here and not in the classic console — there is no panel
+    # there.
+    if isinstance(agent, HITLFunctionAgent):
+        agent.context_observer = lambda size, window: _put_context_size(
+            tui_state, size, window
+        )
 
     # Count chat memory messages.  The count is read in the background:
     # the history of the session is read and tokenized for it, and that

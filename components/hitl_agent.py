@@ -60,7 +60,7 @@ import json
 import logging
 import re
 import uuid
-from typing import Any, List, Optional, Union
+from typing import Any, Callable, List, Optional, Union
 
 from llama_index.core.agent.workflow import (
     AgentInput,
@@ -311,6 +311,17 @@ class HITLFunctionAgent(FunctionAgent):
     #: operator cannot see it coming.
     context_logging_enabled: bool = True
 
+    #: Called with the size of the prompt and the context window of the
+    #: model, every time a request goes out to the model.  The multi-window
+    #: console uses it to show the size of the context in the telemetry
+    #: panel; ``None`` means nobody is watching.
+    #:
+    #: The observer is called **before** the logging flag is checked:
+    #: ``--no-context-log`` turns the *log* off, not the readout on the
+    #: screen off.  An operator who does not want the size of the prompt
+    #: in the log file still wants to see it while the agent works.
+    context_observer: Optional[Callable[[Any, int], None]] = None
+
     # Cached context-window information for the context guard.  Reading the
     # LLM metadata costs a round-trip to the Ollama server, so it is done
     # once per agent instance.
@@ -371,6 +382,11 @@ class HITLFunctionAgent(FunctionAgent):
         # it, and it is the only one that is guaranteed to hold the
         # request.
         self._fit_window_to_prompt(size)
+
+        # Whoever is watching is told the size of the prompt.  This
+        # happens before the logging flag is checked: the flag turns the
+        # log off, not the readout off.
+        self._publish_context_size(size)
 
         # The size of the prompt is logged for every request, whether the
         # guard trimmed it or not: the operator has to see the context grow
@@ -499,6 +515,35 @@ class HITLFunctionAgent(FunctionAgent):
             logger.debug(
                 "Could not fit the context window to the prompt: %s", exc
             )
+
+    def _publish_context_size(self, size: Any) -> None:
+        """Show the size of the prompt to whoever is watching.
+
+        The observer is called with the measurements of the prompt and
+        the context window of the model — the two numbers the readout
+        of the TUI is built from.
+
+        It is called **before** the logging flag is checked, and that is
+        the point of it: ``--no-context-log`` turns the *log* off.  The
+        readout on the screen is a different thing, and the operator who
+        turns the log off still wants to see the size of the context
+        while the agent works.
+
+        A measurement is never worth a run: an observer that raises is
+        logged and ignored, and the agent carries on.
+
+        Args:
+            size: The measured size of the prompt, or ``None`` when it
+                could not be measured.
+        """
+        observer = self.context_observer
+        if observer is None or size is None:
+            return
+
+        try:
+            observer(size, self._model_context_window())
+        except Exception as exc:  # noqa: BLE001 - a size is never worth a run
+            logger.debug("The context observer failed: %s", exc)
 
     def _log_context_size(
         self,

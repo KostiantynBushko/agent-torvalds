@@ -318,6 +318,11 @@ describe.  A plain `git clone` leaves the directory empty;
 - The **multi-window** variant of the orchestrator, built on top of `agent-torvalds.py`
 - Persistent Multi-Window TUI: Markdown document viewer, background worker/tool progress,
   agent telemetry inspector, and a non-blocking command bar with HITL dialogs
+- The **Agent Telemetry & State** pane carries the **size of the context**: the tokens of
+  the prompt and the share of the model's context window they take (green below 50%,
+  yellow from 50%, red from 80%), and the number of messages and the size of the prompt.
+  It is the same measurement the log line carries — see
+  [The size of the context](docs/logging.md#12-the-size-of-the-context)
 - **Full feature parity** with the classic orchestrator:
   - Startup tool selection (`--select`) with an interactive category picker
   - Project Management: `--auto-scan`, `--project-path`, workspace config, project context injection
