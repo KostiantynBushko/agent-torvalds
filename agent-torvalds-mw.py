@@ -689,6 +689,75 @@ def _collect_all_tools() -> List[FunctionTool]:
 
 
 # ---------------------------------------------------------------------------
+# The tools the agent will really have
+# ---------------------------------------------------------------------------
+
+def _agent_tool_inventory(
+    use_retriever: bool,
+    selected_tools: Optional[List[FunctionTool]] = None,
+) -> List[FunctionTool]:
+    """
+    The tools the agent will really have.
+
+    One place decides it, so that the telemetry panel cannot disagree
+    with the agent: the retriever indexes these tools, the agent is
+    given these tools, and the panel names them.
+
+    The three modes are the three answers:
+
+    * the retriever reaches every tool of every toolkit - it picks the
+      ones it needs for a query out of them;
+    * ``--select`` gives the agent the tools the operator picked;
+    * ``--full`` gives the agent every tool of every toolkit.
+
+    Args:
+        use_retriever: True when the agent retrieves its tools on demand.
+        selected_tools: The tools the operator selected with ``--select``.
+
+    Returns:
+        The tools the agent will have.
+    """
+    if use_retriever:
+        from agent_tool_retriever import collect_tools
+
+        return collect_tools()
+
+    if selected_tools is None:
+        return _collect_all_tools()
+
+    return list(selected_tools)
+
+
+def _selected_tool_groups(tools: List[FunctionTool]) -> List[str]:
+    """
+    The categories the operator picked.
+
+    The picker of ``--select`` asks for categories - "Operating
+    System", "System", "Security" - and the telemetry panel names the
+    categories: the operator picked a category, and the name of one
+    tool out of the eleven of a category says nothing about the other
+    ten.
+
+    The order is the order of the menu: the tools carry their category
+    in their description, and the tools arrive in the order of the
+    discovery, so the groups come out in the order the operator saw
+    them in.
+
+    Args:
+        tools: The tools the operator selected.
+
+    Returns:
+        The names of the categories they belong to.
+    """
+    if not tools:
+        return []
+
+    from agent_tool_selection import group_tools_by_category
+
+    return list(group_tools_by_category(tools).keys())
+
+
+# ---------------------------------------------------------------------------
 # Agent factory
 # ---------------------------------------------------------------------------
 
@@ -699,6 +768,7 @@ def create_agent(
     tools: Optional[List[FunctionTool]] = None,
     system_prompt: Optional[str] = None,
     callback_manager: Optional[CallbackManager] = None,
+    indexed_tools: Optional[List[FunctionTool]] = None,
 ):
     """
     Create and configure the Torvalds FunctionAgent.
@@ -720,6 +790,12 @@ def create_agent(
                          with no ``callback_manager`` field — so it must be
                          bound to the LLM (see
                          ``components.stats_handler.bind_callback_manager``).
+        indexed_tools: The tools the retriever indexes. ``None`` collects
+                       them from the toolkits. A caller that has already
+                       collected them hands the list over, so that the
+                       indexed tools are the very tools the caller knows
+                       about - the multi-window console, which names them
+                       in its telemetry panel.
 
     Returns:
         FunctionAgent instance.
@@ -782,6 +858,7 @@ def create_agent(
             callback_manager=callback_manager,
             agent_class=HITLFunctionAgent,
             tools=skill_tools,
+            indexed_tools=indexed_tools,
         )
     else:
         if tools is None:
@@ -1756,7 +1833,9 @@ async def main():
     tui_state = TuiState()
     tui_state.model_name = MODEL
     if args.select:
-        tui_state.mode = f"Selected ({len(selected_tools or [])} tools)"
+        # The count of the tools is on the row of the tools; the mode
+        # only says which mode it is.
+        tui_state.mode = "Selected tools"
     elif args.full:
         tui_state.mode = "Full upfront"
     else:
@@ -1764,7 +1843,6 @@ async def main():
     tui_state.hitl_enabled = hitl_enabled
     tui_state.hitl_timeout = hitl_timeout
     tui_state.hitl_default_answer = hitl_default_answer
-    tui_state.active_toolkits = ["Git", "OS", "DB", "Math"]
 
     # Populate the project context in the TUI state
     try:
@@ -1825,13 +1903,43 @@ async def main():
     # Build the system prompt with project context
     system_prompt = build_system_prompt(force_project=args.force_project)
 
+    # The tools the agent will have.  The inventory is measured once, and
+    # the very same list is given to the agent - the retriever indexes
+    # it, the agent is handed it - so the panel and the agent cannot
+    # disagree about what the agent can do.
+    use_retriever = not args.full and not args.select
+    inventory = _agent_tool_inventory(use_retriever, selected_tools)
+
     # Create Agent
     agent = create_agent(
-        use_retriever=not args.full and not args.select,
+        use_retriever=use_retriever,
         top_k=args.top_k,
         is_tui=True,
-        tools=selected_tools,
+        # The retriever indexes the inventory itself; the other modes are
+        # given the tools directly.
+        tools=None if use_retriever else inventory,
+        indexed_tools=inventory if use_retriever else None,
         system_prompt=system_prompt,
+    )
+
+    # The tools the agent really has, for the telemetry panel.  The row
+    # used to name four toolkits that were written into the source; it
+    # names the tools now - the ones the operator picked with --select,
+    # every tool in --full, and every tool the retriever indexes.  When
+    # the operator picked the tools by hand, the row names the
+    # categories they came from: that is what the operator picked.
+    if args.select:
+        tool_scope = "selected"
+    elif args.full:
+        tool_scope = "loaded"
+    else:
+        tool_scope = "indexed"
+
+    tui_state.update_tools(
+        [tool.metadata.name for tool in inventory],
+        scope=tool_scope,
+        # The operator picked categories, and the panel names them.
+        groups=_selected_tool_groups(inventory) if tool_scope == "selected" else None,
     )
 
     # The size of the context reaches the telemetry panel: the agent

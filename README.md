@@ -324,6 +324,10 @@ describe.  A plain `git clone` leaves the directory empty;
   The row is called **Prompt** and the readout names the window it is a share of, so
   every number on the screen says what it is.  It is the same measurement the log line
   carries — see [The size of the context](docs/logging.md#12-the-size-of-the-context)
+- The **Tools** row names the tools the agent **really has**: the categories the
+  operator selected with `--select` are named — `Operating System, System` — and the
+  count says how the agent got the tools: `8 selected`, `134 loaded`, `156 indexed`.
+  Nothing on the panel is a list that was written into the source.
 - **Full feature parity** with the classic orchestrator:
   - Startup tool selection (`--select`) with an interactive category picker
   - Project Management: `--auto-scan`, `--project-path`, workspace config, project context injection

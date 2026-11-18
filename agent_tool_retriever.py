@@ -28,9 +28,7 @@ Settings.embed_model = OllamaEmbedding(
 )
 
 
-def build_tool_retriever(
-    llm,
-    similarity_top_k: int = 8,
+def collect_tools(
     include_cache_tools: bool = True,
     include_math_tools: bool = True,
     include_git_tools: bool = True,
@@ -45,17 +43,21 @@ def build_tool_retriever(
     include_project_manager_tools: bool = True,  # NEW: Step 05
     include_mikrotik_tools: bool = True,  # NEW: MikroTik RouterOS toolkit
     include_shodan_tools: bool = True,  # NEW: Shodan internet-exposure toolkit
-) -> tuple:
+) -> list:
     """
-    Build a tool retriever that loads tools on-demand based on query semantics.
+    Collect the tools of every toolkit, without indexing them.
+
+    The retriever indexes these tools, and the multi-window console names
+    them in its telemetry panel.  The inventory is therefore a thing of
+    its own and not a side effect of building the index: a caller that
+    needs to know what the agent can reach asks for the list instead of
+    reading it out of the index.
 
     Args:
-        llm: The LLM instance to use for embedding/retrieval.
-        similarity_top_k: Number of top tools to retrieve per query.
         include_*_tools: Flags to enable/disable entire toolkit categories.
 
     Returns:
-        tuple: (tool_retriever, all_tools_list)
+        list: The tools of every enabled toolkit.
     """
     # -----------------------------------------------------------------------
     # 1. Collect all tool definitions from each toolkit
@@ -241,6 +243,65 @@ def build_tool_retriever(
             # Shodan toolkit not available - skip gracefully
             pass
 
+    return all_tools
+
+
+def build_tool_retriever(
+    llm,
+    similarity_top_k: int = 8,
+    include_cache_tools: bool = True,
+    include_math_tools: bool = True,
+    include_git_tools: bool = True,
+    include_os_tools: bool = True,
+    include_linux_tools: bool = True,
+    include_github_tools: bool = True,
+    include_db_tools: bool = True,
+    include_apt_tools: bool = True,
+    include_windows_tools: bool = True,
+    include_xlsx_tools: bool = True,
+    include_data_analysis_tools: bool = True,
+    include_project_manager_tools: bool = True,  # NEW: Step 05
+    include_mikrotik_tools: bool = True,  # NEW: MikroTik RouterOS toolkit
+    include_shodan_tools: bool = True,  # NEW: Shodan internet-exposure toolkit
+    tools: Optional[List[FunctionTool]] = None,
+) -> tuple:
+    """
+    Build a tool retriever that loads tools on-demand based on query semantics.
+
+    Args:
+        llm: The LLM instance to use for embedding/retrieval.
+        similarity_top_k: Number of top tools to retrieve per query.
+        include_*_tools: Flags to enable/disable entire toolkit categories.
+        tools: The tools to index.  ``None`` collects them from the
+            toolkits - the default.  A caller that has already collected
+            them hands the list over, so that the toolkits are not
+            imported twice and the indexed tools are the very tools the
+            caller knows about.
+
+    Returns:
+        tuple: (tool_retriever, all_tools_list)
+    """
+    all_tools = (
+        list(tools)
+        if tools is not None
+        else collect_tools(
+            include_cache_tools=include_cache_tools,
+            include_math_tools=include_math_tools,
+            include_git_tools=include_git_tools,
+            include_os_tools=include_os_tools,
+            include_linux_tools=include_linux_tools,
+            include_github_tools=include_github_tools,
+            include_db_tools=include_db_tools,
+            include_apt_tools=include_apt_tools,
+            include_windows_tools=include_windows_tools,
+            include_xlsx_tools=include_xlsx_tools,
+            include_data_analysis_tools=include_data_analysis_tools,
+            include_project_manager_tools=include_project_manager_tools,
+            include_mikrotik_tools=include_mikrotik_tools,
+            include_shodan_tools=include_shodan_tools,
+        )
+    )
+
     # -----------------------------------------------------------------------
     # 4. Build ObjectIndex over tool objects for semantic retrieval
     # -----------------------------------------------------------------------
@@ -264,6 +325,7 @@ def create_agent_with_retriever(
     callback_manager: Optional[CallbackManager] = None,
     agent_class: type = FunctionAgent,
     tools: Optional[List[FunctionTool]] = None,
+    indexed_tools: Optional[List[FunctionTool]] = None,
 ) -> FunctionAgent:
     """
     Create a FunctionAgent that uses on-demand tool retrieval.
@@ -291,6 +353,11 @@ def create_agent_with_retriever(
                skill is loaded on demand, and the model cannot ask for a
                skill it cannot see.  The retriever adds its own tools on
                top of these; the two lists are merged.
+        indexed_tools: The tools the retriever indexes.  ``None``
+               collects them from the toolkits - the default.  A caller
+               that has already collected them hands the list over, so
+               that the indexed tools are the very tools the caller
+               knows about.
 
     Returns:
         FunctionAgent configured with tool_retriever.
@@ -298,6 +365,7 @@ def create_agent_with_retriever(
     tool_retriever, _ = build_tool_retriever(
         llm,
         similarity_top_k=similarity_top_k,
+        tools=indexed_tools,
     )
 
     agent = agent_class(
