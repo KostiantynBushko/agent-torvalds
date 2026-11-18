@@ -70,7 +70,20 @@ class TuiState:
         self.cache_total: int = 0
         self.model_name: str = ""
         self.mode: str = "On-Demand Retriever"
-        self.active_toolkits: List[str] = []
+        # The tools the agent really has, by name, and how it got them:
+        # "selected" - the operator picked them with ``--select``;
+        # "loaded" - every tool of every toolkit, loaded upfront;
+        # "indexed" - every tool of every toolkit, indexed by the
+        # retriever.  The telemetry panel shows them - and an empty list
+        # means "not known", not "no tools".
+        self.active_tools: List[str] = []
+        self.active_tool_scope: str = ""
+        # The groups the operator picked with ``--select``: the
+        # categories of the menu - "Operating System", "System",
+        # "Security".  The panel names the groups and not the tools:
+        # the operator picked a category, and the name of one tool out
+        # of its eleven says nothing about the other ten.
+        self.active_tool_groups: List[str] = []
         self.memory_msg_count: int = 0
         self.last_stats: Optional[Any] = None
 
@@ -261,6 +274,33 @@ class TuiState:
             self.context_bytes = max(0, int(total_bytes))
             self.context_window = max(0, int(window))
             self.context_estimated = bool(estimated)
+
+    def update_tools(
+        self,
+        tools: Optional[List[str]] = None,
+        scope: str = "",
+        groups: Optional[List[str]] = None,
+    ) -> None:
+        """Update the tools the agent really has.
+
+        The orchestrator measures them: the names of the tools the agent
+        was given, how it got them, and - when the operator picked the
+        tools by hand - the groups the tools belong to.  The panel
+        renders the measurement - it never guesses.
+
+        Args:
+            tools: The names of the tools.
+            scope: How the agent got them: "selected" (the operator
+                picked them), "loaded" (every tool, loaded upfront) or
+                "indexed" (every tool, indexed by the retriever).
+            groups: The groups the operator picked - the categories of
+                the menu.  The panel names them; the tools are the
+                detail behind them.
+        """
+        with self._lock:
+            self.active_tools = list(tools or [])
+            self.active_tool_scope = str(scope or "")
+            self.active_tool_groups = list(groups or [])
 
     def update_project_context(
         self,

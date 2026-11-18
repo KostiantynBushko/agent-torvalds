@@ -855,6 +855,93 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The telemetry panel named four toolkits that were written into the source
+
+- **The operator reported it on 2026-11-18.**  *"Also please check the
+  'Toolkits' in telemetry view looks like it does not represent real
+  selected tools."*  The row was right about the fact that the agent has
+  tools, and wrong about which ones: it said **Git, OS, DB, Math** on
+  every machine, in every mode, whatever the operator had selected.
+
+- **The row was a decoration.**  The list was a literal in
+  `components/tui/telemetry_view.py`, and the orchestrator wrote the same
+  list into the state of the TUI
+  (`tui_state.active_toolkits = ["Git", "OS", "DB", "Math"]`).  Nothing
+  ever measured anything.  The agent had **156 tools** on this machine
+  — among them the tools of GitHub, APT, Linux, Shodan, MikroTik, Excel,
+  the data analysis toolkit and the project manager — and the panel named
+  four toolkits, none of which was necessarily among the selected ones.
+
+- **The row is a measurement now, and it names the groups.**  The
+  orchestrator hands the panel the names of the tools the agent really
+  has, and the panel shows what it is told:
+
+  ```
+  Tools              8 selected
+                    Network
+  ```
+
+  and when the operator picked more than one category:
+
+  ```
+  Tools              18 selected
+                    Operating System, System
+                    +1 more
+  ```
+
+  The count says how the agent got the tools, so that the number is
+  never read as something it is not.  The three modes are three
+  different answers, and each of them is the truth about that mode:
+
+  | mode | the agent has | the panel names |
+  | --- | --- | --- |
+  | the retriever | every tool of every toolkit | `156 indexed` |
+  | `--full` | every tool of every toolkit | `134 loaded` |
+  | `--select Network` | the eight MikroTik tools | `8 selected` and the group `Network` |
+
+  The groups are named when the operator picked the tools by hand.  In
+  the other modes the operator picked no tool at all, and a handful of
+  names out of a hundred and fifty would say nothing that the count does
+  not say better.
+
+- **The operator looked at the row and said what was missing.**  On
+  2026-11-18, with the first version of the row in front of him:
+  *"In the telemetry window I would like to see just common name for
+  selected group, like Operating System, System, Security and so on."*
+  He was right, and the row was wrong in a way nobody had seen yet: the
+  picker of `--select` asks for **categories**, and the row named the
+  **tools**.  The operator typed `3,12` — *Operating System* and
+  *System*, eighteen tools — and the row answered `pwd, ls, +16 more`.
+  The name of one tool out of the eleven of a category says nothing
+  about the other ten, and the operator did not pick a tool: he picked a
+  category.
+
+  The row names the categories now.  `_selected_tool_groups()` in
+  `agent-torvalds-mw.py` groups the selected tools the way the picker
+  grouped them — by the category in their description — and the panel
+  shows the groups.  The tools are still counted: the number on the row
+  is the number of tools the agent has, and the names below it are the
+  categories they came from.
+
+- **One place decides what the agent has.**  `_agent_tool_inventory()`
+  in `agent-torvalds-mw.py` answers the question for the three modes,
+  and the very same list is handed to the agent — the retriever indexes
+  it, the other modes are given it.  The panel and the agent cannot
+  disagree about what the agent can do.
+
+- **The names that do not fit are counted, not cut.**  The panel shows
+  two of them and says how many are left.  A list that is cut in the
+  middle without saying so is a lie.
+
+- **A row that knows nothing says so.**  When nothing is measured, the
+  row shows a dash, like the row of the size of the prompt.  A panel
+  that says something the agent does not do is worse than a panel that
+  says nothing: the operator reads it and believes it.
+
+- **The evidence.**  `investigate/telemetry-tools/` holds the verifier
+  (the panel, in the three modes) and the harness of the change
+  (`tests/test_tui_selected_tools_row.py`).
+
 #### The agent answered nothing at all, and the run ended on a turn that said nothing
 
 - **The operator reported it on 2026-11-13.**  Three requests went in.

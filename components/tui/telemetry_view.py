@@ -89,6 +89,9 @@ class TelemetryView:
     Renders the Agent Telemetry and State pane in the bottom-right sidebar.
     """
 
+    #: How many names the row shows before it counts the rest.
+    TOOL_NAMES_SHOWN = 2
+
     def _render_context(self, state: TuiState) -> str:
         """Render the size of the prompt that goes to the model.
 
@@ -147,6 +150,63 @@ class TelemetryView:
         )
         return f"{head}\n{tail}"
 
+    def _render_tools(self, state: TuiState) -> str:
+        """Render the tools the agent really has.
+
+        The count says how the agent got them, so that the number is
+        never read as something it is not: "8 selected" is what the
+        operator chose, "134 loaded" is every tool of every toolkit, and
+        "156 indexed" is every tool the retriever reaches for.
+
+        The names are shown when the operator picked the tools by hand -
+        the categories that were selected with ``--select``.  The
+        operator picks a category, and the panel names the category:
+        "Operating System, System" says what the agent can do, and the
+        name of one tool out of the eleven of a category says nothing
+        about the other ten.  In the other modes the operator picked no
+        tool at all, and a handful of names out of a hundred and fifty
+        would say nothing that the count does not say better.
+
+        The names that do not fit are counted and not shown: the panel
+        has room for a few, and a list that is cut in the middle
+        without saying so is a lie.
+
+        When nothing is known, the row says so - a dash, like the row of
+        the size of the prompt.
+
+        Args:
+            state: Current TuiState snapshot
+
+        Returns:
+            The readout, as one or two lines of markup.
+        """
+        if not state.active_tools:
+            return "[dim]—[/dim]"
+
+        count = len(state.active_tools)
+        scope = state.active_tool_scope or "available"
+        head = f"{count} {scope}"
+
+        if scope != "selected":
+            return head
+
+        # The groups the operator picked.  The tools are the detail
+        # behind them, and the panel names the groups: the picker asks
+        # for a category, and the answer of the operator was a
+        # category.  When the groups are not known, the tools are shown
+        # - a row that knows less says what it does know.
+        groups = list(state.active_tool_groups) or list(state.active_tools)
+        names = groups[: self.TOOL_NAMES_SHOWN]
+        lines = [", ".join(names)]
+        rest = len(groups) - len(names)
+        if rest > 0:
+            # The count of the names that are not shown is on a line of
+            # its own: a phrase that is broken in the middle is a
+            # phrase nobody reads.
+            lines.append(f"+{rest} more")
+
+        return "\n".join([head] + lines)
+
     def render(self, state: TuiState) -> Panel:
         """
         Render the telemetry panel.
@@ -158,8 +218,12 @@ class TelemetryView:
             Rich Panel to place inside layout['telemetry_pane']
         """
         table = Table(box=None, show_header=False, expand=True, padding=(0, 0))
-        table.add_column("Metric", style="dim cyan", ratio=45)
-        table.add_column("Value", style="bold white", ratio=55)
+        # The value column is the wider one: the names of the tools are
+        # long, and a name that is cut in half is not a name.  "fold"
+        # breaks a name that does not fit instead of hiding the end of
+        # it behind an ellipsis.
+        table.add_column("Metric", style="dim cyan", ratio=35)
+        table.add_column("Value", style="bold white", ratio=65, overflow="fold")
 
         # 1. Mode
         table.add_row("Mode", state.mode)
@@ -189,14 +253,21 @@ class TelemetryView:
         # 6. Tool Calls
         table.add_row("Tool Calls", f"{state.total_tool_calls}")
 
-        # 7. Active Toolkits
-        if state.active_toolkits:
-            toolkits_str = ", ".join(state.active_toolkits[:4])
-            if len(state.active_toolkits) > 4:
-                toolkits_str += f" +{len(state.active_toolkits) - 4}"
-            table.add_row("Toolkits", toolkits_str)
-        else:
-            table.add_row("Toolkits", "Git, OS, DB, Math")
+        # 7. The tools the agent really has
+        #
+        # The row used to name four toolkits that were written into the
+        # source - "Git, OS, DB, Math" - whatever the operator had
+        # selected, and whatever was installed on the machine.  A panel
+        # that says something the agent does not do is worse than a
+        # panel that says nothing: the operator reads it and believes
+        # it.
+        #
+        # The row is a measurement now: the orchestrator hands over the
+        # names of the tools the agent really has - the ones the
+        # operator picked with --select, every tool in --full, and every
+        # tool the retriever indexes.  When nothing is known, the row
+        # says so.
+        table.add_row("Tools", self._render_tools(state))
 
         # 8. Active Project
         if state.active_project:
