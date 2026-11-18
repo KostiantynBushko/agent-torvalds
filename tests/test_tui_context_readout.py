@@ -285,7 +285,7 @@ class TestTheReadout:
         text = _render_text(_measured_state())
 
         assert "39,691 tok" in text
-        assert "4.0% of 1M" in text
+        assert "4.0% of 1M window" in text
 
     def test_it_shows_the_messages_and_the_size(self):
         """What the tokens are made of."""
@@ -298,8 +298,34 @@ class TestTheReadout:
         """The readout sits in the panel, under the total tokens."""
         text = _render_text(_measured_state())
 
-        assert "Context" in text
-        assert text.index("Context") < text.index("Total Tokens") + 200
+        assert "Prompt" in text
+        assert text.index("Prompt") < text.index("Total Tokens") + 200
+
+    def test_the_row_is_named_prompt(self):
+        """The operator sees that the number is the size of the prompt.
+
+        The row was called "Context", and "context" is what the window
+        of the model is called: the operator read "41,834 tok (77.0% of
+        54K)" and could not tell which of the two numbers was the size
+        of the prompt that goes to the model.  The row carries the name
+        of the thing it measures.
+
+        The operator reported it on 2026-11-14.
+        """
+        text = _render_text(_measured_state())
+
+        assert "Prompt" in text
+        assert "Context" not in text
+
+    def test_the_share_names_the_window(self):
+        """The share says what the 54K are.
+
+        "77.0% of 54K" leaves the reader to work out that the 54K are
+        the window of the model.  The readout names it.
+        """
+        text = _render_text(_measured_state())
+
+        assert "of 1M window" in text
 
     def test_before_the_first_measurement_it_shows_a_dash(self):
         """A context of zero tokens would be a lie."""

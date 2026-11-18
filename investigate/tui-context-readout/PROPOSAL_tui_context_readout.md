@@ -28,8 +28,8 @@ to the other numbers of the agent, updated live.
 ## What the panel shows
 
 ```
-Context │ 39,691 tok (4.0% of 1M)
-        │ 75 msgs · 155.6 KB
+Prompt │ 39,691 tok (4.0% of 1M window)
+       │ 75 msgs · 155.6 KB
 ```
 
 Two lines, because the panel has room for two and the operator asked
@@ -43,6 +43,47 @@ for both numbers:
 The share is coloured: green below 50%, yellow from 50%, red from 80%.
 A context that is three quarters full is a context the operator has to
 know about before the next tool result lands in it.
+
+## The panel names every number
+
+The operator looked at the panel on 2026-11-14 and said:
+
+> *"it is not clear from the panel what current prompt size is, in the
+> Telemetry window currently I see 41,834 tok (77.0% of 54K)"*
+
+The number was on the screen, and it was the right number.  The row
+was called **Context**, and *context* is what the **window** of the
+model is called: two numbers stood side by side — "41,834 tok" and
+"54K" — and the row did not say which of them was the size of the
+prompt that goes to the model.
+
+Two words were wrong, and both were in the wording:
+
+* the **row** was called *Context* — it is called **Prompt** now.  The
+  name of the thing is the name of the measurement;
+* the **share** said "77.0% of 54K" — the 54K are the window of the
+  model, and the readout says so: "77.0% of 54K window".
+
+Only the percentage carries the colour now; the words around it are the
+plain text of the panel.  The colour belongs to the share, not to the
+window it is a share of.
+
+There is no article in front of the number.  "a 8K window" is wrong,
+and the window of a model is not always a number that wants an "a".
+
+The wording was measured against the room the panel has.  The sidebar
+is 35% of the terminal, the telemetry pane is half of the sidebar:
+
+| terminal | the sidebar | the panel needs | the pane has | before |
+|---|---|---|---|---|
+| 80×24 | 28 | 18 lines | 9 — cropped, as before | 18 lines |
+| 100×30 | 35 | 15 lines | 12 — cropped, as before | 15 lines |
+| 120×40 (the reference size) | 42 | 13 lines | 17 — fits | 13 lines |
+| 160×50 | 56 | 13 lines | 22 — fits | 12 lines |
+
+The panel is **not taller** at 80, at 100 and at 120 columns.  At 160
+columns it takes one line more, and the telemetry pane has 22 lines
+there.
 
 ## The measurement is the one that already exists
 
@@ -192,6 +233,8 @@ the crop of the bottom of the panel is pre-existing.
 * A failing observer does not take the run down.
 * The state holds the measurement, and the panel renders it: the tokens,
   the share, the number of messages and the size.
+* The row is called **Prompt**, and the share names the window it is a
+  share of — the readout says what every number is.
 * The share is coloured by the threshold, and an estimated number says
   so (`≈`).
 * Before the first measurement the panel shows a dash and not a zero —
