@@ -303,6 +303,11 @@ context window, the number of messages and the size of the prompt.  The
 panel and the log never disagree, because there is only one
 measurement.
 
+The row of the panel is called **Prompt**, and it says what the window
+is: `41,834 tok (77.5% of 54K window)`.  The number of the panel and
+the number of the log are the same number — only the way they are
+written differs.
+
 The switches above turn the **log** off.  They do not turn the panel
 off: an operator who does not want the size of the prompt in the log
 file still wants to see it while the agent works.

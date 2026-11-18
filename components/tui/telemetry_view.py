@@ -104,6 +104,17 @@ class TelemetryView:
         says so: a context of "0 tokens" would be a lie, because the
         size of the prompt is not known yet.
 
+        The wording names every number.  The row is called *Prompt*,
+        because the panel shows the prompt that goes to the model — and
+        "context" is what the window of the model is called, so a row
+        called "Context" left the operator guessing which of the two
+        numbers was the size of the prompt.  The share names what it is
+        a share of, for the same reason: "77.0% of 54K" does not say
+        what the 54K are, and "of 54K window" does.
+
+        There is no article in front of the number: "a 8K window" is
+        wrong, and the panel is read at a glance.
+
         Args:
             state: Current TuiState snapshot
 
@@ -125,7 +136,7 @@ class TelemetryView:
             window = _compact_tokens(state.context_window)
             head = (
                 f"{tokens} tok "
-                f"([{style}]{share:.1f}% of {window}[/{style}])"
+                f"([{style}]{share:.1f}%[/{style}] of {window} window)"
             )
         else:
             head = f"{tokens} tok"
@@ -169,8 +180,8 @@ class TelemetryView:
             tokens_str = "0"
         table.add_row("Total Tokens", tokens_str)
 
-        # 4. The size of the context — the prompt that goes to the model
-        table.add_row("Context", self._render_context(state))
+        # 4. The size of the prompt that goes to the model
+        table.add_row("Prompt", self._render_context(state))
 
         # 5. LLM Invocations
         table.add_row("LLM Calls", f"{state.llm_call_count}")

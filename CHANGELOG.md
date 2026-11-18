@@ -23,8 +23,8 @@ All notable changes to this project are documented in this file.
   two lines instead of one:
 
   ```
-  Context │ 39,691 tok (4.0% of 1M)
-          │ 75 msgs · 155.6 KB
+  Prompt │ 39,691 tok (4.0% of 1M window)
+         │ 75 msgs · 155.6 KB
   ```
 
   A second measurement would be a second number that can disagree with
@@ -751,6 +751,47 @@ All notable changes to this project are documented in this file.
   and the catalog of the five skills takes **209**.
 
 ### Changed
+
+#### The panel says what the number is
+
+- **The operator looked at the panel and could not tell what it
+  measured.**  On 2026-11-14:
+
+  > *"it is not clear from the panel what current prompt size is, in the
+  > Telemetry window currently I see 41,834 tok (77.0% of 54K)"*
+
+  The number was on the screen and it was the right number — but the row
+  was called **Context**, and *context* is what the **window** of the
+  model is called.  Two numbers stood side by side, "41,834 tok" and
+  "54K", and the row did not say which of them was the size of the
+  prompt that goes to the model.
+
+- **The row is called `Prompt` now, and the share names the window:**
+
+  ```
+  Prompt │ 41,834 tok (77.5% of 54K window)
+         │ 75 msgs · 155.6 KB
+  ```
+
+  The name of the thing is the name of the measurement.  "77.0% of 54K"
+  left the reader to work out that the 54K are the window of the model;
+  the readout says it.  There is no article in front of the number —
+  "a 8K window" is wrong.
+
+- **Only the wording moved.**  The number is still the measurement of
+  `measure_context()`, the same one the log line carries, and the panel
+  is still where the operator sees it.  The share is still coloured by
+  the same thresholds; only the percentage carries the colour now, and
+  the words around it are the plain text of the panel.
+
+- **The panel did not grow.**  It was measured at the width of the
+  sidebar of a 120-column terminal (42 characters): 13 lines before,
+  13 lines after.  The same at 100 columns (15 lines) and at 80
+  columns (18 lines, cropped by the pane as before).  At 160 columns it
+  takes one line more — 13 against 12 — and the telemetry pane has 22
+  lines there.
+
+- **The design is in `investigate/tui-context-readout/`.**
 
 #### The develop skill is software development — the "self development" is gone
 
