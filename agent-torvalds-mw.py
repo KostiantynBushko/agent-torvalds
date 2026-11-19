@@ -1952,6 +1952,22 @@ async def main():
             tui_state, size, window
         )
 
+        # The iteration of the workflow reaches the progress panel: the
+        # agent counts the requests it makes to the model, and the
+        # observer puts the number into the state of the TUI.  The
+        # observer is installed here and not in the classic console —
+        # there is no panel there.
+        agent.iteration_observer = (
+            lambda iteration, budget: tui_state.update_workflow_iteration(
+                iteration, budget
+            )
+        )
+
+    # The budget of the run is known before the first request: the panel
+    # shows it from the start, instead of the number it used to carry
+    # when nobody had told it.
+    tui_state.update_workflow_iteration(0, MAX_ITERATIONS)
+
     # Count chat memory messages.  The count is read in the background:
     # the history of the session is read and tokenized for it, and that
     # takes seconds when the session is long.

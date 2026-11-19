@@ -70,13 +70,24 @@ class ProgressView:
 
         # 1. Workflow Iteration Bar
         iter_num = state.workflow_iteration
-        max_iter = max(1, state.max_iterations)
-        pct = int((iter_num / max_iter) * 100) if max_iter > 0 else 0
-        bar_str = _make_bar(iter_num, max_iter, width=12)
+        budget = max(0, state.max_iterations)
+
+        if budget:
+            # The budget of the run is known: the bar is the share of it
+            # that is spent, and the share is the share of the budget.
+            pct = int((iter_num / budget) * 100)
+            bar = f"[green]{_make_bar(iter_num, budget, width=12)}[/green] "
+            counter = f"[white]{iter_num}/{budget}[/white] [dim]({pct}%)[/dim]"
+        else:
+            # The budget of the run is not known.  The number of the
+            # iteration is shown alone: a budget of one is a budget
+            # nobody gave, and a bar that is full because of it would
+            # say more than the run knows.
+            bar = ""
+            counter = f"[white]{iter_num}[/white]"
 
         iter_text = Text.from_markup(
-            f"[bold cyan]Workflow Iteration:[/bold cyan] "
-            f"[green]{bar_str}[/green] [white]{iter_num}/{max_iter}[/white] [dim]({pct}%)[/dim]\n"
+            f"[bold cyan]Workflow Iteration:[/bold cyan] {bar}{counter}\n"
         )
         table.add_row(iter_text)
 

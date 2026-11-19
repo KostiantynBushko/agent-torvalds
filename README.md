@@ -324,6 +324,12 @@ describe.  A plain `git clone` leaves the directory empty;
   The row is called **Prompt** and the readout names the window it is a share of, so
   every number on the screen says what it is.  It is the same measurement the log line
   carries — see [The size of the context](docs/logging.md#12-the-size-of-the-context)
+- The **Workflow & Tool Progress** pane carries the **iteration of the
+  run**: the number of requests the agent has made to the model, and the
+  budget of the run it is a share of (`3/500`).  One iteration is one
+  request to the model, and the number is on the screen while the model
+  is still thinking — not only when it answers.  A new request starts
+  the count again, because a new request is a new run.
 - The **Tools** row names the tools the agent **really has**: the categories the
   operator selected with `--select` are named — `Operating System, System` — and the
   count says how the agent got the tools: `8 selected`, `134 loaded`, `156 indexed`.
