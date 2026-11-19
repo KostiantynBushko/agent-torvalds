@@ -752,6 +752,59 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+#### The telemetry pane carries the icon of the progress pane
+
+- **The operator asked for it on 2026-11-19**, after the icons of the
+  panes were put back:
+
+  > *set this icon ⚡ as it is done in "Workflow & Tool Progress"
+  > widget*
+
+- **The telemetry pane carries the high voltage sign U+26A1 now**, the
+  icon of the progress pane: `⚡ Agent Telemetry & State` and `⚡
+  Workflow & Tool Progress`.  The information sign was the one icon of
+  the console that could break the frame of a panel, and it is gone
+  from the sidebar.
+
+- **What the icon costs, measured.**  The width of the icon has to be
+  the same for Rich and for the terminal, or the frame of the panel
+  breaks.  The information sign — the icon the telemetry pane carried
+  before it carried the high voltage sign — is the sign that needs
+  care: Rich counts it with the variation selector U+FE0F two cells
+  wide — the selector asks for the emoji presentation and Rich gives
+  it — while a terminal without an emoji font draws the sign one cell
+  wide.  The sign is written **without** the selector: it is one cell
+  wide for Rich and for every terminal, and the corner of the top
+  border sits on the edge of the panel in every one of them.  The
+  glyph the operator sees does not change — a terminal that draws the
+  sign one cell wide draws the same glyph with and without the
+  selector.  The high voltage sign that the panes of the sidebar carry
+  now is a wide character and needs no such care: it is two cells wide
+  for Rich and for every terminal.
+
+- **The title of the telemetry pane is one cell wider than it was**:
+  twenty-six cells against twenty-four.  The sidebar is 35% of the
+  terminal and grows one cell every third column: the title of the
+  telemetry pane is whole from eighty-six columns on — three columns
+  of the terminal later than before — and the title of the progress
+  pane, one cell longer, from eighty-nine columns on.  Below that the
+  title is cut at the right, and the icon, which is the first thing in
+  the title, is never the part that is cut.
+
+- **The two panes carry the same icon.**  That is what the operator
+  asked for; the name of the pane — the name is what tells the two
+  panes apart — stands right next to the icon.
+
+- **The width of the title is pinned by a test.**
+  `tests/test_tui_panel_border.py` renders the panels at every width
+  and asserts that the title of the telemetry pane carries the high
+  voltage sign, that the title is as wide for Rich as for the
+  terminal, that the icon is never the part of the title that is cut,
+  and that the title of each pane is whole from the width of the
+  terminal on.  The rows of the two panes of the sidebar are told
+  apart by the name of the pane and not by the icon: both panes carry
+  the same icon now.
+
 #### The panel says what the number is
 
 - **The operator looked at the panel and could not tell what it
@@ -854,6 +907,190 @@ All notable changes to this project are documented in this file.
   is not there.
 
 ### Fixed
+
+#### The icons of the panes of the console are back
+
+- **The operator reported on 2026-11-18** that the border of the
+  telemetry panel was rendered incorrectly in the right top corner, and
+  on **2026-11-19** decided that the panes keep their icon anyway:
+
+  > *can you return icons for "ℹ️ Agent Telemetry & State" and "⚡
+  > Workflow & Tool Progress"*
+
+- **The titles carry an icon**, with the gap between the icon and the
+  name of the pane that the operator asked for on 2026-11-19: `⚡
+  Agent Telemetry & State` and `⚡ Workflow & Tool Progress`.  (The gap
+  is one blank cell — see "The icon of a pane and the name of the pane
+  are apart" below.)  The telemetry pane carried the information sign
+  when this was written; the operator asked for the icon of the
+  progress pane instead — see "The telemetry pane carries the icon of
+  the progress pane" above.
+
+- **What the icon costs, measured.**  The width of the icon has to be
+  the same for Rich and for the terminal, or the frame of the panel
+  breaks.  Rich counts the information sign with the variation
+  selector U+FE0F two cells wide — the selector asks for the emoji
+  presentation and Rich gives it — while a terminal without an emoji
+  font draws the sign one cell wide.  The sign is written **without**
+  the selector: it is one cell wide for Rich and for every terminal,
+  and the corner of the top border sits on the edge of the panel in
+  every one of them.  The glyph the operator sees does not change — a
+  terminal that draws the sign one cell wide draws the same glyph with
+  and without the selector.  The high voltage sign of the progress
+  pane is a wide character and needs no such care: it is two cells
+  wide for Rich and for every terminal.
+
+- **A narrow terminal cuts the title at the right, and never at the
+  icon.**  The sidebar is 35% of the terminal: the title of the
+  telemetry panel is whole from eighty-six columns on, and the title
+  of the progress panel — one cell longer — from eighty-nine columns
+  on.  Below that the title is cut at the right, and the icon, which is
+  the first thing in the title, is never the part that is cut.
+
+- **The width of the title is pinned by a test.**
+  `tests/test_tui_panel_border.py` renders the panels at every width
+  and asserts that every row of a panel is as wide as the panel, that
+  the corner of the top border sits on the right edge of the panel,
+  that the title is as wide for Rich as for the terminal, that the
+  icon is never the part of the title that is cut, and that the title
+  of each pane is whole from the width of the terminal on.  The rows
+  of a panel are the same width on a terminal that knows no emoji
+  presentation as well — that is the difference the corner of the
+  panel depends on.
+
+#### The icon of a pane and the name of the pane are apart
+
+- **The operator asked on 2026-11-19** for a space between the icon of
+  the pane and the name of the pane:
+
+  > *add space in "ℹ️ Agent Telemetry & State" between icon and
+  > "Agent"*
+
+- **What the source said.**  The title carried one blank cell between
+  the icon and the name — U+2139, U+FE0F, U+0020, `Agent Telemetry &
+  State` — and the rendered row carried it as well: the bytes the
+  console writes are `21 39 fe 0f 20 41 67 65 6e 74` — the information
+  sign, the variation selector, one blank cell, then the name of the
+  pane.  The blank cell was in the text the console writes; it was not
+  *read* as a gap.
+
+- **Why one blank cell is not read as one.**  The icon was drawn as a
+  glyph that fills the two cells it takes in the emoji presentation, and
+  a letter that follows a filled cell is read as part of the glyph.  A
+  terminal that does not know the emoji presentation draws the glyph
+  one cell wide and leaves the second cell of the icon empty — the
+  blank cell of the gap falls into it.  The gap is one cell in the
+  emoji presentation and two cells in the text presentation, and
+  neither is a gap that is read as a gap.
+
+- **The icon is as wide in every terminal as Rich measures it**, and
+  that is what makes the gap a gap.  The information sign the pane
+  carried before is written without the variation selector U+FE0F, so
+  Rich measures it the way the terminal draws it — one cell — and the
+  blank cell that follows it is a blank cell of the screen: the icon
+  sits in its own cell, the name of the pane starts in the next one,
+  and the two are apart.  The high voltage sign the panes carry now is
+  a wide character: it fills the two cells it takes, for Rich and for
+  every terminal, and the blank cell that follows it is a blank cell
+  of the screen — the icon sits in its own cells, the name of the pane
+  starts in the cell after the gap, and the two are apart.
+
+- **The gap is one blank cell**, in the title of both panes of the
+  sidebar: `⚡ Agent Telemetry & State` and `⚡ Workflow & Tool
+  Progress`.  The icon of a pane is a wide character: it fills the two
+  cells it takes, and the blank cell after it is the gap.  The gap of
+  the progress pane is the gap of the telemetry pane — the two panes
+  are drawn one above the other in the same sidebar, and a gap in one
+  of them and not in the other is read as a difference that is not
+  there.
+
+  The gap was two blank cells wide while the icon of the telemetry
+  pane carried the variation selector: the terminal drew that icon one
+  cell narrower than Rich measured it, and the blank cell of the gap
+  fell into the cell the icon did not fill.  Two blank cells were the
+  price of a gap that was read at all — and a hole between the icon
+  and the name of the pane once the icon fills its cell.  One blank
+  cell is the space the operator asked for.
+
+- **What the gap costs, measured.**  The title of the telemetry panel
+  is twenty-six cells long and the title of the progress panel
+  twenty-seven.  The sidebar is 35% of the terminal: the title of the
+  telemetry panel is whole from eighty-six columns on, and the title
+  of the progress panel from eighty-nine columns on.  Below that the
+  title is cut at the right, and the icon, which is the first thing in
+  the title, is never the part that is cut.
+
+- **The gap is pinned by a test.**
+  `tests/test_tui_panel_border.py` asserts that the icon of the title
+  of both panes is followed by one blank cell before the name of the
+  pane, that the blank cell is a blank cell *of the screen* — the
+  cells of the row are laid out the way a terminal lays them out, and
+  the cell between the icon and the name has to be empty — and that
+  the titles are whole from the width of the terminal on.
+
+#### The corner of the panel of the telemetry is drawn once
+
+- **The operator reported it on 2026-11-19:**
+
+  > *still issue with right top corner in Agent Telemetry view "──╮╮"*
+
+  Two corners at the right edge of the panel of the telemetry.
+
+- **The second corner was left over.**  The live screen writes the
+  frame of the panel over the frame that was there before it — and the
+  frame before the panel of the telemetry is the placeholder of Rich,
+  a frame of its own with a corner of its own.  The top border of the
+  panel was **one cell shorter** than the frame it replaced: Rich
+  counts the icon of the title two cells wide (the variation selector
+  U+FE0F asks for the emoji presentation) and the terminal of the
+  operator draws the sign one cell wide.  The corner of the new frame
+  was drawn one cell inside the edge, the corner of the old frame
+  stayed where it was, and the operator read two corners — `──╮╮`.
+
+  | the icon of the title | the columns the corner is drawn in |
+  |---|---|
+  | the sign with the variation selector | **118 and 119** |
+  | the sign without it | **119** — the last column of the terminal |
+  | the high voltage sign | **119** — the last column of the terminal |
+
+- **The icon is written without the variation selector now.**  The
+  information sign U+2139 is one cell wide for Rich and for every
+  terminal, so the top border of the panel is as wide as the rest of
+  the frame, and the corner of the panel sits on the edge of the
+  panel.  The glyph the operator sees does not change: a terminal that
+  draws the sign one cell wide draws the same glyph with and without
+  the selector.  The pane carries the high voltage sign now — a wide
+  character, two cells wide for Rich and for every terminal — and the
+  corner of the panel sits on the edge of the panel in every one of
+  them.
+
+  The high voltage sign of the progress pane needs no such care — it
+  is a wide character, and it is two cells wide for Rich and for every
+  terminal.  That is why the corner of the progress pane was never
+  wrong and the corner of the telemetry pane was.
+
+- **The defect is pinned by a test.**  `tests/test_tui_panel_border.py`
+  asserts that the title is as wide for Rich as for the terminal, that
+  the rows of a panel are the same width on a terminal that knows no
+  emoji presentation, and that the corner of the panel is drawn
+  **once**, in the last column of the terminal.  The last one is the
+  test of the report of the operator: it writes the placeholder of
+  Rich and then the panel over it, the way the live screen does, and
+  reads the cells of the screen.
+
+  ```
+  $ .venv/bin/python -m pytest tests/test_tui_panel_border.py -q
+  223 passed
+  ```
+
+- **The evidence was measured with a probe, and the probe is not
+  kept.**  The probe drew the console into a pty, laid the bytes out
+  in a cell grid the way a terminal does, and reported the columns the
+  corner of the top border is drawn in — with the icon of the panel
+  and with the icon of the previous version.  The numbers it measured
+  are the table above.  The operator asked that the investigation not
+  be kept, so the folder of the investigation is not in the
+  repository.
 
 #### The telemetry panel named four toolkits that were written into the source
 
