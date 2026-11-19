@@ -21,6 +21,58 @@ CONTEXT_SHARE_OK = 50.0
 #: The share of the context window from which the context is tight.
 CONTEXT_SHARE_TIGHT = 80.0
 
+#: The icon of the telemetry pane: the high voltage sign U+26A1 - the
+#: icon of the progress pane.
+#:
+#: The operator asked for it on 2026-11-19, after the icons of the
+#: panes were put back: the telemetry pane is to carry the high
+#: voltage sign, the way the progress pane carries it.
+#:
+#: The information sign U+2139 that this pane carried before was the
+#: one icon that could break the frame of the panel.  The sign is a
+#: narrow character - one cell wide - and the variation selector
+#: U+FE0F that asks for the emoji presentation makes it two cells
+#: wide for Rich, while a terminal without an emoji font draws it one
+#: cell wide: the top border of the panel is then one cell shorter
+#: than the rest of the frame, the corner of the panel sits inside
+#: the edge of the panel, and the live screen leaves the corner of
+#: the previous frame next to it - two corners at the right edge of
+#: the panel.  That is what the operator reported on 2026-11-19.
+#:
+#: The high voltage sign is a wide character: it is two cells wide
+#: for Rich and for every terminal, with or without the selector.
+#: The width of the icon is the same on both sides of the frame, the
+#: corner of the top border sits on the edge of the panel, and the
+#: gap after the icon is read as a gap.
+#:
+#: The two panes of the sidebar carry the same icon now.  That is
+#: what the operator asked for; the name of the pane - the name is
+#: what tells the two panes apart - stands right next to the icon.
+TELEMETRY_ICON = "\u26a1"
+
+#: The gap between the icon of a pane and the name of the pane: one
+#: blank cell.
+#:
+#: The gap was two blank cells wide while the icon of this pane
+#: carried the variation selector U+FE0F.  Rich measured that icon
+#: two cells wide and the terminal drew it one cell wide, so the
+#: blank cell of the gap fell into the second cell of the icon and
+#: no gap was read at all - the operator asked for the space on
+#: 2026-11-19, and the space was not there.
+#:
+#: The icon of this pane is a wide character now - two cells wide for
+#: Rich and for every terminal - and it fills the two cells it
+#: takes.  The blank cell of the gap is a blank cell that is read as
+#: a gap: the icon sits in its own cells, the name of the pane
+#: starts in the cell after the gap, and the two are apart.  A
+#: second blank cell would be a hole between them.
+#:
+#: The gap of the progress pane is the gap of this pane: the two
+#: panes are drawn one above the other in the same sidebar, and a gap
+#: in one of them and not in the other is read as a difference that
+#: is not there.
+TITLE_GAP = " "
+
 
 def _compact_tokens(tokens: int) -> str:
     """Render a number of tokens the way it is read at a glance.
@@ -299,9 +351,31 @@ class TelemetryView:
                 Text.from_markup(f"[bold yellow]Notice:[/bold yellow] [yellow]{notification}[/yellow]")
             )
 
+        # The title of the panel carries the icon of the pane.
+        #
+        # The icon is the high voltage sign, a wide character: it is
+        # two cells wide for Rich and for every terminal, so the
+        # frame of the panel is the same width on both sides of the
+        # icon, and the corner of the top border sits on the edge of
+        # the panel - the corner that used to be drawn twice, once
+        # inside the panel and once at the edge of the screen.
+        #
+        # The icon and the name of the pane are separated by one blank
+        # cell.  The icon fills the two cells it takes, the blank cell
+        # after it is read as a gap, and the name of the pane starts
+        # in the cell after the gap.  The operator asked for the space
+        # on 2026-11-19.
+        #
+        # Below the width of the terminal the title does not fit, the
+        # title is cut at the right, and the icon - the first thing in
+        # the title - is never the part that is cut.
         return Panel(
             table,
-            title="[bold magenta]ℹ️ Agent Telemetry & State[/bold magenta]",
+            title=(
+                "[bold magenta]"
+                f"{TELEMETRY_ICON}{TITLE_GAP}Agent Telemetry & State"
+                "[/bold magenta]"
+            ),
             border_style="magenta",
             padding=(0, 1),
         )
