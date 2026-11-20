@@ -33,7 +33,15 @@ from components.tui.layout_manager import (
     check_terminal_size,
 )
 from components.tui.state_bridge import TuiState, TuiEventAdapter, TuiInputModule
-from components.tui.input_reader import NonBlockingInputReader
+from components.tui.input_reader import NonBlockingInputReader, PastedText
+from components.tui.input_text import (
+    cursor_line,
+    line_count,
+    move_cursor_down,
+    move_cursor_up,
+    normalize_paste,
+    visible_line_count,
+)
 from components.hitl_timeout import describe_timeout
 from components.hitl_question_command import (
     is_question_command,
@@ -232,9 +240,23 @@ class TuiApp:
             buf = self.state.input_buffer
             pos = self.state.cursor_pos
 
+            # A paste: the text of the clipboard, in one piece.  It is
+            # read before the named keys, because the text of a paste
+            # may be anything -- the name of a key among them.
+            if isinstance(key, PastedText):
+                self._insert_text(key)
+                return
+
             # Enter Key: Submit command or HITL response
             if key == "ENTER":
                 self._handle_enter_pressed()
+                return
+
+            # Shift+Enter: a new line in the input, not a submission.
+            # The view of the input shows up to three lines, and it
+            # follows the cursor when the text is longer than that.
+            if key == "SHIFT_ENTER":
+                self._insert_text("\n")
                 return
 
             # Backspace Key
@@ -266,6 +288,14 @@ class TuiApp:
 
             # History Navigation
             if key == "UP":
+                # The input of more than one line has lines of its own
+                # to walk through.  The history is reached at the first
+                # line of the input -- and the input the operator was
+                # writing is kept, and comes back when he walks down
+                # again.
+                if line_count(buf) > 1 and cursor_line(buf, pos) > 0:
+                    self.state.cursor_pos = move_cursor_up(buf, pos)
+                    return
                 if self.state.command_history:
                     if self.state.history_index == -1:
                         self.state._saved_input = buf
@@ -279,6 +309,10 @@ class TuiApp:
                 return
 
             if key == "DOWN":
+                # The history is reached at the last line of the input.
+                if line_count(buf) > 1 and cursor_line(buf, pos) < line_count(buf) - 1:
+                    self.state.cursor_pos = move_cursor_down(buf, pos)
+                    return
                 if self.state.history_index != -1:
                     if self.state.history_index < len(self.state.command_history) - 1:
                         self.state.history_index += 1
@@ -313,6 +347,22 @@ class TuiApp:
             if len(key) == 1 and key.isprintable():
                 self.state.input_buffer = buf[:pos] + key + buf[pos:]
                 self.state.cursor_pos = pos + 1
+
+    def _insert_text(self, text: str) -> None:
+        """Put text into the input, at the cursor.
+
+        The line endings of a paste are turned into the line break of
+        the input: the text of the clipboard arrives with the line
+        endings of the system it was copied on.
+
+        Args:
+            text: The text to insert.
+        """
+        text = normalize_paste(text)
+        pos = self.state.cursor_pos
+        buffer = self.state.input_buffer
+        self.state.input_buffer = buffer[:pos] + text + buffer[pos:]
+        self.state.cursor_pos = pos + len(text)
 
     def _handle_enter_pressed(self) -> None:
         """Handle Enter key press (submission)."""
@@ -1074,5 +1124,11 @@ class TuiApp:
         # question *and* the line the answer is typed on.  The partition
         # is given the room the panel needs, or the answer is cropped
         # away and the operator types into the void.
-        fit_footer(self.layout, self.console, footer_panel, self.state.hitl_active)
+        fit_footer(
+            self.layout,
+            self.console,
+            footer_panel,
+            self.state.hitl_active,
+            input_lines=visible_line_count(self.state.input_buffer),
+        )
         self.layout["footer"].update(footer_panel)

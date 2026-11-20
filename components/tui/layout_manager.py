@@ -20,8 +20,15 @@ from rich.table import Table
 from rich.text import Text
 from rich.markup import escape
 
+from components.tui.input_text import (
+    MAX_INPUT_LINES,
+    visible_line_count,
+    visible_window,
+)
+
 #: The footer partition is three lines tall: a border, one line of
-#: content, a border.  The command bar needs exactly that.
+#: content, a border.  The command bar needs exactly that -- and one
+#: line more for every line the operator adds to the input.
 FOOTER_HEIGHT = 3
 
 
@@ -123,6 +130,55 @@ def render_header(
     )
 
 
+def _input_markup(
+    input_buffer: str,
+    cursor_pos: int,
+    indent: int,
+    cursor_style: str,
+    max_lines: int = MAX_INPUT_LINES,
+) -> str:
+    """The markup of the text of the input, with the cursor in its place.
+
+    The view shows at most ``max_lines`` lines of the text: the
+    operator adds a line with Shift+Enter, and a text that is longer
+    than the window is seen through it -- the window follows the
+    cursor, so a paste that is longer than the window ends with its
+    last lines on the screen, and the operator can walk the cursor
+    back into the text above and edit it.
+
+    Args:
+        input_buffer: The text of the input.
+        cursor_pos: The position of the cursor in the text.
+        indent: The number of cells the lines after the first are
+            indented by, so that they stand under the first one.
+        cursor_style: The style of the cell the cursor is on.
+        max_lines: The number of lines the view shows.
+
+    Returns:
+        The markup of the lines of the input.
+    """
+    lines, row, column = visible_window(input_buffer, cursor_pos, max_lines)
+
+    markup = []
+    for index, line in enumerate(lines):
+        prefix = "" if index == 0 else " " * indent
+        if index == row:
+            before = escape(line[:column])
+            # The cursor at the end of a line sits on a space: there is
+            # no character under it to paint.
+            cursor_char = escape(line[column]) if column < len(line) else " "
+            after = escape(line[column + 1:])
+            markup.append(
+                f"{prefix}[bold white]{before}"
+                f"[{cursor_style}]{cursor_char}[/{cursor_style}]"
+                f"{after}[/bold white]"
+            )
+        else:
+            markup.append(f"{prefix}[bold white]{escape(line)}[/bold white]")
+
+    return "\n".join(markup)
+
+
 def render_footer(
     input_buffer: str,
     cursor_pos: int,
@@ -156,29 +212,24 @@ def render_footer(
         prompt_table.add_column(justify="left", ratio=75)
         prompt_table.add_column(justify="right", ratio=25)
 
-        # Format input buffer with cursor
-        safe_pos = max(0, min(len(input_buffer), cursor_pos))
-        before_cur = input_buffer[:safe_pos]
-        cur_char = input_buffer[safe_pos] if safe_pos < len(input_buffer) else " "
-        after_cur = input_buffer[safe_pos + 1:] if safe_pos < len(input_buffer) else ""
-
-        # The typed text is operator input: it may hold square brackets,
-        # which Rich would read as markup.  Without the escape the text
-        # between the brackets disappears from the screen -- and a
-        # bracket that closes a tag Rich never opened ends the panel
-        # with a MarkupError.
-        cursor_rendered = (
-            f"{escape(before_cur)}"
-            f"[black on bright_yellow]{escape(cur_char)}[/black on bright_yellow]"
-            f"{escape(after_cur)}"
-        )
-
         # The label tells the operator what kind of answer is expected.
         answer_label = {
             "yesno": "Yes/No: ",
             "menu": "Option: ",
             "password": "Password: ",
         }.get(hitl_input_type, "Answer: ")
+
+        # The typed text is operator input: it may hold square brackets,
+        # which Rich would read as markup.  Without the escape the text
+        # between the brackets disappears from the screen -- and a
+        # bracket that closes a tag Rich never opened ends the panel
+        # with a MarkupError.
+        cursor_rendered = _input_markup(
+            input_buffer,
+            cursor_pos,
+            indent=len(answer_label),
+            cursor_style="black on bright_yellow",
+        )
 
         # The question is agent text: it may contain square brackets, which
         # Rich would read as markup.
@@ -205,30 +256,35 @@ def render_footer(
 
     # Standard Command Bar Mode
     footer_table = Table.grid(expand=True)
-    footer_table.add_column(justify="left", ratio=65)
-    footer_table.add_column(justify="right", ratio=35)
-
-    safe_pos = max(0, min(len(input_buffer), cursor_pos))
-    before_cur = input_buffer[:safe_pos]
-    cur_char = input_buffer[safe_pos] if safe_pos < len(input_buffer) else " "
-    after_cur = input_buffer[safe_pos + 1:] if safe_pos < len(input_buffer) else ""
-
-    cursor_rendered = (
-        f"{escape(before_cur)}"
-        f"[black on green]{escape(cur_char)}[/black on green]"
-        f"{escape(after_cur)}"
-    )
 
     prompt_label = "[green]>>> [/green]"
+    prompt_width = len(">>> ")
     if is_busy:
         prompt_label = "[dim yellow]>>> (busy) [/dim yellow]"
+        prompt_width = len(">>> (busy) ")
 
-    input_text = Text.from_markup(f"{prompt_label}[bold white]{cursor_rendered}[/bold white]")
-    hints_text = Text.from_markup(
-        "[dim][\\stats | \\tools | \\projects | \\chat-sessions | \\help | \\exit | PgUp/PgDn: Scroll][/dim]"
+    cursor_rendered = _input_markup(
+        input_buffer,
+        cursor_pos,
+        indent=prompt_width,
+        cursor_style="black on green",
     )
+    input_text = Text.from_markup(f"{prompt_label}{cursor_rendered}")
 
-    footer_table.add_row(input_text, hints_text)
+    # The hot commands are hidden while there is text in the bar: the
+    # operator is writing, and the width of the bar belongs to what he
+    # writes.  They come back when the bar is empty again -- and the
+    # bar is empty again when the last character is deleted.
+    if input_buffer:
+        footer_table.add_column(justify="left", ratio=1)
+        footer_table.add_row(input_text)
+    else:
+        footer_table.add_column(justify="left", ratio=65)
+        footer_table.add_column(justify="right", ratio=35)
+        hints_text = Text.from_markup(
+            "[dim][\\stats | \\tools | \\projects | \\chat-sessions | \\help | \\exit | PgUp/PgDn: Scroll][/dim]"
+        )
+        footer_table.add_row(input_text, hints_text)
 
     return Panel(
         footer_table,
@@ -261,11 +317,14 @@ def fit_footer(
     console: Console,
     panel: Panel,
     hitl_active: bool = False,
+    input_lines: int = 1,
 ) -> int:
     """Give the footer partition the room the panel needs.
 
-    The command bar keeps the height it has always had: one line of
-    content, and the hints beside it may be cut short.
+    The command bar keeps the height it has always had -- one line of
+    content -- and it grows with the lines the operator adds to the
+    input: the bar shows up to three lines, and every line of them
+    needs a line of the screen.
 
     The HITL panel is never cropped.  It carries the question *and* the
     line the answer is typed on, and the answer is the last line of the
@@ -279,6 +338,7 @@ def fit_footer(
         console: The console the panel is rendered into.
         panel: The footer panel about to be shown.
         hitl_active: Whether a question of the agent is waiting.
+        input_lines: The number of lines the input bar shows.
 
     Returns:
         The height the footer partition was given.
@@ -286,7 +346,7 @@ def fit_footer(
     if hitl_active:
         needed = max(FOOTER_HEIGHT, footer_height(console, panel))
     else:
-        needed = FOOTER_HEIGHT
+        needed = max(FOOTER_HEIGHT, FOOTER_HEIGHT + max(0, int(input_lines) - 1))
     layout["footer"].size = needed
     return needed
 
