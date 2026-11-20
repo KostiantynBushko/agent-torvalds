@@ -1029,6 +1029,46 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The home of the operator is not on the screen of the progress pane
+
+- **The operator asked on 2026-11-20** for the path of the agent to be
+  shown without the home of the operator:
+
+  > *the agent internally uses user home directory which is file but in
+  > the "Workflow & Tool Progress" window it must be shown as a "~/" … the
+  > path to user home folder can be used internally but should be hidden
+  > in TUI view*
+
+- **The line under the name of the tool carried the home in full.**  The
+  pane shows the tool that runs and what it works on, and the path was
+  shown as the tool was given it — `/home/<user>/notes/todo.md` on the
+  screen of the operator, on every path the agent touched below the home.
+
+- **The cut of the line was in the wrong place.**  The line was cut to
+  forty characters in the state — before the view ever saw it — and a cut
+  that lands inside the home leaves half of it on the screen:
+  `python -m pytest --rootdir=/home/<user>/p`.
+
+- **The hiding is in the view, and the state keeps the truth.**  The agent
+  works with the path of the machine — a tool cannot open `~/notes/todo.md`
+  — so the state carries the real path and the pane hides the home.  The
+  cut follows the hiding: the view decides how much of the line fits on
+  the screen, and it cuts what is left.
+
+- **The rule is in one place, and it is the same on every machine.**
+  `components/tui/path_display.py` — the home is a whole path component
+  (a folder that only starts like it is another folder, and it is left
+  alone), the separator behind it stays (the path keeps the spelling of
+  its own system — `~/notes` on Linux, `~\Documents` on Windows), and a
+  Windows home is hidden the same way: the spelling of the home travels
+  with the home, so the check does not need a Windows machine to run.
+
+- **The evidence:** `tests/test_tui_home_path.py` — 23 tests — and
+  `investigate/tui-home-path-in-progress/probe_home_path.py`, which renders
+  the real panel with the real state.  Three of the tests and six of the
+  checks of the probe fail against the old pane.  The gate of the
+  repository stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The cursor of the command bar does not hang while an arrow key is held
 
 - **The operator reported on 2026-11-20** that the cursor of the command bar

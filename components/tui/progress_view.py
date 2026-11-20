@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from components.tui.path_display import hide_home
 from components.tui.state_bridge import TuiState, ToolExecutionRecord
 
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -38,6 +39,24 @@ PROGRESS_ICON = "\u26a1"
 #: at all.  The icon is one cell wide now, and one blank cell is the
 #: gap.  The operator asked for the space on 2026-11-19.
 TITLE_GAP = " "
+
+#: The width of the line under the name of the tool: the pane is
+#: narrow, and the line is cut to the width it has.
+DETAIL_WIDTH = 40
+
+
+def display_detail(details: str) -> str:
+    """
+    The line under the name of the tool, the way the screen shows it.
+
+    The home of the operator is hidden **before** the line is cut: a
+    cut that lands inside the home leaves half of it on the screen.
+
+    The line is the way the *screen* shows the path.  The state keeps
+    the real path — the agent works with the path of the machine, and
+    the pane only hides the home of the operator.
+    """
+    return hide_home(details)[:DETAIL_WIDTH]
 
 
 def _make_bar(current: int, total: int, width: int = 14) -> str:
@@ -125,7 +144,7 @@ class ProgressView:
                     )
 
                 if task.details:
-                    row_markup += f"\n   [dim]└ {task.details}[/dim]"
+                    row_markup += f"\n   [dim]└ {display_detail(task.details)}[/dim]"
 
                 table.add_row(Text.from_markup(row_markup))
 
