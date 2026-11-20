@@ -8,6 +8,9 @@ well enough to write a long question into it:
   and they come back when the last character is deleted;
 - Shift+Enter adds a line to the input, and the view of the input
   grows with it — up to three lines;
+- the text that reaches the end of the view moves to the next line, the
+  way the question of the agent moves to the next line in the
+  agent-question mode, and the cursor goes with it;
 - a paste arrives in one piece, and a paste that is longer than the
   window ends with its last lines on the screen; the operator can walk
   the cursor back into the text and edit it.
@@ -38,6 +41,7 @@ from components.tui.input_reader import (  # noqa: E402
 )
 from components.tui.input_text import (  # noqa: E402
     MAX_INPUT_LINES,
+    cursor_column,
     cursor_line,
     line_count,
     move_cursor_down,
@@ -45,11 +49,13 @@ from components.tui.input_text import (  # noqa: E402
     normalize_paste,
     visible_line_count,
     visible_window,
+    wrap_lines,
 )
 from components.tui.layout_manager import (  # noqa: E402
     FOOTER_HEIGHT,
     build_torvalds_layout,
     fit_footer,
+    input_text_width,
     render_footer,
 )
 from components.tui.tui_app import TuiApp  # noqa: E402
@@ -91,15 +97,56 @@ def render_screen(width=120, height=24, footer_panel=None, layout=None,
     return console.file.getvalue()
 
 
-def footer_screen(input_buffer, cursor_pos=None, **kwargs):
-    """The screen of the TUI with the given text in the command bar."""
+def footer_screen(input_buffer, cursor_pos=None, width=120, **kwargs):
+    """The screen of the TUI with the given text in the command bar.
+
+    Args:
+        input_buffer: The text of the operator.
+        cursor_pos: The position of the cursor; the end of the text by
+            default.
+        width: The width of the terminal.
+        kwargs: The rest of the arguments of :func:`render_screen`.
+
+    Returns:
+        The text of the screen.
+    """
     pos = len(input_buffer) if cursor_pos is None else cursor_pos
-    panel = render_footer(input_buffer=input_buffer, cursor_pos=pos)
+    text_width = input_text_width(width)
+    panel = render_footer(
+        input_buffer=input_buffer,
+        cursor_pos=pos,
+        width=text_width,
+    )
+    kwargs.setdefault("width", width)
     return render_screen(
         footer_panel=panel,
-        input_lines=visible_line_count(input_buffer),
+        input_lines=visible_line_count(input_buffer, text_width),
         **kwargs,
     )
+
+
+def cursor_row_on_screen(panel, width=120):
+    """The row of the screen the cursor is drawn on.
+
+    The cursor is a cell with a style of its own: it is found by the
+    style, not by its text.
+
+    Args:
+        panel: The panel of the command bar.
+        width: The width of the terminal.
+
+    Returns:
+        The number of the row of the screen, counted from zero.
+    """
+    console = Console(width=width, height=24, file=io.StringIO())
+    lines = console.render_lines(panel, console.options.update(height=None))
+
+    for index, row in enumerate(lines):
+        for segment in row:
+            if segment.style and "on green" in str(segment.style):
+                return index
+
+    return -1
 
 
 def keys_from_pty(data: bytes, seconds=4.0, collect=2.0):
@@ -362,6 +409,134 @@ class TestTheViewOfTheInput(unittest.TestCase):
         self.assertEqual(lines, ["c", "d", "e"])
         self.assertEqual(row, 2)
         self.assertEqual(line_count(text), 5)
+
+
+class TestTheTextMovesToTheNextLine(unittest.TestCase):
+    """The text that reaches the end of the view moves to the next line."""
+
+    def test_the_text_is_wrapped_at_the_width_of_the_view(self):
+        """The text is not cut at the edge: it moves to the next line."""
+        width = 40
+        text = "a" * 100
+
+        lines, _, _ = visible_window(text, len(text), width)
+
+        self.assertEqual(len(lines), 3)
+        self.assertEqual(lines[0], "a" * 40)
+        self.assertEqual(lines[1], "a" * 40)
+        self.assertEqual(lines[2], "a" * 20)
+
+    def test_no_word_of_the_text_is_thrown_away(self):
+        """Every word of the operator is on some line."""
+        width = 40
+        text = "the operator asked for four things in the command bar"
+
+        lines = wrap_lines(text, width)
+
+        # The space at the break is eaten by the break -- it is the
+        # space between two words, and no word is lost.
+        self.assertEqual(
+            "".join(line for line, _ in lines).replace(" ", ""),
+            text.replace(" ", ""),
+            "the wrapping lost a word of the text of the operator",
+        )
+
+    def test_the_cursor_goes_with_the_text_to_the_next_line(self):
+        """The cursor is on the line the text moved to."""
+        width = 40
+        text = "a" * 100
+
+        self.assertEqual(cursor_line(text, 45, width), 1)
+        self.assertEqual(cursor_column(text, 45, width), 5)
+        self.assertEqual(cursor_line(text, len(text), width), 2)
+
+    def test_the_view_shows_at_most_three_lines_of_a_long_text(self):
+        """The bar takes three lines, whatever the length of the text."""
+        width = 40
+        text = "a" * 500
+
+        lines, row, _ = visible_window(text, len(text), width)
+
+        self.assertEqual(len(lines), MAX_INPUT_LINES)
+        self.assertEqual(row, MAX_INPUT_LINES - 1)
+        self.assertEqual(visible_line_count(text, width), MAX_INPUT_LINES)
+
+    def test_the_text_is_on_the_screen_on_the_next_line(self):
+        """The operator sees the text that did not fit on one line."""
+        screen = footer_screen("Q" * 200, width=100)
+        rows = [line for line in screen.splitlines() if "Q" in line]
+
+        self.assertGreater(
+            len(rows),
+            1,
+            "the text of the operator is on one line -- it was cut at the "
+            "edge of the view instead of moving to the next line",
+        )
+
+    def test_the_cursor_is_drawn_on_the_line_the_text_moved_to(self):
+        """The cursor is on the screen, and it is on the right line."""
+        width = 100
+        text = "Q" * 200
+        text_width = input_text_width(width)
+
+        panel = render_footer(
+            input_buffer=text,
+            cursor_pos=len(text),
+            width=text_width,
+        )
+
+        self.assertGreaterEqual(
+            cursor_row_on_screen(panel, width),
+            0,
+            "the cursor is not on the screen -- the text was cut at the "
+            "edge of the view and the cursor went with it",
+        )
+
+    def test_the_bar_grows_with_the_wrapped_text(self):
+        """Every line the text takes needs a line of the screen."""
+        layout = build_torvalds_layout()
+        console = Console(width=100, height=24, file=io.StringIO())
+        text = "Q" * 200
+        text_width = input_text_width(100)
+
+        given = fit_footer(
+            layout,
+            console,
+            render_footer(
+                input_buffer=text,
+                cursor_pos=len(text),
+                width=text_width,
+            ),
+            input_lines=visible_line_count(text, text_width),
+        )
+
+        self.assertEqual(given, FOOTER_HEIGHT + 2)
+
+    def test_the_answer_of_the_agent_is_wrapped_too(self):
+        """The agent-question mode wraps the answer the same way."""
+        console = Console(width=100, height=24, file=io.StringIO())
+        text = "Q" * 200
+        text_width = input_text_width(100, hitl_active=True)
+
+        panel = render_footer(
+            input_buffer=text,
+            cursor_pos=len(text),
+            hitl_active=True,
+            hitl_prompt="Which one?",
+            width=text_width,
+        )
+        lines = console.render_lines(panel, console.options.update(height=None))
+        rows = [
+            "".join(segment.text for segment in row)
+            for row in lines
+        ]
+        rows_with_text = [row for row in rows if "Q" in row]
+
+        self.assertGreater(
+            len(rows_with_text),
+            1,
+            "the answer of the operator was cut at the edge of the view",
+        )
 
 
 class TestThePaste(unittest.TestCase):

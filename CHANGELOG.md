@@ -6,6 +6,71 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The text of the command bar moves to the next line when it reaches the end of the view
+
+- **The operator asked on 2026-11-20 for the text of the command bar to
+  move to the next line when it reaches the end of the view** — *"like
+  it does it in the agent question mode"*.  The reference is exact: in
+  the agent-question mode the question of the agent is wrapped by Rich
+  and the panel grows to hold the wrapped lines.  The text of the
+  operator was not treated that way at all.
+
+- **The text was cut at the edge of the view, and the cursor went with
+  it.**  Rich wraps a text inside a panel, but a word that is longer
+  than the column is *ellipsized*, not folded — and the text of the
+  operator is one long word as far as Rich is concerned when it has no
+  spaces in it.  Everything past the edge of the view was gone, and the
+  cursor — a cell with a style of its own, drawn on the character under
+  it — was not on the screen at all.  The operator was typing into the
+  void, and could not see where he was.
+
+- **The model behind it was the reason.**  `components/tui/input_text.py`
+  knew the text as a string of *logical lines* — the parts between the
+  line breaks of the buffer — and the view was a window over those.  A
+  logical line wider than the bar had no place in that model: it was
+  one line, and the bar had one line for it.
+
+- **The text of the bar is now seen in lines of the screen.**
+  `wrap_lines(text, width)` returns the lines the text takes, and the
+  offset of the first character of each one.  A text that reaches the
+  end of the view moves to the next line: the line is broken at the
+  last space that fits, and a word longer than the view is folded over
+  the lines.  No word is lost — the space at a break is eaten by the
+  break, and nothing else is.
+
+- **The bar knows how wide it is.**  `input_text_width()` in
+  `components/tui/layout_manager.py` is the one place that answers *how
+  many cells the bar gives the text of the operator*: the width of the
+  terminal, less the border and the padding of the panel, less the
+  prompt — 92 cells at a terminal of 100 columns.  The number is
+  measured, not guessed.
+
+- **The bar draws the lines itself.**  `_input_markup()` renders one
+  line of the panel per line of the view, and the cursor is drawn on
+  the character under it — in the line the text moved it to.  A line is
+  never wider than the view, so Rich never wraps it a second time.
+
+- **The cursor walks the lines of the screen.**  `Up` and `Down` walk
+  the lines the operator sees, and the history is reached at the first
+  line of the view, as it was reached at the first line of the input.
+
+- **The bar is still three lines.**  A text of any length is seen
+  through a window of three lines that follows the cursor — the
+  guarantee of the previous change is kept, and a long text no longer
+  makes the bar taller than the screen.
+
+- **The Shift+Enter of a terminal that sends another sequence is left
+  alone.**  The reader knows the Shift+Enter of xterm and of the kitty
+  keyboard protocol; every other sequence is reported as an escape and
+  dropped silently.  The operator decided on 2026-11-20 to leave that
+  for now.
+
+- **The evidence:** `tests/test_tui_multiline_input.py` — 42 tests, 8 of
+  them for the wrapping — and
+  `investigate/tui-input-wrapping/probe_input_wrapping.py`, which
+  renders the real panels at the width of a real terminal.  The gate of
+  the repository stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The size of the context is in the telemetry panel of the TUI
 
 - **The operator asked for the size of the context to be visible while

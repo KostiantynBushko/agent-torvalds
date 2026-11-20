@@ -28,6 +28,7 @@ from components.file_logging import LogFileConfig
 from components.tui.layout_manager import (
     build_torvalds_layout,
     fit_footer,
+    input_text_width,
     render_header,
     render_footer,
     check_terminal_size,
@@ -234,6 +235,24 @@ class TuiApp:
                 break
             self._handle_key(key)
 
+    def _input_width(self) -> int:
+        """The number of cells the command bar gives the text of the operator.
+
+        The text of the operator is wrapped at this width: a text that
+        reaches the end of the view moves to the next line, the way the
+        question of the agent moves to the next line in the
+        agent-question mode.
+
+        Returns:
+            The number of cells of the text on one line.
+        """
+        return input_text_width(
+            self.console.width,
+            hitl_active=self.state.hitl_active,
+            is_busy=self.state.is_busy,
+            hitl_input_type=self.state.hitl_input_type,
+        )
+
     def _handle_key(self, key: str) -> None:
         """Process a single normalized keystroke."""
         with self.state._lock:
@@ -293,8 +312,9 @@ class TuiApp:
                 # line of the input -- and the input the operator was
                 # writing is kept, and comes back when he walks down
                 # again.
-                if line_count(buf) > 1 and cursor_line(buf, pos) > 0:
-                    self.state.cursor_pos = move_cursor_up(buf, pos)
+                width = self._input_width()
+                if line_count(buf, width) > 1 and cursor_line(buf, pos, width) > 0:
+                    self.state.cursor_pos = move_cursor_up(buf, pos, width)
                     return
                 if self.state.command_history:
                     if self.state.history_index == -1:
@@ -310,8 +330,12 @@ class TuiApp:
 
             if key == "DOWN":
                 # The history is reached at the last line of the input.
-                if line_count(buf) > 1 and cursor_line(buf, pos) < line_count(buf) - 1:
-                    self.state.cursor_pos = move_cursor_down(buf, pos)
+                width = self._input_width()
+                if (
+                    line_count(buf, width) > 1
+                    and cursor_line(buf, pos, width) < line_count(buf, width) - 1
+                ):
+                    self.state.cursor_pos = move_cursor_down(buf, pos, width)
                     return
                 if self.state.history_index != -1:
                     if self.state.history_index < len(self.state.command_history) - 1:
@@ -1110,6 +1134,7 @@ class TuiApp:
 
         # 5. Footer Input Bar / HITL Modal
         remaining = self.state.get_hitl_time_remaining()
+        width = self._input_width()
         footer_panel = render_footer(
             input_buffer=self.state.input_buffer,
             cursor_pos=self.state.cursor_pos,
@@ -1119,6 +1144,7 @@ class TuiApp:
             hitl_default_answer=self.state.hitl_default_answer,
             is_busy=self.state.is_busy,
             hitl_input_type=self.state.hitl_input_type,
+            width=width,
         )
         # The HITL panel is taller than the command bar -- it carries the
         # question *and* the line the answer is typed on.  The partition
@@ -1129,6 +1155,6 @@ class TuiApp:
             self.console,
             footer_panel,
             self.state.hitl_active,
-            input_lines=visible_line_count(self.state.input_buffer),
+            input_lines=visible_line_count(self.state.input_buffer, width),
         )
         self.layout["footer"].update(footer_panel)
