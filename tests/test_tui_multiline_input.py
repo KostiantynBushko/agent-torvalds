@@ -53,6 +53,9 @@ from components.tui.input_text import (  # noqa: E402
 )
 from components.tui.layout_manager import (  # noqa: E402
     FOOTER_HEIGHT,
+    HINTS_COLUMN_RATIO,
+    INPUT_PROMPT,
+    PANEL_OVERHEAD,
     build_torvalds_layout,
     fit_footer,
     input_text_width,
@@ -265,18 +268,23 @@ class TestTheHotCommands(unittest.TestCase):
             "is writing",
         )
 
-    def test_the_text_has_the_room_the_hot_commands_had(self):
-        """The bar is wider once the commands are gone."""
-        written = footer_screen("Q" * 100)
-        lines_with_the_text = [
-            line for line in written.splitlines() if "Q" in line
-        ]
+    def test_the_text_has_more_room_than_the_hot_commands_had(self):
+        """The bar is wider once the commands are gone.
 
-        self.assertEqual(
-            len(lines_with_the_text),
-            1,
-            "the text of the operator was pushed onto a second line -- "
-            "the bar did not get the room of the hot commands",
+        The text of the operator has a column of its own -- three
+        quarters of the bar -- and the hot commands had a third of it.
+        So the text has more room than they had, and the invitation to
+        press Enter has the rest.
+        """
+        width = 120
+        content = width - PANEL_OVERHEAD
+        hints_column = content * HINTS_COLUMN_RATIO // 100
+
+        self.assertGreater(
+            input_text_width(width) + len(INPUT_PROMPT),
+            hints_column,
+            "the text of the operator has less room than the hot commands "
+            "had -- the bar did not get wider once the commands were gone",
         )
 
     def test_the_hot_commands_come_back_when_the_text_is_deleted(self):

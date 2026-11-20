@@ -48,9 +48,24 @@ ANSWER_LABELS = {
 #: The label of the answer of the agent.
 DEFAULT_ANSWER_LABEL = "Answer: "
 
-#: The share of the width of the bar that the question of the agent and
-#: its answer take.
-ANSWER_COLUMN_RATIO = 75
+#: The share of the width of the bar that the text takes: the question
+#: of the agent and its answer in the agent-question mode, and the text
+#: of the operator in the command bar.  The rest of the bar belongs to
+#: the invitation to press Enter.
+TEXT_COLUMN_RATIO = 75
+
+#: The share of the width of the bar that the hot commands take while
+#: the bar is empty.  They need more room than the invitation, and
+#: there is no text of the operator to wrap while they are there.
+HINTS_COLUMN_RATIO = 35
+
+#: The invitation to press Enter, in the command bar: what Enter does
+#: with the text the operator wrote.
+SEND_INVITATION = "[Enter to send]"
+
+#: The invitation to press Enter, in the agent-question mode: what
+#: Enter does with the answer the operator wrote.
+CONFIRM_INVITATION = "[Enter to confirm]"
 
 #: The cells the panel of the bar takes for its border and for its
 #: padding.
@@ -69,6 +84,11 @@ def input_text_width(
     reaches it moves to the next line, the way the question of the agent
     moves to the next line in the agent-question mode.
 
+    The text has a column of its own — three quarters of the bar, the
+    way the question of the agent and its answer have one in the
+    agent-question mode.  The rest of the bar belongs to the invitation
+    to press Enter, and to nothing else.
+
     Args:
         console_width: The width of the terminal.
         hitl_active: Whether a question of the agent is waiting.
@@ -79,14 +99,14 @@ def input_text_width(
         The number of cells of the text on one line.
     """
     content = console_width - PANEL_OVERHEAD
+    column = content * TEXT_COLUMN_RATIO // 100
 
     if hitl_active:
         label = ANSWER_LABELS.get(hitl_input_type, DEFAULT_ANSWER_LABEL)
-        column = content * ANSWER_COLUMN_RATIO // 100
         return max(1, column - len(label))
 
     prompt = BUSY_PROMPT if is_busy else INPUT_PROMPT
-    return max(1, content - len(prompt))
+    return max(1, column - len(prompt))
 
 
 def build_torvalds_layout() -> Layout:
@@ -241,6 +261,27 @@ def _input_markup(
     return "\n".join(markup)
 
 
+def _cursor_row(
+    input_buffer: str,
+    cursor_pos: int,
+    width: int = DEFAULT_WIDTH,
+    max_lines: int = MAX_INPUT_LINES,
+) -> int:
+    """The line of the view the cursor is on.
+
+    Args:
+        input_buffer: The text of the input.
+        cursor_pos: The position of the cursor in the text.
+        width: The number of cells the text has on one line.
+        max_lines: The number of lines the view shows.
+
+    Returns:
+        The number of the line, counted from zero.
+    """
+    _, row, _ = visible_window(input_buffer, cursor_pos, width, max_lines)
+    return row
+
+
 def render_footer(
     input_buffer: str,
     cursor_pos: int,
@@ -254,7 +295,12 @@ def render_footer(
 ) -> Panel:
     """
     Render the bottom interactive command bar / HITL prompt.
-    
+
+    While there is text in the bar, the invitation to press Enter stands
+    in the right column of the bar, on the line the cursor is on, and
+    the text of the operator has the column on the left.  While the bar
+    is empty, the hot commands stand in the right column.
+
     Args:
         input_buffer: Currently typed command text
         cursor_pos: Index of the cursor inside input_buffer
@@ -310,7 +356,9 @@ def render_footer(
         if hitl_time_remaining is not None:
             timeout_info = f"[bright_yellow]⏱ {hitl_time_remaining:.0f}s[/bright_yellow]"
         def_info = f"[dim](Default: '{hitl_default_answer}')[/dim]" if hitl_default_answer else ""
-        right_content = Text.from_markup(f"{timeout_info} {def_info}\n[dim][Enter to confirm][/dim]")
+        right_content = Text.from_markup(
+            f"{timeout_info} {def_info}\n[dim]{CONFIRM_INVITATION}[/dim]"
+        )
 
         prompt_table.add_row(left_content, right_content)
 
@@ -339,16 +387,31 @@ def render_footer(
     )
     input_text = Text.from_markup(f"{prompt_label}{cursor_rendered}")
 
-    # The hot commands are hidden while there is text in the bar: the
-    # operator is writing, and the width of the bar belongs to what he
-    # writes.  They come back when the bar is empty again -- and the
-    # bar is empty again when the last character is deleted.
+    # While there is text in the bar, the right column of the bar is
+    # the invitation to press Enter: the operator has to see what Enter
+    # does with what he wrote, the way the agent-question mode invites
+    # him to confirm the answer.  The text of the operator does not
+    # take the whole bar for itself -- the invitation has a column of
+    # its own, on the right.
+    #
+    # The invitation stands on the line the cursor is on -- the line
+    # the operator is writing on.
     if input_buffer:
-        footer_table.add_column(justify="left", ratio=1)
-        footer_table.add_row(input_text)
+        footer_table.add_column(justify="left", ratio=TEXT_COLUMN_RATIO)
+        footer_table.add_column(justify="right", ratio=100 - TEXT_COLUMN_RATIO)
+        row = _cursor_row(input_buffer, cursor_pos, width)
+        invitation = Text.from_markup(
+            "\n" * row + f"[dim]{SEND_INVITATION}[/dim]"
+        )
+        footer_table.add_row(input_text, invitation)
     else:
-        footer_table.add_column(justify="left", ratio=65)
-        footer_table.add_column(justify="right", ratio=35)
+        # The hot commands are hidden while there is text in the bar:
+        # the operator is writing, and the width of the bar belongs to
+        # what he writes.  They come back when the bar is empty again
+        # -- and the bar is empty again when the last character is
+        # deleted.  Their column is the one they always had.
+        footer_table.add_column(justify="left", ratio=100 - HINTS_COLUMN_RATIO)
+        footer_table.add_column(justify="right", ratio=HINTS_COLUMN_RATIO)
         hints_text = Text.from_markup(
             "[dim][\\stats | \\tools | \\projects | \\chat-sessions | \\help | \\exit | PgUp/PgDn: Scroll][/dim]"
         )

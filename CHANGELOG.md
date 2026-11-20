@@ -6,6 +6,47 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The command bar invites the operator to press Enter
+
+- **The operator asked on 2026-11-20 for two things in the command bar** —
+  *"I would like to see the invitation to press Enter like it is in the agent
+  question mode and the user's message does not occupy an entire input
+  window"*.
+
+- **The bar had no invitation.**  The agent-question mode is a grid of two
+  columns — the question of the agent and its answer on the left,
+  `[Enter to confirm]` on the right, on the line the answer is typed on.  The
+  command bar was a grid of *one* column while there was text in it, and the
+  hot commands — the only thing that ever stood on the right of the bar —
+  were hidden exactly then.  Nothing on the screen said what Enter does with
+  what the operator wrote.
+
+- **The message took the whole window.**  The text of the operator was
+  wrapped at the whole width of the bar — 92 cells at a terminal of 100
+  columns — and the invitation had no place to stand.
+
+- **The bar is a grid of two columns now, the way the agent-question mode
+  is.**  While there is text in it, the bar is 75% / 25%: the text of the
+  operator on the left, the invitation on the right.  The text has a column of
+  its own — 68 cells at a terminal of 100 columns — and the message does not
+  take the whole window any more.
+
+- **The invitation stands on the line the operator writes on.**  It is a cell
+  of the right column, and the cell is put on the line of the cursor — the
+  agent-question mode does the same, under the question.  The cursor is a
+  cell with a style of its own, so the row of the screen it is drawn on is
+  found by the style, and the invitation follows the cursor when the operator
+  walks it up.
+
+- **The empty bar is untouched.**  The hot commands keep their column, and
+  they are exactly as visible as they were: the probe renders the empty bar
+  the old way and the new way and compares the two lines of the screen.
+
+- **The evidence:** `tests/test_tui_command_bar.py` — 10 tests — and
+  `investigate/tui-command-bar-invitation/probe_command_bar.py`, which renders
+  the real panels at the width of a real terminal.  The gate of the repository
+  stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The text of the command bar moves to the next line when it reaches the end of the view
 
 - **The operator asked on 2026-11-20 for the text of the command bar to

@@ -318,6 +318,11 @@ describe.  A plain `git clone` leaves the directory empty;
 - The **multi-window** variant of the orchestrator, built on top of `agent-torvalds.py`
 - Persistent Multi-Window TUI: Markdown document viewer, background worker/tool progress,
   agent telemetry inspector, and a non-blocking command bar with HITL dialogs
+- The **command bar** says what Enter does with the text of the operator: while there
+  is text in the bar, the invitation `[Enter to send]` stands on the right, on the line
+  the cursor is on, and the text has a column of its own — three quarters of the bar —
+  so the message never takes the whole window.  The hot commands take that place while
+  the bar is empty.
 - The **Agent Telemetry & State** pane carries the **size of the prompt**: the tokens of
   the prompt and the share of the model's context window they take (green below 50%,
   yellow from 50%, red from 80%), and the number of messages and the size of the prompt.
