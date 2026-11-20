@@ -25,7 +25,7 @@ import atexit
 import os
 import sys
 import time
-from typing import Optional
+from typing import List, Optional
 
 # Platform detection
 IS_WINDOWS = sys.platform.startswith("win")
@@ -55,6 +55,11 @@ BRACKETED_PASTE_OFF = "\x1b[?2004l"
 #: the operator types after it -- and the operator has no way of
 #: knowing that.
 PASTE_IDLE_TIMEOUT = 2.0
+
+#: How long the reader waits for the rest of a control sequence that
+#: has not arrived whole yet.  A key pressed on its own is an escape,
+#: and the operator has to wait this long to be told so.
+ESCAPE_TIMEOUT = 0.05
 
 
 #: The keys of a control sequence whose final byte says everything.
@@ -118,6 +123,10 @@ class NonBlockingInputReader:
         # When the paste started, so that a paste that never closes is
         # given up on instead of swallowing the keys of the operator.
         self._paste_started: float = 0.0
+        # When the control sequence that is not whole yet was first
+        # seen, so that a sequence the terminal never finishes is given
+        # up on instead of waiting for the rest of it forever.
+        self._escape_started: float = 0.0
         # The reader puts the terminal into cbreak mode: the echo is off,
         # and the TUI draws the typed text itself.  An exit that does not
         # go through ``stop()`` would leave the operator with a terminal
@@ -140,6 +149,7 @@ class NonBlockingInputReader:
         self._pending = ""
         self._paste_text = None
         self._paste_started = 0.0
+        self._escape_started = 0.0
         self._is_active = True
         # The terminal is asked to mark the pastes.  Without the mark a
         # paste arrives as the text itself, and every newline in it is
@@ -166,6 +176,7 @@ class NonBlockingInputReader:
         self._pending = ""
         self._paste_text = None
         self._paste_started = 0.0
+        self._escape_started = 0.0
         self._is_active = False
 
     def __enter__(self):
@@ -209,6 +220,46 @@ class NonBlockingInputReader:
             return self._poll_windows()
         else:
             return self._poll_posix()
+
+    def poll_keys(self) -> List[str]:
+        """The keys that are waiting at the terminal, in one piece.
+
+        The terminal is read once, and the keys that are in the buffer
+        are parsed out of it.  A key that arrives while they are parsed
+        is left for the next call.
+
+        The reader waits for the terminal to go quiet nowhere: a
+        terminal repeats a key that is held, and a reader that waits
+        for the quiet would never give the screen back -- the cursor
+        of the operator would stand still while the key was held, and
+        would jump to the place it belongs to when the key was
+        released.
+
+        Returns:
+            The keys, in the order the terminal sent them.  An empty
+            list when nothing is waiting.
+        """
+        if not self.is_available():
+            return []
+
+        if IS_WINDOWS:
+            keys = []
+            while msvcrt.kbhit():
+                key = self._poll_windows()
+                if key is None:
+                    break
+                keys.append(key)
+            return keys
+
+        self._read_available()
+
+        keys = []
+        while True:
+            key = self._poll_buffered()
+            if key is None:
+                break
+            keys.append(key)
+        return keys
 
     # ------------------------------------------------------------------
     # The terminal
@@ -401,6 +452,45 @@ class NonBlockingInputReader:
 
         return data.decode("utf-8", "replace")
 
+    def _read_available(self) -> None:
+        """Read what the terminal has right now, and keep it.
+
+        The terminal is not waited for: the bytes that are there are
+        taken, and the bytes that arrive later are taken by the next
+        call.
+        """
+        try:
+            r, _, _ = select.select([sys.stdin], [], [], 0)
+        except Exception:
+            return
+        if not r:
+            return
+        data = self._read_fd()
+        if data:
+            self._pending += data
+
+    def _key_of(self, character: str) -> Optional[str]:
+        """The key of a character that is not a part of a sequence.
+
+        Args:
+            character: The character the operator pressed.
+
+        Returns:
+            The name of the key, or None when the character is a
+            character of its own.
+        """
+        if character in ("\r", "\n"):
+            return "ENTER"
+        if character in ("\x7f", "\x08"):
+            return "BACKSPACE"
+        if character == "\t":
+            return "TAB"
+        if character == "\x03":
+            return "CTRL_C"
+        if character == "\x04":
+            return "CTRL_D"
+        return None
+
     def _next_char(self) -> str:
         """
         Return the next character from the pending buffer.
@@ -413,6 +503,55 @@ class NonBlockingInputReader:
         if not self._pending:
             return ""
         return self._pending[0]
+
+    def _peek_char(self) -> str:
+        """
+        The next character of the pending buffer, without waiting.
+
+        Unlike :meth:`_next_char` this never reads from the terminal:
+        it only looks at what the reader already has.  The reader of a
+        control sequence needs it: the sequence may already be whole in
+        the buffer, and waiting for it would cost the operator fifty
+        milliseconds for every key of a key that repeats.
+
+        Returns:
+            The character, or an empty string when the buffer is empty.
+        """
+        if not self._pending:
+            return ""
+        return self._pending[0]
+
+    def _wait_for_input(self, timeout: Optional[float] = None) -> bool:
+        """
+        Wait for the terminal to give more, and keep what it gives.
+
+        Args:
+            timeout: How long to wait, in seconds.  None waits for as
+                long as it takes: the terminal is in the middle of
+                writing a control sequence, and the rest of it comes.
+
+        Returns:
+            True when more arrived, False when nothing came in time.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while True:
+            if deadline is None:
+                wait = 0.05
+            else:
+                wait = deadline - time.monotonic()
+                if wait <= 0:
+                    return False
+            try:
+                r, _, _ = select.select([sys.stdin], [], [], wait)
+            except Exception:
+                return False
+            if r:
+                break
+        data = self._read_fd()
+        if not data:
+            return False
+        self._pending += data
+        return True
 
     def _consume(self, count: int = 1) -> None:
         """
@@ -436,16 +575,9 @@ class NonBlockingInputReader:
         self._consume(1)
 
         # Standard control keys
-        if ch in ("\r", "\n"):
-            return "ENTER"
-        if ch in ("\x7f", "\x08"):
-            return "BACKSPACE"
-        if ch == "\t":
-            return "TAB"
-        if ch == "\x03":
-            return "CTRL_C"
-        if ch == "\x04":
-            return "CTRL_D"
+        key = self._key_of(ch)
+        if key is not None:
+            return key
 
         # An escape sequence: the cursor keys, and the marker that
         # opens a paste.
@@ -454,6 +586,109 @@ class NonBlockingInputReader:
 
         return ch
 
+    def _poll_buffered(self) -> Optional[str]:
+        """One key out of the pending buffer, and nothing more.
+
+        The buffer is not filled from the terminal: a control sequence
+        that has not arrived whole is left in it, and the terminal is
+        read by the caller.
+
+        Returns:
+            The key, or None when the buffer holds no whole key.
+        """
+        if not self._pending:
+            return None
+
+        ch = self._pending[0]
+        if ch == "\x1b":
+            return self._poll_escape_buffered()
+
+        self._consume(1)
+        self._escape_started = 0.0
+        key = self._key_of(ch)
+        return key if key is not None else ch
+
+    def _poll_escape_buffered(self) -> Optional[str]:
+        """The key of the sequence in the buffer, without waiting for the
+        quiet of the terminal.
+
+        A sequence the terminal is still writing is waited for -- the
+        rest of it comes.  An escape that is alone in the buffer is
+        reported when nothing comes after it: the operator pressed
+        ESC, and nothing else.
+
+        Returns:
+            The key of the sequence, "ESCAPE", or None while the
+            sequence may still arrive.
+        """
+        # The sequence is ESC [ <parameters> <final byte>.
+        if len(self._pending) < 2:
+            # Nothing behind the ESC yet.  The escape is left in the
+            # buffer: the terminal may still be writing the sequence.
+            return self._escape_given_up()
+
+        if self._pending[1] != "[":
+            # Not a control sequence: the escape is a key of its own.
+            self._consume(2)
+            self._escape_started = 0.0
+            return "ESCAPE"
+
+        # The escape and the introducer are behind us.
+        self._consume(2)
+
+        params = ""
+        final = ""
+        while True:
+            character = self._peek_char()
+            if not character:
+                # The terminal is in the middle of the sequence: the
+                # rest of it comes, and it is waited for.
+                if not self._wait_for_input():
+                    # The terminal gave nothing: the escape is a key
+                    # of its own.
+                    self._escape_started = 0.0
+                    self._consume(1)
+                    return "ESCAPE"
+                continue
+            self._consume(1)
+            if "0" <= character <= "?":
+                params += character
+                continue
+            if " " <= character <= "/":
+                # An intermediate byte: it is part of the sequence and
+                # it says nothing about the key.
+                continue
+            final = character
+            break
+
+        self._escape_started = 0.0
+        if params == "200" and final == "~":
+            # The marker that opens a paste.
+            return self._collect_paste()
+        return self._decode_csi(params, final)
+
+    def _escape_given_up(self) -> Optional[str]:
+        """The escape of a sequence that never arrived whole.
+
+        A sequence that is not whole yet is left in the buffer, and the
+        terminal may still be writing it.  When it has waited long
+        enough, the escape it began with is reported: the operator
+        pressed ESC, and nothing else came.
+
+        Returns:
+            "ESCAPE" when the sequence has waited long enough, and None
+            while it may still arrive.
+        """
+        if self._escape_started == 0.0:
+            self._escape_started = time.monotonic()
+            return None
+        if time.monotonic() - self._escape_started < ESCAPE_TIMEOUT:
+            return None
+        # The rest of the sequence never came.
+        self._escape_started = 0.0
+        self._consume(1)
+        return "ESCAPE"
+
     def _poll_escape(self) -> Optional[str]:
         """Read and decode an escape sequence on POSIX.
 
@@ -461,16 +696,23 @@ class NonBlockingInputReader:
         intermediate bytes and the final byte.  A sequence the reader
         does not know is an escape, as it always was.
 
+        The reader waits for the rest of the sequence only when it does
+        not have it yet.  A terminal that repeats a key sends the
+        sequences faster than the screen is drawn -- and a reader that
+        waits fifty milliseconds for the rest of every sequence would
+        never catch up with them: the cursor of the operator would
+        stand still while the key was held, and would jump to the place
+        it belongs to when the key was released.
+
         Returns:
             The key of the sequence, or "ESCAPE" when there is none.
         """
-        # The rest of the sequence may not have arrived yet: a key
-        # pressed on its own is an escape.
-        r, _, _ = select.select([sys.stdin], [], [], 0.05)
-        if not r and not self._pending:
+        # The introducer: the byte behind the ESC.  It may not have
+        # arrived yet: a key pressed on its own is an escape.
+        if not self._pending and not self._wait_for_input(ESCAPE_TIMEOUT):
             return "ESCAPE"
 
-        introducer = self._next_char()
+        introducer = self._peek_char()
         if not introducer:
             return "ESCAPE"
         self._consume(1)
@@ -481,9 +723,13 @@ class NonBlockingInputReader:
         params = ""
         final = ""
         while True:
-            c = self._next_char()
+            c = self._peek_char()
             if not c:
-                return "ESCAPE"
+                # The rest of the sequence has not arrived yet: the
+                # terminal is still writing it.
+                if not self._wait_for_input(ESCAPE_TIMEOUT):
+                    return "ESCAPE"
+                continue
             self._consume(1)
             if "0" <= c <= "?":
                 params += c

@@ -227,12 +227,20 @@ class TuiApp:
                             task.cancel()
 
     def _process_keyboard_input(self) -> None:
-        """Read and handle pending keys from the non-blocking input reader."""
-        # Read all available keys this tick
-        while self.input_reader.is_available():
-            key = self.input_reader.poll_key()
-            if not key:
-                break
+        """Read and handle pending keys from the non-blocking input reader.
+
+        The keys that are waiting are read in one piece: the keys that
+        arrive while they are handled are read by the next tick.
+
+        The reader is not asked for one key after the other until the
+        terminal goes quiet.  A terminal repeats a key that is held --
+        the arrow keys are the ones the operator holds -- and a reader
+        that waits for the quiet would keep the screen for as long as
+        the key was held: the cursor of the operator would stand still,
+        and would jump to the place it belongs to when the key was
+        released.
+        """
+        for key in self.input_reader.poll_keys():
             self._handle_key(key)
 
     def _input_width(self) -> int:

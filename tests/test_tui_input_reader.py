@@ -5,6 +5,23 @@ Covers the buffered-reading behaviour that keeps the multi-window TUI
 responsive: keystrokes typed as a burst must all be captured, not just the
 first one.
 
+And the keys that arrive while a key is held.  The operator reported on
+2026-11-20 that the cursor of the command bar stands still while an arrow
+key is held, and that it jumps to the place it belongs to when the key is
+released.  The reader was the cause, and the tests at the end of this file
+measure it:
+
+* the reader waited fifty milliseconds for the rest of every control
+  sequence, even when the sequence was already in its buffer -- twenty
+  arrow keys took a second to be read;
+* the app asked it for one key after the other until the terminal went
+  quiet, and a terminal that repeats a key that is held never goes quiet --
+  the drain of the keyboard lasted as long as the key was held, and the
+  screen is drawn after the drain.
+
+The reader reads the keys that are waiting, in one piece, and the app draws
+the screen between them.
+
 Run with:
     pytest tests/test_tui_input_reader.py -v
 """
@@ -201,6 +218,253 @@ class TestInputReaderUnitBehaviour(unittest.TestCase):
         self.assertEqual(reader._next_char(), "y")
         reader._consume(1)
         self.assertEqual(reader._pending, "")
+
+
+#: The marker the reader writes when it starts: the terminal is asked
+#: to mark the pastes.  The parent waits for it before it writes, so
+#: that the bytes are read by the reader and not swallowed by the line
+#: discipline of the terminal.
+READY = b"\x1b[?2004h"
+
+#: The body of the child that reads the keys the way the app reads
+#: them: the keys that are waiting, in one piece.  A reader without
+#: that way of reading is given the old one -- one key after the other,
+#: until the terminal goes quiet -- so that both are measured by the
+#: same ruler.
+COLLECT = (
+    "def collect():\n"
+    "    batch = []\n"
+    "    read = getattr(r, 'poll_keys', None)\n"
+    "    if read is not None:\n"
+    "        return read()\n"
+    "    while r.is_available():\n"
+    "        key = r.poll_key()\n"
+    "        if key is None:\n"
+    "            break\n"
+    "        batch.append(key)\n"
+    "    return batch\n"
+)
+
+
+def run_in_pty(body, writes, timeout=25.0):
+    """Run a piece of the reader in a pseudo-terminal.
+
+    The child runs the body with the reader ``r`` in it, and with the
+    way of reading the keys the app uses.  The parent writes the bytes
+    of ``writes`` into the terminal, once the reader has announced
+    itself.
+
+    Args:
+        body: The body of the child, as Python source.
+        writes: A list of pairs: the delay in seconds from the moment
+            the reader is ready, and the bytes to write.
+        timeout: How long the parent waits for the child.
+
+    Returns:
+        The line the child printed after the marker "RESULT:".
+    """
+    script = (
+        "import sys, time\n"
+        f"sys.path.insert(0, {str(ROOT)!r})\n"
+        "from components.tui.input_reader import NonBlockingInputReader\n"
+        "r = NonBlockingInputReader()\n"
+        "r.start()\n"
+        + COLLECT
+        + body
+        + "\nr.stop()\n"
+    )
+
+    pid, fd = pty.fork()
+    if pid == 0:  # pragma: no cover - the child process
+        os.environ["TERM"] = "xterm"
+        os.chdir(str(ROOT))
+        os.execv(sys.executable, [sys.executable, "-c", script])
+
+    out = b""
+    pending = []
+    ready = None
+    try:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            readable, _, _ = select.select([fd], [], [], 0.02)
+            if readable:
+                try:
+                    chunk = os.read(fd, 65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                out += chunk
+                if ready is None and READY in out:
+                    ready = time.monotonic()
+                    pending = [
+                        (ready + delay, data) for delay, data in writes
+                    ]
+            now = time.monotonic()
+            while pending and pending[0][0] <= now:
+                _, data = pending.pop(0)
+                os.write(fd, data)
+            if b"RESULT:" in out:
+                break
+    finally:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        os.waitpid(pid, os.WNOHANG)
+
+    text = out.decode("utf-8", "replace")
+    if "RESULT:" not in text:
+        return None
+    return text.split("RESULT:", 1)[1].split("\n")[0].strip()
+
+
+class TestTheRepeatedKey(unittest.TestCase):
+    """The keys that arrive while a key is held."""
+
+    def test_a_burst_of_repeated_keys_comes_in_one_piece(self):
+        """Twenty arrow keys are twenty keys, and they come at once."""
+        body = (
+            "keys = []\n"
+            "took = -1\n"
+            "end = time.time() + 8\n"
+            "while time.time() < end and len(keys) < 20:\n"
+            "    start = time.monotonic()\n"
+            "    batch = collect()\n"
+            "    if batch and len(keys) + len(batch) >= 20:\n"
+            "        took = time.monotonic() - start\n"
+            "    keys.extend(batch)\n"
+            "    time.sleep(0.02)\n"
+            "print('RESULT:' + repr([str(k) for k in keys]) + '|' "
+            "+ repr(took), flush=True)\n"
+        )
+
+        result = run_in_pty(body, [(0.0, b"\x1b[C" * 20)])
+
+        self.assertIsNotNone(result, "the reader reported nothing")
+        keys, span = result.split("|")
+        keys = eval(keys)  # noqa: S307 - a literal from our own child
+        span = float(span)  # noqa: S307 - a literal from our own child
+        self.assertEqual(
+            len(keys),
+            20,
+            f"the reader reported {len(keys)} keys of twenty -- the "
+            "repeats of the key were lost",
+        )
+        self.assertTrue(
+            all(value == "RIGHT" for value in keys),
+            f"the reader did not report the arrow keys -- it reported "
+            f"{keys[:3]}",
+        )
+        self.assertLess(
+            span,
+            0.5,
+            f"the twenty keys took {span:.3f} s to be read -- the reader "
+            "waits for the rest of a sequence it already has",
+        )
+
+    def test_the_drain_of_the_keyboard_ends_while_the_key_is_held(self):
+        """The screen is drawn while the key is held, and not after it."""
+        body = (
+            "worst = 0.0\n"
+            "for _ in range(20):\n"
+            "    start = time.monotonic()\n"
+            "    for _key in collect():\n"
+            "        pass\n"
+            "    worst = max(worst, time.monotonic() - start)\n"
+            "    time.sleep(0.066)\n"
+            "print('RESULT:' + repr(worst), flush=True)\n"
+        )
+
+        # A key that repeats, the way a terminal repeats a held key.
+        writes = [(0.1 + index * 0.033, b"\x1b[C") for index in range(20)]
+
+        result = run_in_pty(body, writes)
+
+        self.assertIsNotNone(result, "the reader reported nothing")
+        worst = float(result)  # noqa: S307 - a literal from our own child
+        self.assertLess(
+            worst,
+            0.25,
+            f"the drain of the keyboard lasted {worst:.3f} s -- the screen "
+            "is drawn after the drain, and the cursor of the operator "
+            "stands still while the key is held",
+        )
+
+
+class TestTheKeysOfTheReader(unittest.TestCase):
+    """The keys the reader reports."""
+
+    def test_a_paste_arrives_in_one_piece(self):
+        """A paste is one key, and not one key per line of it."""
+        body = (
+            "keys = []\n"
+            "end = time.time() + 8\n"
+            "while time.time() < end and not keys:\n"
+            "    keys.extend(collect())\n"
+            "    time.sleep(0.02)\n"
+            "print('RESULT:' + repr([(type(k).__name__, str(k)) "
+            "for k in keys]), flush=True)\n"
+        )
+
+        result = run_in_pty(
+            body, [(0.0, b"\x1b[200~hello world\x1b[201~")]
+        )
+
+        self.assertIsNotNone(result, "the reader reported nothing")
+        keys = eval(result)  # noqa: S307 - a literal from our own child
+        self.assertEqual(
+            len(keys),
+            1,
+            f"the reader reported {len(keys)} keys for one paste -- the "
+            "paste did not arrive whole",
+        )
+        self.assertEqual(keys[0][0], "PastedText", "the paste is not a paste")
+        self.assertEqual(keys[0][1], "hello world", "the paste is not whole")
+
+    def test_a_lone_escape_is_an_escape(self):
+        """The operator pressed ESC, and nothing else came."""
+        body = (
+            "keys = []\n"
+            "end = time.time() + 5\n"
+            "while time.time() < end and not keys:\n"
+            "    keys.extend(collect())\n"
+            "    time.sleep(0.02)\n"
+            "print('RESULT:' + repr([str(k) for k in keys]), flush=True)\n"
+        )
+
+        result = run_in_pty(body, [(0.0, b"\x1b")])
+
+        self.assertIsNotNone(result, "the reader reported nothing")
+        keys = eval(result)  # noqa: S307 - a literal from our own child
+        self.assertEqual(
+            keys,
+            ["ESCAPE"],
+            f"the reader reported {keys} -- the escape of the operator was "
+            "not reported",
+        )
+
+    def test_a_sequence_that_comes_in_two_pieces_is_one_key(self):
+        """The terminal may be slow: the sequence is still one key."""
+        body = (
+            "keys = []\n"
+            "end = time.time() + 6\n"
+            "while time.time() < end and not keys:\n"
+            "    keys.extend(collect())\n"
+            "    time.sleep(0.02)\n"
+            "print('RESULT:' + repr([str(k) for k in keys]), flush=True)\n"
+        )
+
+        result = run_in_pty(body, [(0.0, b"\x1b["), (0.3, b"C")])
+
+        self.assertIsNotNone(result, "the reader reported nothing")
+        keys = eval(result)  # noqa: S307 - a literal from our own child
+        self.assertEqual(
+            keys,
+            ["RIGHT"],
+            f"the reader reported {keys} -- the sequence was not read as "
+            "one key",
+        )
 
 
 if __name__ == "__main__":

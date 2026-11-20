@@ -1028,6 +1028,43 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The cursor of the command bar does not hang while an arrow key is held
+
+- **The operator reported on 2026-11-20** that the cursor of the command bar
+  stands still while an arrow key is held, and that it jumps to the place it
+  belongs to when the key is released:
+
+  > *by holding arrow key to move forward and back the cursor hangs until I
+  > release the key, and then it moves to the correct position*
+
+- **The reader waited fifty milliseconds for every control sequence** — even
+  for the ones it already had in its buffer.  Twenty arrow keys took **1.005
+  seconds** to be read; a key that repeats arrives faster than that, and the
+  backlog grew the whole time the key was held.
+
+- **The app asked for one key after the other until the terminal went quiet.**
+  A terminal that repeats a key that is held never goes quiet, so the drain of
+  the keyboard lasted as long as the key was held — **0.946 seconds** in the
+  measurement — and the screen is drawn *after* the drain.  The cursor stood
+  still because the screen was never drawn.
+
+- **The reader reads the keys that are waiting, in one piece, and the app
+  draws the screen between them.**  The terminal is read once and the keys in
+  the buffer are parsed out of it; the keys that arrive while they are parsed
+  are read by the next tick.  Twenty arrow keys are now read in **0.000
+  seconds**, and the longest drain of the keyboard is **0.000 seconds**.
+
+- **The keys still arrive whole.**  A paste is one key, a lone escape is an
+  escape, and a sequence the terminal writes in two pieces is one key — the
+  reader waits for the rest of a sequence it is in the middle of reading, as
+  it always did.
+
+- **The evidence:** `tests/test_tui_input_reader.py` — 5 new tests, in a
+  file that held 6 more — and
+  `investigate/tui-arrow-key-repeat/probe_arrow_key_repeat.py`, which drives
+  the real reader from a pseudo-terminal.  Two of the tests and two of the
+  checks of the probe fail against the old reader, with the numbers above.
+
 #### The iteration of the workflow is on the screen
 
 - **The operator reported on 2026-11-19** that the number in the
