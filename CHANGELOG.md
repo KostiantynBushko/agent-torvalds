@@ -873,6 +873,39 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+#### The import of one module of the agent does not cost a second
+
+- **A program that wanted one small module of the TUI paid for the whole
+  of llama_index.**  The reader of the terminal —
+  `components/tui/input_reader.py`, which needs nothing but the standard
+  library — cost **0.976 s** to import: **81 %** of the 1.2 s that the
+  helper of the multiline input test has for the reader to reach the
+  terminal before the keys are typed.
+
+- **The packages of the agent imported everything they had.**  The import
+  tree says it: `components.tui.input_reader` → `components.tui` →
+  `components` → `components.event_consumer` → `llama_index.core.workflow`.
+  The package of the components imported all five of its modules when it
+  was imported, and one of them carries the workflow engine of
+  llama_index — so *every* import of *any* module of the agent paid that
+  price.
+
+- **The modules are imported when a name of them is asked for now.**
+  `components/__init__.py` and `components/tui/__init__.py` carry a map
+  of the name to the module that holds it, and the `__getattr__` of a
+  module (PEP 562) imports that module when the name is asked for.  The
+  reader of the terminal costs **0.025 s** now — **2.1 %** of the budget
+  — and the margin of the test grows from **0.226 s** to **1.180 s**.
+
+- **The public API of the packages did not change.**  Both `__all__`
+  lists are byte-identical to the ones of `master`, and every name in
+  them resolves to the very same object the submodule carries.
+
+- **The evidence:** `investigate/import-cost-of-the-components/` — the
+  report, and `probe_import_cost.py`, which measures every import in a
+  fresh interpreter and prints the import tree.  The gate of the
+  repository stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The telemetry pane carries the icon of the progress pane
 
 - **The operator asked for it on 2026-11-19**, after the icons of the
