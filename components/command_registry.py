@@ -395,7 +395,6 @@ CATEGORY_TITLES = {
 
 KEYBOARD_SHORTCUTS: Tuple[Tuple[str, str], ...] = (
     ("Enter", "Submit prompt / confirm HITL answer"),
-    ("Shift+Enter", "Add a line to the input bar (the bar shows three lines)"),
     ("Paste", "Paste text into the input bar (a long paste scrolls to its end)"),
     ("PgUp / PgDn", "Scroll document viewer up and down"),
     ("Up / Down", "Move between the lines of the input, or browse its history"),

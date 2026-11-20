@@ -218,12 +218,12 @@ def _input_markup(
     """The markup of the text of the input, with the cursor in its place.
 
     The view shows at most ``max_lines`` lines of the text: the text
-    that reaches the end of the view moves to the next line, the
-    operator adds a line with Shift+Enter, and a text that is longer
-    than the window is seen through it -- the window follows the
-    cursor, so a paste that is longer than the window ends with its
-    last lines on the screen, and the operator can walk the cursor
-    back into the text above and edit it.
+    that reaches the end of the view moves to the next line, a paste
+    brings the lines of its own, and a text that is longer than the
+    window is seen through it -- the window follows the cursor, so a
+    paste that is longer than the window ends with its last lines on
+    the screen, and the operator can walk the cursor back into the
+    text above and edit it.
 
     Args:
         input_buffer: The text of the input.

@@ -271,13 +271,6 @@ class TuiApp:
                 self._handle_enter_pressed()
                 return
 
-            # Shift+Enter: a new line in the input, not a submission.
-            # The view of the input shows up to three lines, and it
-            # follows the cursor when the text is longer than that.
-            if key == "SHIFT_ENTER":
-                self._insert_text("\n")
-                return
-
             # Backspace Key
             if key == "BACKSPACE":
                 if pos > 0:
@@ -390,10 +383,10 @@ class TuiApp:
 
     def _handle_enter_pressed(self) -> None:
         """Handle Enter key press (submission)."""
-        # The text as the operator wrote it.  The line break that the
-        # last Shift+Enter left is the empty last line of the bar, and
-        # it is not a part of the message; the line breaks inside the
-        # text, and the indentation of a pasted block, are.
+        # The text as the operator wrote it.  The line break at the end
+        # of the text is the end of the message, and it is not a part of
+        # it; the line breaks inside the text, and the indentation of a
+        # pasted block, are.
         text = self.state.input_buffer.rstrip("\n")
 
         # The command that is matched is the text without the spaces

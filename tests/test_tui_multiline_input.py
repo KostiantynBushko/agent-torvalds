@@ -6,8 +6,8 @@ well enough to write a long question into it:
 
 - the hot commands on the right go away while there is text in the bar,
   and they come back when the last character is deleted;
-- Shift+Enter adds a line to the input, and the view of the input
-  grows with it — up to three lines;
+- the view of the input grows with the lines of the input — up to
+  three lines;
 - the text that reaches the end of the view moves to the next line, the
   way the question of the agent moves to the next line in the
   agent-question mode, and the cursor goes with it;
@@ -305,99 +305,45 @@ class TestTheHotCommands(unittest.TestCase):
         )
 
 
-class TestShiftEnter(unittest.TestCase):
-    """Shift+Enter adds a line to the input."""
-
-    def test_shift_enter_adds_a_line(self):
-        """The line break lands at the cursor."""
-        app = TuiApp(agent=None, prompt_handler_fn=None)
-
-        app._handle_key("a")
-        app._handle_key("SHIFT_ENTER")
-        app._handle_key("b")
-
-        self.assertEqual(app.state.input_buffer, "a\nb")
-        self.assertEqual(app.state.cursor_pos, 3)
-
-    def test_shift_enter_does_not_submit(self):
-        """The line is added, the command is not run."""
-        app = TuiApp(agent=None, prompt_handler_fn=None)
-
-        app._handle_key("a")
-        app._handle_key("SHIFT_ENTER")
-
-        self.assertIsNone(
-            app._active_query_task,
-            "Shift+Enter submitted the command -- the agent was asked "
-            "before the operator wrote the question",
-        )
-        self.assertEqual(app.state.input_buffer, "a\n")
-
-    def test_the_reader_reports_shift_enter(self):
-        """The terminal sends Shift+Enter as a sequence of its own."""
-        keys, _ = keys_from_pty(b"\x1b[13;2~")
-
-        self.assertIn(
-            "SHIFT_ENTER",
-            key_values(keys),
-            f"the reader did not report Shift+Enter: {keys!r}",
-        )
-
-    def test_the_reader_reports_the_kitty_form_of_shift_enter(self):
-        """The kitty keyboard protocol sends another sequence."""
-        keys, _ = keys_from_pty(b"\x1b[27;2;13~")
-
-        self.assertIn(
-            "SHIFT_ENTER",
-            key_values(keys),
-            f"the reader did not report Shift+Enter: {keys!r}",
-        )
-
-    def test_the_reader_reports_the_csi_u_form_of_shift_enter(self):
-        """A terminal that writes the "CSI u" form is known too."""
-        keys, _ = keys_from_pty(b"\x1b[13;2u")
-
-        self.assertIn(
-            "SHIFT_ENTER",
-            key_values(keys),
-            f"the reader did not report Shift+Enter: {keys!r}",
-        )
-
-    def test_the_reader_reports_shift_enter_in_any_order(self):
-        """The key and the modifier are read, whatever the order is."""
-        keys, _ = keys_from_pty(b"\x1b[2;13~")
-
-        self.assertIn(
-            "SHIFT_ENTER",
-            key_values(keys),
-            f"the reader did not report Shift+Enter: {keys!r}",
-        )
-
-    def test_the_reader_reports_shift_enter_with_a_parameter_more(self):
-        """A terminal that adds a parameter of its own is known too."""
-        keys, _ = keys_from_pty(b"\x1b[13;2;3~")
-
-        self.assertIn(
-            "SHIFT_ENTER",
-            key_values(keys),
-            f"the reader did not report Shift+Enter: {keys!r}",
-        )
-
-    def test_the_ctrl_enter_is_still_the_ctrl_enter(self):
-        """The generalization did not take the other modifiers."""
-        keys, _ = keys_from_pty(b"\x1b[13;5u")
-
-        self.assertIn(
-            "CTRL_ENTER",
-            key_values(keys),
-            f"the reader did not report Ctrl+Enter: {keys!r}",
-        )
+class TestTheReader(unittest.TestCase):
+    """The reader reports the keys of the terminal."""
 
     def test_the_enter_key_is_still_the_enter_key(self):
         """The rewrite of the escape sequences kept the old keys."""
         keys, _ = keys_from_pty(b"\r")
 
         self.assertIn("ENTER", key_values(keys))
+
+    def test_the_shift_enter_is_not_a_key(self):
+        """There is no Shift+Enter: the bar has no line break key.
+
+        The operator decided on 2026-11-20 that the bar carries no
+        Shift+Enter at all.  The sequence the terminals send for it is
+        an escape to the reader, and the application drops it -- so the
+        text of the operator never changes by a key nobody can see.
+        """
+        for sequence in (b"\x1b[13;2~", b"\x1b[27;2;13~", b"\x1b[13;2u"):
+            keys, _ = keys_from_pty(sequence)
+
+            self.assertNotIn(
+                "SHIFT_ENTER",
+                key_values(keys),
+                f"the reader reported a Shift+Enter: {keys!r}",
+            )
+
+    def test_the_shift_enter_does_not_change_the_bar(self):
+        """The sequence of the Shift+Enter leaves the bar as it was."""
+        app = TuiApp(agent=None, prompt_handler_fn=None)
+
+        app._handle_key("a")
+        app._handle_key("ESCAPE")
+        app._handle_key("b")
+
+        self.assertEqual(
+            app.state.input_buffer,
+            "ab",
+            "the bar changed by a key that is not a key",
+        )
 
 
 class TestTheViewOfTheInput(unittest.TestCase):
@@ -633,20 +579,19 @@ class TestTheTextThatIsSent(unittest.TestCase):
             "text was stripped on its way",
         )
 
-    def test_the_line_break_of_a_shift_enter_is_not_part_of_the_message(self):
-        """The empty last line of the bar is not a part of the text."""
+    def test_the_line_break_at_the_end_is_not_part_of_the_message(self):
+        """The end of the text is not a part of it."""
         app = TuiApp(agent=None, prompt_handler_fn=None)
 
-        app._handle_key("a")
-        app._handle_key("SHIFT_ENTER")
+        app._handle_key(PastedText("a\n"))
 
         sent = self._sent_to_the_agent(app)
 
         self.assertEqual(
             sent,
             "a",
-            "the line break that the last Shift+Enter left went to the "
-            "agent with the text",
+            "the line break at the end of the text went to the agent "
+            "with the text",
         )
 
     def test_the_line_breaks_inside_the_text_are_kept(self):

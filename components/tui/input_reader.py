@@ -8,7 +8,6 @@ Key mappings normalized:
 - "ENTER", "BACKSPACE", "DELETE", "TAB", "ESCAPE"
 - "UP", "DOWN", "LEFT", "RIGHT"
 - "PGUP", "PGDN", "HOME", "END"
-- "SHIFT_ENTER" — the operator adds a line to the input with it
 - "CTRL_C", "CTRL_D"
 - Regular characters (e.g. 'a', 'Z', '1', '\\', ' ')
 
@@ -70,8 +69,7 @@ _CSI_FINAL_KEYS = {
 }
 
 #: The keys of a control sequence that ends with a tilde.  The number
-#: is the key, and the numbers after the ";" are the modifiers: "2" is
-#: Shift, which is how Shift+Enter arrives.
+#: is the key, and the numbers after the ";" are the modifiers.
 _CSI_TILDE_KEYS = {
     "1": "HOME",
     "2": "INSERT",
@@ -88,38 +86,6 @@ _CSI_TILDE_KEYS = {
 _CSI_U_KEYS = {
     "13;5": "CTRL_ENTER",
 }
-
-#: The number of the Enter key in the parameters of a control sequence.
-_ENTER_KEY = 13
-
-#: The number of the Shift modifier in the parameters of a control
-#: sequence.
-_SHIFT_MODIFIER = 2
-
-
-def _is_shift_enter(params: str) -> bool:
-    """Whether the parameters of a sequence say Shift+Enter.
-
-    The terminals do not write the Shift+Enter the same way: xterm
-    writes ``ESC [ 13 ; 2 ~``, the kitty keyboard protocol writes
-    ``ESC [ 27 ; 2 ; 13 ~`` and ``ESC [ 13 ; 2 u``, and a terminal may
-    add a parameter of its own.  The key is 13 and the modifier is 2 in
-    all of them — but the order the two are written in is not the same,
-    and a table of exact strings knows only the forms that were written
-    down when it was made.
-
-    Args:
-        params: The parameter bytes of the sequence.
-
-    Returns:
-        True when the sequence says Enter with Shift.
-    """
-    numbers = []
-    for part in params.split(";"):
-        if part.isdigit():
-            numbers.append(int(part))
-
-    return _ENTER_KEY in numbers and _SHIFT_MODIFIER in numbers
 
 
 class PastedText(str):
@@ -481,8 +447,8 @@ class NonBlockingInputReader:
         if ch == "\x04":
             return "CTRL_D"
 
-        # An escape sequence: the cursor keys, Shift+Enter, and the
-        # marker that opens a paste.
+        # An escape sequence: the cursor keys, and the marker that
+        # opens a paste.
         if ch == "\x1b":
             return self._poll_escape()
 
@@ -547,12 +513,8 @@ class NonBlockingInputReader:
         if final in _CSI_FINAL_KEYS:
             return _CSI_FINAL_KEYS[final]
         if final == "~":
-            if _is_shift_enter(params):
-                return "SHIFT_ENTER"
             return _CSI_TILDE_KEYS.get(params, "ESCAPE")
         if final == "u":
-            if _is_shift_enter(params):
-                return "SHIFT_ENTER"
             return _CSI_U_KEYS.get(params, "ESCAPE")
         return "ESCAPE"
 

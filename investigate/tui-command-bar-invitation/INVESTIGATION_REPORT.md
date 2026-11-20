@@ -172,9 +172,8 @@ fixed since the baseline        : 0
   and that is a change of the shape of the screen that the operator did not ask for.
 - **The invitation does not appear on an empty bar.**  There is nothing to send, and an invitation
   that is always on the screen is an invitation that is not true half of the time.
-- **The Shift+Enter of a terminal that sends another sequence**, and **the trailing line break of a
-  Shift+Enter that is eaten when the bar is submitted** — both are open from the change of
-  2026-11-20 and are described in
+- **There is no line-break key.**  The operator withdrew the Shift+Enter on 2026-11-20 — the bar
+  carries no key that adds a line, and the lines of the input come from a paste.  It is described in
   [`investigate/tui-input-wrapping/INVESTIGATION_REPORT.md`](../tui-input-wrapping/INVESTIGATION_REPORT.md).
 - **The busy prompt.**  While the agent is busy the prompt is `>>> (busy) `, and the text of the
   operator has eleven cells less — the column of the text is the same, the prompt is longer.

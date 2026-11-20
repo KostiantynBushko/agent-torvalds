@@ -17,7 +17,8 @@ The operator asked for four things in the command bar of the TUI:
 1. the helper (hot) commands on the right go away while there is text in the bar, and
    they come back when the text is gone;
 2. Shift+Enter adds a line to the input, and the view of the input grows with it — up
-   to three lines;
+   to three lines.  **The operator withdrew this one on 2026-11-20: the bar carries
+   no Shift+Enter at all**, and the lines of the input come from a paste;
 3. a paste arrives in one piece; a paste that is longer than three lines shows its last
    lines, and the operator can walk the cursor into the text and edit it;
 4. deleting the last character brings the helper commands back.
@@ -70,16 +71,18 @@ The control characters of a paste are dropped: the terminal acts on them, and a 
 text is not allowed to move the cursor of the TUI or to change the state of the
 terminal.
 
-### 3.2 Shift+Enter is a key of its own
+### 3.2 The reader reads a control sequence as a whole
 
-The reader now reads a control sequence as a whole — the parameter bytes, the
-intermediate bytes and the final byte — instead of guessing at them.  The sequences
-that carry the Shift+Enter key (`ESC [ 13 ; 2 ~` of xterm, `ESC [ 27 ; 2 ; 13 ~` of the
-kitty keyboard protocol, and their `CSI u` forms) are reported as `SHIFT_ENTER`, and
-the keys that were known before are known still.
+The reader reads a control sequence as a whole — the parameter bytes, the
+intermediate bytes and the final byte — instead of guessing at them.  The keys that
+were known before are known still, and a sequence that carries no key the reader
+knows is an escape, which the application drops.
 
-In the application, `SHIFT_ENTER` puts a line break into the input at the cursor.  It
-does not submit.
+**The Shift+Enter is not among the keys.**  The operator asked for it on 2026-11-20
+and withdrew the request the same day: the bar carries no line-break key, and the
+lines of the input come from a paste.  The sequence a terminal sends for the
+Shift+Enter is an escape to the reader, and the bar does not change by a key nobody
+can see.
 
 ### 3.3 The input is a text, and the view is a window over it
 
@@ -93,9 +96,10 @@ of the bar is *seen*:
 
 That single rule gives the three behaviours the operator asked for:
 
-* **Shift+Enter extends the view.**  One line of text is one line of the bar; a second
-  line makes the bar two lines tall; a third makes it three.  A fourth line does not
-  make the bar taller — the window scrolls, and the cursor stays visible.
+* **The lines of the input extend the view.**  One line of text is one line of the
+  bar; a second line makes the bar two lines tall; a third makes it three.  A fourth
+  line does not make the bar taller — the window scrolls, and the cursor stays
+  visible.  The lines come from a paste: there is no line-break key.
 * **A long paste shows its last lines.**  The cursor is at the end of a pasted text,
   and the window follows the cursor to the end of it.
 * **The text can be edited.**  The window is a window: the text above it is still in
@@ -120,7 +124,7 @@ is empty again.
 | group | what it holds |
 | :--- | :--- |
 | the hot commands | they are shown on an empty bar, hidden while there is text, and back after the last character is deleted |
-| Shift+Enter | it adds a line, it does not submit, and the reader reports it — in both the xterm and the kitty form |
+| the Shift+Enter | there is no line-break key: the sequence is an escape, and the bar does not change by it |
 | the view of the input | it grows with the lines, it never shows more than three, and the text above the window is not thrown away |
 | the paste | it arrives in one piece, it is put into the bar, a long one shows its last lines, and the text can be edited |
 | the cursor | it walks the lines of the input, and the history is still there for the input of one line |
@@ -138,13 +142,12 @@ the hot commands of the bar
    with text in the bar : hidden
    after the last character is deleted : shown
 
-Shift+Enter
-   the reader reports : ['SHIFT_ENTER']
-   the input holds     : 'a\nb'
+the Shift+Enter
+   the reader reports : ['ESCAPE']
+   the input holds     : 'ab'
    the bar shows       :
      ╭──────────────────────────────────────────────────────────────────────────────────╮
-     │ >>> a                                                                        │
-     │     b                                                                        │
+     │ >>> ab                                                                       │
      ╰──────────────────────────────────────────────────────────────────────────────────╯
 
 the paste

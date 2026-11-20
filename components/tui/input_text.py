@@ -3,8 +3,8 @@ The text of the input bar of the TUI.
 
 The command bar carries what the operator types.  It carries up to
 three lines of the screen: the text moves to the next line when it
-reaches the end of the view, the operator adds a line with Shift+Enter,
-and a paste that is longer than that is seen through a window of three
+reaches the end of the view, a paste brings the lines of its own, and a
+paste that is longer than the window is seen through a window of three
 lines that follows the cursor.
 
 The buffer itself is flat — a string with newlines in it — and this

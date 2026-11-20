@@ -6,8 +6,9 @@ than one line:
 
   1. the hot commands on the right go away while there is text in the
      bar, and they come back when the last character is deleted;
-  2. Shift+Enter adds a line to the input, and the view of the input
-     grows with it — up to three lines;
+  2. the operator withdrew the Shift+Enter on 2026-11-20: the bar
+     carries no line-break key, and the lines of the input come from a
+     paste;
   3. a paste arrives in one piece; a paste that is longer than the
      window ends with its last lines on the screen, and the operator
      can walk the cursor back into the text and edit it.
@@ -19,9 +20,9 @@ layout, the real panels, the real reader, the real key handling:
      screen is rendered the way the app renders it, and the commands
      are looked for in it.
 
-  2. **Does Shift+Enter add a line?**  The reader is driven from a
-     pseudo-terminal with the sequence a terminal sends, and the key it
-     reports is put into the real app.
+  2. **Is the Shift+Enter dropped?**  The reader is driven from a
+     pseudo-terminal with the sequence a terminal sends, and the bar
+     must not change: there is no line-break key.
 
   3. **Does a paste arrive in one piece?**  The reader is driven with
      a bracketed paste, and the text it reports is put into the real
@@ -200,14 +201,14 @@ def check_the_hot_commands() -> bool:
     return ok
 
 
-def check_shift_enter() -> bool:
-    """Shift+Enter adds a line to the input.
+def check_the_shift_enter_is_dropped() -> bool:
+    """The Shift+Enter is not a key: the bar has no line-break key.
 
     Returns:
-        True when it does.
+        True when the sequence changes nothing.
     """
     print()
-    print("Shift+Enter")
+    print("the Shift+Enter")
 
     keys, _ = keys_from_pty(b"\x1b[13;2~")
     values = [value for _, value in keys]
@@ -215,7 +216,7 @@ def check_shift_enter() -> bool:
 
     app = TuiApp(agent=None, prompt_handler_fn=None)
     app._handle_key("a")
-    app._handle_key("SHIFT_ENTER")
+    app._handle_key("ESCAPE")
     app._handle_key("b")
 
     screen = render(app.state.input_buffer, app.state.cursor_pos)
@@ -224,9 +225,9 @@ def check_shift_enter() -> bool:
     for line in screen.splitlines()[-4:]:
         print("     " + line)
 
-    ok = "SHIFT_ENTER" in values and app.state.input_buffer == "a\nb"
+    ok = "SHIFT_ENTER" not in values and app.state.input_buffer == "ab"
     if not ok:
-        print("   Shift+Enter did not add the line")
+        print("   the Shift+Enter was not dropped")
     return ok
 
 
@@ -291,7 +292,7 @@ def main() -> int:
         The exit code: 0 when every check holds.
     """
     commands_ok = check_the_hot_commands()
-    shift_ok = check_shift_enter()
+    shift_ok = check_the_shift_enter_is_dropped()
     paste_ok = check_the_paste()
 
     print()

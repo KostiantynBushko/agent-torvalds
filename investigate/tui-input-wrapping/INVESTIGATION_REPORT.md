@@ -104,7 +104,7 @@ change):
 | group | what it holds |
 | :--- | :--- |
 | the hot commands | they are shown on an empty bar, hidden while there is text, and back after the last character is deleted |
-| Shift+Enter | it adds a line, it does not submit, and the reader reports it — in both the xterm and the kitty form |
+| the Shift+Enter | there is no line-break key: the sequence is an escape, and the bar does not change by it |
 | the view of the input | it grows with the lines, it never shows more than three, and the text above the window is not thrown away |
 | **the text that reaches the end of the view** | **it is wrapped, no word is lost, the cursor goes with it, the bar grows with it, and the agent-question mode does the same** |
 | the paste | it arrives in one piece, it is put into the bar, a long one shows its last lines, and the text can be edited |
@@ -147,16 +147,15 @@ fixed since the baseline        : 0
 
 ## 5. What is not in this change
 
-- **The Shift+Enter of a terminal that sends another sequence.**  The reader knows the Shift+Enter of
-  xterm (`ESC [ 13 ; 2 ~`) and of the kitty keyboard protocol (`ESC [ 27 ; 2 ; 13 ~`), and reports
-  every other sequence as an escape — which the application drops silently.  The operator decided on
-  2026-11-20 to leave this alone for now; the report of it is in the conversation of that day, and
-  the fix is a normalization of the parameters of the sequence: the key is 13 and the modifier is 2,
-  whatever the order they are written in.
-- **The trailing line break of a Shift+Enter is eaten when the bar is submitted.**
-  `_handle_enter_pressed()` takes `input_buffer.strip()`, and the strip takes the line break that
-  the operator added at the end of the text.  A Shift+Enter in the middle of the text is not
-  affected: the line break inside the text is kept.
+- **There is no Shift+Enter.**  The operator asked for the key on 2026-11-20 and withdrew the
+  request the same day: the bar carries no line-break key.  The sequence a terminal sends for it is
+  an escape to the reader, and the application drops it — so the text of the operator never changes
+  by a key nobody can see.  The lines of the input come from a paste.
+- **The trailing line break of the text is dropped when the bar is submitted.**
+  `_handle_enter_pressed()` takes `input_buffer.rstrip("\n")`: the line break at the end of the
+  text is the end of the message, and it is not a part of it.  The line breaks inside the text are
+  kept, and so is the indentation of a pasted block — the text the agent gets is the text the
+  operator wrote.
 - **The question of the agent is not re-wrapped.**  It is wrapped by Rich, as it was, and it is
   wrapped in the column of the question — which is a different shape from the wrapping of the
   answer, whose lines are indented by the label.
