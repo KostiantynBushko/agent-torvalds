@@ -5,6 +5,7 @@ Provides a persistent multi-pane terminal workspace for Torvalds AI Agent:
 - Layout Manager: Hierarchical Layout construction & styling
 - State Bridge: Thread-safe state synchronization and event bridge
 - Input Reader: Cross-platform non-blocking keyboard input
+- Input Text: The text of the input bar -- one line, or three, wrapped
 - Markdown View: Persistent Markdown document viewer with buffer pagination
 - Progress View: Background task and tool execution monitor
 - Telemetry View: Live agent telemetry and session statistics
@@ -16,9 +17,16 @@ Provides a persistent multi-pane terminal workspace for Torvalds AI Agent:
 - Log Routing: The log of the agent in the file, not on the screen
 """
 
-from components.tui.layout_manager import build_torvalds_layout
+from components.tui.layout_manager import build_torvalds_layout, input_text_width
 from components.tui.state_bridge import TuiState, TuiEventAdapter, TuiInputModule
-from components.tui.input_reader import NonBlockingInputReader
+from components.tui.input_reader import NonBlockingInputReader, PastedText
+from components.tui.input_text import (
+    MAX_INPUT_LINES,
+    normalize_paste,
+    visible_line_count,
+    visible_window,
+    wrap_lines,
+)
 from components.tui.markdown_view import MarkdownView
 from components.tui.progress_view import ProgressView
 from components.tui.telemetry_view import TelemetryView
@@ -49,6 +57,13 @@ __all__ = [
     "TuiEventAdapter",
     "TuiInputModule",
     "NonBlockingInputReader",
+    "PastedText",
+    "MAX_INPUT_LINES",
+    "normalize_paste",
+    "visible_line_count",
+    "visible_window",
+    "wrap_lines",
+    "input_text_width",
     "MarkdownView",
     "ProgressView",
     "TelemetryView",

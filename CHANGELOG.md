@@ -6,6 +6,127 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The text the agent gets is the text the operator wrote
+
+- **The operator withdrew the Shift+Enter on 2026-11-20.**  The bar carries
+  no line-break key: the sequence a terminal sends for the Shift+Enter is an
+  escape to the reader, and the application drops it — so the text of the
+  operator never changes by a key nobody can see.  The lines of the input come
+  from a paste.
+
+- **The text is not stripped on its way to the agent.**  The line break at the
+  end of the text is the end of the message, and it is not a part of it; the
+  line breaks inside the text, and the indentation of a pasted block, are.  The
+  command that is *matched* is still the text without the spaces around it:
+  `\exit ` is the `\exit` command, and a text of spaces is not a command at
+  all.
+
+- **The evidence:** `tests/test_tui_multiline_input.py` — 44 tests — and
+  `investigate/tui-multiline-input/probe_multiline_input.py`, which drives the
+  real reader from a pseudo-terminal and asks what it made of the Shift+Enter.
+  The gate of the repository stays green: 40 known failures, 0 new, 0 fixed.
+
+#### The command bar invites the operator to press Enter
+
+- **The operator asked on 2026-11-20 for two things in the command bar** —
+  *"I would like to see the invitation to press Enter like it is in the agent
+  question mode and the user's message does not occupy an entire input
+  window"*.
+
+- **The bar had no invitation.**  The agent-question mode is a grid of two
+  columns — the question of the agent and its answer on the left,
+  `[Enter to confirm]` on the right, on the line the answer is typed on.  The
+  command bar was a grid of *one* column while there was text in it, and the
+  hot commands — the only thing that ever stood on the right of the bar —
+  were hidden exactly then.  Nothing on the screen said what Enter does with
+  what the operator wrote.
+
+- **The message took the whole window.**  The text of the operator was
+  wrapped at the whole width of the bar — 92 cells at a terminal of 100
+  columns — and the invitation had no place to stand.
+
+- **The bar is a grid of two columns now, the way the agent-question mode
+  is.**  While there is text in it, the bar is 75% / 25%: the text of the
+  operator on the left, the invitation on the right.  The text has a column of
+  its own — 68 cells at a terminal of 100 columns — and the message does not
+  take the whole window any more.
+
+- **The invitation stands in the lower right corner of the bar.**  It is a
+  cell of the right column, and the cell is put on the last line of the bar
+  — the place the agent-question mode has its own invitation, which stands
+  on the line of the answer under the question.  The operator asked for the
+  two to be in the same place on 2026-11-20, and they are: the same column,
+  the same right edge, the same number of rows below them.  The invitation
+  does not walk with the cursor — it is a fixed cell of the bar.
+
+- **The empty bar is untouched.**  The hot commands keep their column, and
+  they are exactly as visible as they were: the probe renders the empty bar
+  the old way and the new way and compares the two lines of the screen.
+
+- **The evidence:** `tests/test_tui_command_bar.py` — 11 tests — and
+  `investigate/tui-command-bar-invitation/probe_command_bar.py`, which renders
+  the real panels at the width of a real terminal.  The gate of the repository
+  stays green: 40 known failures, 0 new, 0 fixed.
+
+#### The text of the command bar moves to the next line when it reaches the end of the view
+
+- **The operator asked on 2026-11-20 for the text of the command bar to
+  move to the next line when it reaches the end of the view** — *"like
+  it does it in the agent question mode"*.  The reference is exact: in
+  the agent-question mode the question of the agent is wrapped by Rich
+  and the panel grows to hold the wrapped lines.  The text of the
+  operator was not treated that way at all.
+
+- **The text was cut at the edge of the view, and the cursor went with
+  it.**  Rich wraps a text inside a panel, but a word that is longer
+  than the column is *ellipsized*, not folded — and the text of the
+  operator is one long word as far as Rich is concerned when it has no
+  spaces in it.  Everything past the edge of the view was gone, and the
+  cursor — a cell with a style of its own, drawn on the character under
+  it — was not on the screen at all.  The operator was typing into the
+  void, and could not see where he was.
+
+- **The model behind it was the reason.**  `components/tui/input_text.py`
+  knew the text as a string of *logical lines* — the parts between the
+  line breaks of the buffer — and the view was a window over those.  A
+  logical line wider than the bar had no place in that model: it was
+  one line, and the bar had one line for it.
+
+- **The text of the bar is now seen in lines of the screen.**
+  `wrap_lines(text, width)` returns the lines the text takes, and the
+  offset of the first character of each one.  A text that reaches the
+  end of the view moves to the next line: the line is broken at the
+  last space that fits, and a word longer than the view is folded over
+  the lines.  No word is lost — the space at a break is eaten by the
+  break, and nothing else is.
+
+- **The bar knows how wide it is.**  `input_text_width()` in
+  `components/tui/layout_manager.py` is the one place that answers *how
+  many cells the bar gives the text of the operator*: the column of the
+  text — three quarters of the bar, the way the question of the agent
+  and its answer have one — less the prompt, 68 cells at a terminal of
+  100 columns.  The number is measured, not guessed.
+
+- **The bar draws the lines itself.**  `_input_markup()` renders one
+  line of the panel per line of the view, and the cursor is drawn on
+  the character under it — in the line the text moved it to.  A line is
+  never wider than the view, so Rich never wraps it a second time.
+
+- **The cursor walks the lines of the screen.**  `Up` and `Down` walk
+  the lines the operator sees, and the history is reached at the first
+  line of the view, as it was reached at the first line of the input.
+
+- **The bar is still three lines.**  A text of any length is seen
+  through a window of three lines that follows the cursor — the
+  guarantee of the previous change is kept, and a long text no longer
+  makes the bar taller than the screen.
+
+- **The evidence:** `tests/test_tui_multiline_input.py` — 42 tests, 8 of
+  them for the wrapping — and
+  `investigate/tui-input-wrapping/probe_input_wrapping.py`, which
+  renders the real panels at the width of a real terminal.  The gate of
+  the repository stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The size of the context is in the telemetry panel of the TUI
 
 - **The operator asked for the size of the context to be visible while
@@ -907,6 +1028,43 @@ All notable changes to this project are documented in this file.
   is not there.
 
 ### Fixed
+
+#### The cursor of the command bar does not hang while an arrow key is held
+
+- **The operator reported on 2026-11-20** that the cursor of the command bar
+  stands still while an arrow key is held, and that it jumps to the place it
+  belongs to when the key is released:
+
+  > *by holding arrow key to move forward and back the cursor hangs until I
+  > release the key, and then it moves to the correct position*
+
+- **The reader waited fifty milliseconds for every control sequence** — even
+  for the ones it already had in its buffer.  Twenty arrow keys took **1.005
+  seconds** to be read; a key that repeats arrives faster than that, and the
+  backlog grew the whole time the key was held.
+
+- **The app asked for one key after the other until the terminal went quiet.**
+  A terminal that repeats a key that is held never goes quiet, so the drain of
+  the keyboard lasted as long as the key was held — **0.946 seconds** in the
+  measurement — and the screen is drawn *after* the drain.  The cursor stood
+  still because the screen was never drawn.
+
+- **The reader reads the keys that are waiting, in one piece, and the app
+  draws the screen between them.**  The terminal is read once and the keys in
+  the buffer are parsed out of it; the keys that arrive while they are parsed
+  are read by the next tick.  Twenty arrow keys are now read in **0.000
+  seconds**, and the longest drain of the keyboard is **0.000 seconds**.
+
+- **The keys still arrive whole.**  A paste is one key, a lone escape is an
+  escape, and a sequence the terminal writes in two pieces is one key — the
+  reader waits for the rest of a sequence it is in the middle of reading, as
+  it always did.
+
+- **The evidence:** `tests/test_tui_input_reader.py` — 5 new tests, in a
+  file that held 6 more — and
+  `investigate/tui-arrow-key-repeat/probe_arrow_key_repeat.py`, which drives
+  the real reader from a pseudo-terminal.  Two of the tests and two of the
+  checks of the probe fail against the old reader, with the numbers above.
 
 #### The iteration of the workflow is on the screen
 

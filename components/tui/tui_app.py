@@ -28,12 +28,21 @@ from components.file_logging import LogFileConfig
 from components.tui.layout_manager import (
     build_torvalds_layout,
     fit_footer,
+    input_text_width,
     render_header,
     render_footer,
     check_terminal_size,
 )
 from components.tui.state_bridge import TuiState, TuiEventAdapter, TuiInputModule
-from components.tui.input_reader import NonBlockingInputReader
+from components.tui.input_reader import NonBlockingInputReader, PastedText
+from components.tui.input_text import (
+    cursor_line,
+    line_count,
+    move_cursor_down,
+    move_cursor_up,
+    normalize_paste,
+    visible_line_count,
+)
 from components.hitl_timeout import describe_timeout
 from components.hitl_question_command import (
     is_question_command,
@@ -218,19 +227,52 @@ class TuiApp:
                             task.cancel()
 
     def _process_keyboard_input(self) -> None:
-        """Read and handle pending keys from the non-blocking input reader."""
-        # Read all available keys this tick
-        while self.input_reader.is_available():
-            key = self.input_reader.poll_key()
-            if not key:
-                break
+        """Read and handle pending keys from the non-blocking input reader.
+
+        The keys that are waiting are read in one piece: the keys that
+        arrive while they are handled are read by the next tick.
+
+        The reader is not asked for one key after the other until the
+        terminal goes quiet.  A terminal repeats a key that is held --
+        the arrow keys are the ones the operator holds -- and a reader
+        that waits for the quiet would keep the screen for as long as
+        the key was held: the cursor of the operator would stand still,
+        and would jump to the place it belongs to when the key was
+        released.
+        """
+        for key in self.input_reader.poll_keys():
             self._handle_key(key)
+
+    def _input_width(self) -> int:
+        """The number of cells the command bar gives the text of the operator.
+
+        The text of the operator is wrapped at this width: a text that
+        reaches the end of the view moves to the next line, the way the
+        question of the agent moves to the next line in the
+        agent-question mode.
+
+        Returns:
+            The number of cells of the text on one line.
+        """
+        return input_text_width(
+            self.console.width,
+            hitl_active=self.state.hitl_active,
+            is_busy=self.state.is_busy,
+            hitl_input_type=self.state.hitl_input_type,
+        )
 
     def _handle_key(self, key: str) -> None:
         """Process a single normalized keystroke."""
         with self.state._lock:
             buf = self.state.input_buffer
             pos = self.state.cursor_pos
+
+            # A paste: the text of the clipboard, in one piece.  It is
+            # read before the named keys, because the text of a paste
+            # may be anything -- the name of a key among them.
+            if isinstance(key, PastedText):
+                self._insert_text(key)
+                return
 
             # Enter Key: Submit command or HITL response
             if key == "ENTER":
@@ -266,6 +308,15 @@ class TuiApp:
 
             # History Navigation
             if key == "UP":
+                # The input of more than one line has lines of its own
+                # to walk through.  The history is reached at the first
+                # line of the input -- and the input the operator was
+                # writing is kept, and comes back when he walks down
+                # again.
+                width = self._input_width()
+                if line_count(buf, width) > 1 and cursor_line(buf, pos, width) > 0:
+                    self.state.cursor_pos = move_cursor_up(buf, pos, width)
+                    return
                 if self.state.command_history:
                     if self.state.history_index == -1:
                         self.state._saved_input = buf
@@ -279,6 +330,14 @@ class TuiApp:
                 return
 
             if key == "DOWN":
+                # The history is reached at the last line of the input.
+                width = self._input_width()
+                if (
+                    line_count(buf, width) > 1
+                    and cursor_line(buf, pos, width) < line_count(buf, width) - 1
+                ):
+                    self.state.cursor_pos = move_cursor_down(buf, pos, width)
+                    return
                 if self.state.history_index != -1:
                     if self.state.history_index < len(self.state.command_history) - 1:
                         self.state.history_index += 1
@@ -314,9 +373,34 @@ class TuiApp:
                 self.state.input_buffer = buf[:pos] + key + buf[pos:]
                 self.state.cursor_pos = pos + 1
 
+    def _insert_text(self, text: str) -> None:
+        """Put text into the input, at the cursor.
+
+        The line endings of a paste are turned into the line break of
+        the input: the text of the clipboard arrives with the line
+        endings of the system it was copied on.
+
+        Args:
+            text: The text to insert.
+        """
+        text = normalize_paste(text)
+        pos = self.state.cursor_pos
+        buffer = self.state.input_buffer
+        self.state.input_buffer = buffer[:pos] + text + buffer[pos:]
+        self.state.cursor_pos = pos + len(text)
+
     def _handle_enter_pressed(self) -> None:
         """Handle Enter key press (submission)."""
-        cmd = self.state.input_buffer.strip()
+        # The text as the operator wrote it.  The line break at the end
+        # of the text is the end of the message, and it is not a part of
+        # it; the line breaks inside the text, and the indentation of a
+        # pasted block, are.
+        text = self.state.input_buffer.rstrip("\n")
+
+        # The command that is matched is the text without the spaces
+        # around it: "\exit " is the "\exit" command, and a text of
+        # spaces is not a command at all.
+        cmd = text.strip()
 
         # If HITL mode is active, submit input to waiting future
         if self.state.hitl_active:
@@ -337,7 +421,7 @@ class TuiApp:
             return
 
         # Record in history
-        self.state.command_history.append(cmd)
+        self.state.command_history.append(text)
         self.state.history_index = -1
         self.state.input_buffer = ""
         self.state.cursor_pos = 0
@@ -435,7 +519,10 @@ class TuiApp:
             self.state.show_notification("Agent is busy processing. Please wait.", duration=2.5)
             return
 
-        self._active_query_task = asyncio.create_task(self._execute_agent_query(cmd))
+        # The agent gets the text as the operator wrote it.
+        self._active_query_task = asyncio.create_task(
+            self._execute_agent_query(text)
+        )
 
     async def _execute_agent_query(self, query: str) -> None:
         """Execute agent workflow in background without freezing UI loop."""
@@ -1060,6 +1147,7 @@ class TuiApp:
 
         # 5. Footer Input Bar / HITL Modal
         remaining = self.state.get_hitl_time_remaining()
+        width = self._input_width()
         footer_panel = render_footer(
             input_buffer=self.state.input_buffer,
             cursor_pos=self.state.cursor_pos,
@@ -1069,10 +1157,17 @@ class TuiApp:
             hitl_default_answer=self.state.hitl_default_answer,
             is_busy=self.state.is_busy,
             hitl_input_type=self.state.hitl_input_type,
+            width=width,
         )
         # The HITL panel is taller than the command bar -- it carries the
         # question *and* the line the answer is typed on.  The partition
         # is given the room the panel needs, or the answer is cropped
         # away and the operator types into the void.
-        fit_footer(self.layout, self.console, footer_panel, self.state.hitl_active)
+        fit_footer(
+            self.layout,
+            self.console,
+            footer_panel,
+            self.state.hitl_active,
+            input_lines=visible_line_count(self.state.input_buffer, width),
+        )
         self.layout["footer"].update(footer_panel)
