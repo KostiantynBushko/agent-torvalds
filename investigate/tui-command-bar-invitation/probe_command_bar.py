@@ -154,7 +154,8 @@ def render(input_buffer: str, cursor_pos=None, width=TERMINAL_WIDTH,
     return console.file.getvalue()
 
 
-def footer_rows(input_buffer: str, cursor_pos=None, width=TERMINAL_WIDTH):
+def footer_rows(input_buffer: str, cursor_pos=None, width=TERMINAL_WIDTH,
+                hitl_active=False, hitl_prompt=""):
     """The rows of the bar, and the row of the cursor on the screen.
 
     Args:
@@ -162,6 +163,8 @@ def footer_rows(input_buffer: str, cursor_pos=None, width=TERMINAL_WIDTH):
         cursor_pos: The position of the cursor; the end of the text by
             default.
         width: The width of the terminal.
+        hitl_active: Whether a question of the agent is waiting.
+        hitl_prompt: The question of the agent.
 
     Returns:
         The rows of the bar, and the number of the row the cursor is
@@ -169,11 +172,13 @@ def footer_rows(input_buffer: str, cursor_pos=None, width=TERMINAL_WIDTH):
     """
     console = Console(width=width, height=24, file=io.StringIO())
     pos = len(input_buffer) if cursor_pos is None else cursor_pos
-    text_width = input_text_width(width)
+    text_width = input_text_width(width, hitl_active=hitl_active)
 
     panel = render_footer(
         input_buffer=input_buffer,
         cursor_pos=pos,
+        hitl_active=hitl_active,
+        hitl_prompt=hitl_prompt,
         width=text_width,
     )
     lines = console.render_lines(panel, console.options.update(height=None))
@@ -218,7 +223,8 @@ def main() -> int:
             print(f"   {line.rstrip()}")
     print()
 
-    # 2. the invitation stands on the line the cursor is on
+    # 2. the invitation stands on the last line of the bar, and the
+    #    invitation of the agent-question mode is in the same place
     rows, cursor_row = footer_rows(long_text)
     invitation_row = None
     for index, row in enumerate(rows):
@@ -227,17 +233,46 @@ def main() -> int:
             break
     if invitation_row is None:
         failures.append("the invitation is not on the bar of a long text")
-    elif cursor_row >= 0 and invitation_row != cursor_row:
+    elif invitation_row != len(rows) - 2:
         failures.append(
-            f"the invitation stands on row {invitation_row} and the cursor "
-            f"on row {cursor_row} -- the invitation is not on the line the "
-            "operator writes on"
+            f"the invitation stands on row {invitation_row} of {len(rows)} "
+            "rows -- the invitation is not in the lower right corner of "
+            "the bar"
         )
     print("a text of three lines")
     for index, row in enumerate(rows):
         print(f"   row {index}: {row.rstrip()}")
     print(f"   the cursor is on row {cursor_row}")
     print(f"   the invitation is on row {invitation_row}")
+    print()
+
+    # The two invitations are in the same place: the lower right corner.
+    agent_rows, _ = footer_rows(
+        "hello",
+        hitl_active=True,
+        hitl_prompt="Which one?",
+    )
+    agent_invitation = None
+    for index, row in enumerate(agent_rows):
+        if CONFIRM_INVITATION in row:
+            agent_invitation = index
+            break
+    if agent_invitation is None:
+        failures.append(
+            "the invitation of the agent-question mode is not on the screen"
+        )
+    else:
+        below_bar = len(rows) - 1 - invitation_row
+        below_agent = len(agent_rows) - 1 - agent_invitation
+        if below_bar != below_agent:
+            failures.append(
+                f"the invitation of the bar has {below_bar} row(s) below "
+                f"it and the one of the agent-question mode has "
+                f"{below_agent} -- the two are not in the same place"
+            )
+    print("the two invitations")
+    print(f"   the bar          : row {invitation_row} of {len(rows)}")
+    print(f"   the agent question: row {agent_invitation} of {len(agent_rows)}")
     print()
 
     # 3. the message does not take the whole window
@@ -306,8 +341,9 @@ def main() -> int:
         return 1
 
     print(
-        "everything holds: the invitation is on the screen, it stands on "
-        "the line the operator writes on, the message leaves the window "
+        "everything holds: the invitation is on the screen, it stands in "
+        "the lower right corner of the bar -- the place the agent-question "
+        "mode has its own invitation -- the message leaves the window "
         "alone, and the hot commands are where they were"
     )
     return 0

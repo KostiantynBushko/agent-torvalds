@@ -71,11 +71,10 @@ sees `[\stats | \tools | \projects |` and the rest of the list is below the pane
 The text of the operator therefore has a **column of its own**, and the invitation has another one.
 The message does not take the whole window any more.
 
-### 3.2 The invitation stands on the line the operator writes on
+### 3.2 The invitation stands in the lower right corner of the bar
 
 The invitation is not a line of its own: it is a cell of the right column, and the cell is put on
-the line of the cursor — the line the operator is writing on.  The agent-question mode does the
-same: `[Enter to confirm]` stands on the line of the answer, under the question.
+the **last line of the bar**.
 
 ```
 │ >>> the operator asked for the invitation to press enter in the command                          │
@@ -83,9 +82,21 @@ same: `[Enter to confirm]` stands on the line of the answer, under the question.
 │     operator must not occupy the whole window of the input                       [Enter to send] │
 ```
 
-The cursor is a cell with a style of its own, so the row of the screen it is drawn on is found by
-the style — and the invitation is put on that row.  When the operator walks the cursor up, the
-invitation walks with it.
+That is the place the agent-question mode has its own invitation: `[Enter to confirm]` stands on the
+line of the answer, under the question, and the answer is typed on the last line of the panel — so
+the two invitations are in the same place on the screen, the lower right corner of the bar.
+
+The operator asked for this on 2026-11-20 — *"I also want you to make sure the [Enter to send] is on
+the same place as the one for (Agent Question)"* — and the rule was measured before it was changed:
+
+| | the command bar | the agent-question mode |
+| :--- | :--- | :--- |
+| the column of the invitation | the right 25% | the right 25% |
+| the right edge of the invitation | the cell 97 | the cell 97 |
+| the rows below the invitation | 1 (the border) | 1 (the border) |
+
+The invitation does not walk with the cursor: it is a fixed cell of the bar, and the operator reads
+it in the same corner every time — in the corner the agent-question mode put it.
 
 ### 3.3 The width of the text is the width of its column
 
@@ -112,7 +123,7 @@ two invitations are the same kind of thing, and they say what they do.
 
 | group | what it holds |
 | :--- | :--- |
-| the invitation | it is on the screen while there is text, it is not on an empty bar, it stands on the line of the cursor, it follows the cursor up, and the agent-question mode keeps its own |
+| the invitation | it is on the screen while there is text, it is not on an empty bar, it stands in the lower right corner of the bar, it stays in its corner when the cursor walks up, and the agent-question mode keeps its own — in the same place |
 | the message and the window | the text has a column of its own, it is wrapped before the column of the invitation, the bar is not cropped by it, and the hot commands are exactly as visible as they were |
 
 One test of `tests/test_tui_multiline_input.py` was changed: it asserted that the text of the
@@ -150,7 +161,7 @@ the agent-question mode
    │ 🤖 AGENT QUESTION: Which one?                                                                    │
    │ Answer: hello                                                                 [Enter to confirm] │
 
-everything holds: the invitation is on the screen, it stands on the line the operator writes on, the message leaves the window alone, and the hot commands are where they were
+everything holds: the invitation is on the screen, it stands in the lower right corner of the bar -- the place the agent-question mode has its own invitation -- the message leaves the window alone, and the hot commands are where they were
 ```
 
 The gate of the repository stays green:

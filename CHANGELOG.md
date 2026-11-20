@@ -51,18 +51,19 @@ All notable changes to this project are documented in this file.
   its own — 68 cells at a terminal of 100 columns — and the message does not
   take the whole window any more.
 
-- **The invitation stands on the line the operator writes on.**  It is a cell
-  of the right column, and the cell is put on the line of the cursor — the
-  agent-question mode does the same, under the question.  The cursor is a
-  cell with a style of its own, so the row of the screen it is drawn on is
-  found by the style, and the invitation follows the cursor when the operator
-  walks it up.
+- **The invitation stands in the lower right corner of the bar.**  It is a
+  cell of the right column, and the cell is put on the last line of the bar
+  — the place the agent-question mode has its own invitation, which stands
+  on the line of the answer under the question.  The operator asked for the
+  two to be in the same place on 2026-11-20, and they are: the same column,
+  the same right edge, the same number of rows below them.  The invitation
+  does not walk with the cursor — it is a fixed cell of the bar.
 
 - **The empty bar is untouched.**  The hot commands keep their column, and
   they are exactly as visible as they were: the probe renders the empty bar
   the old way and the new way and compares the two lines of the screen.
 
-- **The evidence:** `tests/test_tui_command_bar.py` — 10 tests — and
+- **The evidence:** `tests/test_tui_command_bar.py` — 11 tests — and
   `investigate/tui-command-bar-invitation/probe_command_bar.py`, which renders
   the real panels at the width of a real terminal.  The gate of the repository
   stays green: 40 known failures, 0 new, 0 fixed.

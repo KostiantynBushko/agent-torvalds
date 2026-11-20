@@ -261,13 +261,19 @@ def _input_markup(
     return "\n".join(markup)
 
 
-def _cursor_row(
+def _last_row(
     input_buffer: str,
     cursor_pos: int,
     width: int = DEFAULT_WIDTH,
     max_lines: int = MAX_INPUT_LINES,
 ) -> int:
-    """The line of the view the cursor is on.
+    """The last line of the bar.
+
+    The invitation to press Enter stands on it.  The invitation of the
+    agent-question mode stands on the last line of its panel too -- the
+    answer of the operator is typed on it, and it is the last line of
+    the panel -- and the two invitations are in the same place on the
+    screen: the lower right corner of the bar.
 
     Args:
         input_buffer: The text of the input.
@@ -276,10 +282,10 @@ def _cursor_row(
         max_lines: The number of lines the view shows.
 
     Returns:
-        The number of the line, counted from zero.
+        The number of the last line, counted from zero.
     """
-    _, row, _ = visible_window(input_buffer, cursor_pos, width, max_lines)
-    return row
+    lines, _, _ = visible_window(input_buffer, cursor_pos, width, max_lines)
+    return max(0, len(lines) - 1)
 
 
 def render_footer(
@@ -297,7 +303,8 @@ def render_footer(
     Render the bottom interactive command bar / HITL prompt.
 
     While there is text in the bar, the invitation to press Enter stands
-    in the right column of the bar, on the line the cursor is on, and
+    in the right column of the bar, on the last line of the bar -- the
+    same place the agent-question mode has its own invitation -- and
     the text of the operator has the column on the left.  While the bar
     is empty, the hot commands stand in the right column.
 
@@ -394,12 +401,17 @@ def render_footer(
     # take the whole bar for itself -- the invitation has a column of
     # its own, on the right.
     #
-    # The invitation stands on the line the cursor is on -- the line
-    # the operator is writing on.
+    # The invitation stands on the last line of the bar.  The
+    # agent-question mode puts its invitation on the last line of its
+    # panel as well -- the answer is typed on it -- and the operator
+    # finds the two in the same place on the screen: the lower right
+    # corner of the bar.  The invitation does not walk with the cursor:
+    # it is a fixed cell of the bar, and the operator reads it there
+    # every time.
     if input_buffer:
         footer_table.add_column(justify="left", ratio=TEXT_COLUMN_RATIO)
         footer_table.add_column(justify="right", ratio=100 - TEXT_COLUMN_RATIO)
-        row = _cursor_row(input_buffer, cursor_pos, width)
+        row = _last_row(input_buffer, cursor_pos, width)
         invitation = Text.from_markup(
             "\n" * row + f"[dim]{SEND_INVITATION}[/dim]"
         )

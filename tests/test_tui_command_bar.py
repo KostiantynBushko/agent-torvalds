@@ -10,8 +10,12 @@ The operator asked on 2026-11-20 for two things in the command bar:
 
 The bar is now a grid of two columns, the way the agent-question mode
 is: the text of the operator on the left, the invitation on the right,
-on the line the cursor is on.  The hot commands keep the right column
+on the last line of the bar.  The hot commands keep the right column
 while the bar is empty, and they are exactly as visible as they were.
+
+The operator asked on 2026-11-20 that the invitation be in the same
+place as the one of the agent-question mode: the lower right corner of
+the panel.  That is where it is.
 
 Run with:
     pytest tests/test_tui_command_bar.py -v
@@ -183,35 +187,70 @@ class TestTheInvitation(unittest.TestCase):
             "the invitation is on an empty bar -- there is nothing to send",
         )
 
-    def test_the_invitation_stands_on_the_line_the_cursor_is_on(self):
-        """The invitation is next to the line the operator writes on."""
+    def test_the_invitation_stands_on_the_last_line_of_the_bar(self):
+        """The invitation is in the lower right corner of the bar."""
         text = "the operator asked for the invitation to press enter"
 
-        rows, cursor_row = bar_rows(text)
+        rows, _ = bar_rows(text)
 
+        last = row_with(rows, SEND_INVITATION)
         self.assertGreaterEqual(
-            cursor_row,
+            last,
             0,
-            "the cursor is not on the screen -- there is no line to stand "
-            "the invitation on",
+            "the invitation is not on the screen -- the operator cannot "
+            "see what Enter does with what he wrote",
         )
         self.assertEqual(
-            row_with(rows, SEND_INVITATION),
-            cursor_row,
-            "the invitation does not stand on the line the cursor is on",
+            last,
+            len(rows) - 2,
+            "the invitation does not stand on the last line of the bar -- "
+            "it is not in the place the agent-question mode has its own "
+            "invitation",
         )
 
-    def test_the_invitation_follows_the_cursor_up(self):
-        """The cursor walks the lines, and the invitation walks with it."""
+    def test_the_invitation_stays_in_its_corner_when_the_cursor_walks_up(self):
+        """The invitation is a fixed cell of the bar."""
         text = "the operator asked for the invitation to press enter"
 
         rows, _ = bar_rows(text, cursor_pos=0)
 
         self.assertEqual(
             row_with(rows, SEND_INVITATION),
-            1,
-            "the invitation did not move to the first line of the text "
-            "when the cursor walked up to it",
+            len(rows) - 2,
+            "the invitation moved when the cursor walked up -- the operator "
+            "finds it in the lower right corner every time",
+        )
+
+    def test_the_two_invitations_are_in_the_same_place(self):
+        """The invitation of the bar is where the one of the agent is."""
+        console = Console(width=100, height=24, file=io.StringIO())
+
+        bar = render_footer(
+            input_buffer="hello",
+            cursor_pos=2,
+            width=input_text_width(100),
+        )
+        agent = render_footer(
+            input_buffer="hello",
+            cursor_pos=2,
+            hitl_active=True,
+            hitl_prompt="Which one?",
+            width=input_text_width(100, hitl_active=True),
+        )
+
+        def rows_below(panel, needle):
+            """The rows between the invitation and the bottom of the panel."""
+            lines = console.render_lines(
+                panel, console.options.update(height=None)
+            )
+            rows = ["".join(segment.text for segment in line) for line in lines]
+            return len(rows) - 1 - row_with(rows, needle)
+
+        self.assertEqual(
+            rows_below(bar, SEND_INVITATION),
+            rows_below(agent, CONFIRM_INVITATION),
+            "the two invitations are not in the same place -- the operator "
+            "has to look for the one of the bar",
         )
 
     def test_the_agent_question_mode_keeps_its_own_invitation(self):
