@@ -130,6 +130,13 @@ REPEAT_CALL_HISTORY = 8
 #: saying anything in this run.
 _SILENT_TURN_KEY = "hitl_silent_turn"
 
+#: Key used to remember the number of the iteration of the run.
+#:
+#: The store of the workflow belongs to one run — a run gets a store of
+#: its own — so the counter starts at zero with every run and nobody
+#: has to reset it.
+_ITERATION_KEY = "torvalds_iteration"
+
 #: What the agent says to the model when it ended a turn without an
 #: answer.  The empty turn of the model stays in the conversation, so the
 #: note follows it and the model can see what it did.
@@ -311,6 +318,15 @@ class HITLFunctionAgent(FunctionAgent):
     #: operator cannot see it coming.
     context_logging_enabled: bool = True
 
+    #: Called with the number of the iteration and the budget of the run,
+    #: every time a request goes out to the model.
+    #:
+    #: One iteration is one request to the model.  The multi-window
+    #: console shows the number in its progress panel, so the operator
+    #: sees that the agent is working — and how much of the budget of
+    #: the run it has used.  ``None`` means nobody is watching.
+    iteration_observer: Optional[Callable[[int, int], None]] = None
+
     #: Called with the size of the prompt and the context window of the
     #: model, every time a request goes out to the model.  The multi-window
     #: console uses it to show the size of the context in the telemetry
@@ -393,7 +409,45 @@ class HITLFunctionAgent(FunctionAgent):
         # to know that it is about to overflow.
         self._log_context_size([*head, *tail], tools, size)
 
+        # The number of the iteration goes out *before* the request does:
+        # the operator sees the agent working while the model is still
+        # thinking, and not only when it answers.
+        await self._publish_iteration(ctx)
+
         return await super().take_step(ctx, head, tools, memory)
+
+    async def _publish_iteration(self, ctx: Context) -> None:
+        """Tell whoever is watching which iteration of the run this is.
+
+        One iteration is one request to the model.  The counter lives in
+        the store of the workflow, and the store belongs to one run — so
+        the number starts at one with every run, and nobody has to reset
+        it.
+
+        The budget that goes with it is the one the workflow was started
+        with: the same number the workflow itself compares the count
+        against, so the panel and the agent cannot disagree about how
+        much of the run is left.
+
+        An observer that raises is logged and ignored: a number is never
+        worth a run.
+
+        Args:
+            ctx: The context of the workflow.
+        """
+        iteration = await ctx.store.get(_ITERATION_KEY, default=0) + 1
+        await ctx.store.set(_ITERATION_KEY, iteration)
+
+        observer = self.iteration_observer
+        if observer is None:
+            return
+
+        budget = await ctx.store.get("max_iterations", default=0)
+
+        try:
+            observer(iteration, int(budget or 0))
+        except Exception as exc:  # noqa: BLE001 - a number is never worth a run
+            logger.debug("The iteration observer failed: %s", exc)
 
     async def _prompt_window(
         self,

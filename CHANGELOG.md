@@ -908,6 +908,74 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The iteration of the workflow is on the screen
+
+- **The operator reported on 2026-11-19** that the number in the
+  progress pane never moved:
+
+  > *please investigate "Workflow Iteration:" in the "Workflow & Tool
+  > Progress" panel, it always remains 0*
+
+- **The number had no publisher.**  The state of the TUI carried the
+  iteration, and the only way to write it was
+  `TuiState.update_workflow_iteration()` — which was called by
+  `TuiEventAdapter.on_workflow_iteration()`, which **nothing called**.
+  The hook was waiting for an event that does not exist: the TUI
+  adapter registers three callbacks with the consumer (`ToolCall`,
+  `ToolCallResult`, `AgentStream`), and the vocabulary of the consumer
+  carries no iteration event at all.  The row of the pane was a number
+  that nobody wrote, rendered on every frame.
+
+- **The agent counts the iterations, and tells whoever is watching.**
+  One iteration is one request to the model.  `take_step()` counts it
+  and hands it to an observer (`agent.iteration_observer`) *before* the
+  request goes out — so the operator sees the agent working while the
+  model is still thinking, and not only when it answers.  The counter
+  lives in the store of the workflow, and the store belongs to one
+  run: the number starts at one with every run, and nobody has to
+  reset it.  The budget that goes with it is the one the workflow was
+  started with, so the pane and the agent cannot disagree about how
+  much of the run is left.
+
+- **The budget on the screen is the budget of the run.**  The state
+  carried ten — a number nothing had measured.  The agent of the
+  multi-window console runs with five hundred (`llm.max_iterations`),
+  and the pane shows that now.  A budget that nobody gave is not shown
+  as one: the row shows the number of the iteration alone, and no bar
+  that would be full because of a budget of one.
+
+- **A new request starts the count again.**  A new request is a new
+  run: the iteration of the run that just ended does not stay on the
+  screen as the iteration of the run that is starting.
+
+- **The hook that nothing called is gone.**  The number comes from the
+  agent, where the iteration happens.  A hook that waits for an event
+  that does not exist is what made the defect invisible.
+
+- **The test pins the number.**
+  `tests/test_tui_iteration_readout.py` drives the real agent against
+  a scripted model and checks that the number counts the requests to
+  the model, that it starts again with every run, that the budget is
+  the one of the run, and that the pane shows both.  Eleven of its
+  sixteen tests fail without the fix.
+
+- **The investigation is in `investigate/workflow-iteration-counter/`.**
+  The probe renders the pane, reads the source of the repository and
+  runs the real agent against a scripted model.  It shows the number —
+  `0/10` on the pane while the run had made three requests to the
+  model and the budget was five hundred — and it shows that nothing
+  published it.
+
+- **What is not in this change.**  The bar of the row is twelve cells
+  wide and the budget is five hundred: one cell is forty-two
+  iterations, and the bar stays empty through a normal run.  The number
+  carries the information; the bar is decoration at that budget, and
+  making it useful is a change of the design of the pane.  And a turn
+  in which the model asks a question does not spend the budget of the
+  run — the agent answers that turn itself, without the check of the
+  budget.  That is a separate defect: it changes when a run stops, it
+  is reported in the investigation, and it is not fixed here.
+
 #### The icons of the panes of the console are back
 
 - **The operator reported on 2026-11-18** that the border of the
