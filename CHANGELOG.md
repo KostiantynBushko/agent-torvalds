@@ -6,6 +6,38 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The Shift+Enter of every terminal is known, and the text reaches the agent as it was written
+
+- **The operator closed the item that was left open on 2026-11-20** — the
+  Shift+Enter of a terminal that sends another sequence, and the trailing line
+  break that was eaten when the bar was submitted.
+
+- **The reader matched the exact string of the parameters of a sequence.**  A
+  table of exact strings knows only the forms that were written down when it
+  was made, and the terminals do not agree on one form: the key is 13 and the
+  modifier is 2 in all of them, but the order, the form and the number of the
+  parameters are not the same.  `ESC [ 2 ; 13 ~` and `ESC [ 13 ; 2 ; 3 ~` were
+  read by the reader and thrown away as an escape — the operator typed
+  Shift+Enter and nothing happened.
+
+- **The parameters are read now, not matched as a string.**  `_is_shift_enter()`
+  splits them on the ";", reads the numbers, and the sequence is a Shift+Enter
+  when it names the key 13 **and** the modifier 2 — in any order, with any
+  number of parameters.  The Ctrl+Enter (`ESC [ 13 ; 5 u`) is still the
+  Ctrl+Enter.
+
+- **The text the agent gets is the text the operator wrote.**  The line break
+  that the last Shift+Enter left is the empty last line of the bar, and it is
+  not a part of the message; the line breaks inside the text, and the
+  indentation of a pasted block, are.  The command that is *matched* is still
+  the text without the spaces around it: `\exit ` is the `\exit` command.
+
+- **The evidence:** `tests/test_tui_multiline_input.py` — 50 tests, 8 of them
+  new, 3 of them failing without the change — and
+  `investigate/tui-shift-enter/probe_shift_enter.py`, which types the bytes of
+  the Shift+Enter into a real pseudo-terminal and asks the reader what it saw.
+  The gate of the repository stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The command bar invites the operator to press Enter
 
 - **The operator asked on 2026-11-20 for two things in the command bar** —

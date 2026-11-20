@@ -390,7 +390,16 @@ class TuiApp:
 
     def _handle_enter_pressed(self) -> None:
         """Handle Enter key press (submission)."""
-        cmd = self.state.input_buffer.strip()
+        # The text as the operator wrote it.  The line break that the
+        # last Shift+Enter left is the empty last line of the bar, and
+        # it is not a part of the message; the line breaks inside the
+        # text, and the indentation of a pasted block, are.
+        text = self.state.input_buffer.rstrip("\n")
+
+        # The command that is matched is the text without the spaces
+        # around it: "\exit " is the "\exit" command, and a text of
+        # spaces is not a command at all.
+        cmd = text.strip()
 
         # If HITL mode is active, submit input to waiting future
         if self.state.hitl_active:
@@ -411,7 +420,7 @@ class TuiApp:
             return
 
         # Record in history
-        self.state.command_history.append(cmd)
+        self.state.command_history.append(text)
         self.state.history_index = -1
         self.state.input_buffer = ""
         self.state.cursor_pos = 0
@@ -509,7 +518,10 @@ class TuiApp:
             self.state.show_notification("Agent is busy processing. Please wait.", duration=2.5)
             return
 
-        self._active_query_task = asyncio.create_task(self._execute_agent_query(cmd))
+        # The agent gets the text as the operator wrote it.
+        self._active_query_task = asyncio.create_task(
+            self._execute_agent_query(text)
+        )
 
     async def _execute_agent_query(self, query: str) -> None:
         """Execute agent workflow in background without freezing UI loop."""

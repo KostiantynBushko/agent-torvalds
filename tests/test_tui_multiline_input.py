@@ -353,6 +353,46 @@ class TestShiftEnter(unittest.TestCase):
             f"the reader did not report Shift+Enter: {keys!r}",
         )
 
+    def test_the_reader_reports_the_csi_u_form_of_shift_enter(self):
+        """A terminal that writes the "CSI u" form is known too."""
+        keys, _ = keys_from_pty(b"\x1b[13;2u")
+
+        self.assertIn(
+            "SHIFT_ENTER",
+            key_values(keys),
+            f"the reader did not report Shift+Enter: {keys!r}",
+        )
+
+    def test_the_reader_reports_shift_enter_in_any_order(self):
+        """The key and the modifier are read, whatever the order is."""
+        keys, _ = keys_from_pty(b"\x1b[2;13~")
+
+        self.assertIn(
+            "SHIFT_ENTER",
+            key_values(keys),
+            f"the reader did not report Shift+Enter: {keys!r}",
+        )
+
+    def test_the_reader_reports_shift_enter_with_a_parameter_more(self):
+        """A terminal that adds a parameter of its own is known too."""
+        keys, _ = keys_from_pty(b"\x1b[13;2;3~")
+
+        self.assertIn(
+            "SHIFT_ENTER",
+            key_values(keys),
+            f"the reader did not report Shift+Enter: {keys!r}",
+        )
+
+    def test_the_ctrl_enter_is_still_the_ctrl_enter(self):
+        """The generalization did not take the other modifiers."""
+        keys, _ = keys_from_pty(b"\x1b[13;5u")
+
+        self.assertIn(
+            "CTRL_ENTER",
+            key_values(keys),
+            f"the reader did not report Ctrl+Enter: {keys!r}",
+        )
+
     def test_the_enter_key_is_still_the_enter_key(self):
         """The rewrite of the escape sequences kept the old keys."""
         keys, _ = keys_from_pty(b"\r")
@@ -544,6 +584,96 @@ class TestTheTextMovesToTheNextLine(unittest.TestCase):
             len(rows_with_text),
             1,
             "the answer of the operator was cut at the edge of the view",
+        )
+
+
+class TestTheTextThatIsSent(unittest.TestCase):
+    """The text the agent gets is the text the operator wrote."""
+
+    def _sent_to_the_agent(self, app):
+        """The text the last query carried.
+
+        Args:
+            app: The application the query was sent from.
+
+        Returns:
+            The text of the query.
+        """
+        import asyncio
+
+        sent = []
+
+        async def handler(cmd, **kwargs):
+            sent.append(cmd)
+            return "ok", None
+
+        app.prompt_handler_fn = handler
+
+        async def run():
+            app._handle_key("ENTER")
+            if app._active_query_task is not None:
+                await app._active_query_task
+
+        asyncio.run(run())
+
+        return sent[0] if sent else None
+
+    def test_the_indentation_of_a_pasted_block_reaches_the_agent(self):
+        """The text is not stripped on its way to the agent."""
+        app = TuiApp(agent=None, prompt_handler_fn=None)
+
+        app._handle_key(PastedText("    def f():\n        return 1"))
+
+        sent = self._sent_to_the_agent(app)
+
+        self.assertEqual(
+            sent,
+            "    def f():\n        return 1",
+            "the indentation of the block did not reach the agent -- the "
+            "text was stripped on its way",
+        )
+
+    def test_the_line_break_of_a_shift_enter_is_not_part_of_the_message(self):
+        """The empty last line of the bar is not a part of the text."""
+        app = TuiApp(agent=None, prompt_handler_fn=None)
+
+        app._handle_key("a")
+        app._handle_key("SHIFT_ENTER")
+
+        sent = self._sent_to_the_agent(app)
+
+        self.assertEqual(
+            sent,
+            "a",
+            "the line break that the last Shift+Enter left went to the "
+            "agent with the text",
+        )
+
+    def test_the_line_breaks_inside_the_text_are_kept(self):
+        """Only the last line break is the empty last line of the bar."""
+        app = TuiApp(agent=None, prompt_handler_fn=None)
+
+        app._handle_key(PastedText("first\nsecond"))
+
+        sent = self._sent_to_the_agent(app)
+
+        self.assertEqual(
+            sent,
+            "first\nsecond",
+            "the line break inside the text did not reach the agent",
+        )
+
+    def test_a_command_with_spaces_around_it_is_still_matched(self):
+        """The spaces around a command are not a part of it."""
+        app = TuiApp(agent=None, prompt_handler_fn=None)
+
+        for character in "\\exit ":
+            app._handle_key(character)
+        app._handle_key("ENTER")
+
+        self.assertTrue(
+            app.state.exit_requested,
+            "the command with a space around it was not matched",
         )
 
 

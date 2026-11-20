@@ -81,17 +81,45 @@ _CSI_TILDE_KEYS = {
     "6": "PGDN",
     "7": "HOME",
     "8": "END",
-    "13;2": "SHIFT_ENTER",
-    "27;2;13": "SHIFT_ENTER",
 }
 
 #: The keys of the "CSI u" form, where the key is the first number and
 #: the modifiers follow it.
 _CSI_U_KEYS = {
-    "13;2": "SHIFT_ENTER",
     "13;5": "CTRL_ENTER",
-    "27;2;13": "SHIFT_ENTER",
 }
+
+#: The number of the Enter key in the parameters of a control sequence.
+_ENTER_KEY = 13
+
+#: The number of the Shift modifier in the parameters of a control
+#: sequence.
+_SHIFT_MODIFIER = 2
+
+
+def _is_shift_enter(params: str) -> bool:
+    """Whether the parameters of a sequence say Shift+Enter.
+
+    The terminals do not write the Shift+Enter the same way: xterm
+    writes ``ESC [ 13 ; 2 ~``, the kitty keyboard protocol writes
+    ``ESC [ 27 ; 2 ; 13 ~`` and ``ESC [ 13 ; 2 u``, and a terminal may
+    add a parameter of its own.  The key is 13 and the modifier is 2 in
+    all of them — but the order the two are written in is not the same,
+    and a table of exact strings knows only the forms that were written
+    down when it was made.
+
+    Args:
+        params: The parameter bytes of the sequence.
+
+    Returns:
+        True when the sequence says Enter with Shift.
+    """
+    numbers = []
+    for part in params.split(";"):
+        if part.isdigit():
+            numbers.append(int(part))
+
+    return _ENTER_KEY in numbers and _SHIFT_MODIFIER in numbers
 
 
 class PastedText(str):
@@ -519,8 +547,12 @@ class NonBlockingInputReader:
         if final in _CSI_FINAL_KEYS:
             return _CSI_FINAL_KEYS[final]
         if final == "~":
+            if _is_shift_enter(params):
+                return "SHIFT_ENTER"
             return _CSI_TILDE_KEYS.get(params, "ESCAPE")
         if final == "u":
+            if _is_shift_enter(params):
+                return "SHIFT_ENTER"
             return _CSI_U_KEYS.get(params, "ESCAPE")
         return "ESCAPE"
 
