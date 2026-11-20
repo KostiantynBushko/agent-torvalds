@@ -2858,9 +2858,9 @@ All notable changes to this project are documented in this file.
 
   | | |
   |---|---|
-  | `investigate/tui-selection-and-flicker/IMPLEMENTATION_REPORT.md` | PR #95, `1f8c52e` |
-  | `investigate/tui-selection-and-flicker/README.md` | PR #95, `1f8c52e` |
-  | `investigate/tui-session-selection/IMPLEMENTATION_REPORT.md` | PR #96, `e031ebf` |
+  | `investigate/tui-selection-and-flicker/IMPLEMENTATION_REPORT.md` | PR #95, `58f7c26` |
+  | `investigate/tui-selection-and-flicker/README.md` | PR #95, `58f7c26` |
+  | `investigate/tui-session-selection/IMPLEMENTATION_REPORT.md` | PR #96, `a08693c` |
 
 ### Tests
 

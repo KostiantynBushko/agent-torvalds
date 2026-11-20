@@ -85,7 +85,7 @@ called **no tool**.
 ### 2.1 The memory buffer of this branch is not the cause
 
 The headline of the branch is *"the memory buffer of the agent trims the
-history in one pass"* (`chat_manager/memory.py`, commit `89fd3a7`).  It is
+history in one pass"* (`chat_manager/memory.py`, commit `641fd6e`).  It is
 the obvious suspect, so it was measured first: the probe rebuilds the
 history of each request from the store and runs both buffers over it.
 
