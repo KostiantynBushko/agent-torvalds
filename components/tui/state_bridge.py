@@ -54,7 +54,11 @@ class TuiState:
 
         # Background workflow & progress state
         self.workflow_iteration: int = 0
-        self.max_iterations: int = 10
+        #: The budget of the run — how many iterations the agent may take.
+        #: Zero means "not known yet": the console tells the state the
+        #: budget when the agent is built, and it tells it again with
+        #: every iteration of the run.
+        self.max_iterations: int = 0
         self.tool_tasks: List[ToolExecutionRecord] = []
         self._tool_counter: int = 0
 
@@ -144,6 +148,10 @@ class TuiState:
                 self.current_query = query
                 self.status_message = "Analyzing request..."
                 self.scroll_offset = 0
+                # A new request is a new run: the iteration starts at
+                # zero again, so the panel counts the run that is
+                # running and not the one that ran before it.
+                self.workflow_iteration = 0
             else:
                 self.status_message = "Ready"
                 self.active_tool = None
@@ -222,10 +230,22 @@ class TuiState:
             self.scroll_offset = min(max_scroll, self.scroll_offset + lines)
 
     def update_workflow_iteration(self, iteration: int, max_iterations: int) -> None:
-        """Update workflow iteration progress."""
+        """Update the progress of the workflow.
+
+        The agent tells the panel which iteration of the run this is, and
+        the budget the run was started with.
+
+        A budget of zero is the *absence* of a budget, not a budget of
+        zero: it does not replace a budget that is already known.
+
+        Args:
+            iteration: The number of the iteration of the run.
+            max_iterations: The budget of the run.
+        """
         with self._lock:
-            self.workflow_iteration = iteration
-            self.max_iterations = max_iterations
+            self.workflow_iteration = max(0, int(iteration))
+            if int(max_iterations) > 0:
+                self.max_iterations = int(max_iterations)
 
     def update_telemetry_stats(self, stats: Any) -> None:
         """Update telemetry counts from finalized RequestStats."""
@@ -388,9 +408,6 @@ class TuiEventAdapter:
 
     def on_agent_output(self, output: str) -> None:
         self.state.set_markdown_content(output)
-
-    def on_workflow_iteration(self, iteration: int, max_iter: int) -> None:
-        self.state.update_workflow_iteration(iteration, max_iter)
 
     def register_with_event_consumer(self, consumer: Any) -> None:
         """Hook into EventConsumer callbacks."""
