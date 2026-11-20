@@ -152,8 +152,55 @@ def cursor_row_on_screen(panel, width=120):
     return -1
 
 
+#: The environment variable that makes the reader in the child of the
+#: pseudo-terminal start late.  A test sets it to imitate a machine
+#: that is slower than the one the test runs on.
+START_DELAY_VARIABLE = "TORVALDS_TEST_PTY_START_DELAY"
+
+#: How long the parent waits for the child to say that it is ready.
+#: The child imports the whole TUI package before it puts the terminal
+#: into cbreak mode, and that takes longer than a guess would allow
+#: for on a loaded machine.
+READY_TIMEOUT = 60.0
+
+
+def _read_until(fd, out, marker, timeout):
+    """Read from the terminal until the marker shows up.
+
+    Args:
+        fd: The master side of the pseudo-terminal.
+        out: The bytes that were read already.
+        marker: The bytes that end the wait.
+        timeout: How long the wait lasts at the most.
+
+    Returns:
+        The bytes that were read, the old ones included.
+    """
+    deadline = time.time() + timeout
+
+    while marker not in out and time.time() < deadline:
+        r, _, _ = select.select([fd], [], [], 0.3)
+        if not r:
+            continue
+        try:
+            chunk = os.read(fd, 65536)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+
+    return out
+
+
 def keys_from_pty(data: bytes, seconds=4.0, collect=2.0):
     """Type bytes into a pseudo-terminal and collect the keys of the reader.
+
+    The bytes are typed only when the reader says that it is ready: a
+    terminal that is still in its old mode takes a typed byte for a
+    line of text, and it throws the line away when the mode changes.
+    A key that was typed too early is lost, and the reader reports
+    nothing at all.
 
     Args:
         data: The bytes to write into the terminal.
@@ -167,11 +214,15 @@ def keys_from_pty(data: bytes, seconds=4.0, collect=2.0):
         kind tells it apart from a key that was typed.
     """
     script = (
-        "import sys, time\n"
+        "import os, sys, time\n"
         f"sys.path.insert(0, {str(ROOT)!r})\n"
         "from components.tui.input_reader import NonBlockingInputReader\n"
+        # A reader that starts late imitates a slow machine.
+        f"time.sleep(float(os.environ.get({START_DELAY_VARIABLE!r}, '0')))\n"
         "r = NonBlockingInputReader()\n"
         "r.start()\n"
+        # The child says that the terminal is ready for the keys.
+        "print('READY', flush=True)\n"
         "got = []\n"
         "end = time.time() + %r\n" % collect
         +         "while time.time() < end:\n"
@@ -191,8 +242,12 @@ def keys_from_pty(data: bytes, seconds=4.0, collect=2.0):
 
     out = b""
     try:
-        time.sleep(1.2)
-        os.write(fd, data)
+        out = _read_until(fd, out, b"READY", READY_TIMEOUT)
+        try:
+            os.write(fd, data)
+        except OSError:
+            # The child is gone -- the keys it would report are lost.
+            pass
 
         deadline = time.time() + seconds
         while time.time() < deadline:
@@ -330,6 +385,31 @@ class TestTheReader(unittest.TestCase):
                 key_values(keys),
                 f"the reader reported a Shift+Enter: {keys!r}",
             )
+
+    def test_the_keys_survive_a_reader_that_starts_late(self):
+        """A reader that starts late still gets the keys.
+
+        The terminal throws away the bytes that were typed before the
+        reader put it into cbreak mode -- they are a line of text for
+        the terminal, and it keeps no line when it stops waiting for
+        one.  So the keys are typed only when the reader is ready,
+        and a slow reader still gets them.
+        """
+        previous = os.environ.get(START_DELAY_VARIABLE)
+        os.environ[START_DELAY_VARIABLE] = "2.0"
+        try:
+            keys, _ = keys_from_pty(b"\r")
+        finally:
+            if previous is None:
+                os.environ.pop(START_DELAY_VARIABLE, None)
+            else:
+                os.environ[START_DELAY_VARIABLE] = previous
+
+        self.assertIn(
+            "ENTER",
+            key_values(keys),
+            f"the reader missed the key: {keys!r}",
+        )
 
     def test_the_shift_enter_does_not_change_the_bar(self):
         """The sequence of the Shift+Enter leaves the bar as it was."""

@@ -2829,6 +2829,42 @@ All notable changes to this project are documented in this file.
   | `investigate/tui-selection-and-flicker/README.md` | PR #95, `1f8c52e` |
   | `investigate/tui-session-selection/IMPLEMENTATION_REPORT.md` | PR #96, `e031ebf` |
 
+### Tests
+
+#### The keys of the terminal were lost when the reader started late
+
+- **The gate of PR #105 went red on three tests of the command bar.**
+  `test_the_enter_key_is_still_the_enter_key`,
+  `test_the_reader_hands_over_the_paste_in_one_piece` and
+  `test_a_paste_that_never_closes_is_given_up_on` all reported an empty
+  list of keys on the CI runner — and passed on every machine that was
+  not busy.
+
+- **The reason was a race in the test itself, not in the reader.**  The
+  helper types into a pseudo-terminal after a fixed sleep of 1.2 seconds.
+  The reader in the child has to import the whole `components.tui`
+  package before it puts the terminal into cbreak mode, and that import
+  takes longer than 1.2 seconds on a loaded runner.  A byte that is typed
+  before the terminal is in cbreak mode is a line of text for the
+  terminal, and `tty.setcbreak()` throws the pending input away
+  (`TCSAFLUSH`) — so the keys were typed into a terminal that discarded
+  them, and the reader reported nothing at all.
+
+- **The keys are typed when the reader is ready.**  The child says
+  `READY` after `r.start()`, and the parent waits for it before it types.
+  The wait is bounded, so a child that never comes cannot hang the test.
+
+- **The reader itself is not changed.**  A terminal that throws the
+  pending input away when the TUI starts is the right behaviour — the
+  keys that were typed before the TUI came must not fire the commands of
+  the TUI.
+
+- **The evidence:** `tests/test_tui_multiline_input.py` — 45 tests — and
+  the new `test_the_keys_survive_a_reader_that_starts_late`, which makes
+  the reader start two seconds late and asks whether the key still
+  arrives.  The gate of the repository stays green: 40 known failures, 0
+  new, 0 fixed.
+
 ## [1.0.0] - 2026-10-29
 
 ### Added
