@@ -21,8 +21,10 @@ This folder holds the documentation of that interface.
 │         Markdown Document Viewer     │   Workflow Iteration: [███] 3/8│
 │                                      │                               │
 │         (the answer of the agent,    │   Recent Tool Tasks:          │
-│          the documents, the logs)    │    ✔ execute_shell_command     │
+│          the documents, the logs)    │    ⠹ execute_shell_command     │
 │                                      │      └ python scripts/ci.py   │
+│                                      │    ✔ execute_shell_command     │
+│                                      │      └ pytest tests/ -x       │
 │                                      │                               │
 ├──────────────────────────────────────┤                               │
 │                                      │ ⚡ Agent Telemetry & State     │

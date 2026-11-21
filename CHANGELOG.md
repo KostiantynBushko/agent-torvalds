@@ -1271,6 +1271,58 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The command that runs now is on top of the progress pane
+
+- **The operator asked on 2026-11-22** for the command that runs now to
+  stand on top of the workflow window:
+
+  > *I also noticed that sometime the currently executed command in not on
+  > top of the workflow window but instead it could apear somewhere in the
+  > midle of the commands so that completed command (tool) in on top and
+  > currently running is in the midle of the list or in the bottom*
+
+- **The list of the tasks was in the order they started.**  The finished
+  commands stood above the one that was still going — and in the
+  ordinary case, one tool after the other, the command that runs was the
+  **last** line of the list.
+
+- **The pane told the operator the wrong command was running.**  The
+  framework runs the calls of a turn **concurrently**, and it carries a
+  `tool_id` on every `ToolCall` and every `ToolCallResult`.  The TUI
+  looked for the record of the call by **name**, so two calls of the same
+  tool could not be told apart: the result of the first call closed the
+  record of the second one, and the first record spun **for ever**.  The
+  pane showed the spinner on a command that was done, and the tick on the
+  command that still ran.  The stats handler already used the id — *"the
+  workflow runs tool calls concurrently, so the id keeps concurrent calls
+  to the same tool apart"* — the TUI did not.
+
+- **The result closes its own record.**  `ToolExecutionRecord` carries the
+  `tool_id` of the call, and the record that is closed is the one of that
+  id.  The name is the fallback, for the events that carry no id.
+
+- **The command that runs now is *pinned* on top of the pane.**  It is
+  drawn **above the window** of the pane, so it is on top of the window,
+  and it stays there while the operator scrolls the history.  It cannot
+  live inside the window: the running command would scroll out of the
+  pane as soon as the log is longer than the pane.
+
+- **The log of the tasks that are done is still a log.**  The oldest
+  completion first, the newest at the bottom, the window stuck to the
+  bottom: "down" walks *forward* in time.  The decision of 2026-11-21
+  (§16.1 of `docs/tui/hotkeys.md`) is not reversed — the running task is
+  not a part of the history.
+
+- **Nothing spins for ever.**  When the run is over, the tasks that still
+  run are closed: a task that spins on top of the pane for ever is a lie
+  the operator reads.
+
+- **The evidence:** `tests/test_tui_task_order.py` — 11 tests — and
+  `investigate/tui-running-task-order/`, the report and the probe, which
+  feeds the real state the events the framework really publishes.  Nine
+  of the tests fail against the old pane.  The gate of the repository
+  stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The home of the operator is not on the screen of the progress pane
 
 - **The operator asked on 2026-11-20** for the path of the agent to be

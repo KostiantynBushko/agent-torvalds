@@ -26,7 +26,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ToolExecutionRecord:
-    """Record of a tool execution for progress monitoring."""
+    """Record of a tool execution for progress monitoring.
+
+    The **id of the call** is kept with the record: the workflow runs
+    the calls of a turn concurrently, and two calls of the same tool
+    carry the same name.  The id tells the two apart -- without it the
+    result of one call closes the record of the other one, and the
+    operator is shown a command that is still running as finished.
+    """
     id: str
     name: str
     status: str  # "running", "completed", "error"
@@ -35,6 +42,7 @@ class ToolExecutionRecord:
     duration_ms: float = 0.0
     details: str = ""
     error_message: str = ""
+    tool_id: str = ""
 
 
 class TuiState:
@@ -188,9 +196,38 @@ class TuiState:
             else:
                 self.status_message = "Ready"
                 self.active_tool = None
+                # The run is over, so nothing runs any more.  A tool
+                # that never reported is closed here: the pane shows
+                # the task that runs now on top, and a task that spins
+                # there for ever is a lie the operator reads.
+                self._close_the_tasks_that_run()
 
-    def update_tool_start(self, tool_name: str, tool_kwargs: Dict[str, Any]) -> None:
-        """Record the start of a tool execution."""
+    def _close_the_tasks_that_run(self) -> None:
+        """Close the tasks that still run when the run is over."""
+        now = time.time()
+        for record in self.tool_tasks:
+            if record.status != "running":
+                continue
+            record.status = "error"
+            record.end_time = now
+            record.duration_ms = (now - record.start_time) * 1000
+            record.error_message = "the run was over before it reported"
+
+    def update_tool_start(
+        self,
+        tool_name: str,
+        tool_kwargs: Dict[str, Any],
+        tool_id: str = "",
+    ) -> None:
+        """Record the start of a tool execution.
+
+        Args:
+            tool_name: The name of the tool.
+            tool_kwargs: The arguments of the call.
+            tool_id: The id of the call in the workflow.  The calls of
+                a turn run concurrently, and the id is what tells two
+                calls of the same tool apart.
+        """
         with self._lock:
             self.status_message = f"Calling tool `{tool_name}`..."
             self.active_tool = tool_name
@@ -214,30 +251,77 @@ class TuiState:
                 status="running",
                 start_time=time.time(),
                 details=details,
+                tool_id=str(tool_id or ""),
             )
             self.tool_tasks.append(record)
             # Keep history bounded to last 15 tool executions
             if len(self.tool_tasks) > 15:
                 self.tool_tasks.pop(0)
 
-    def update_tool_end(self, tool_name: str, result: str, is_error: bool = False) -> None:
-        """Record the completion of a tool execution."""
+    def update_tool_end(
+        self,
+        tool_name: str,
+        result: str,
+        is_error: bool = False,
+        tool_id: str = "",
+    ) -> None:
+        """Record the completion of a tool execution.
+
+        The **id of the call** finds the record: the workflow runs the
+        calls of a turn concurrently, and the name of a tool is not
+        enough to tell two calls of the same tool apart.  The name is
+        the fallback, for the events that carry no id.
+
+        Args:
+            tool_name: The name of the tool.
+            result: The result of the call.
+            is_error: Whether the call failed.
+            tool_id: The id of the call in the workflow.
+        """
         with self._lock:
             self.status_message = f"Tool `{tool_name}` completed"
             if self.active_tool == tool_name:
                 self.active_tool = None
 
             now = time.time()
-            for record in reversed(self.tool_tasks):
-                if record.name == tool_name and record.status == "running":
-                    record.status = "error" if is_error else "completed"
-                    record.end_time = now
-                    record.duration_ms = (now - record.start_time) * 1000
-                    if is_error:
-                        record.error_message = result[:60]
-                    break
+            record = self._the_record_of(tool_name, tool_id)
+            if record is not None:
+                record.status = "error" if is_error else "completed"
+                record.end_time = now
+                record.duration_ms = (now - record.start_time) * 1000
+                if is_error:
+                    record.error_message = result[:60]
 
             self.total_tool_calls += 1
+
+    def _the_record_of(
+        self,
+        tool_name: str,
+        tool_id: str = "",
+    ) -> Optional[ToolExecutionRecord]:
+        """The record of the call that is done.
+
+        The id of the call is the truth: the workflow runs the calls of
+        a turn concurrently, and two calls of the same tool carry the
+        same name.  The name is the fallback, for the events that carry
+        no id.
+
+        Args:
+            tool_name: The name of the tool.
+            tool_id: The id of the call in the workflow.
+
+        Returns:
+            The record of the call, or ``None`` when the call is not
+            on the screen any more.
+        """
+        if tool_id:
+            for record in reversed(self.tool_tasks):
+                if record.tool_id == tool_id and record.status == "running":
+                    return record
+        for record in reversed(self.tool_tasks):
+            if record.name == tool_name and record.status == "running":
+                return record
+        return None
 
     def append_stream_token(self, token: str) -> None:
         """Append streaming LLM token to markdown content."""
@@ -553,11 +637,22 @@ class TuiEventAdapter:
         if input_type:
             self._input_type = input_type
 
-    def on_tool_call_start(self, tool_name: str, tool_kwargs: Dict[str, Any]) -> None:
-        self.state.update_tool_start(tool_name, tool_kwargs)
+    def on_tool_call_start(
+        self,
+        tool_name: str,
+        tool_kwargs: Dict[str, Any],
+        tool_id: str = "",
+    ) -> None:
+        self.state.update_tool_start(tool_name, tool_kwargs, tool_id=tool_id)
 
-    def on_tool_call_end(self, tool_name: str, result: str, is_error: bool = False) -> None:
-        self.state.update_tool_end(tool_name, result, is_error)
+    def on_tool_call_end(
+        self,
+        tool_name: str,
+        result: str,
+        is_error: bool = False,
+        tool_id: str = "",
+    ) -> None:
+        self.state.update_tool_end(tool_name, result, is_error, tool_id=tool_id)
 
     def on_stream_token(self, token: str) -> None:
         self.state.append_stream_token(token)
@@ -575,7 +670,11 @@ class TuiEventAdapter:
     async def _handle_tool_call(self, event: Any) -> None:
         tool_name = getattr(event, "tool_name", "")
         tool_kwargs = getattr(event, "tool_kwargs", {}) or {}
-        self.on_tool_call_start(tool_name, tool_kwargs)
+        # The id of the call: the workflow runs the calls of a turn
+        # concurrently, and it is what tells two calls of the same
+        # tool apart.
+        tool_id = getattr(event, "tool_id", "") or ""
+        self.on_tool_call_start(tool_name, tool_kwargs, tool_id=tool_id)
 
     async def _handle_tool_call_result(self, event: Any) -> None:
         tool_name = getattr(event, "tool_name", "")
@@ -586,7 +685,8 @@ class TuiEventAdapter:
         elif hasattr(output, "content"):
             content = str(output.content)
             is_error = content.startswith("Error:") or content.startswith("Traceback")
-        self.on_tool_call_end(tool_name, str(output), is_error)
+        tool_id = getattr(event, "tool_id", "") or ""
+        self.on_tool_call_end(tool_name, str(output), is_error, tool_id=tool_id)
 
     async def _handle_stream(self, event: Any) -> None:
         delta = getattr(event, "delta", "")

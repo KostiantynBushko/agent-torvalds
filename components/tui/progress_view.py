@@ -13,13 +13,19 @@ does.  A detail that does not fit on one line is **split** and takes
 the lines it needs: every line is the width of the pane, and nothing
 of the command is lost.
 
-**The list of the tasks is a log.**  The oldest task first, the newest
-at the bottom, and the window stuck to the bottom: "down" walks
-forward in time, the way it does in every scrollable thing the
-operator knows, and the running task is the last line on the screen,
-where the eye already is.  The **anchor** of the window keeps the
-operator where he is: a new task does not move the window of the
-operator who is reading an old one.
+**The task that runs now is on top of the pane.**  It is drawn
+above the window of the pane -- *pinned* -- so the operator sees the
+command that runs before anything else, and he keeps seeing it while
+he scrolls the log.  The operator asked for it on 2026-11-22: the
+command that runs now was in the middle of the commands, with the
+finished ones above it.
+
+**The list of the tasks that are done is a log.**  The oldest
+completion first, the newest at the bottom, and the window stuck to
+the bottom: "down" walks forward in time, the way it does in every
+scrollable thing the operator knows.  The **anchor** of the window
+keeps the operator where he is: a new task does not move the window of
+the operator who is reading an old one.
 
 **The pane that has the focus is marked.**  The border is brighter,
 the title carries the marker ``▶``, and the subtitle says where the
@@ -27,7 +33,7 @@ operator is.
 """
 import re
 import time
-from typing import List, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 from rich.cells import cell_len
 from rich.markup import escape
@@ -84,8 +90,10 @@ DETAIL_PREFIX = 5
 #: columns, and the text of the detail has 41 cells on one line.
 DEFAULT_PANE_WIDTH = 50
 
-#: How many tasks the pane shows.  The oldest of them is the first one
-#: on the screen, and the newest is the last one.
+#: How many tasks the pane shows.  They are the tasks that are **done**:
+#: the oldest of them is the first one on the screen, and the newest is
+#: the last one.  The task that runs now is not one of them -- it is
+#: pinned above them.
 TASKS_SHOWN = 6
 
 #: The words of a detail, and the spaces between them.
@@ -308,23 +316,42 @@ def _make_bar(current: int, total: int, width: int = 14) -> str:
     return "[" + ("█" * filled) + ("░" * unfilled) + "]"
 
 
+class Section(NamedTuple):
+    """One part of the content of the pane.
+
+    Attributes:
+        lines: The lines of the part.
+        anchors: The anchor of every line -- the id of the task the
+            line belongs to.
+    """
+
+    lines: List[str]
+    anchors: List[str]
+
+
 class ProgressView:
     """
     Renders the Workflow and Tool Progress pane in the top-right sidebar.
     """
 
-    def content_lines(
+    def sections(
         self,
         state: TuiState,
         text_width: int,
-    ) -> Tuple[List[str], List[str]]:
+    ) -> Tuple[Section, Section, Section]:
         """
-        The lines of the content of the pane, and the anchor of every line.
+        The three parts of the content of the pane.
 
-        The content is a **log**: the oldest task first, the newest at
-        the bottom.  The anchor of a line is the id of the task the line
-        belongs to, and the anchor is what keeps the operator on the
-        task he is reading when a new task arrives.
+        The **head** is the bar of the iteration and the name of the
+        list.  The **running** part is the task that runs now -- it is
+        drawn above the window of the pane, so it is on top of the
+        window and it stays there while the operator scrolls the log.
+        The **log** is the tasks that are done: the oldest completion
+        first, and the newest at the bottom.
+
+        The anchor of a line is the id of the task the line belongs to,
+        and the anchor is what keeps the operator on the task he is
+        reading when a new task arrives.
 
         Args:
             state: Current TuiState snapshot
@@ -332,10 +359,10 @@ class ProgressView:
                 one line.
 
         Returns:
-            The lines of the content, and the anchor of every line.
+            The head, the running task, and the log.
         """
-        lines: List[str] = []
-        anchors: List[str] = []
+        head_lines: List[str] = []
+        head_anchors: List[str] = []
 
         # 1. Workflow Iteration Bar
         iter_num = state.workflow_iteration
@@ -355,32 +382,95 @@ class ProgressView:
             bar = ""
             counter = f"[white]{iter_num}[/white]"
 
-        lines.append(
+        head_lines.append(
             f"[bold cyan]Workflow Iteration:[/bold cyan] {bar}{counter}"
         )
-        anchors.append("")
+        head_anchors.append("")
 
         # The blank line behind the bar.
-        lines.append("")
-        anchors.append("")
+        head_lines.append("")
+        head_anchors.append("")
 
         # 2. Tool Tasks Header
-        lines.append("[bold dim white]Recent Tool Tasks:[/bold dim white]")
-        anchors.append("")
-
-        # 3. Tool Tasks List
-        tasks = state.tool_tasks[-TASKS_SHOWN:]
-        if not tasks:
-            lines.append("[dim]  No active background tasks[/dim]")
-            anchors.append("")
-            return lines, anchors
+        head_lines.append("[bold dim white]Recent Tool Tasks:[/bold dim white]")
+        head_anchors.append("")
 
         now = time.time()
         spinner_char = SPINNER_FRAMES[state.spinner_frame % len(SPINNER_FRAMES)]
 
-        # The list is a log: the **oldest** task first, and the newest
-        # at the bottom.  The window is stuck to the bottom, and the
-        # running task is the last line on the screen.
+        # The task that runs now, and the tasks that are done.
+        running = [task for task in state.tool_tasks if task.status == "running"]
+        done = [task for task in state.tool_tasks if task.status != "running"]
+        # The log is the order of what happened: the task that is done
+        # first is the oldest one.
+        done.sort(key=lambda task: task.end_time or task.start_time)
+
+        running_lines, running_anchors = self._task_lines(
+            running, now, spinner_char, text_width
+        )
+        log_lines, log_anchors = self._task_lines(
+            done[-TASKS_SHOWN:], now, spinner_char, text_width
+        )
+
+        if not running and not done:
+            log_lines = ["[dim]  No active background tasks[/dim]"]
+            log_anchors = [""]
+
+        return (
+            Section(head_lines, head_anchors),
+            Section(running_lines, running_anchors),
+            Section(log_lines, log_anchors),
+        )
+
+    def content_lines(
+        self,
+        state: TuiState,
+        text_width: int,
+    ) -> Tuple[List[str], List[str]]:
+        """
+        The lines of the content of the pane, and the anchor of every line.
+
+        The content is the head of the pane, the task that runs now, and
+        the log of the tasks that are done.  The task that runs now is
+        the **first** line of the list of the tasks: the operator sees
+        the command that runs before anything else.
+
+        Args:
+            state: Current TuiState snapshot
+            text_width: The number of cells the detail of a tool has on
+                one line.
+
+        Returns:
+            The lines of the content, and the anchor of every line.
+        """
+        head, running, log = self.sections(state, text_width)
+
+        lines = head.lines + running.lines + log.lines
+        anchors = head.anchors + running.anchors + log.anchors
+        return lines, anchors
+
+    def _task_lines(
+        self,
+        tasks: List[ToolExecutionRecord],
+        now: float,
+        spinner_char: str,
+        text_width: int,
+    ) -> Tuple[List[str], List[str]]:
+        """The lines of the tasks, and the anchor of every line.
+
+        Args:
+            tasks: The tasks to draw.
+            now: The time the pane is drawn at.
+            spinner_char: The frame of the spinner of the running task.
+            text_width: The number of cells the detail of a tool has on
+                one line.
+
+        Returns:
+            The lines of the tasks, and the anchor of every line.
+        """
+        lines: List[str] = []
+        anchors: List[str] = []
+
         for task in tasks:
             lines.append(self._task_line(task, now, spinner_char))
             anchors.append(task.id)
@@ -466,14 +556,25 @@ class ProgressView:
             width = DEFAULT_PANE_WIDTH
         text_width = detail_width(width)
 
-        lines, anchors = self.content_lines(state, text_width)
+        head, running, log = self.sections(state, text_width)
 
         if scroll is not None:
-            # The content is sliced to the window of the scroll: the
-            # lines that do not fit on the screen are reached with the
-            # keys of the pane.
-            scroll.set_frame(lines, anchors, height=scroll.height or len(lines))
-            lines = scroll.window()
+            # The task that runs now is **pinned**: it is drawn above
+            # the window of the pane, and the window is the log of the
+            # tasks that are done.  The window gets the lines that are
+            # left of the pane, and the lines that do not fit are
+            # reached with the keys of the pane.
+            available = scroll.height or (
+                len(head.lines) + len(running.lines) + len(log.lines)
+            )
+            height = max(
+                1,
+                available - len(head.lines) - len(running.lines),
+            )
+            scroll.set_frame(log.lines, log.anchors, height=height)
+            lines = head.lines + running.lines + scroll.window()
+        else:
+            lines = head.lines + running.lines + log.lines
 
         table = Table.grid(expand=True)
         table.add_column(ratio=1)
