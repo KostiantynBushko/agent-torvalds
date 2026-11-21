@@ -12,10 +12,22 @@ and the part that is cut away is the part that says what the command
 does.  A detail that does not fit on one line is **split** and takes
 the lines it needs: every line is the width of the pane, and nothing
 of the command is lost.
+
+**The list of the tasks is a log.**  The oldest task first, the newest
+at the bottom, and the window stuck to the bottom: "down" walks
+forward in time, the way it does in every scrollable thing the
+operator knows, and the running task is the last line on the screen,
+where the eye already is.  The **anchor** of the window keeps the
+operator where he is: a new task does not move the window of the
+operator who is reading an old one.
+
+**The pane that has the focus is marked.**  The border is brighter,
+the title carries the marker ``▶``, and the subtitle says where the
+operator is.
 """
 import re
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from rich.cells import cell_len
 from rich.markup import escape
@@ -23,7 +35,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from components.tui.hotkeys import FOCUS_GAP, FOCUS_MARKER
 from components.tui.path_display import hide_home
+from components.tui.pane_scroll import PaneScroll
 from components.tui.state_bridge import TuiState, ToolExecutionRecord
 
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -70,6 +84,10 @@ DETAIL_PREFIX = 5
 #: columns, and the text of the detail has 41 cells on one line.
 DEFAULT_PANE_WIDTH = 50
 
+#: How many tasks the pane shows.  The oldest of them is the first one
+#: on the screen, and the newest is the last one.
+TASKS_SHOWN = 6
+
 #: The words of a detail, and the spaces between them.
 _WORDS = re.compile(r"\s+|\S+")
 
@@ -78,8 +96,8 @@ def detail_width(pane_width: int) -> int:
     """
     The number of cells the text of the detail has on one line.
 
-    The pane spends a few of its cells on its frame, and the line of
-    the detail spends a few more on the branch that opens it: what is
+    The pane spends a few of its cells on its frame, and the line of the
+    detail spends a few more on the branch that opens it: what is
     left is the width of the text of the command.
 
     Args:
@@ -295,27 +313,29 @@ class ProgressView:
     Renders the Workflow and Tool Progress pane in the top-right sidebar.
     """
 
-    def render(self, state: TuiState, width: Optional[int] = None) -> Panel:
+    def content_lines(
+        self,
+        state: TuiState,
+        text_width: int,
+    ) -> Tuple[List[str], List[str]]:
         """
-        Render the progress panel.
+        The lines of the content of the pane, and the anchor of every line.
+
+        The content is a **log**: the oldest task first, the newest at
+        the bottom.  The anchor of a line is the id of the task the line
+        belongs to, and the anchor is what keeps the operator on the
+        task he is reading when a new task arrives.
 
         Args:
             state: Current TuiState snapshot
-            width: The number of cells the pane has on the screen.  The
-                detail of a tool is split to fit it: the whole command
-                is shown, and it takes the lines it needs.  None means
-                the width of the pane is not known, and the default of
-                the module is used.
+            text_width: The number of cells the detail of a tool has on
+                one line.
 
         Returns:
-            Rich Panel to place inside layout['progress_pane']
+            The lines of the content, and the anchor of every line.
         """
-        if width is None:
-            width = DEFAULT_PANE_WIDTH
-        text_width = detail_width(width)
-
-        table = Table.grid(expand=True)
-        table.add_column(ratio=1)
+        lines: List[str] = []
+        anchors: List[str] = []
 
         # 1. Workflow Iteration Bar
         iter_num = state.workflow_iteration
@@ -335,49 +355,130 @@ class ProgressView:
             bar = ""
             counter = f"[white]{iter_num}[/white]"
 
-        iter_text = Text.from_markup(
-            f"[bold cyan]Workflow Iteration:[/bold cyan] {bar}{counter}\n"
+        lines.append(
+            f"[bold cyan]Workflow Iteration:[/bold cyan] {bar}{counter}"
         )
-        table.add_row(iter_text)
+        anchors.append("")
+
+        # The blank line behind the bar.
+        lines.append("")
+        anchors.append("")
 
         # 2. Tool Tasks Header
-        table.add_row(Text.from_markup("[bold dim white]Recent Tool Tasks:[/bold dim white]"))
+        lines.append("[bold dim white]Recent Tool Tasks:[/bold dim white]")
+        anchors.append("")
 
         # 3. Tool Tasks List
-        tasks = state.tool_tasks[-6:]  # Show up to 6 most recent tasks
+        tasks = state.tool_tasks[-TASKS_SHOWN:]
         if not tasks:
-            table.add_row(Text.from_markup("[dim]  No active background tasks[/dim]"))
-        else:
-            now = time.time()
-            spinner_char = SPINNER_FRAMES[state.spinner_frame % len(SPINNER_FRAMES)]
+            lines.append("[dim]  No active background tasks[/dim]")
+            anchors.append("")
+            return lines, anchors
 
-            for task in reversed(tasks):
-                if task.status == "running":
-                    elapsed = now - task.start_time
-                    row_markup = (
-                        f" [bold yellow]{spinner_char}[/bold yellow] "
-                        f"[yellow]{task.name}[/yellow] "
-                        f"[dim]({elapsed:.1f}s)[/dim]"
-                    )
-                elif task.status == "completed":
-                    dur_str = f"{task.duration_ms:.0f}ms" if task.duration_ms < 1000 else f"{task.duration_ms / 1000:.1f}s"
-                    row_markup = (
-                        f" [bold green]✔[/bold green] "
-                        f"[white]{task.name}[/white] "
-                        f"[dim]({dur_str})[/dim]"
-                    )
-                else:  # Error
-                    row_markup = (
-                        f" [bold red]✖[/bold red] "
-                        f"[red]{task.name}[/red] "
-                        f"[dim](failed)[/dim]"
-                    )
+        now = time.time()
+        spinner_char = SPINNER_FRAMES[state.spinner_frame % len(SPINNER_FRAMES)]
 
-                if task.details:
-                    detail = display_detail(task.details, text_width)
-                    row_markup += f"\n   [dim]└ {detail}[/dim]"
+        # The list is a log: the **oldest** task first, and the newest
+        # at the bottom.  The window is stuck to the bottom, and the
+        # running task is the last line on the screen.
+        for task in tasks:
+            lines.append(self._task_line(task, now, spinner_char))
+            anchors.append(task.id)
 
-                table.add_row(Text.from_markup(row_markup))
+            if not task.details:
+                continue
+
+            detail = display_detail(task.details, text_width)
+            for index, detail_line in enumerate(detail.split("\n")):
+                if index == 0:
+                    # The branch opens the detail: it stands under the
+                    # name of the tool.
+                    lines.append(f"   [dim]└ {detail_line}[/dim]")
+                else:
+                    # The lines after the first one are indented under
+                    # the text of the first one: the command stands
+                    # under itself and reads as one command.
+                    lines.append(f"[dim]{detail_line}[/dim]")
+                anchors.append(task.id)
+
+        return lines, anchors
+
+    def _task_line(
+        self,
+        task: ToolExecutionRecord,
+        now: float,
+        spinner_char: str,
+    ) -> str:
+        """The line of a task: its name, its state, and how long it took."""
+        if task.status == "running":
+            elapsed = now - task.start_time
+            return (
+                f" [bold yellow]{spinner_char}[/bold yellow] "
+                f"[yellow]{task.name}[/yellow] "
+                f"[dim]({elapsed:.1f}s)[/dim]"
+            )
+        if task.status == "completed":
+            dur_str = (
+                f"{task.duration_ms:.0f}ms"
+                if task.duration_ms < 1000
+                else f"{task.duration_ms / 1000:.1f}s"
+            )
+            return (
+                f" [bold green]✔[/bold green] "
+                f"[white]{task.name}[/white] "
+                f"[dim]({dur_str})[/dim]"
+            )
+        return (
+            f" [bold red]✖[/bold red] "
+            f"[red]{task.name}[/red] "
+            f"[dim](failed)[/dim]"
+        )
+
+    def render(
+        self,
+        state: TuiState,
+        width: Optional[int] = None,
+        scroll: Optional[PaneScroll] = None,
+        focused: bool = False,
+    ) -> Panel:
+        """
+        Render the progress panel.
+
+        Args:
+            state: Current TuiState snapshot
+            width: The number of cells the pane has on the screen.  The
+                detail of a tool is split to fit it: the whole command
+                is shown, and it takes the lines it needs.  None means
+                the width of the pane is not known, and the default of
+                the module is used.
+            scroll: The scroll of the pane.  When it is given, the
+                content is sliced to the window of the scroll, and the
+                scroll learns the content it scrolls.  None means the
+                whole content is shown.
+            focused: Whether the pane has the focus.  The pane that has
+                the focus carries a brighter border and the marker in
+                its title.
+
+        Returns:
+            Rich Panel to place inside layout['progress_pane']
+        """
+        if width is None:
+            width = DEFAULT_PANE_WIDTH
+        text_width = detail_width(width)
+
+        lines, anchors = self.content_lines(state, text_width)
+
+        if scroll is not None:
+            # The content is sliced to the window of the scroll: the
+            # lines that do not fit on the screen are reached with the
+            # keys of the pane.
+            scroll.set_frame(lines, anchors, height=scroll.height or len(lines))
+            lines = scroll.window()
+
+        table = Table.grid(expand=True)
+        table.add_column(ratio=1)
+        for line in lines:
+            table.add_row(Text.from_markup(line) if line else Text(""))
 
         # The title of the panel carries the icon of the pane, and it
         # is measured the way the title of the telemetry panel is: the
@@ -395,13 +496,26 @@ class ProgressView:
         # Below the width of the terminal the title does not fit, the
         # title is cut at the right, and the icon - the first thing in
         # the title - is never the part that is cut.
+        #
+        # The pane that has the focus carries the marker in front of
+        # the icon: the operator must see which pane the keys go to.
+        marker = f"{FOCUS_MARKER}{FOCUS_GAP}" if focused else ""
+
+        # The subtitle says where the operator is.
+        subtitle = ""
+        if scroll is not None:
+            position = scroll.subtitle()
+            if position:
+                subtitle = f"[dim]{position}[/dim]"
+
         return Panel(
             table,
             title=(
                 "[bold cyan]"
-                f"{PROGRESS_ICON}{TITLE_GAP}Workflow & Tool Progress"
+                f"{marker}{PROGRESS_ICON}{TITLE_GAP}Workflow & Tool Progress"
                 "[/bold cyan]"
             ),
-            border_style="cyan",
+            subtitle=subtitle,
+            border_style="bright_cyan" if focused else "cyan",
             padding=(0, 1),
         )

@@ -6,6 +6,137 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The panes of the TUI scroll, and they hide
+
+- **The operator asked on 2026-11-21** for three things:
+
+  > *scrolling of the "Workflow & Tool Progress"*
+  > *hide/show "Agent Telemetry & State"*
+  > *more will be added so the solution must be easy extended*
+
+  and for the decisions that shape the work: the hot-keys are **separate from
+  the help command**, the keys the **operating system takes are not ours to
+  bind**, the **selected pane has to be highlighted**, and the bindings are
+  **configuration** — in the file the operator already has.
+
+- **The reader names the modified keys.**  There was no key that could carry a
+  hot-key: the terminal sends `Ctrl+T` as the control byte `0x14`, and the
+  reader dropped it — it was not printable.  `Ctrl+Up` arrived as
+  `ESC [ 1 ; 5 A` and the reader said `"UP"`: **the modifier was thrown away**.
+  `F1` … `F12` arrived as `ESC [ 11 ~` and the reader said `"ESCAPE"`, and
+  `Alt+A` arrived as `ESC a` and the reader said `"ESCAPE"` — **the character
+  was lost**.  The reader names `CTRL_A` … `CTRL_Z`, `CTRL_UP`,
+  `SHIFT_DOWN`, `F1` … `F20` and `ALT_a` now.  The four bytes another key
+  already claimed keep their name: `Ctrl+H` is still `BACKSPACE`, `Ctrl+I` is
+  still `TAB`, and `Ctrl+J` and `Ctrl+M` are still `ENTER`.
+
+- **The Shift+Enter is still not a key of the command bar.**  The operator
+  decided on 2026-11-20 that the bar carries no line break key.  The reader
+  may now *name* the sequence, and the application still drops it: the text
+  of the operator never changes by a key nobody can see.
+
+- **The hot-keys live in one table** — `components/tui/hotkeys.py`.  It holds
+  the keys of the command bar and the hot-keys of the panes, and it is **the
+  only list**: the `\keys` screen is rendered from it.  `KEYBOARD_SHORTCUTS`
+  and the `keyboard_shortcuts` flag **left** the command registry — the
+  registry describes the **commands**, and the hot-keys describe the **keys** —
+  and the "Keyboard Navigation" block **left** the `\help` screen.  The
+  `\keys` command is registered like every other command, so it is *named* in
+  the `\help` screen, as a command.
+
+- **A new hot-key is a row and a method.**  The row goes into the registry,
+  the method into the application, and **no other file changes**: the
+  `\keys` screen, the footer hints and the tests pick it up by themselves.
+
+- **The list of the tasks is a log.**  The oldest task first, the newest at
+  the bottom, and the window stuck to the bottom: "down" walks *forward* in
+  time, the way it does in every scrollable thing the operator knows, and the
+  running task is the last line on the screen, where the eye already is.  The
+  pane listed the newest task first, which made "down" walk *into the past*.
+
+- **The anchor keeps the operator where he is.**  A new tool task is inserted
+  at the end of the log, and the window does not jump: the operator who has
+  scrolled up keeps the task he is reading, and the operator who has not keeps
+  the newest one.
+
+- **Six lines of content were cut off, and there was no way to see them.**
+  The progress pane showed the newest task first, so the lines that did not
+  fit were the lines of the *oldest* task — and the command
+  `git status --short && python -m pytest tests/ -x --tb=short` ran with no
+  way to reach it.  PR #106 made the command whole when it is shown; this is
+  the other half of that work: the command must also be **reachable**.
+
+- **The height is the one the layout really uses** —
+  `layout.map[layout["progress_pane"]].region.height`, less the two lines of
+  the border.  It is the same principle as `progress_pane_width()` in PR
+  #106: *the number is the one the layout really uses*, not the one the source
+  guesses.
+
+- **The pane that has the focus is marked, and not guessed.**  Three marks,
+  together: the **border is brighter** (`cyan` → `bright_cyan`, `magenta` →
+  `bright_magenta`) — and the *content* is never dimmed, a dimmed command is a
+  command the operator cannot read — the **title carries the marker `▶`** in
+  front of the icon, and the **subtitle says where the operator is**
+  (`▲ 10/21 │ ▼ 9 more`).
+
+- **A printable character always goes into the input, and it takes the focus
+  back.**  The operator is never trapped in a pane: he scrolls the progress
+  pane, he types a character, and he is at the command bar again, with the
+  character in the buffer.  The chords are global for the same reason — a
+  chord carries no text, and it cannot eat what is being written.
+
+- **A hidden pane leaves the layout, and its sibling takes the space.**
+  `Layout.visible = False` collapses the pane, and the whole sidebar goes to
+  the pane that is left: the progress pane goes from 42×17 to 42×34.  There is
+  **no rebuild of the layout tree** and **no new ratios**, and the visibility
+  is applied from the state on every frame, so it is idempotent and it
+  survives a resize.
+
+- **The notice of the TUI moved to the header.**  It was drawn in the
+  telemetry pane — and hiding that pane would have **silenced every message
+  the TUI gives the operator**, including the message that says the pane is
+  hidden.  The header grows by one line while a notice is up, the mechanism
+  `fit_footer()` already uses for the footer.
+
+- **The bindings are configuration**, in the `[hotkeys]` section of the file
+  the operator already has — `~/.config/torvalds/config.toml`.  A value
+  replaces the default of its action **and frees the key the action had**; an
+  empty value unbinds the action; a chord the operating system takes, a
+  chord that cannot be read and a chord that two actions ask for are
+  **refused**, with a warning, and the default stands.  **A refusal is never
+  a crash** — the TUI starts, the default stands, and the operator is told
+  which setting of which file was refused and why.  It is the rule the rest of
+  the configuration file already follows: *a broken file is a warning, not a
+  failed boot*.
+
+- **The keys the operating system takes are not ours to bind.**  The reader
+  puts the terminal into *cbreak* mode, and cbreak is **not** raw mode:
+  `ISIG` and `IXON` are left exactly as they were.  The kernel takes
+  `Ctrl+C`, `Ctrl+\` and `Ctrl+Z`; the terminal takes `Ctrl+S` and `Ctrl+Q`
+  — and `Ctrl+S` **freezes the screen** — and the four bytes of the
+  backspace, the tab and the enter; the desktop takes the `Alt` chords.  The
+  letters that are left are `A B E F G K L N O P R T U V X Y`, and the default
+  bindings use two of them — `Ctrl+T` for the *T*elemetry pane and `Ctrl+P`
+  for the *P*rogress pane.  **A test refuses any binding that the terminal,
+  the kernel or the desktop would eat**, so a hot-key that the operating
+  system would swallow can never be added.
+
+- **The TUI says that the configuration file was created.**  The classic
+  agent tells the operator when the template was written; the TUI created the
+  file silently, and the message was lost in the screen the TUI takes over.
+  It is shown in the header now.
+
+- **The evidence:** `tests/test_tui_hotkeys.py` — 44 tests —,
+  `tests/test_tui_pane_scroll.py` — 27 tests —, the extension of
+  `tests/test_tui_input_reader.py`, and `investigate/tui-hotkeys/`, the report
+  and the probe, which drives the real application with the keys the operator
+  presses.  The gate of the repository stays green: 40 known failures, 0 new,
+  0 fixed.
+
+- **The documentation:** `docs/tui/` — the documentation of the multi-window
+  console, and `docs/tui/hotkeys.md`, the hot-keys of the TUI: the operator's
+  guide in the first part, the design and the implementation in the second.
+
 #### The command of a tool is shown whole
 
 - **The operator asked on 2026-11-20** for the whole command of a tool on

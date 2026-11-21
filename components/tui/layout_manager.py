@@ -14,7 +14,7 @@ import time
 from fractions import Fraction
 from typing import List, Optional, Sequence
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.layout import Layout
 from rich.panel import Panel
 from rich.table import Table
@@ -45,6 +45,16 @@ MINIMUM_COLUMN = 1
 #: content, a border.  The command bar needs exactly that -- and one
 #: line more for every line the operator adds to the input.
 FOOTER_HEIGHT = 3
+
+#: The header partition is three lines tall: a border, one line of
+#: content, a border.  The notice of the TUI is the line below the
+#: content, and the header grows by one line while a notice is up.
+HEADER_HEIGHT = 3
+
+#: The lines a panel spends on its border: one on the top and one on
+#: the bottom.  The padding of the panes is horizontal, so the content
+#: of a pane is the height of the pane without these two lines.
+PANEL_BORDER = 2
 
 #: The prompt of the command bar.
 INPUT_PROMPT = ">>> "
@@ -241,17 +251,25 @@ def render_header(
     hitl_enabled: bool,
     session_start_time: float,
     is_busy: bool = False,
+    notice: str = "",
 ) -> Panel:
     """
     Render the top Header Panel.
-    
+
+    The **notice** of the TUI is drawn here, and not in a pane: a
+    notice that lives in a pane is silenced by the pane that hides it,
+    and the operator has to be told what happened even when he has
+    hidden everything.
+
     Args:
         model_name: Current model name
         memory_count: Number of messages in chat memory
         hitl_enabled: True if Human-In-The-Loop is active
         session_start_time: Monotonic or epoch timestamp of session start
         is_busy: True if agent is currently processing
-        
+        notice: The notice of the TUI, and an empty string when there
+            is none.
+
     Returns:
         Rich Panel containing formatted header
     """
@@ -285,11 +303,97 @@ def render_header(
 
     header_table.add_row(left_text, center_text, right_text)
 
+    content = header_table
+    if notice:
+        # The notice is the line under the content of the header.  The
+        # text of the operator may carry square brackets, and Rich
+        # reads them as markup: the text between them would disappear
+        # from the screen.
+        notice_text = Text.from_markup(
+            f"[bold yellow]Notice:[/bold yellow] [yellow]{escape(notice)}[/yellow]"
+        )
+        content = Group(header_table, notice_text)
+
     return Panel(
-        header_table,
+        content,
         border_style="cyan",
         padding=(0, 1),
     )
+
+
+def header_height(console: Console, panel: Panel) -> int:
+    """The number of terminal lines a header panel needs.
+
+    Args:
+        console: The console the panel is rendered into.
+        panel: The header panel about to be shown.
+
+    Returns:
+        The number of lines the panel occupies.
+    """
+    options = console.options.update(height=None)
+    return len(console.render_lines(panel, options))
+
+
+def fit_header(
+    layout: Layout,
+    console: Console,
+    panel: Panel,
+    has_notice: bool = False,
+) -> int:
+    """Give the header partition the room the panel needs.
+
+    The header keeps the height it has always had -- one line of
+    content -- and it grows by one line while a notice is up: the
+    notice is not in a pane, so that it is visible whatever the
+    operator has hidden.
+
+    Args:
+        layout: The TUI layout.
+        console: The console the panel is rendered into.
+        panel: The header panel about to be shown.
+        has_notice: Whether a notice is up.
+
+    Returns:
+        The height the header partition was given.
+    """
+    needed = HEADER_HEIGHT
+    if has_notice:
+        # The header grows by one line while a notice is up.  It keeps
+        # the height it has always had when there is no notice: the
+        # header was never fitted to its content, and the body of the
+        # layout must not lose a line to a header that wraps.
+        needed = max(HEADER_HEIGHT + 1, header_height(console, panel))
+    layout["header"].size = needed
+    return needed
+
+
+def pane_content_height(layout: Layout, name: str, default: int = 0) -> int:
+    """The number of lines the content of a pane has on the screen.
+
+    The number is the one the layout **really uses**: the region of
+    the pane in the map of the last drawn frame, without the lines of
+    its border.  A check asks the real layout for the region of the
+    pane and compares it with the number that is computed -- a Rich
+    that divides its layout another way is caught by the check, and
+    not by a pane that cuts its text in the wrong place.
+
+    Args:
+        layout: The TUI layout.
+        name: The name of the pane in the layout.
+        default: The number of lines when the layout does not know the
+            pane yet -- before the first frame was drawn.
+
+    Returns:
+        The number of lines of the content of the pane.
+    """
+    try:
+        region = layout.map[layout[name]].region
+    except (KeyError, TypeError, AttributeError):
+        # The pane is not in the map: it was never drawn, or it is
+        # hidden and it is not on the screen at all.
+        return default
+    return max(0, region.height - PANEL_BORDER)
 
 
 def _input_markup(
@@ -510,7 +614,7 @@ def render_footer(
         footer_table.add_column(justify="left", ratio=100 - HINTS_COLUMN_RATIO)
         footer_table.add_column(justify="right", ratio=HINTS_COLUMN_RATIO)
         hints_text = Text.from_markup(
-            "[dim][\\stats | \\tools | \\projects | \\chat-sessions | \\help | \\exit | PgUp/PgDn: Scroll][/dim]"
+            "[dim][\\stats | \\tools | \\projects | \\chat-sessions | \\keys | \\help | \\exit][/dim]"
         )
         footer_table.add_row(input_text, hints_text)
 

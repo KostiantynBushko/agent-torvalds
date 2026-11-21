@@ -28,13 +28,16 @@ from components.file_logging import LogFileConfig
 from components.tui.layout_manager import (
     build_torvalds_layout,
     fit_footer,
+    fit_header,
     input_text_width,
+    pane_content_height,
     progress_pane_width,
     render_header,
     render_footer,
     check_terminal_size,
 )
 from components.tui.state_bridge import TuiState, TuiEventAdapter, TuiInputModule
+from components.tui import hotkeys
 from components.tui.input_reader import NonBlockingInputReader, PastedText
 from components.tui.input_text import (
     cursor_line,
@@ -68,7 +71,6 @@ HELP_TEXT = build_help_markdown(
         chat_history=True,
         project_manager=True,
         tui=True,
-        keyboard_shortcuts=True,
     )
 )
 
@@ -118,6 +120,13 @@ class TuiApp:
         self.markdown_view = MarkdownView(self.console)
         self.progress_view = ProgressView()
         self.telemetry_view = TelemetryView()
+
+        # The bindings of the hot-keys.  They come from the file the
+        # operator already has: the "[hotkeys]" section of it.  A chord
+        # the operating system takes, a chord that cannot be read and a
+        # chord that two actions ask for are refused -- with a warning,
+        # and the default stands.  A refusal never stops the TUI.
+        self.hotkeys = hotkeys.resolve(config)
 
         self._active_query_task: Optional[asyncio.Task] = None
         self._is_paused: bool = False
@@ -177,6 +186,12 @@ class TuiApp:
 
         # Initialize input reader
         self.input_reader.start()
+
+        # The operator is told what the file of the configuration said:
+        # the chords that were refused, and the file that was created.
+        # The notice is in the header, and not in a pane: a notice that
+        # lives in a pane is silenced by the pane that hides it.
+        self._report_startup_notices()
 
         # The terminal belongs to the layout while the TUI is up, so the
         # log of the agent goes into the file.  The operator decided on
@@ -270,9 +285,17 @@ class TuiApp:
 
             # A paste: the text of the clipboard, in one piece.  It is
             # read before the named keys, because the text of a paste
-            # may be anything -- the name of a key among them.
+            # may be anything -- the name of a key among them.  A paste
+            # is never taken by a hot-key.
             if isinstance(key, PastedText):
                 self._insert_text(key)
+                return
+
+            # The hot-keys.  They are read before the keys of the
+            # command bar, and a key that no binding claims falls
+            # through to it untouched: a hot-key must never eat what
+            # the operator is typing.
+            if self._apply_hot_key(key):
                 return
 
             # Enter Key: Submit command or HITL response
@@ -369,10 +392,212 @@ class TuiApp:
                     self.state.exit_requested = True
                 return
 
+            # An Alt chord: the terminal sends the ESC, and then the
+            # key itself.  No Alt chord may be bound -- the desktop
+            # owns them -- so the character goes into the input, the
+            # way it goes into the input of every editor.
+            if key.startswith("ALT_"):
+                character = " " if key == "ALT_SPACE" else key[4:]
+                if len(character) == 1 and character.isprintable():
+                    self.state.input_buffer = buf[:pos] + character + buf[pos:]
+                    self.state.cursor_pos = pos + 1
+                    self.state.set_focus(hotkeys.FOCUS_INPUT)
+                return
+
             # Printable Character
             if len(key) == 1 and key.isprintable():
                 self.state.input_buffer = buf[:pos] + key + buf[pos:]
                 self.state.cursor_pos = pos + 1
+                # **A printable character always goes into the input,
+                # and it takes the focus back.**  The operator is never
+                # trapped in a pane: he scrolls the progress pane, he
+                # types a character, and he is at the command bar again,
+                # with the character in the buffer.
+                self.state.set_focus(hotkeys.FOCUS_INPUT)
+
+    # ------------------------------------------------------------------
+    # The hot-keys
+    # ------------------------------------------------------------------
+
+    def _apply_hot_key(self, key: str) -> bool:
+        """Apply the hot-key of a key, when one claims it.
+
+        The chords are global: they are live whatever the operator is
+        doing, because a chord carries no text and cannot eat what is
+        being written.  The keys of a pane are live only while that
+        pane has the focus.
+
+        Args:
+            key: The name of the key, the way the reader names it.
+
+        Returns:
+            True when the key was claimed, and the application must not
+            handle it again.
+        """
+        binding = hotkeys.match(key, self.hotkeys)
+        if binding is None:
+            return False
+
+        if not self._hot_key_is_live(binding):
+            return False
+
+        # Every action is a method of the application, and the name of
+        # the method is the name of the action: "toggle.telemetry" is
+        # "_hotkey_toggle_telemetry".  A new hot-key is a row in the
+        # registry and a method -- and nothing else.
+        method = getattr(self, f"_hotkey_{binding.action.replace('.', '_')}", None)
+        if method is None:
+            return False
+
+        method()
+        return True
+
+    def _hot_key_is_live(self, binding: hotkeys.HotKey) -> bool:
+        """Whether the binding may be applied right now.
+
+        Args:
+            binding: The binding of the key.
+
+        Returns:
+            True when the binding may be applied.
+        """
+        if binding.scope == hotkeys.SCOPE_GLOBAL:
+            # The chords are always live -- also while the answer of
+            # the agent is being typed: a chord carries no text.
+            return True
+
+        if binding.scope != hotkeys.SCOPE_PANE:
+            return False
+
+        if self.state.hitl_active or self._awaiting_session:
+            # The answer of the operator is being typed: every key that
+            # is not a chord is his.
+            return False
+
+        return hotkeys.is_live(binding, self.state.focus)
+
+    def _hotkey_toggle_telemetry(self) -> None:
+        """Show or hide the *Agent Telemetry & State* pane."""
+        self._toggle_pane("telemetry_pane", "Agent Telemetry & State")
+
+    def _hotkey_toggle_progress(self) -> None:
+        """Show or hide the *Workflow & Tool Progress* pane."""
+        self._toggle_pane("progress_pane", "Workflow & Tool Progress")
+
+    def _toggle_pane(self, pane: str, name: str) -> None:
+        """Show or hide a pane, and say what happened.
+
+        The space of a hidden pane goes to its sibling: the sidebar
+        carries one pane instead of two, and the pane that is left
+        takes the whole of it.
+
+        Args:
+            pane: The name of the pane in the layout.
+            name: The name of the pane, for the operator.
+        """
+        visible = self.state.toggle_pane(pane)
+        self.state.show_notification(
+            f"The {name} pane is {'shown' if visible else 'hidden'}.",
+            duration=2.5,
+        )
+
+    def _hotkey_focus_next(self) -> None:
+        """Give the focus to the next pane."""
+        self.state.move_focus(1)
+
+    def _hotkey_focus_previous(self) -> None:
+        """Give the focus to the previous pane."""
+        self.state.move_focus(-1)
+
+    def _hotkey_focus_input(self) -> None:
+        """Give the focus back to the command bar."""
+        self.state.set_focus(hotkeys.FOCUS_INPUT)
+
+    def _hotkey_scroll_up(self) -> None:
+        """Scroll the focused pane by one line."""
+        self._scroll_focused_pane(-1)
+
+    def _hotkey_scroll_down(self) -> None:
+        """Scroll the focused pane by one line."""
+        self._scroll_focused_pane(1)
+
+    def _hotkey_scroll_page_up(self) -> None:
+        """Scroll the focused pane by one page."""
+        self._scroll_focused_pane(-self._page_height())
+
+    def _hotkey_scroll_page_down(self) -> None:
+        """Scroll the focused pane by one page."""
+        self._scroll_focused_pane(self._page_height())
+
+    def _hotkey_scroll_home(self) -> None:
+        """Go to the top of the focused pane."""
+        focus = self.state.focus
+        if focus == hotkeys.FOCUS_DOCUMENT:
+            self.state.scroll_home()
+            return
+        self.state.scroll_of(focus).scroll_home()
+
+    def _hotkey_scroll_end(self) -> None:
+        """Go to the bottom of the focused pane."""
+        focus = self.state.focus
+        if focus == hotkeys.FOCUS_DOCUMENT:
+            self.state.scroll_end()
+            return
+        self.state.scroll_of(focus).scroll_end()
+
+    def _scroll_focused_pane(self, lines: int) -> None:
+        """Scroll the pane that has the focus.
+
+        Args:
+            lines: How many lines -- and the sign says which way.
+        """
+        focus = self.state.focus
+        if focus == hotkeys.FOCUS_DOCUMENT:
+            if lines < 0:
+                self.state.scroll_up(lines=-lines)
+            else:
+                self.state.scroll_down(lines=lines)
+            return
+
+        scroll = self.state.scroll_of(focus)
+        if lines < 0:
+            scroll.scroll_up(-lines)
+        else:
+            scroll.scroll_down(lines)
+
+    def _page_height(self) -> int:
+        """The number of lines a page of the focused pane is."""
+        focus = self.state.focus
+        if focus == hotkeys.FOCUS_DOCUMENT:
+            return max(1, self.state.document_height)
+        return max(1, self.state.scroll_of(focus).height)
+
+    def _report_startup_notices(self) -> None:
+        """Tell the operator what the file of the configuration said.
+
+        A chord that was refused is a warning, not a failed boot: the
+        default stands, and the operator is told which setting of which
+        file was refused and why.
+        """
+        for problem in self.hotkeys.problems:
+            logger.warning("The hot-key was refused: %s", problem)
+
+        if self.hotkeys.problems:
+            self.state.show_notification(
+                "  ".join(self.hotkeys.problems), duration=12.0
+            )
+            return
+
+        if config.created is not None:
+            # The TUI creates the file silently -- the message would be
+            # lost in the screen the TUI takes over.  It is shown in
+            # the header instead.
+            self.state.show_notification(
+                f"The configuration template was created at {config.created} "
+                f"— every setting in it is commented out, so the defaults "
+                f"are used",
+                duration=12.0,
+            )
 
     def _insert_text(self, text: str) -> None:
         """Put text into the input, at the cursor.
@@ -440,6 +665,14 @@ class TuiApp:
 
         if is_help_command(cmd):
             self.state.set_markdown_content(self._build_help_markdown())
+            return
+
+        if cmd_lower == "\\keys":
+            # The keys of the TUI, from the one table that owns them:
+            # the keys of the command bar and the hot-keys of the panes.
+            self.state.set_markdown_content(
+                hotkeys.keys_markdown(self.hotkeys)
+            )
             return
 
         if cmd_lower == "\\stats":
@@ -587,8 +820,7 @@ class TuiApp:
             chat_history=self.chat_history_enabled,
             project_manager=self.project_manager_enabled,
             tui=True,
-            keyboard_shortcuts=True,
-        )
+            )
         return build_help_markdown(options)
 
     def _render_stats_to_markdown(self) -> None:
@@ -1122,20 +1354,54 @@ class TuiApp:
         except Exception:
             pass
 
+    def _apply_visibility(self) -> None:
+        """Hide the panes the operator has hidden.
+
+        A hidden pane leaves the layout, and the space goes to its
+        sibling: the whole sidebar to the pane that is left.  The
+        visibility is applied from the state on every frame, so it is
+        idempotent and it survives a resize.
+        """
+        for pane in ("progress_pane", "telemetry_pane"):
+            self.layout[pane].visible = pane not in self.state.hidden_panes
+
     def _update_layout_panes(self) -> None:
         """Render and attach panels to the layout partitions."""
+        # The panes the operator has hidden leave the layout, and their
+        # space goes to their sibling.
+        self._apply_visibility()
+
         # 1. Header
+        #
+        # The notice of the TUI is in the header, and not in a pane: a
+        # notice that lives in a pane is silenced by the pane that
+        # hides it.  The header grows by one line while a notice is
+        # up.
+        notice = self.state.get_notification() or ""
         header_panel = render_header(
             model_name=self.state.model_name,
             memory_count=self.state.memory_msg_count,
             hitl_enabled=self.state.hitl_enabled,
             session_start_time=self.state.session_start_time,
             is_busy=self.state.is_busy,
+            notice=notice,
         )
+        fit_header(self.layout, self.console, header_panel, bool(notice))
         self.layout["header"].update(header_panel)
 
         # 2. Markdown View (Main Body Left)
-        markdown_panel = self.markdown_view.render(self.state)
+        #
+        # The pane is told how many lines it has: the number is the
+        # one the layout really uses, and it is the same number the
+        # scroll of the pane is clamped to.
+        self.state.document_height = pane_content_height(
+            self.layout,
+            "markdown_pane",
+            default=max(10, self.console.height - 10),
+        )
+        markdown_panel = self.markdown_view.render(
+            self.state, max_height=self.state.document_height
+        )
         self.layout["markdown_pane"].update(markdown_panel)
 
         # 3. Progress View (Sidebar Top)
@@ -1143,13 +1409,33 @@ class TuiApp:
         # The pane is told how wide it is: the detail of a tool is
         # split to the width the pane really has, so that the whole
         # command is shown - in as many lines as it needs.
+        #
+        # The pane is told how tall it is as well: the content that
+        # does not fit is reached with the keys of the pane, and the
+        # number of lines that fit is the one the layout really uses.
+        progress_scroll = self.state.scroll_of(hotkeys.FOCUS_PROGRESS)
+        progress_scroll.height = pane_content_height(
+            self.layout, "progress_pane"
+        )
         progress_panel = self.progress_view.render(
-            self.state, width=progress_pane_width(self.console.width)
+            self.state,
+            width=progress_pane_width(self.console.width),
+            scroll=progress_scroll,
+            focused=self.state.focus == hotkeys.FOCUS_PROGRESS,
         )
         self.layout["progress_pane"].update(progress_panel)
 
         # 4. Telemetry View (Sidebar Bottom)
-        telemetry_panel = self.telemetry_view.render(self.state)
+        telemetry_scroll = self.state.scroll_of(hotkeys.FOCUS_TELEMETRY)
+        telemetry_scroll.height = pane_content_height(
+            self.layout, "telemetry_pane"
+        )
+        telemetry_panel = self.telemetry_view.render(
+            self.state,
+            width=progress_pane_width(self.console.width),
+            scroll=telemetry_scroll,
+            focused=self.state.focus == hotkeys.FOCUS_TELEMETRY,
+        )
         self.layout["telemetry_pane"].update(telemetry_panel)
 
         # 5. Footer Input Bar / HITL Modal

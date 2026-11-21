@@ -9,9 +9,17 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from components.hitl_timeout import NO_TIMEOUT, is_no_timeout, normalize_timeout
+from components.tui.hotkeys import (
+    FOCUS_INPUT,
+    FOCUS_PROGRESS,
+    FOCUS_TELEMETRY,
+    PANE_OF_FOCUS,
+    PANES,
+)
+from components.tui.pane_scroll import PaneScroll
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +59,10 @@ class TuiState:
         self.scroll_offset: int = 0
         self.total_rendered_lines: int = 0
         self.spinner_frame: int = 0
+        #: The number of lines the document pane shows.  The
+        #: application sets it from the layout: the number is the one
+        #: the layout really uses, and not the one the source guesses.
+        self.document_height: int = 10
 
         # Background workflow & progress state
         self.workflow_iteration: int = 0
@@ -135,6 +147,27 @@ class TuiState:
         self.exit_requested: bool = False
         self.notification_message: Optional[str] = None
         self.notification_expire: float = 0.0
+
+        # -- the hot-keys ------------------------------------------------
+        #
+        # The focus is the command bar by default: **nothing changes for
+        # the operator who uses no hot-key at all**.  The pager keys
+        # still scroll the document, and the cursor still moves in the
+        # input.
+        self.focus: str = FOCUS_INPUT
+        # The panes that are hidden.  A hidden pane is not in the focus
+        # cycle, and the space it took goes to its sibling.
+        self.hidden_panes: Set[str] = set()
+        # The scroll of every pane of the sidebar that can be scrolled.
+        # Every pane carries its own: the operator reads the progress
+        # pane and the telemetry pane at the same time, and one window
+        # does not move the other.  The document pane scrolls on
+        # ``scroll_offset`` -- it has carried its own scroll since the
+        # beginning.
+        self.pane_scrolls: Dict[str, PaneScroll] = {
+            FOCUS_PROGRESS: PaneScroll(),
+            FOCUS_TELEMETRY: PaneScroll(),
+        }
 
     # ----------------------------------------------------------------------
     # Thread-Safe State Mutators
@@ -231,8 +264,27 @@ class TuiState:
     def scroll_down(self, lines: int = 5) -> None:
         """Scroll document viewer downwards."""
         with self._lock:
-            max_scroll = max(0, self.total_rendered_lines - 10)
+            max_scroll = self.max_scroll()
             self.scroll_offset = min(max_scroll, self.scroll_offset + lines)
+
+    def scroll_home(self) -> None:
+        """Go to the top of the document."""
+        with self._lock:
+            self.scroll_offset = 0
+
+    def scroll_end(self) -> None:
+        """Go to the bottom of the document."""
+        with self._lock:
+            self.scroll_offset = self.max_scroll()
+
+    def max_scroll(self) -> int:
+        """The largest offset the document may have.
+
+        The number of lines the pane shows is the one the layout really
+        uses: the scroll stops where the last line of the content is on
+        the screen.
+        """
+        return max(0, self.total_rendered_lines - max(1, self.document_height))
 
     def update_workflow_iteration(self, iteration: int, max_iterations: int) -> None:
         """Update the progress of the workflow.
@@ -352,6 +404,105 @@ class TuiState:
             self.chat_session_name = session_name
             self.chat_session_type = session_type
             self.chat_session_id = session_id
+
+    # ----------------------------------------------------------------------
+    # The hot-keys
+    # ----------------------------------------------------------------------
+
+    def set_focus(self, focus: str) -> None:
+        """Give the focus to a pane.
+
+        Args:
+            focus: The focus — "input", "document", "progress" or
+                "telemetry".
+        """
+        with self._lock:
+            self.focus = focus or FOCUS_INPUT
+
+    def is_pane_visible(self, focus: str) -> bool:
+        """Whether the pane of a focus is on the screen.
+
+        Args:
+            focus: The focus of the pane.
+
+        Returns:
+            True when the pane is visible.
+        """
+        with self._lock:
+            pane = PANE_OF_FOCUS.get(focus, focus)
+            return pane not in self.hidden_panes
+
+    def focus_cycle(self) -> List[str]:
+        """The focus cycle, in the order the operator walks through it.
+
+        A hidden pane is not in the cycle: the operator cannot focus
+        what is not on the screen.
+        """
+        with self._lock:
+            cycle = [FOCUS_INPUT]
+            for pane in PANES:
+                layout_pane = PANE_OF_FOCUS.get(pane, pane)
+                if layout_pane not in self.hidden_panes:
+                    cycle.append(pane)
+            return cycle
+
+    def move_focus(self, step: int = 1) -> str:
+        """Move the focus by a number of panes, and wrap around.
+
+        Args:
+            step: How many panes to move — one forward, one backward.
+
+        Returns:
+            The new focus.
+        """
+        with self._lock:
+            cycle = self.focus_cycle()
+            if not cycle:
+                return self.focus
+            try:
+                index = cycle.index(self.focus)
+            except ValueError:
+                index = 0
+            self.focus = cycle[(index + int(step)) % len(cycle)]
+            return self.focus
+
+    def toggle_pane(self, pane: str) -> bool:
+        """Show or hide a pane.
+
+        The space of a hidden pane goes to its sibling: the sidebar
+        carries one pane instead of two, and the pane that is left
+        takes the whole of it.
+
+        Args:
+            pane: The name of the pane in the layout — "progress_pane"
+                or "telemetry_pane".
+
+        Returns:
+            True when the pane is visible after the change.
+        """
+        with self._lock:
+            if pane in self.hidden_panes:
+                self.hidden_panes.discard(pane)
+            else:
+                self.hidden_panes.add(pane)
+            return pane not in self.hidden_panes
+
+    def scroll_of(self, focus: str) -> PaneScroll:
+        """The scroll of a pane.
+
+        Args:
+            focus: The focus of the pane.
+
+        Returns:
+            The scroll of the pane — a new one when the pane is not
+            known, so that the caller never gets None.
+        """
+        with self._lock:
+            scroll = self.pane_scrolls.get(focus)
+            if scroll is None:
+                scroll = PaneScroll()
+                self.pane_scrolls[focus] = scroll
+            return scroll
 
     def show_notification(self, message: str, duration: float = 3.0) -> None:
         """Display a temporary notification in the status bar."""
