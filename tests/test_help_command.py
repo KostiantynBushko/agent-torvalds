@@ -111,7 +111,7 @@ class TestCommandRegistry(unittest.TestCase):
         self.assertNotIn("\\clear", names)
 
     def test_build_help_markdown_lists_commands_with_descriptions(self):
-        options = self.registry.HelpOptions(tui=True, keyboard_shortcuts=True)
+        options = self.registry.HelpOptions(tui=True)
         md = self.registry.build_help_markdown(options)
 
         self.assertIn("# Torvalds AI Agent", md)
@@ -165,17 +165,35 @@ class TestCommandRegistry(unittest.TestCase):
         ):
             self.assertIn(command, md, f"{command} missing from help output")
 
-    def test_keyboard_shortcuts_only_in_tui_mode(self):
-        with_shortcuts = self.registry.build_help_markdown(
-            self.registry.HelpOptions(tui=True, keyboard_shortcuts=True)
-        )
-        without_shortcuts = self.registry.build_help_markdown(
-            self.registry.HelpOptions(tui=True, keyboard_shortcuts=False)
-        )
+    def test_the_keys_are_not_in_the_help_screen(self):
+        """The keys have their own command -- ``\\keys``.
 
-        self.assertIn("Keyboard Navigation", with_shortcuts)
-        self.assertIn("PgUp", with_shortcuts)
-        self.assertNotIn("Keyboard Navigation", without_shortcuts)
+        The help screen is the list of the commands.  A key list that is
+        a copy of the hot-key registry is a copy that goes stale, so
+        the block is *gone* -- and this test says so, so that nobody
+        puts it back by accident.
+        """
+        for options in (
+            self.registry.HelpOptions(tui=True),
+            self.registry.HelpOptions(tui=False),
+        ):
+            markdown = self.registry.build_help_markdown(options)
+            text = self.registry.build_help_text(options)
+
+            self.assertNotIn("Keyboard Navigation", markdown)
+            self.assertNotIn("Keyboard Navigation", text)
+            self.assertNotIn("PgUp", markdown)
+            self.assertNotIn("Ctrl+C", text)
+
+    def test_the_keys_command_is_registered_for_the_tui(self):
+        """``\\keys`` is a command of the TUI -- and only of the TUI."""
+        options = self.registry.HelpOptions(tui=True)
+        self.assertIsNotNone(self.registry.find_command("\\keys", options))
+        self.assertIn("\\keys", self.registry.build_help_markdown(options))
+
+        without_tui = self.registry.HelpOptions(tui=False)
+        self.assertIsNone(self.registry.find_command("\\keys", without_tui))
+        self.assertNotIn("\\keys", self.registry.build_help_markdown(without_tui))
 
 
 # ---------------------------------------------------------------------------

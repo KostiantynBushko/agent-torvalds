@@ -467,5 +467,123 @@ class TestTheKeysOfTheReader(unittest.TestCase):
         )
 
 
+# ---------------------------------------------------------------------------
+# The modified keys
+# ---------------------------------------------------------------------------
+
+
+def _the_keys_of(sequence: bytes):
+    """The keys the reader reports for a sequence of bytes."""
+    body = (
+        "keys = []\n"
+        "end = time.time() + 6\n"
+        "while time.time() < end and not keys:\n"
+        "    keys.extend(collect())\n"
+        "    time.sleep(0.02)\n"
+        "print('RESULT:' + repr([str(k) for k in keys]), flush=True)\n"
+    )
+
+    result = run_in_pty(body, [(0.0, sequence)])
+
+    assert result is not None, f"the reader reported nothing for {sequence!r}"
+    return eval(result)  # noqa: S307 - a literal from our own child
+
+
+class TestTheModifiedKeys(unittest.TestCase):
+    """The reader has to name the modified keys.
+
+    The hot-keys need something to bind: without a name for the
+    Ctrl+<letter> chords, every hot-key would have to take a key away
+    from the operator's typing.
+    """
+
+    def test_a_ctrl_chord_is_named(self):
+        """A terminal sends the Ctrl+<letter> as the control byte."""
+        keys = _the_keys_of(b"\x14")  # Ctrl+T
+
+        self.assertEqual(keys, ["CTRL_T"])
+
+    def test_every_ctrl_letter_is_named(self):
+        """Every chord the terminal delivers is named.
+
+        The Ctrl+Z is not among them: the kernel raises the SIGTSTP
+        before the byte is read, and the TUI is suspended.  It is named
+        all the same -- see the test below -- but the byte never
+        reaches the reader.
+        """
+        for letter in "ABEFGKLNOPRTUVXY":
+            with self.subTest(letter=letter):
+                keys = _the_keys_of(bytes([ord(letter) - 64]))
+
+                self.assertEqual(keys, [f"CTRL_{letter}"])
+
+    def test_the_ctrl_z_is_named_by_the_reader(self):
+        """The kernel takes the byte, and the reader still names it."""
+        from components.tui.input_reader import NonBlockingInputReader
+
+        reader = NonBlockingInputReader()
+
+        self.assertEqual(reader._key_of("\x1a"), "CTRL_Z")
+
+    def test_the_ctrl_chords_the_terminal_claims_are_not_named_away(self):
+        """The four bytes another key already claimed keep their name."""
+        for sequence, expected in (
+            (b"\x08", "BACKSPACE"),  # Ctrl+H
+            (b"\x09", "TAB"),        # Ctrl+I
+            (b"\x0a", "ENTER"),      # Ctrl+J
+            (b"\x0d", "ENTER"),      # Ctrl+M
+        ):
+            with self.subTest(expected=expected):
+                keys = _the_keys_of(sequence)
+
+                self.assertEqual(keys, [expected])
+
+    def test_a_modified_arrow_is_not_the_arrow(self):
+        """The modifier is a part of the name of the key."""
+        keys = _the_keys_of(b"\x1b[1;5A")  # Ctrl+Up
+
+        self.assertNotIn("UP", keys, "the modifier was thrown away")
+        self.assertEqual(keys, ["CTRL_UP"])
+
+    def test_a_shifted_arrow_is_named(self):
+        keys = _the_keys_of(b"\x1b[1;2B")  # Shift+Down
+
+        self.assertEqual(keys, ["SHIFT_DOWN"])
+
+    def test_a_function_key_is_named(self):
+        keys = _the_keys_of(b"\x1b[15~")  # F5
+
+        self.assertEqual(keys, ["F5"])
+
+    def test_a_function_key_of_the_application_mode_is_named(self):
+        keys = _the_keys_of(b"\x1bOP")  # F1
+
+        self.assertEqual(keys, ["F1"])
+
+    def test_an_alt_chord_is_named(self):
+        """The terminal sends the ESC, and then the key itself."""
+        keys = _the_keys_of(b"\x1ba")
+
+        self.assertEqual(keys, ["ALT_a"])
+
+    def test_the_plain_keys_are_not_named_away(self):
+        """The keys the TUI has always had keep their name."""
+        for sequence, expected in (
+            (b"\x1b[A", "UP"),
+            (b"\x1b[B", "DOWN"),
+            (b"\x1b[5~", "PGUP"),
+            (b"\x1b[6~", "PGDN"),
+            (b"\x1b[H", "HOME"),
+            (b"\x1b[F", "END"),
+            (b"\x1b[Z", "SHIFT_TAB"),
+            (b"\t", "TAB"),
+            (b"\r", "ENTER"),
+        ):
+            with self.subTest(expected=expected):
+                keys = _the_keys_of(sequence)
+
+                self.assertEqual(keys, [expected])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1182,7 +1182,6 @@ def render_help_text(
         chat_history=chat_history_enabled,
         project_manager=True,
         tui=False,
-        keyboard_shortcuts=False,
     )
     text = build_help_text(options)
     console.print(Markdown(f"```text\n{text}```"))

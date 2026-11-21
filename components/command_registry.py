@@ -82,7 +82,6 @@ class HelpOptions:
         project_manager: Show the Project / workspace commands.
         mikrotik: Show the MikroTik RouterOS commands.
         tui: Show commands that only exist inside the multi-window TUI.
-        keyboard_shortcuts: Show the TUI keyboard navigation cheat sheet.
     """
 
     hitl: bool = True
@@ -90,7 +89,6 @@ class HelpOptions:
     project_manager: bool = True
     mikrotik: bool = True
     tui: bool = False
-    keyboard_shortcuts: bool = False
 
     def allows(self, feature: str) -> bool:
         """
@@ -123,6 +121,16 @@ COMMAND_SPECS: Tuple[CommandSpec, ...] = (
         name="\\clear",
         description="Clear the current document viewer pane.",
         usage="\\clear",
+        category="General",
+        feature=FEATURE_TUI,
+    ),
+    CommandSpec(
+        name="\\keys",
+        description=(
+            "Show every key of the TUI - the keys of the command bar and "
+            "the hot-keys of the panes - and where they are changed."
+        ),
+        usage="\\keys",
         category="General",
         feature=FEATURE_TUI,
     ),
@@ -390,18 +398,12 @@ CATEGORY_TITLES = {
 
 
 # ---------------------------------------------------------------------------
-# TUI keyboard navigation cheat sheet
+# The keys of the TUI
 # ---------------------------------------------------------------------------
-
-KEYBOARD_SHORTCUTS: Tuple[Tuple[str, str], ...] = (
-    ("Enter", "Submit prompt / confirm HITL answer"),
-    ("Paste", "Paste text into the input bar (a long paste scrolls to its end)"),
-    ("PgUp / PgDn", "Scroll document viewer up and down"),
-    ("Up / Down", "Move between the lines of the input, or browse its history"),
-    ("Left / Right", "Move cursor horizontally in the input bar"),
-    ("Home / End", "Jump to start / end of the input line"),
-    ("Ctrl+C", "Cancel current input or exit if the buffer is empty"),
-)
+#
+# The list of the keys is **not** here: it belongs to the hot-keys of
+# the TUI, which own them, and the "\keys" screen is rendered from
+# that one table.  A key list that is a copy is a copy that goes stale.
 
 
 # ---------------------------------------------------------------------------
@@ -545,13 +547,6 @@ def build_help_markdown(options: Optional[HelpOptions] = None) -> str:
             lines.append(f"- `{_usage_label(spec)}` : {spec.description}")
         lines.append("")
 
-    if opts.keyboard_shortcuts:
-        lines.append("### Keyboard Navigation")
-        lines.append("")
-        for key, description in KEYBOARD_SHORTCUTS:
-            lines.append(f"- **{key}** : {description}")
-        lines.append("")
-
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -584,13 +579,6 @@ def build_help_text(options: Optional[HelpOptions] = None) -> str:
             lines.append(f"  {label.ljust(width)}  {spec.description}")
         lines.append("")
 
-    if opts.keyboard_shortcuts:
-        lines.append("KEYBOARD NAVIGATION")
-        width = max(len(key) for key, _ in KEYBOARD_SHORTCUTS)
-        for key, description in KEYBOARD_SHORTCUTS:
-            lines.append(f"  {key.ljust(width)}  {description}")
-        lines.append("")
-
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -606,7 +594,6 @@ __all__ = [
     "COMMAND_SPECS",
     "CATEGORY_ORDER",
     "CATEGORY_TITLES",
-    "KEYBOARD_SHORTCUTS",
     "is_help_command",
     "iter_sections",
     "get_command_specs",

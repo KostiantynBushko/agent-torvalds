@@ -55,6 +55,7 @@ The project documentation:
 | Agent Skills — the procedures the agent loads on demand, and how to write one | [docs/skills.md](docs/skills.md) |
 | MikroTik RouterOS Toolkit — the end-user reference | [docs/mikrotik-toolkit.md](docs/mikrotik-toolkit.md) |
 | Shodan Toolkit — the end-user reference | [docs/shodan-toolkit.md](docs/shodan-toolkit.md) |
+| The multi-window console — the TUI, its panes, and its keys | [docs/tui/](docs/tui/) |
 | The design proposals — the documents the features were designed in | [docs/proposals/](docs/proposals/) |
 | The development rules — how a change to this codebase is made | [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) |
 | The CI test gate — the script the build runs | [scripts/ci_test_gate.py](scripts/ci_test_gate.py) |
@@ -344,6 +345,17 @@ describe.  A plain `git clone` leaves the directory empty;
   under the text of the first one, so that a command that takes several
   lines reads as one command.  Nothing of the command is cut away: the
   part of a command that says what it does is the part that matters.
+- The **hot-keys** of the TUI: `Ctrl+T` and `Ctrl+P` show and hide the two
+  panes of the sidebar, `Tab` and `Shift+Tab` move the focus from pane to pane,
+  and `Esc` gives the focus back to the command bar.  The pane that has the
+  focus carries a brighter border and the marker `▶` in its title, and the keys
+  of that pane scroll it.  The **list of the tasks is a log** — the oldest
+  first, the newest at the bottom — and the window stays on the task the
+  operator is reading when a new one arrives.  The bindings live in the
+  `[hotkeys]` section of the configuration file, and the operator may replace
+  any of them — see [The hot-keys of the TUI](docs/tui/hotkeys.md)
+- The **notice** of the TUI is drawn in the **header**, and not in a pane: a
+  notice that lives in a pane is silenced by the pane that hides it
 - The **Tools** row names the tools the agent **really has**: the categories the
   operator selected with `--select` are named — `Operating System, System` — and the
   count says how the agent got the tools: `8 selected`, `134 loaded`, `156 indexed`.
@@ -354,7 +366,7 @@ describe.  A plain `git clone` leaves the directory empty;
   - Chat History Manager: multi-user, multi-session history with `\chat-*` commands
   - Runtime Prompt Injection: dynamic system prompt derived from the active project
   - Callback-manager propagation for LLM-level event tracking
-- TUI slash commands: `\help`, `\tools`, `\tool-list`, `\projects`, `\project-info`,
+- TUI slash commands: `\help`, `\keys`, `\tools`, `\tool-list`, `\projects`, `\project-info`,
   `\project-status`, `\project-summary`, `\chat-sessions`, `\chat-select`, `\chat-info`,
   `\chat-user`, …
 - Seamless fallback to the classic linear REPL via `--no-tui` or in headless/piped environments

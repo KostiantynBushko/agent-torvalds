@@ -5,6 +5,11 @@ Renders the primary document pane with:
 - Live formatted Markdown (headings, tables, syntax-highlighted code blocks)
 - Real-time animated spinner and status indicators during processing
 - Virtual buffer pagination and scrolling via PgUp / PgDn
+
+**The pane that has the focus is marked.**  The border is brighter,
+the title carries the marker ``▶``, and the subtitle says where the
+operator is -- the three marks of a selected pane, the same the
+progress pane and the telemetry pane carry.
 """
 from typing import Optional
 from rich.console import Console
@@ -12,6 +17,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 
+from components.tui.hotkeys import FOCUS_GAP, FOCUS_MARKER
 from components.tui.state_bridge import TuiState
 from components.tui.terminal_size import build_console
 
@@ -70,14 +76,22 @@ class MarkdownView:
             height=200,
         )
 
-    def render(self, state: TuiState, max_height: Optional[int] = None) -> Panel:
+    def render(
+        self,
+        state: TuiState,
+        max_height: Optional[int] = None,
+        focused: bool = False,
+    ) -> Panel:
         """
         Render the Markdown panel according to current state.
-        
+
         Args:
             state: Current TuiState snapshot
             max_height: Approximate visible height in lines for pagination
-            
+            focused: Whether the pane has the focus.  The pane that has
+                the focus carries a brighter border and the marker in
+                its title.
+
         Returns:
             Rich Panel to place inside layout['markdown_pane']
         """
@@ -85,12 +99,24 @@ class MarkdownView:
         state.spinner_frame = (state.spinner_frame + 1) % len(SPINNER_FRAMES)
         spinner_char = SPINNER_FRAMES[state.spinner_frame]
 
+        # The pane that has the focus carries the marker in front of
+        # the title: the operator must see which pane the keys go to.
+        # The marker stands in front of the icon of the pane, exactly
+        # as it does in the progress pane and in the telemetry pane.
+        marker = f"{FOCUS_MARKER}{FOCUS_GAP}" if focused else ""
+
         if state.is_busy:
-            title = f"[bold yellow]{spinner_char} {state.status_message}[/bold yellow]"
-            border_style = "yellow"
+            title = (
+                "[bold yellow]"
+                f"{marker}{spinner_char} {state.status_message}"
+                "[/bold yellow]"
+            )
+            # The busy pane is yellow, and the border of the pane that
+            # has the focus is the brighter one of the two.
+            border_style = "bright_yellow" if focused else "yellow"
         else:
-            title = "[bold blue]📄 Markdown Document Viewer[/bold blue]"
-            border_style = "blue"
+            title = f"[bold blue]{marker}📄 Markdown Document Viewer[/bold blue]"
+            border_style = "bright_blue" if focused else "blue"
 
         # Determine raw markdown content to render
         content_to_render = state.markdown_content.strip()

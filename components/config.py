@@ -480,6 +480,55 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("logging.context_size", "TORVALDS_LOG_CONTEXT_SIZE",
             True, KIND_BOOLEAN,
             "Log the size of the prompt with every request to the model."),
+
+    # -- the hot-keys of the TUI -----------------------------------------
+    #
+    # The chords the TUI is driven with.  They live in the file the
+    # operator already has, and the operator may replace any of them:
+    # a value replaces the default of its action and frees the key the
+    # action had, and an empty value unbinds the action.
+    #
+    # A chord that cannot be read, a chord the operating system takes
+    # and a chord that two actions ask for are refused by the TUI --
+    # with a warning, and the default stands.  The validation belongs
+    # to the hot-keys of the TUI, which own the list of the keys the
+    # operating system takes.
+    #
+    # The settings have no environment variable: the file is the place
+    # for them, and a variable would be a second place to look.
+    Setting("hotkeys.toggle_telemetry", None,
+            "Ctrl+T", KIND_STRING,
+            "Show or hide the *Agent Telemetry & State* pane."),
+    Setting("hotkeys.toggle_progress", None,
+            "Ctrl+P", KIND_STRING,
+            "Show or hide the *Workflow & Tool Progress* pane."),
+    Setting("hotkeys.focus_next", None,
+            "Tab", KIND_STRING,
+            "Give the focus to the next pane."),
+    Setting("hotkeys.focus_previous", None,
+            "Shift+Tab", KIND_STRING,
+            "Give the focus to the previous pane."),
+    Setting("hotkeys.focus_input", None,
+            "Esc", KIND_STRING,
+            "Give the focus back to the command bar."),
+    Setting("hotkeys.scroll_up", None,
+            "Up", KIND_STRING,
+            "Scroll the focused pane by one line."),
+    Setting("hotkeys.scroll_down", None,
+            "Down", KIND_STRING,
+            "Scroll the focused pane by one line."),
+    Setting("hotkeys.scroll_page_up", None,
+            "PgUp", KIND_STRING,
+            "Scroll the focused pane by one page."),
+    Setting("hotkeys.scroll_page_down", None,
+            "PgDn", KIND_STRING,
+            "Scroll the focused pane by one page."),
+    Setting("hotkeys.scroll_home", None,
+            "Home", KIND_STRING,
+            "Go to the top of the focused pane."),
+    Setting("hotkeys.scroll_end", None,
+            "End", KIND_STRING,
+            "Go to the bottom of the focused pane."),
 )
 
 
@@ -867,7 +916,7 @@ class Config:
             "",
         ]
         section = None
-        for setting in SETTINGS:
+        for setting in self.settings.values():
             if setting.section != section:
                 section = setting.section
                 lines.append("")
