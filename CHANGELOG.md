@@ -137,6 +137,52 @@ All notable changes to this project are documented in this file.
   console, and `docs/tui/hotkeys.md`, the hot-keys of the TUI: the operator's
   guide in the first part, the design and the implementation in the second.
 
+#### The document pane is the selected pane from the first frame
+
+- **The operator asked on 2026-11-22**:
+
+  > *I see that focus mark apears only when I hit Tab so it does not have
+  > default selected window, the default one must be markdown document
+  > window and the focus mark must apears on start up on this window*
+
+  He was right: the focus was the **command bar** by default, and the
+  command bar carries no mark.  So the TUI showed **no mark at all** until
+  the operator pressed `Tab` — and the mark that was meant to answer
+  *which pane is the selected one* appeared only after the operator had
+  found it himself.  The pane that has the focus is marked in three ways
+  (a brighter border, the marker `▶` in front of the icon, and the
+  subtitle that says where the operator is), and none of the three was on
+  the screen at the start.
+
+- **The default focus is the document pane now.**  It is the pane the
+  operator reads the most, and the pane the keys `PgUp`/`PgDn` scroll.  The
+  mark is on the screen from the first frame: the brighter border and the
+  marker `▶` in front of the icon of the pane.
+
+- **The price of the mark, and it is a real one.**  The keys of a pane are
+  live while that pane has the focus, so `Up`/`Down` scroll the document
+  at the start, and not the history of the command bar.  `PgUp`/`PgDn`
+  scroll a **page** of the document, and not six lines.  `Esc` gives the
+  focus back to the command bar, and the history is there again — the rule
+  of §11.4 stands: the operator is never trapped in a pane, and the first
+  printable character brings the focus back to the command bar.
+
+- **The paste takes the focus back too.**  The change above exposed a hole
+  in the rule of §11.4: the text of a paste goes into the input, but the
+  paste was the one path into the input that did **not** take the focus
+  back.  The operator pasted a question of several lines and the arrow keys
+  scrolled the document instead of walking his cursor.  The paste takes the
+  focus back now, the way a printable character and an `Alt` chord do.
+
+- **The evidence:** `tests/test_tui_pane_scroll.py` — 34 tests — three of
+  them for the startup: the document pane has the focus, it carries the
+  marker, and the progress pane carries none.  `tests/test_tui_hotkeys.py`
+  — 49 tests — the cycle of the focus starts in the document pane and
+  wraps around, and a paste takes the focus back.
+  `tests/test_tui_multiline_input.py` — 47 tests — the history of the
+  command bar is walked when the command bar has the focus.  The gate of
+  the repository stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The document pane carries the focus mark too
 
 - **The operator asked on 2026-11-22** for the focus mark on the markdown

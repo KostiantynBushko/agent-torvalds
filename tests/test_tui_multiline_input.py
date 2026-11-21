@@ -881,15 +881,35 @@ class TestTheCursorWalksTheLines(unittest.TestCase):
         self.assertEqual(app.state.cursor_pos, len("first line") - 1)
 
     def test_the_history_is_still_there_for_a_single_line(self):
-        """A one-line input walks the history, as it always did."""
+        """A one-line input walks the history, as it always did.
+
+        The document pane is the selected pane at the start, and the
+        arrow keys belong to the pane that has the focus.  `Esc` gives
+        the focus back to the command bar, and the history is there
+        again.
+        """
         app = TuiApp(agent=None, prompt_handler_fn=None)
 
         app.state.command_history = ["\\stats", "\\tools"]
+
+        app._handle_key("ESCAPE")
 
         app._handle_key("UP")
         self.assertEqual(app.state.input_buffer, "\\tools")
 
         app._handle_key("UP")
+        self.assertEqual(app.state.input_buffer, "\\stats")
+
+    def test_the_history_is_walked_when_the_command_bar_has_the_focus(self):
+        """`Esc` gives the focus back to the command bar, and the history
+        is there again."""
+        app = TuiApp(agent=None, prompt_handler_fn=None)
+
+        app.state.command_history = ["\\stats"]
+
+        app._handle_key("ESCAPE")
+        app._handle_key("UP")
+
         self.assertEqual(app.state.input_buffer, "\\stats")
 
     def test_the_cursor_stops_at_the_first_line(self):

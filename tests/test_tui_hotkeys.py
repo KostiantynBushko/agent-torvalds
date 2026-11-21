@@ -471,17 +471,30 @@ class TestTheRouting(unittest.TestCase):
 
         self.assertNotIn("progress_pane", self.app.state.hidden_panes)
 
+    def test_the_document_pane_has_the_focus_at_the_startup(self):
+        """The operator asked on 2026-11-22: the default selected
+        window is the markdown document window, and the mark is on the
+        screen from the first frame."""
+        self.assertEqual(self.app.state.focus, hotkeys.FOCUS_DOCUMENT)
+
     def test_the_focus_moves_to_the_next_pane(self):
         self.app._handle_key("TAB")
 
-        self.assertEqual(self.app.state.focus, hotkeys.FOCUS_DOCUMENT)
+        self.assertEqual(self.app.state.focus, hotkeys.FOCUS_PROGRESS)
 
     def test_the_focus_moves_to_the_previous_pane(self):
         self.app._handle_key("TAB")
         self.app._handle_key("TAB")
         self.app._handle_key("SHIFT_TAB")
 
-        self.assertEqual(self.app.state.focus, hotkeys.FOCUS_DOCUMENT)
+        self.assertEqual(self.app.state.focus, hotkeys.FOCUS_PROGRESS)
+
+    def test_the_cycle_of_the_focus_wraps_around(self):
+        """The document pane is the first one of the cycle, and the
+        command bar is the last: the wrap around reaches every pane."""
+        self.app._handle_key("SHIFT_TAB")
+
+        self.assertEqual(self.app.state.focus, FOCUS_INPUT)
 
     def test_the_focus_comes_back_to_the_command_bar(self):
         self.app._handle_key("TAB")
@@ -493,6 +506,7 @@ class TestTheRouting(unittest.TestCase):
         """The pager keys scroll the document when the bar has the focus."""
         self.app.state.set_markdown_content("line\n" * 50)
         self.app.state.total_rendered_lines = 50
+        self.app.state.set_focus(FOCUS_INPUT)
 
         self.app._handle_key("PGDN")
         self.assertEqual(self.app.state.scroll_offset, 6)
@@ -506,6 +520,35 @@ class TestTheRouting(unittest.TestCase):
             "the pager key of the document moved while the progress pane "
             "had the focus",
         )
+
+    def test_the_pager_key_scrolls_a_page_of_the_document_at_the_startup(self):
+        """The document pane has the focus, and the pager key scrolls a
+        page of it -- not the six lines of the legacy path."""
+        self.app.state.set_markdown_content("line\n" * 50)
+        self.app.state.total_rendered_lines = 50
+
+        self.app._handle_key("PGDN")
+
+        self.assertEqual(self.app.state.scroll_offset, 10)
+
+    def test_the_arrow_keys_scroll_the_document_at_the_startup(self):
+        """The document pane is the selected pane, and the arrow keys
+        scroll the pane that has the focus."""
+        self.app.state.set_markdown_content("line\n" * 50)
+        self.app.state.total_rendered_lines = 50
+
+        self.app._handle_key("DOWN")
+
+        self.assertEqual(self.app.state.scroll_offset, 1)
+
+    def test_a_paste_takes_the_focus_back(self):
+        """The text of a paste goes into the input, and it takes the
+        focus back -- the way a printable character does."""
+        from components.tui.input_reader import PastedText
+
+        self.app._handle_key(PastedText("first\nsecond"))
+
+        self.assertEqual(self.app.state.focus, FOCUS_INPUT)
 
     def test_the_answer_of_the_agent_keeps_every_key_that_is_not_a_chord(self):
         """The keys of the answer of the operator are his."""

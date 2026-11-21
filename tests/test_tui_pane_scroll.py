@@ -40,7 +40,11 @@ sys.path.insert(0, str(ROOT))
 
 from rich.console import Console  # noqa: E402
 
-from components.tui.hotkeys import FOCUS_MARKER  # noqa: E402
+from components.tui.hotkeys import (  # noqa: E402
+    FOCUS_DOCUMENT,
+    FOCUS_MARKER,
+    FOCUS_PROGRESS,
+)
 from components.tui.layout_manager import (  # noqa: E402
     build_torvalds_layout,
     pane_content_height,
@@ -346,6 +350,51 @@ class TestTheFocus(unittest.TestCase):
             title.index("\U0001f4c4"),
             "the marker is behind the icon of the pane",
         )
+
+
+class TestTheFocusAtTheStartup(unittest.TestCase):
+    """The document pane is the selected one from the first frame.
+
+    The operator asked on 2026-11-22: the focus mark appeared only
+    after Tab, so the TUI had no default selected window.  The default
+    one is the markdown document window, and the mark is on the screen
+    from the start.
+    """
+
+    def _document(self, state):
+        """The document pane, drawn the way the operator sees it."""
+        console = Console(width=60, color_system=None)
+        view = MarkdownView(console)
+        panel = view.render(
+            state,
+            max_height=20,
+            focused=state.focus == FOCUS_DOCUMENT,
+        )
+        lines = console.render_lines(panel, console.options.update(width=60))
+        return "\n".join("".join(s.text for s in line) for line in lines)
+
+    def test_the_document_pane_has_the_focus_at_the_startup(self):
+        state = TuiState()
+
+        self.assertEqual(state.focus, FOCUS_DOCUMENT)
+
+    def test_the_document_pane_carries_the_marker_at_the_startup(self):
+        state = TuiState()
+
+        self.assertIn(FOCUS_MARKER, self._document(state))
+
+    def test_the_progress_pane_carries_no_marker_at_the_startup(self):
+        state = TuiState()
+        console = Console(width=60, color_system=None)
+        panel = ProgressView().render(
+            state,
+            width=60,
+            focused=state.focus == FOCUS_PROGRESS,
+        )
+        lines = console.render_lines(panel, console.options.update(width=60))
+        drawn = "\n".join("".join(s.text for s in line) for line in lines)
+
+        self.assertNotIn(FOCUS_MARKER, drawn)
 
 
 class TestTheHiddenPane(unittest.TestCase):

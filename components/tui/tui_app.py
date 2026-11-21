@@ -289,6 +289,14 @@ class TuiApp:
             # is never taken by a hot-key.
             if isinstance(key, PastedText):
                 self._insert_text(key)
+                # The text of a paste goes into the input, and it takes
+                # the focus back with it -- the way a printable
+                # character does, and the way an Alt chord does.  The
+                # paste was the one path into the input that did not:
+                # the operator pasted a question of several lines, and
+                # the arrow keys scrolled the document instead of
+                # walking his cursor.
+                self.state.set_focus(hotkeys.FOCUS_INPUT)
                 return
 
             # The hot-keys.  They are read before the keys of the

@@ -91,6 +91,12 @@ lists the commands.
 
 ## 3. Moving the focus
 
+**The document pane is the selected one from the first frame.**  The
+mark `▶` and the brighter border are on the screen from the start, and
+the operator does not have to press `Tab` to find out which pane is
+the selected one.  (The operator asked for it on 2026-11-22: the mark
+appeared only after `Tab`, and the TUI had no default selected window.)
+
 `Tab` moves the focus to the next pane, and the cycle **wraps around**:
 
 ```
@@ -152,6 +158,10 @@ instead of the command bar.
 **While the command bar has the focus**, the keys keep the behaviour they
 always had: `PgUp`/`PgDn` scroll the document pane, and `Up`/`Down` move
 the cursor in the input and browse its history.
+
+The document pane has the focus at the start, and `Up`/`Down` scroll it
+therefore.  `Esc` gives the focus back to the command bar, and the
+history of the input is there again.
 
 ### The progress pane is a log
 
@@ -329,7 +339,8 @@ not on the list above.
 | What the operator sees | What it means | What to do |
 | :--- | :--- | :--- |
 | `Ctrl+T` does nothing | the terminal took the chord, or the binding was changed | try the binding of the `\keys` screen; some terminals intercept `Ctrl+<letter>` themselves |
-| the pane does not scroll | the command bar has the focus | press `Tab` until the pane is marked with `▶` |
+| the pane does not scroll | the command bar has the focus | press `Tab` until the pane is marked with `▶` — or `Esc`, if the pane you want is the document pane: it is the selected one at the start |
+| `Up`/`Down` do not walk the history | the document pane has the focus, and it is the selected one at the start | press `Esc`: the focus goes back to the command bar |
 | the notice is not on the screen | it is in the header, above the panes | look at the header |
 | a binding did not change | the file is read at the start | restart the agent |
 | a warning about a setting | the chord was refused | read the warning: it says which setting of which file, and why |
@@ -547,9 +558,14 @@ cannot eat what the operator is writing.
 
 `focus ∈ {input, document, progress, telemetry}`.
 
-* `input` is the default — **nothing changes for the operator who uses no
-  hot-key at all**.  `PgUp`/`PgDn` still scroll the document, `Up`/`Down`
-  still move the cursor and browse the history.
+* `document` is the default — the selected pane is on the screen from the
+  first frame, and the operator does not have to guess which pane it is.
+  (The operator asked for it on 2026-11-22; the focus was the command bar
+  before that, and no pane was marked until `Tab` was pressed.)
+* The keys of the document pane are therefore live at the start:
+  `Up`/`Down` scroll the document, and `PgUp`/`PgDn` scroll a page of it.
+  `Esc` gives the focus back to the command bar, and `Up`/`Down` move the
+  cursor and browse the history again.
 * `Tab` cycles the focus through the panes that are **visible** — a hidden
   pane is not in the cycle — and wraps around.
 * `Esc` gives the focus back to the command bar.
@@ -979,6 +995,8 @@ up by themselves.  **No other file changes.**
     back;
   * a chord is live while the operator is typing;
   * a pane key is live only while its pane has the focus;
+  * the document pane has the focus at the start, and the mark is on the
+    screen from the first frame;
   * the pager keys scroll the document when the focus is on the input
     (today's behaviour, unchanged);
   * `hitl_active` and the session picker: only the global chords are live,

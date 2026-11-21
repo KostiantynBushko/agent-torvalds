@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from components.hitl_timeout import NO_TIMEOUT, is_no_timeout, normalize_timeout
 from components.tui.hotkeys import (
+    FOCUS_DOCUMENT,
     FOCUS_INPUT,
     FOCUS_PROGRESS,
     FOCUS_TELEMETRY,
@@ -158,11 +159,26 @@ class TuiState:
 
         # -- the hot-keys ------------------------------------------------
         #
-        # The focus is the command bar by default: **nothing changes for
-        # the operator who uses no hot-key at all**.  The pager keys
-        # still scroll the document, and the cursor still moves in the
-        # input.
-        self.focus: str = FOCUS_INPUT
+        # The focus is the **document pane** by default.  The operator
+        # asked on 2026-11-22:
+        #
+        #     I see that focus mark apears only when I hit Tab so it
+        #     does not have default selected window, the default one
+        #     must be markdown document window and the focus mark must
+        #     apears on start up on this window
+        #
+        # Before that, the focus was the command bar and **no pane was
+        # marked at all** until the operator pressed Tab: the TUI did
+        # not say which pane was the selected one, and the mark that
+        # was meant to answer the question appeared only after the
+        # operator had found it himself.
+        #
+        # The price of the mark: the keys of a pane are live while that
+        # pane has the focus.  `Up` and `Down` scroll the document
+        # therefore, and not the history of the command bar.  `Esc`
+        # gives the focus back to the command bar, and the history is
+        # there again.
+        self.focus: str = FOCUS_DOCUMENT
         # The panes that are hidden.  A hidden pane is not in the focus
         # cycle, and the space it took goes to its sibling.
         self.hidden_panes: Set[str] = set()
