@@ -29,6 +29,7 @@ from components.tui.layout_manager import (
     build_torvalds_layout,
     fit_footer,
     input_text_width,
+    progress_pane_width,
     render_header,
     render_footer,
     check_terminal_size,
@@ -1138,7 +1139,13 @@ class TuiApp:
         self.layout["markdown_pane"].update(markdown_panel)
 
         # 3. Progress View (Sidebar Top)
-        progress_panel = self.progress_view.render(self.state)
+        #
+        # The pane is told how wide it is: the detail of a tool is
+        # split to the width the pane really has, so that the whole
+        # command is shown - in as many lines as it needs.
+        progress_panel = self.progress_view.render(
+            self.state, width=progress_pane_width(self.console.width)
+        )
         self.layout["progress_pane"].update(progress_panel)
 
         # 4. Telemetry View (Sidebar Bottom)

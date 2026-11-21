@@ -338,6 +338,12 @@ describe.  A plain `git clone` leaves the directory empty;
   the name of the tool says what it works on, and the home of the
   operator is hidden in it — the path is shown the way a shell writes it,
   as `~/notes/todo.md`.
+- The **whole** command of a tool is on that line.  A command that does
+  not fit the pane is **split** and takes the lines it needs — a path is
+  cut at the separator that fits, and the lines after the first one stand
+  under the text of the first one, so that a command that takes several
+  lines reads as one command.  Nothing of the command is cut away: the
+  part of a command that says what it does is the part that matters.
 - The **Tools** row names the tools the agent **really has**: the categories the
   operator selected with `--select` are named — `Operating System, System` — and the
   count says how the agent got the tools: `8 selected`, `134 loaded`, `156 indexed`.

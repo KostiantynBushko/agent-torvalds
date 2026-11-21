@@ -6,6 +6,53 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The command of a tool is shown whole
+
+- **The operator asked on 2026-11-20** for the whole command of a tool on
+  the screen of the *Workflow & Tool Progress* pane — and for the command to
+  be **split** when it does not fit on the screen:
+
+  > *✔ execute_shell_command (33ms) └ cd ~/projects/agent-torvalds &&*
+  > *such info is useless — can we print an entire command arguments? If an
+  > entire shell command does not fit the window size it must split it*
+
+- **The detail was cut at forty characters.**  `DETAIL_WIDTH = 40` was a
+  number of the source, and the pane is a third and a half of the width of
+  the terminal — 28 cells at 80 columns, 42 at 120, 56 at 160.  The cut
+  landed at an arbitrary place, and what it cut away —
+  `us --short && python -m pytest tests/ -x` — is the part of a command that
+  says what the command does.
+
+- **The command on the screen was not the command that ran.**  The detail
+  went into `Text.from_markup()` without being escaped, and Rich reads the
+  square brackets of a command as markup: the text between them was dropped.
+  `ls [abc] && echo "x" > out.txt` was shown as `ls  && echo "x" > out.txt`.
+  The defect was found while the cut was measured — it is the same defect:
+  the screen did not carry the command.
+
+- **The whole command is shown now, and it is split to the width of the
+  pane.**  A word that does not fit beside what is on the line goes on the
+  next one; a word that does not fit on a line of its own is cut, and a
+  **path** is cut at the separator that fits, so that the name of a folder is
+  not cut in the middle.  The spaces between the words are kept — a command
+  carries spaces that mean something — and only the spaces at the break of a
+  line are gone.  The lines after the first one are indented under the text
+  of the first one, so that a command that takes several lines reads as one
+  command.
+
+- **The pane knows how wide it is.**  `progress_pane_width()` computes the
+  width of the pane the way Rich divides the layout — the remainder of the
+  division is carried to the next column — and the check asks the **real**
+  layout for the region of the pane and compares it with the number that is
+  computed.  A Rich that divides its layout another way is caught by the
+  check, and not by a pane that splits its text in the wrong place.
+
+- **The evidence:** `tests/test_tui_progress_detail.py` — 24 tests — and
+  `investigate/tui-progress-full-command/`, the report and the probe, which
+  drives the real panel from the real state at the widths of the terminals
+  the operator uses.  The gate of the repository stays green: 40 known
+  failures, 0 new, 0 fixed.
+
 #### The text the agent gets is the text the operator wrote
 
 - **The operator withdrew the Shift+Enter on 2026-11-20.**  The bar carries

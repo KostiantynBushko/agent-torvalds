@@ -11,7 +11,8 @@ Constructs and manages the hierarchical Rich layout partitions:
 - Footer: Interactive non-blocking command bar and HITL confirmation dialog
 """
 import time
-from typing import Optional
+from fractions import Fraction
+from typing import List, Optional, Sequence
 
 from rich.console import Console
 from rich.layout import Layout
@@ -26,6 +27,19 @@ from components.tui.input_text import (
     visible_line_count,
     visible_window,
 )
+
+#: The share of the width of the body that the document pane takes.
+DOCUMENT_RATIO = 65
+
+#: The share of the width of the body that the sidebar takes.  The
+#: sidebar carries the progress pane above and the telemetry pane
+#: below it, and both of them are as wide as the sidebar is.
+SIDEBAR_RATIO = 35
+
+#: The smallest a column of the body may be.  Rich gives a column that
+#: would be narrower than this its minimum, and the repository divides
+#: the body the way Rich divides it.
+MINIMUM_COLUMN = 1
 
 #: The footer partition is three lines tall: a border, one line of
 #: content, a border.  The command bar needs exactly that -- and one
@@ -109,6 +123,77 @@ def input_text_width(
     return max(1, column - len(prompt))
 
 
+def _row_cells(total: int, ratios: Sequence[int]) -> List[int]:
+    """
+    The cells every column of a row takes, the way Rich divides a row.
+
+    Rich divides the width of a row with exact fractions and carries
+    the remainder of the division to the next column: the columns add
+    up to the whole width, and none of them is a cell short of its
+    share.  A column that would be narrower than the minimum gets the
+    minimum instead, and the rest of the row is divided again.
+
+    The repository divides its own body the same way, so that a pane
+    knows how many cells it has before the layout is drawn.
+
+    Args:
+        total: The number of cells the row has.
+        ratios: The share of every column of the row.
+
+    Returns:
+        The number of cells of every column of the row.
+    """
+    sizes: List[Optional[int]] = [None] * len(ratios)
+    while None in sizes:
+        flexible = [index for index, size in enumerate(sizes) if size is None]
+        remaining = total - sum(size or 0 for size in sizes)
+        if remaining <= 0:
+            # No room for the flexible columns: they get the minimum.
+            return [
+                MINIMUM_COLUMN if size is None else size for size in sizes
+            ]
+        portion = Fraction(remaining, sum(ratios[index] for index in flexible))
+        for index in flexible:
+            if portion * ratios[index] <= MINIMUM_COLUMN:
+                sizes[index] = MINIMUM_COLUMN
+                break
+        else:
+            # The remainder of the division is carried to the next
+            # column, and the columns add up to the whole width.
+            remainder = Fraction(0)
+            for index in flexible:
+                size, remainder = divmod(portion * ratios[index] + remainder, 1)
+                sizes[index] = size
+            break
+    return [int(size or 0) for size in sizes]
+
+
+def progress_pane_width(console_width: int) -> int:
+    """
+    The number of cells the progress pane has on the screen.
+
+    The pane is a third and a half of the width of the body, and the
+    body is as wide as the terminal.  The pane of the progress is
+    asked this number before the layout is drawn, so that the detail
+    of a tool is split to the width the pane really has.
+
+    The number is the one the layout really uses.  A check asks the
+    real layout for the region of the pane and compares it with this
+    number: a Rich that divides its layout another way is caught by
+    the check, and not by a pane that splits its text in the wrong
+    place.
+
+    Args:
+        console_width: The width of the terminal.
+
+    Returns:
+        The number of cells of the pane.
+    """
+    return _row_cells(max(0, int(console_width)), (DOCUMENT_RATIO, SIDEBAR_RATIO))[
+        1
+    ]
+
+
 def build_torvalds_layout() -> Layout:
     """
     Build the hierarchical Rich Layout for Torvalds Multi-Window Console.
@@ -137,8 +222,8 @@ def build_torvalds_layout() -> Layout:
 
     # Body horizontal division: Document Pane (65%) vs Sidebar (35%)
     root["body"].split_row(
-        Layout(name="markdown_pane", ratio=65),
-        Layout(name="sidebar", ratio=35),
+        Layout(name="markdown_pane", ratio=DOCUMENT_RATIO),
+        Layout(name="sidebar", ratio=SIDEBAR_RATIO),
     )
 
     # Sidebar vertical division: Background Progress (top) vs Telemetry (bottom)
