@@ -3,8 +3,8 @@
 **Date**: 2026-11-13
 **Branch**: `fix/tui-session-selection-background` (from `master`)
 **Status**: implemented, verified — **committed**.  The operator approved
-the commit on 2026-11-13, and the work is **PR #98**: `5df0ed0` (the
-choice of the session in the background) and `89fd3a7` (the buffer of the
+the commit on 2026-11-13, and the work is **PR #98**: `83e1115` (the
+choice of the session in the background) and `641fd6e` (the buffer of the
 agent, in one pass).
 **Companion to**: `investigation_tui_session_selection_background.md`,
 `PROPOSAL_tui_session_selection_background.md`,

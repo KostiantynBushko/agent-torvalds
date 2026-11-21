@@ -164,11 +164,16 @@ class TuiState:
             self.active_tool_args = tool_kwargs
             self._tool_counter += 1
 
+            # The detail is the **whole** path or command, not a cut
+            # of it: the view decides how much of it fits on the
+            # screen, and the screen hides the home of the operator
+            # before it cuts.  A cut here would leave half a home on
+            # the screen.
             details = ""
             if tool_name == "execute_shell_command":
-                details = tool_kwargs.get("command", "")[:40]
+                details = tool_kwargs.get("command", "")
             elif "file_path" in tool_kwargs:
-                details = tool_kwargs.get("file_path", "")[:40]
+                details = tool_kwargs.get("file_path", "")
 
             record = ToolExecutionRecord(
                 id=f"tool-{self._tool_counter}",

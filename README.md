@@ -334,7 +334,10 @@ describe.  A plain `git clone` leaves the directory empty;
   budget of the run it is a share of (`3/500`).  One iteration is one
   request to the model, and the number is on the screen while the model
   is still thinking — not only when it answers.  A new request starts
-  the count again, because a new request is a new run.
+  the count again, because a new request is a new run.  The line under
+  the name of the tool says what it works on, and the home of the
+  operator is hidden in it — the path is shown the way a shell writes it,
+  as `~/notes/todo.md`.
 - The **Tools** row names the tools the agent **really has**: the categories the
   operator selected with `--select` are named — `Operating System, System` — and the
   count says how the agent got the tools: `8 selected`, `134 loaded`, `156 indexed`.

@@ -4,7 +4,7 @@
 **Branch**: `fix/tui-terminal-size`
 **Status**: implemented, verified — **merged**.  The operator approved the
 commit and merged it as **PR #95**, which squash-merged the fix into
-`master` as `1f8c52e` on 2026-11-13.
+`master` as `58f7c26` on 2026-11-13.
 **Companion to**: `investigation_tui_selection_and_flicker.md`, `PROPOSAL_tui_terminal_size.md`
 
 ---

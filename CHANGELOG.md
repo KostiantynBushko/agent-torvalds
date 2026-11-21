@@ -873,6 +873,39 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+#### The import of one module of the agent does not cost a second
+
+- **A program that wanted one small module of the TUI paid for the whole
+  of llama_index.**  The reader of the terminal —
+  `components/tui/input_reader.py`, which needs nothing but the standard
+  library — cost **0.976 s** to import: **81 %** of the 1.2 s that the
+  helper of the multiline input test has for the reader to reach the
+  terminal before the keys are typed.
+
+- **The packages of the agent imported everything they had.**  The import
+  tree says it: `components.tui.input_reader` → `components.tui` →
+  `components` → `components.event_consumer` → `llama_index.core.workflow`.
+  The package of the components imported all five of its modules when it
+  was imported, and one of them carries the workflow engine of
+  llama_index — so *every* import of *any* module of the agent paid that
+  price.
+
+- **The modules are imported when a name of them is asked for now.**
+  `components/__init__.py` and `components/tui/__init__.py` carry a map
+  of the name to the module that holds it, and the `__getattr__` of a
+  module (PEP 562) imports that module when the name is asked for.  The
+  reader of the terminal costs **0.025 s** now — **2.1 %** of the budget
+  — and the margin of the test grows from **0.226 s** to **1.180 s**.
+
+- **The public API of the packages did not change.**  Both `__all__`
+  lists are byte-identical to the ones of `master`, and every name in
+  them resolves to the very same object the submodule carries.
+
+- **The evidence:** `investigate/import-cost-of-the-components/` — the
+  report, and `probe_import_cost.py`, which measures every import in a
+  fresh interpreter and prints the import tree.  The gate of the
+  repository stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The telemetry pane carries the icon of the progress pane
 
 - **The operator asked for it on 2026-11-19**, after the icons of the
@@ -1028,6 +1061,46 @@ All notable changes to this project are documented in this file.
   is not there.
 
 ### Fixed
+
+#### The home of the operator is not on the screen of the progress pane
+
+- **The operator asked on 2026-11-20** for the path of the agent to be
+  shown without the home of the operator:
+
+  > *the agent internally uses user home directory which is file but in
+  > the "Workflow & Tool Progress" window it must be shown as a "~/" … the
+  > path to user home folder can be used internally but should be hidden
+  > in TUI view*
+
+- **The line under the name of the tool carried the home in full.**  The
+  pane shows the tool that runs and what it works on, and the path was
+  shown as the tool was given it — `/home/<user>/notes/todo.md` on the
+  screen of the operator, on every path the agent touched below the home.
+
+- **The cut of the line was in the wrong place.**  The line was cut to
+  forty characters in the state — before the view ever saw it — and a cut
+  that lands inside the home leaves half of it on the screen:
+  `python -m pytest --rootdir=/home/<user>/p`.
+
+- **The hiding is in the view, and the state keeps the truth.**  The agent
+  works with the path of the machine — a tool cannot open `~/notes/todo.md`
+  — so the state carries the real path and the pane hides the home.  The
+  cut follows the hiding: the view decides how much of the line fits on
+  the screen, and it cuts what is left.
+
+- **The rule is in one place, and it is the same on every machine.**
+  `components/tui/path_display.py` — the home is a whole path component
+  (a folder that only starts like it is another folder, and it is left
+  alone), the separator behind it stays (the path keeps the spelling of
+  its own system — `~/notes` on Linux, `~\Documents` on Windows), and a
+  Windows home is hidden the same way: the spelling of the home travels
+  with the home, so the check does not need a Windows machine to run.
+
+- **The evidence:** `tests/test_tui_home_path.py` — 23 tests — and
+  `investigate/tui-home-path-in-progress/probe_home_path.py`, which renders
+  the real panel with the real state.  Three of the tests and six of the
+  checks of the probe fail against the old pane.  The gate of the
+  repository stays green: 40 known failures, 0 new, 0 fixed.
 
 #### The cursor of the command bar does not hang while an arrow key is held
 
@@ -2785,9 +2858,45 @@ All notable changes to this project are documented in this file.
 
   | | |
   |---|---|
-  | `investigate/tui-selection-and-flicker/IMPLEMENTATION_REPORT.md` | PR #95, `1f8c52e` |
-  | `investigate/tui-selection-and-flicker/README.md` | PR #95, `1f8c52e` |
-  | `investigate/tui-session-selection/IMPLEMENTATION_REPORT.md` | PR #96, `e031ebf` |
+  | `investigate/tui-selection-and-flicker/IMPLEMENTATION_REPORT.md` | PR #95, `58f7c26` |
+  | `investigate/tui-selection-and-flicker/README.md` | PR #95, `58f7c26` |
+  | `investigate/tui-session-selection/IMPLEMENTATION_REPORT.md` | PR #96, `a08693c` |
+
+### Tests
+
+#### The keys of the terminal were lost when the reader started late
+
+- **The gate of PR #105 went red on three tests of the command bar.**
+  `test_the_enter_key_is_still_the_enter_key`,
+  `test_the_reader_hands_over_the_paste_in_one_piece` and
+  `test_a_paste_that_never_closes_is_given_up_on` all reported an empty
+  list of keys on the CI runner — and passed on every machine that was
+  not busy.
+
+- **The reason was a race in the test itself, not in the reader.**  The
+  helper types into a pseudo-terminal after a fixed sleep of 1.2 seconds.
+  The reader in the child has to import the whole `components.tui`
+  package before it puts the terminal into cbreak mode, and that import
+  takes longer than 1.2 seconds on a loaded runner.  A byte that is typed
+  before the terminal is in cbreak mode is a line of text for the
+  terminal, and `tty.setcbreak()` throws the pending input away
+  (`TCSAFLUSH`) — so the keys were typed into a terminal that discarded
+  them, and the reader reported nothing at all.
+
+- **The keys are typed when the reader is ready.**  The child says
+  `READY` after `r.start()`, and the parent waits for it before it types.
+  The wait is bounded, so a child that never comes cannot hang the test.
+
+- **The reader itself is not changed.**  A terminal that throws the
+  pending input away when the TUI starts is the right behaviour — the
+  keys that were typed before the TUI came must not fire the commands of
+  the TUI.
+
+- **The evidence:** `tests/test_tui_multiline_input.py` — 45 tests — and
+  the new `test_the_keys_survive_a_reader_that_starts_late`, which makes
+  the reader start two seconds late and asks whether the key still
+  arrives.  The gate of the repository stays green: 40 known failures, 0
+  new, 0 fixed.
 
 ## [1.0.0] - 2026-10-29
 

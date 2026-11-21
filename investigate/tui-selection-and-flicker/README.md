@@ -9,7 +9,7 @@ whole screen blinks while a request is processed.
 **Status**: Investigated **and implemented** — see `IMPLEMENTATION_REPORT.md`.
 The change was on the branch `fix/tui-terminal-size`, and the operator
 approved the commit and merged it as **PR #95**, which squash-merged the
-fix into `master` as `1f8c52e` on 2026-11-13.
+fix into `master` as `58f7c26` on 2026-11-13.
 
 ---
 
