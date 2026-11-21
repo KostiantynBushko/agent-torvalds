@@ -137,6 +137,37 @@ All notable changes to this project are documented in this file.
   console, and `docs/tui/hotkeys.md`, the hot-keys of the TUI: the operator's
   guide in the first part, the design and the implementation in the second.
 
+#### The document pane carries the focus mark too
+
+- **The operator asked on 2026-11-22** for the focus mark on the markdown
+  document view:
+
+  > *I would like to have a focus mark on markdown document view as well,
+  > does it make sence?*
+
+  It makes sense — and the documentation had **already promised it**: §3 of
+  `docs/tui/hotkeys.md` says that the **document pane** is `blue` and
+  `bright_blue` when it is selected.  The implementation never kept that
+  promise: `MarkdownView.render()` was not even asked whether the pane had
+  the focus.  The two panes of the sidebar carried the marker `▶` and the
+  brighter border, and the document pane — the pane the operator reads the
+  most, and the pane the keys `PgUp`/`PgDn` scroll — carried **only** the
+  third of the three marks, the subtitle.
+
+- **The mark is the same mark.**  `FOCUS_MARKER` and `FOCUS_GAP` come from
+  `components/tui/hotkeys.py`, and the marker stands **in front of the icon**
+  of the pane, the way it stands in front of the icon of the progress pane
+  and in front of the icon of the telemetry pane.  The border of the document
+  pane is the brighter one of the two: `blue` → `bright_blue`, and
+  `yellow` → `bright_yellow` while the agent is busy.  The *content* is
+  never dimmed — a dimmed answer is an answer the operator cannot read.
+
+- **The evidence:** `tests/test_tui_pane_scroll.py` — 31 tests — four of
+  them for the document pane: the marker is there when the pane has the
+  focus, it is not there when the pane does not, the border of the focused
+  pane is the brighter one, and the marker stays **in front of the icon**.
+  The gate of the repository stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The command of a tool is shown whole
 
 - **The operator asked on 2026-11-20** for the whole command of a tool on

@@ -1400,7 +1400,9 @@ class TuiApp:
             default=max(10, self.console.height - 10),
         )
         markdown_panel = self.markdown_view.render(
-            self.state, max_height=self.state.document_height
+            self.state,
+            max_height=self.state.document_height,
+            focused=self.state.focus == hotkeys.FOCUS_DOCUMENT,
         )
         self.layout["markdown_pane"].update(markdown_panel)
 

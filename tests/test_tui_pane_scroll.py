@@ -45,6 +45,7 @@ from components.tui.layout_manager import (  # noqa: E402
     build_torvalds_layout,
     pane_content_height,
 )
+from components.tui.markdown_view import MarkdownView  # noqa: E402
 from components.tui.pane_scroll import PaneScroll  # noqa: E402
 from components.tui.progress_view import ProgressView  # noqa: E402
 from components.tui.state_bridge import TuiState  # noqa: E402
@@ -299,6 +300,52 @@ class TestTheFocus(unittest.TestCase):
         self.assertIsInstance(focused, Panel)
         self.assertNotEqual(focused.border_style, plain.border_style)
         self.assertIn("bright", str(focused.border_style))
+
+    def _render_document(self, state, focused):
+        """The document pane, drawn the way the operator sees it."""
+        console = Console(width=60, color_system=None)
+        view = MarkdownView(console)
+        panel = view.render(state, max_height=20, focused=focused)
+        lines = console.render_lines(panel, console.options.update(width=60))
+        return "\n".join("".join(s.text for s in line) for line in lines)
+
+    def test_the_focused_document_pane_carries_the_marker(self):
+        state = TuiState()
+
+        self.assertIn(
+            FOCUS_MARKER, self._render_document(state, focused=True)
+        )
+
+    def test_the_document_pane_that_is_not_focused_carries_no_marker(self):
+        state = TuiState()
+
+        self.assertNotIn(
+            FOCUS_MARKER, self._render_document(state, focused=False)
+        )
+
+    def test_the_border_of_the_focused_document_pane_is_brighter(self):
+        state = TuiState()
+        view = MarkdownView(Console(width=60))
+
+        focused = view.render(state, max_height=20, focused=True)
+        plain = view.render(state, max_height=20, focused=False)
+
+        self.assertNotEqual(focused.border_style, plain.border_style)
+        self.assertIn("bright", str(focused.border_style))
+
+    def test_the_marker_of_the_document_pane_stays_in_front_of_the_icon(self):
+        """The marker stands in front of the icon of the pane -- and the
+        icon is the first thing that is seen."""
+        state = TuiState()
+
+        drawn = self._render_document(state, focused=True)
+        title = next(line for line in drawn.splitlines() if FOCUS_MARKER in line)
+
+        self.assertLess(
+            title.index(FOCUS_MARKER),
+            title.index("\U0001f4c4"),
+            "the marker is behind the icon of the pane",
+        )
 
 
 class TestTheHiddenPane(unittest.TestCase):

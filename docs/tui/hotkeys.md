@@ -124,6 +124,13 @@ it can never be guessed:
    selected:       ▶  ⚡ Workflow & Tool Progress
    ```
 
+   The document pane carries it in front of its icon as well:
+
+   ```
+   not selected:      📄 Markdown Document Viewer
+   selected:       ▶  📄 Markdown Document Viewer
+   ```
+
 3. **the subtitle says where the operator is** — the scroll position of
    the pane, the way the document pane already says it:
    `▲ Line 6/21 │ ▼ 14 more (PgDn)`.
