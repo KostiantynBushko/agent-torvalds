@@ -116,8 +116,8 @@ def the_running_task_is_on_top(state: TuiState) -> bool:
     can spin on the wrong command.  The question is: **is the task
     that really runs the first one of the pane?**
     """
-    running = [task for task in state.tool_tasks if task.status == "running"]
-    done = [task for task in state.tool_tasks if task.status != "running"]
+    running = state.task_stack.running()
+    done = state.task_stack.done()
     if not running:
         return True
 
@@ -130,7 +130,7 @@ def the_running_task_is_on_top(state: TuiState) -> bool:
 
 def the_call_of(state: TuiState, tool_id: str) -> str:
     """The state of the record of the call with that id."""
-    for task in state.tool_tasks:
+    for task in state.task_stack.tasks:
         if getattr(task, "tool_id", "") == tool_id:
             return task.status
     return "(no record)"
@@ -143,8 +143,8 @@ def report(title: str, state: TuiState, truth: str = "") -> None:
     print("=" * 72)
     if truth:
         print(f"the truth: {truth}")
-    print("the records of the pane:")
-    for index, task in enumerate(state.tool_tasks):
+    print("the records of the pane, the newest on the top:")
+    for index, task in enumerate(state.task_stack.tasks):
         print(
             f"  {index}: {task.id:<10} {task.status:<10} {task.name} "
             f"({task.details})"
@@ -155,12 +155,12 @@ def report(title: str, state: TuiState, truth: str = "") -> None:
         print(f"  {line}")
     print()
 
-    running = [task for task in state.tool_tasks if task.status == "running"]
+    running = state.task_stack.running()
     for task in running:
-        position = state.tool_tasks.index(task)
+        position = state.task_stack.tasks.index(task)
         print(
             f"  -> the task that runs now is task {position} of "
-            f"{len(state.tool_tasks)}: {task.name} ({task.details})"
+            f"{len(state.task_stack)}: {task.name} ({task.details})"
         )
     if not running:
         print("  -> nothing is running.")
@@ -268,7 +268,7 @@ def the_verdicts() -> Tuple[bool, bool]:
     ):
         if not the_running_task_is_on_top(state):
             on_top = False
-        for task in state.tool_tasks:
+        for task in state.task_stack.tasks:
             if task.status == "running":
                 # A task that still spins after the run is over is a
                 # task that never reported: the state of the call and

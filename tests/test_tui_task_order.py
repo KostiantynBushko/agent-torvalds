@@ -15,14 +15,22 @@ and, on the same day, with the words of the decision:
     > please make sure the tool task grow down so that current executed
     > is always on top of the window
 
+and again, on the same day, with the words that say what the list is:
+
+    > the Recent Tool Task must be shown in the upside-down, so
+    > data structure that shows recent tool task must be stack and the
+    > current executed command must be on top of the window the previous
+    > task must be below currently runned task and so on
+
 What the tests hold together:
 
 * **the task that runs now is the first task of the pane** -- and it
   stays there while the operator scrolls the log;
-* **the tasks that are done are a log that grows down** -- the oldest
-  completion first, the newest at the bottom: "down" walks forward in
-  time, and a task that is done is appended at the bottom without
-  moving the tasks that were done before it;
+* **the tasks that are done are a stack** -- the newest completion on
+  the top, and the task that ran before it right below it: the recent
+  tool tasks are shown upside down;
+* **the stack grows down** -- a task that is done is pushed on the top
+  of the stack, and the tasks that were done before it go **down**;
 * **the result of a call closes its own record** -- the workflow runs
   the calls of a turn concurrently, and two calls of the same tool
   carry the same name;
@@ -151,7 +159,7 @@ class TestTheRunningTask(unittest.TestCase):
             "execute_shell_command", {"command": "the-one-that-runs"}
         )
 
-        drawn = the_pane(state, height=6)
+        drawn = the_pane(state, height=12)
 
         self.assertIn(
             "the-one-that-runs",
@@ -184,6 +192,9 @@ class TestTheRunningTask(unittest.TestCase):
         scroll = PaneScroll()
         the_pane(state, height=6, scroll=scroll)
 
+        # The end of the stack is the oldest task of the run: the
+        # window goes there, and the newest one is not on the screen
+        # any more.
         scroll.scroll_end()
         drawn = the_pane(state, height=6, scroll=scroll)
 
@@ -192,9 +203,17 @@ class TestTheRunningTask(unittest.TestCase):
             drawn,
             "the history took the task that runs now away from the top",
         )
+        # The pinned task stands above every line of the window.
+        _, anchors = ProgressView().content_lines(state, 46)
+        running = state.task_stack.running()[0].id
+        first_of_the_window = len(anchors) - len(scroll.anchors)
         self.assertLess(
-            the_line_of(drawn, "the-one-that-runs"),
-            the_line_of(drawn, "command-9"),
+            max(
+                index
+                for index, anchor in enumerate(anchors)
+                if anchor == running
+            ),
+            first_of_the_window,
             "the task that runs now is not on top of the window",
         )
 
@@ -232,8 +251,8 @@ class TestTheCallThatIsDone(unittest.TestCase):
 
         state.update_tool_end("execute_shell_command", "ok", tool_id="call-1")
 
-        first = state.tool_tasks[0]
-        second = state.tool_tasks[1]
+        first = state.task_stack.tasks[0]
+        second = state.task_stack.tasks[1]
         self.assertEqual(first.status, "completed")
         self.assertEqual(
             second.status,
@@ -252,8 +271,10 @@ class TestTheCallThatIsDone(unittest.TestCase):
 
         state.update_tool_end("execute_shell_command", "ok", tool_id="call-2")
 
-        self.assertEqual(state.tool_tasks[0].status, "running")
-        self.assertEqual(state.tool_tasks[1].status, "completed")
+        # The call that is done is pushed on the top of the stack: it
+        # is the newest one of the log.
+        self.assertEqual(state.task_stack.tasks[0].status, "completed")
+        self.assertEqual(state.task_stack.tasks[1].status, "running")
 
     def test_the_name_is_the_fallback_when_the_event_carries_no_id(self):
         """The events that carry no id are still closed by their name."""
@@ -262,7 +283,7 @@ class TestTheCallThatIsDone(unittest.TestCase):
 
         state.update_tool_end("read_file", "ok")
 
-        self.assertEqual(state.tool_tasks[0].status, "completed")
+        self.assertEqual(state.task_stack.tasks[0].status, "completed")
 
     def test_the_adapter_hands_the_id_of_the_call_over(self):
         """The id of the call is what the framework carries, and the
@@ -290,8 +311,8 @@ class TestTheCallThatIsDone(unittest.TestCase):
             )
         )
 
-        self.assertEqual(state.tool_tasks[0].status, "completed")
-        self.assertEqual(state.tool_tasks[1].status, "running")
+        self.assertEqual(state.task_stack.tasks[0].status, "completed")
+        self.assertEqual(state.task_stack.tasks[1].status, "running")
 
     def test_the_run_that_is_over_closes_the_tasks_that_still_run(self):
         """A task that spins on top of the pane for ever is a lie the
@@ -303,16 +324,16 @@ class TestTheCallThatIsDone(unittest.TestCase):
 
         state.set_busy(False)
 
-        self.assertEqual(state.tool_tasks[0].status, "error")
+        self.assertEqual(state.task_stack.tasks[0].status, "error")
         self.assertEqual(
-            [task for task in state.tool_tasks if task.status == "running"],
+            [task for task in state.task_stack.tasks if task.status == "running"],
             [],
             "a task still runs after the run is over",
         )
 
 
 class TestTheLog(unittest.TestCase):
-    """The tasks that are done are a log."""
+    """The tasks that are done are a stack."""
 
     def _state_with_three_finished_tasks(self) -> TuiState:
         state = TuiState()
@@ -323,22 +344,25 @@ class TestTheLog(unittest.TestCase):
             state.update_tool_end("execute_shell_command", "ok")
         return state
 
-    def test_the_oldest_task_is_first_and_the_newest_is_last(self):
+    def test_the_newest_task_is_first_and_the_oldest_is_last(self):
+        """The stack is upside down: the newest completion is the first
+        one, and the oldest is the last one."""
         state = self._state_with_three_finished_tasks()
 
         drawn = the_pane(state)
 
         self.assertLess(
-            the_line_of(drawn, "command-0"),
             the_line_of(drawn, "command-2"),
-            "the list of the tasks that are done is not a log",
+            the_line_of(drawn, "command-0"),
+            "the list of the tasks that are done is not a stack",
         )
 
     def test_the_list_grows_down(self):
-        """A task that is done is appended at the bottom of the list.
+        """A task that is done is pushed on the top of the stack.
 
-        The list grows down: the tasks that were done before it do not
-        move when the new one arrives.
+        The list grows down: the tasks that were done before it go
+        **down**, one line further down for every line the new task
+        takes.  The list never grows up.
         """
         state = TuiState()
         for index in range(3):
@@ -355,6 +379,7 @@ class TestTheLog(unittest.TestCase):
         scroll.height = 15
         ProgressView().render(state, width=60, scroll=scroll)
         before = list(scroll.anchors)
+        offset_before = scroll.offset_of_anchor(before[0])
 
         state.update_tool_start(
             "execute_shell_command",
@@ -367,20 +392,22 @@ class TestTheLog(unittest.TestCase):
         ProgressView().render(state, width=60, scroll=scroll)
         after = list(scroll.anchors)
 
-        self.assertGreater(
-            len(after),
-            len(before),
-            "the task that is done is not appended to the list",
-        )
         self.assertEqual(
+            after[len(after) - len(before):],
             before,
-            after[: len(before)],
             "the list does not grow down: the tasks that were done "
             "before it moved",
         )
+        self.assertGreater(
+            scroll.offset_of_anchor(before[0]),
+            offset_before,
+            "the list does not grow down: the tasks that were done "
+            "before it did not go down",
+        )
 
-    def test_the_log_is_the_order_of_what_happened(self):
-        """The task that is done **last** is the newest one."""
+    def test_the_newest_completion_is_the_first_one(self):
+        """The task that is done **last** is the newest one, and the
+        newest one is the first one of the stack."""
         state = TuiState()
         state.update_tool_start(
             "execute_shell_command",
@@ -399,9 +426,9 @@ class TestTheLog(unittest.TestCase):
         drawn = the_pane(state)
 
         self.assertLess(
-            the_line_of(drawn, "the-first-one"),
             the_line_of(drawn, "the-second-one"),
-            "the log is not in the order of what happened",
+            the_line_of(drawn, "the-first-one"),
+            "the stack is not in the order of what happened",
         )
 
 

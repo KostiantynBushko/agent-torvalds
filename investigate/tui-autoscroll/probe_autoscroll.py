@@ -7,34 +7,50 @@ execution of a command.
     > please make sure the tool task grow down so that current executed
     > is always on top of the window
 
+and, on the same day, with the words that say what the list is:
+
+    > the Recent Tool Task must be shown in the upside-down, so
+    > data structure that shows recent tool task must be stack and the
+    > current executed command must be on top of the window the previous
+    > task must be below currently runned task and so on
+
 The *Workflow & Tool Progress* pane carries the list of the tool tasks
 of the run.  The request is about **two** things at once:
 
-* the list **grows down** -- a task that is done is appended at the
-  bottom of the list, the tasks that were done before it do not move,
-  and "down" walks forward in time;
+* the recent tool tasks are shown **upside down** -- the structure that
+  carries them is a **stack**: the newest task is on the top of it, the
+  task that ran before it is right below it, and the one before that
+  is below that;
 * the task that **runs now is always on top of the window** -- the
   command that runs is the first thing on the screen, and it stays
   there while the operator scrolls the history.
 
-The pane answers both with two parts: the task that runs now is
-**pinned** above the window of the pane, and the window carries the
-list of the tasks that are done -- a log, the oldest completion first,
-the newest at the bottom -- and it is stuck to the tail of that log.
+The pane answers both with three parts: the task that runs now is
+**pinned** above the window of the pane, the window carries the
+**stack** of the tasks that are done -- the newest completion first --
+and the window is stuck to the **top** of that stack, which is the
+current position of the work.
 
-The probe answers five questions:
+The stack grows **down**: a task that is done is pushed on the top of
+the stack, and the tasks that were done before it go down, one line
+further down for every line the new task takes.
+
+The probe answers six questions:
 
   1. **Is the task that runs now on top of the pane?**
 
   2. **Does it stay on top while the operator scrolls the history?**
 
-  3. **Does the list of the tasks grow down?**
+  3. **Is the task that ran before it directly below it?**
 
-  4. **Is the window at the current position?**  The newest completion
-     is on the screen, and the window follows it while the work goes
-     on.
+  4. **Does the list grow down?**  A task that is done goes on the top
+     of the stack, and the tasks that were done before it go down.
 
-  5. **Does the window keep the place of the operator?**  The operator
+  5. **Is the window at the current position?**  The newest completion
+     is on the screen, at the top of the window, and the window
+     follows it while the work goes on.
+
+  6. **Does the window keep the place of the operator?**  The operator
      who scrolled away keeps the task he is reading.
 
 Usage:
@@ -145,7 +161,7 @@ def the_line_of(drawn: str, needle: str) -> int:
 
 
 def a_state_with_a_long_log(tasks: int = 12) -> TuiState:
-    """A state whose list of the tasks that are done is longer than the pane.
+    """A state whose stack of the tasks that are done is longer than the pane.
 
     Args:
         tasks: The number of the tasks that are done.
@@ -176,38 +192,49 @@ def the_id_of_the_task(state: TuiState, command: str) -> str:
     Returns:
         The id of the task, and an empty string when there is none.
     """
-    for task in state.tool_tasks:
+    for task in state.task_stack.tasks:
         if command in task.details:
             return task.id
     return ""
 
 
-def the_done_tasks_above(state: TuiState, anchor: str) -> int:
-    """The number of the lines of the tasks that are done above a task.
+def the_lines_of_the_task(state: TuiState, task_id: str) -> List[int]:
+    """The lines of the content that belong to a task.
 
-    The count is the measure of the **growth** of the list: a list
-    that grows down keeps the count, and a list that grows up -- the
-    newest completion first -- pushes the tasks that were done before
-    it further down.
+    The anchor of a line is the id of the task the line belongs to, so
+    the lines of a task are found without guessing.
 
     Args:
         state: The state of the TUI.
-        anchor: The id of the task to count above.
+        task_id: The id of the task.
 
     Returns:
-        The number of the lines of the tasks that are done above it.
+        The numbers of the lines of the task.
+    """
+    _, anchors = ProgressView().content_lines(state, 46)
+    return [
+        index for index, anchor in enumerate(anchors) if anchor == task_id
+    ]
+
+
+def the_offset_of_the_task(state: TuiState, task_id: str) -> int:
+    """The number of the line of the window that carries the task.
+
+    The window is the stack of the tasks that are done.  The offset of
+    a task is the measure of where it stands in it: a task that goes
+    **down** has a bigger offset.
+
+    Args:
+        state: The state of the TUI.
+        task_id: The id of the task.
+
+    Returns:
+        The offset of the task, and -1 when it is not on the screen.
     """
     scroll = state.scroll_of("progress")
-    done = {
-        task.id
-        for task in state.tool_tasks
-        if task.status != "running"
-    }
-    if not scroll.anchors or anchor not in scroll.anchors:
+    if not scroll.anchors or task_id not in scroll.anchors:
         return -1
-
-    index = scroll.anchors.index(anchor)
-    return sum(1 for value in scroll.anchors[:index] if value in done)
+    return scroll.anchors.index(task_id)
 
 
 # ---------------------------------------------------------------------------
@@ -273,12 +300,54 @@ def check_it_stays_on_top_while_the_operator_scrolls() -> Tuple[bool, str]:
     return on_top, report
 
 
+def check_the_previous_task_is_below_the_running_one() -> Tuple[bool, str]:
+    """The task that ran before it is right below it.
+
+    The recent tool tasks are shown upside down: the newest completion
+    is the first one of the stack, and the task that ran before it is
+    right below the task that runs now.
+
+    Returns:
+        Whether the check holds, and the report of the measurement.
+    """
+    state = TuiState()
+    for index in range(3):
+        state.update_tool_start(
+            "execute_shell_command",
+            {"command": f"the-done-command-{index}"},
+            tool_id=f"done-{index}",
+        )
+        state.update_tool_end(
+            "execute_shell_command", "ok", tool_id=f"done-{index}"
+        )
+    state.update_tool_start(
+        "execute_shell_command", {"command": SHORT_COMMAND}, tool_id="run-1"
+    )
+    the_pane_of(state)
+
+    running = state.task_stack.running()[0].id
+    previous = state.task_stack.done()[0].id
+    running_lines = the_lines_of_the_task(state, running)
+    previous_lines = the_lines_of_the_task(state, previous)
+
+    directly_below = bool(running_lines and previous_lines) and (
+        min(previous_lines) == max(running_lines) + 1
+    )
+    report = (
+        f"the task that ran before is right below the one that runs: "
+        f"{directly_below}\n"
+        f"  the lines of the task that runs: {running_lines}\n"
+        f"  the lines of the task that ran before: {previous_lines}"
+    )
+    return directly_below, report
+
+
 def check_the_list_grows_down() -> Tuple[bool, str]:
     """The list of the tasks grows down.
 
-    A task that is done is appended at the bottom of the list, and the
-    tasks that were done before it do not move: the list grows down,
-    and "down" walks forward in time.
+    A task that is done is pushed on the top of the stack, and the
+    tasks that were done before it go **down** -- one line further
+    down for every line the new task takes.  The list never grows up.
 
     Returns:
         Whether the check holds, and the report of the measurement.
@@ -296,10 +365,10 @@ def check_the_list_grows_down() -> Tuple[bool, str]:
     the_pane_of(state)
 
     anchor = the_id_of_the_task(state, "the-done-command-0")
-    before = the_done_tasks_above(state, anchor)
+    before = the_offset_of_the_task(state, anchor)
 
-    # A new task runs and is done: it is appended at the bottom of the
-    # list, and the task that was done before it does not move.
+    # A new task runs and is done: it is pushed on the top of the
+    # stack, and the task that was done before it goes down.
     state.update_tool_start(
         "execute_shell_command", {"command": "the-newest-command"},
         tool_id="new-1",
@@ -307,21 +376,25 @@ def check_the_list_grows_down() -> Tuple[bool, str]:
     state.update_tool_end("execute_shell_command", "ok", tool_id="new-1")
     the_pane_of(state)
 
-    after = the_done_tasks_above(state, anchor)
-    grows_down = before == after and before != -1
+    after = the_offset_of_the_task(state, anchor)
+    newest = the_id_of_the_task(state, "the-newest-command")
+    scroll = state.scroll_of("progress")
+    on_top = bool(newest) and bool(scroll.anchors) and scroll.anchors[0] == newest
+    grows_down = before != -1 and after > before
 
     report = (
         f"the list of the tasks grows down: {grows_down}\n"
-        f"  the lines of the done tasks above the first one: "
-        f"{before} before, {after} after"
+        f"  the offset of the task that was done first: {before} before, "
+        f"{after} after\n"
+        f"  the new task is on the top of the stack: {on_top}"
     )
-    return grows_down, report
+    return grows_down and on_top, report
 
 
 def check_the_window_is_at_the_current_position() -> Tuple[bool, str]:
     """The window is at the current position of the work.
 
-    The window is stuck to the tail of the log: the newest completion
+    The window is stuck to the top of the stack: the newest completion
     is on the screen, and the window follows it while the work goes on.
 
     Returns:
@@ -337,13 +410,23 @@ def check_the_window_is_at_the_current_position() -> Tuple[bool, str]:
     the_pane_of(state)
 
     window = "\n".join(scroll.window())
-    at_the_position = "the-old-command-11" in window
+    newest = state.task_stack.done()[0]
+    # The detail of a command is split over several lines, and the
+    # whole of it is never on one line: the first word of it is what
+    # the operator reads.
+    words = newest.details.split()
+    head = words[0] if words else ""
+    at_the_position = (
+        newest.id in scroll.anchors
+        and scroll.anchors.index(newest.id) == 0
+        and scroll.offset == 0
+        and head in window
+    )
     report = (
         f"the window is at the current position: {at_the_position}\n"
         f"  the offset of the window: {scroll.offset} of "
         f"{scroll.total_lines} lines\n"
-        f"  the newest completion is on the screen: "
-        f"{'the-old-command-11' in window}"
+        f"  the newest completion is on the screen: {head in window}"
     )
     return at_the_position, report
 
@@ -414,6 +497,8 @@ def main() -> int:
          check_the_task_that_runs_now_is_on_top_of_the_pane),
         ("the task that runs now stays on top while the operator scrolls",
          check_it_stays_on_top_while_the_operator_scrolls),
+        ("the task that ran before is right below the one that runs",
+         check_the_previous_task_is_below_the_running_one),
         ("the list of the tasks grows down",
          check_the_list_grows_down),
         ("the window is at the current position",

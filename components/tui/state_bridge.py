@@ -24,6 +24,12 @@ from components.tui.pane_scroll import PaneScroll
 
 logger = logging.getLogger(__name__)
 
+#: How many tasks the stack of the run keeps.  The oldest one falls
+#: off the bottom of the stack when the stack is full: the pane shows
+#: six of them, and the rest of the stack is the history the operator
+#: scrolls.
+MAX_TOOL_TASKS = 15
+
 
 @dataclass
 class ToolExecutionRecord:
@@ -44,6 +50,162 @@ class ToolExecutionRecord:
     details: str = ""
     error_message: str = ""
     tool_id: str = ""
+
+
+class TaskStack:
+    """
+    The stack of the tasks of the run.
+
+    The stack is the structure that shows the **recent tool tasks**.
+    The newest task is on the top, and a task that is done is pushed
+    on the top of it: the task that ran before it is below it now, and
+    the one before that is below that.
+
+    The operator asked for the stack on 2026-11-22 -- the recent tool
+    tasks are shown **upside down**:
+
+    > the Recent Tool Task must be shown in the upside-down, so
+    > data structure that shows recent tool task must be stack and the
+    > current executed command must be on top of the window the previous
+    > task must be below currently runned task and so on
+
+    The stack grows **down** on the screen: a task that is done is
+    pushed on the top of the list, and the tasks that were done before
+    it go down -- one line further down for every line the new task
+    takes.  The list never grows up.
+
+    Args:
+        limit: The number of the tasks the stack keeps.  The oldest one
+            falls off the bottom of the stack when it is full.
+    """
+
+    def __init__(self, limit: int = MAX_TOOL_TASKS) -> None:
+        self._tasks: List[ToolExecutionRecord] = []
+        self._limit = max(1, int(limit))
+
+    # -- the stack ----------------------------------------------------
+
+    def push(self, record: ToolExecutionRecord) -> None:
+        """A task starts: it goes on the top of the stack.
+
+        Args:
+            record: The record of the task.
+        """
+        self._tasks.insert(0, record)
+        self._drop_the_oldest()
+
+    def complete(self, record: ToolExecutionRecord) -> None:
+        """A task is done: it is pushed on the top of the stack.
+
+        The task is the newest one of the log -- the task that ran
+        before it is below it now.
+
+        Args:
+            record: The record of the task.
+        """
+        if not self._remove(record):
+            return
+        self._tasks.insert(0, record)
+        self._drop_the_oldest()
+
+    def _remove(self, record: ToolExecutionRecord) -> bool:
+        """Take a record out of the stack.
+
+        The record is found by its **identity** and not by its value:
+        two records of two calls of the same tool carry the same values
+        as long as the id is not read, and the wrong one would go.
+
+        Args:
+            record: The record to take out.
+
+        Returns:
+            True when the record was on the stack.
+        """
+        for index, other in enumerate(self._tasks):
+            if other is record:
+                del self._tasks[index]
+                return True
+        return False
+
+    def _drop_the_oldest(self) -> None:
+        """The oldest tasks fall off the bottom of the stack."""
+        while len(self._tasks) > self._limit:
+            self._tasks.pop()
+
+    # -- the reading --------------------------------------------------
+
+    @property
+    def tasks(self) -> List[ToolExecutionRecord]:
+        """The whole stack, the newest task first."""
+        return list(self._tasks)
+
+    def running(self) -> List[ToolExecutionRecord]:
+        """The tasks that run now."""
+        return [task for task in self._tasks if task.status == "running"]
+
+    def done(self) -> List[ToolExecutionRecord]:
+        """The tasks that are done, the newest completion first."""
+        return [task for task in self._tasks if task.status != "running"]
+
+    def find_running(
+        self,
+        tool_name: str,
+        tool_id: str = "",
+    ) -> Optional[ToolExecutionRecord]:
+        """The record of the call that runs.
+
+        The id of the call is the truth: the workflow runs the calls of
+        a turn concurrently, and two calls of the same tool carry the
+        same name.  The name is the fallback, for the events that carry
+        no id.
+
+        The stack is walked from the top: the call that started last is
+        the one on the top of it.
+
+        Args:
+            tool_name: The name of the tool.
+            tool_id: The id of the call in the workflow.
+
+        Returns:
+            The record of the call, or ``None`` when the call is not on
+            the screen any more.
+        """
+        if tool_id:
+            for record in self._tasks:
+                if record.tool_id == tool_id and record.status == "running":
+                    return record
+        for record in self._tasks:
+            if record.name == tool_name and record.status == "running":
+                return record
+        return None
+
+    def close_the_running(self) -> None:
+        """Close the tasks that still run when the run is over.
+
+        A task that never reported is closed, and it is pushed on the
+        top of the stack: it is the newest completion of the run, and
+        the stack keeps the newest one on the top.
+        """
+        now = time.time()
+        running = [
+            record for record in self._tasks if record.status == "running"
+        ]
+        # The oldest task first, so that the newest of them ends on the
+        # top of the stack.
+        for record in sorted(running, key=lambda item: item.start_time):
+            record.status = "error"
+            record.end_time = now
+            record.duration_ms = (now - record.start_time) * 1000
+            record.error_message = "the run was over before it reported"
+            self.complete(record)
+
+    def __len__(self) -> int:
+        """The number of the tasks on the stack."""
+        return len(self._tasks)
+
+    def __iter__(self):
+        """The tasks of the stack, the newest first."""
+        return iter(list(self._tasks))
 
 
 class TuiState:
@@ -80,7 +242,11 @@ class TuiState:
         #: budget when the agent is built, and it tells it again with
         #: every iteration of the run.
         self.max_iterations: int = 0
-        self.tool_tasks: List[ToolExecutionRecord] = []
+        #: The **stack** of the tasks of the run.  The newest task is
+        #: on the top of it: the recent tool tasks are shown upside
+        #: down, and the command that runs now is on top of the window
+        #: with the task that ran before it right below it.
+        self.task_stack: TaskStack = TaskStack()
         self._tool_counter: int = 0
 
         # Telemetry & metrics state
@@ -220,14 +386,7 @@ class TuiState:
 
     def _close_the_tasks_that_run(self) -> None:
         """Close the tasks that still run when the run is over."""
-        now = time.time()
-        for record in self.tool_tasks:
-            if record.status != "running":
-                continue
-            record.status = "error"
-            record.end_time = now
-            record.duration_ms = (now - record.start_time) * 1000
-            record.error_message = "the run was over before it reported"
+        self.task_stack.close_the_running()
 
     def update_tool_start(
         self,
@@ -269,10 +428,10 @@ class TuiState:
                 details=details,
                 tool_id=str(tool_id or ""),
             )
-            self.tool_tasks.append(record)
-            # Keep history bounded to last 15 tool executions
-            if len(self.tool_tasks) > 15:
-                self.tool_tasks.pop(0)
+            # The task goes on the top of the stack: the newest task is
+            # the first one, and the oldest one falls off the bottom of
+            # the stack when it is full.
+            self.task_stack.push(record)
 
     def update_tool_end(
         self,
@@ -300,44 +459,19 @@ class TuiState:
                 self.active_tool = None
 
             now = time.time()
-            record = self._the_record_of(tool_name, tool_id)
+            record = self.task_stack.find_running(tool_name, tool_id)
             if record is not None:
                 record.status = "error" if is_error else "completed"
                 record.end_time = now
                 record.duration_ms = (now - record.start_time) * 1000
                 if is_error:
                     record.error_message = result[:60]
+                # The task that is done is the newest one of the log:
+                # it is pushed on the top of the stack, and the tasks
+                # that were done before it go down.
+                self.task_stack.complete(record)
 
             self.total_tool_calls += 1
-
-    def _the_record_of(
-        self,
-        tool_name: str,
-        tool_id: str = "",
-    ) -> Optional[ToolExecutionRecord]:
-        """The record of the call that is done.
-
-        The id of the call is the truth: the workflow runs the calls of
-        a turn concurrently, and two calls of the same tool carry the
-        same name.  The name is the fallback, for the events that carry
-        no id.
-
-        Args:
-            tool_name: The name of the tool.
-            tool_id: The id of the call in the workflow.
-
-        Returns:
-            The record of the call, or ``None`` when the call is not
-            on the screen any more.
-        """
-        if tool_id:
-            for record in reversed(self.tool_tasks):
-                if record.tool_id == tool_id and record.status == "running":
-                    return record
-        for record in reversed(self.tool_tasks):
-            if record.name == tool_name and record.status == "running":
-                return record
-        return None
 
     def append_stream_token(self, token: str) -> None:
         """Append streaming LLM token to markdown content."""

@@ -12,18 +12,24 @@ and, on the same day, with the words of the decision:
     > please make sure the tool task grow down so that current executed
     > is always on top of the window
 
+and again, on the same day, with the words that say what the list is:
+
+    > the Recent Tool Task must be shown in the upside-down, so
+    > data structure that shows recent tool task must be stack and the
+    > current executed command must be on top of the window the previous
+    > task must be below currently runned task and so on
+
 What the tests hold together:
 
 * **the task that runs now is the head of the pane** -- the command
   that runs is the first thing on the screen, above the commands that
   are done, and it is **pinned**: it stays there while the operator
   scrolls the history;
-* **the window is at the current position** -- it follows the tail of
-  the log, so the newest completion is on the screen, and it is there
-  while the work goes on;
-* **the list grows down** -- a task that is done is appended at the
-  bottom of the list, and the tasks that were done before it do not
-  move;
+* **the window is at the current position** -- it follows the **top**
+  of the stack, so the newest completion is on the screen, and it is
+  there while the work goes on;
+* **the list grows down** -- a task that is done is pushed on the top
+  of the stack, and the tasks that were done before it go **down**;
 * **the operator who scrolled away keeps the task he is reading** --
   the anchor holds his place while the work goes on;
 * **the whole of the log is reachable** -- the keys of the pane reach
@@ -196,6 +202,9 @@ class TestTheCurrentPosition(unittest.TestCase):
         scroll = PaneScroll()
         the_window(state, scroll=scroll)
 
+        # The end of the stack is the oldest task of the run: the
+        # window goes there, and the newest one is not on the screen
+        # any more.
         scroll.scroll_end()
         drawn = the_pane(state, scroll=scroll)
 
@@ -204,16 +213,24 @@ class TestTheCurrentPosition(unittest.TestCase):
             drawn,
             "the history took the task that runs now away from the top",
         )
+        # The pinned task stands above every line of the window.
+        _, anchors = ProgressView().content_lines(state, 46)
+        running = state.task_stack.running()[0].id
+        first_of_the_window = len(anchors) - len(scroll.anchors)
         self.assertLess(
-            the_line_of(drawn, "the-one-that-runs"),
-            the_line_of(drawn, "the-done-command-5"),
-            "the task that runs now is not on top of the pane",
+            max(
+                index
+                for index, anchor in enumerate(anchors)
+                if anchor == running
+            ),
+            first_of_the_window,
+            "the task that runs now is not on top of the window",
         )
 
     def test_the_window_is_at_the_current_position(self):
-        """The window is stuck to the tail of the log.
+        """The window is stuck to the top of the stack.
 
-        The tail of the log is the newest completion: it is the
+        The top of the stack is the newest completion: it is the
         current position of the work, and it is on the screen.
         """
         state = a_state_with_done_tasks(3)
@@ -227,13 +244,13 @@ class TestTheCurrentPosition(unittest.TestCase):
         )
         self.assertEqual(
             scroll.offset,
-            scroll.maximum_offset,
+            0,
             "the window is not at the current position",
         )
 
     def test_the_window_stays_at_the_current_position_while_a_command_runs(self):
         """The list grows while a command runs -- and the window follows
-        the tail of it."""
+        the top of it."""
         state = a_state_with_done_tasks(3)
         scroll = PaneScroll()
         the_window(state, scroll=scroll)
@@ -249,18 +266,20 @@ class TestTheCurrentPosition(unittest.TestCase):
             "\n".join(window),
             "the window did not scroll into the current position",
         )
-        self.assertEqual(scroll.offset, scroll.maximum_offset)
+        self.assertEqual(scroll.offset, 0)
 
 
 class TestTheGrowth(unittest.TestCase):
     """The list of the tasks grows down."""
 
-    def test_a_task_that_is_done_is_appended_at_the_bottom(self):
-        """The list grows down: the tasks above do not move."""
+    def test_a_task_that_is_done_is_pushed_on_the_top(self):
+        """The list grows down: the tasks that were done before it go
+        down, and the new one is right below the task that runs now."""
         state = a_state_with_done_tasks(3)
         scroll = PaneScroll()
         the_window(state, scroll=scroll)
         before = list(scroll.anchors)
+        offset_before = scroll.offset_of_anchor(before[0])
 
         state.update_tool_start(
             "execute_shell_command",
@@ -271,30 +290,31 @@ class TestTheGrowth(unittest.TestCase):
         window, scroll = the_window(state, scroll=scroll)
         after = list(scroll.anchors)
 
-        self.assertGreater(
-            len(after),
-            len(before),
-            "the task that is done is not appended to the list",
-        )
         self.assertEqual(
+            after[len(after) - len(before):],
             before,
-            after[: len(before)],
             "the list does not grow down: the tasks that were done "
             "before it moved",
         )
+        self.assertGreater(
+            scroll.offset_of_anchor(before[0]),
+            offset_before,
+            "the list does not grow down: the tasks that were done "
+            "before it did not go down",
+        )
 
-    def test_the_order_of_the_log_is_the_order_of_what_happened(self):
-        """The oldest completion is the first one, the newest is the
-        last one: "down" walks forward in time."""
+    def test_the_newest_completion_is_the_first_one(self):
+        """The newest completion is the first one and the oldest is the
+        last one: the recent tool tasks are shown upside down."""
         state = a_state_with_done_tasks(3)
 
         window, _ = the_window(state)
         drawn = "\n".join(window)
 
         self.assertLess(
-            drawn.index("the-done-command-0"),
             drawn.index("the-done-command-2"),
-            "the log is not in the order of what happened",
+            drawn.index("the-done-command-0"),
+            "the stack is not in the order of what happened",
         )
 
 
@@ -326,8 +346,10 @@ class TestTheOperator(unittest.TestCase):
         """The keys of the pane reach the tasks that are not on the
         screen.
 
-        The log carries the newest tasks that are done -- six of them
+        The stack carries the newest tasks that are done -- six of them
         -- and the window of the pane shows a few of them at a time.
+        The older tasks are **below** the newest one, and the key that
+        walks down the window reaches them.
         """
         state = a_state_with_done_tasks(6)
         scroll = PaneScroll()
@@ -338,7 +360,7 @@ class TestTheOperator(unittest.TestCase):
             for line in scroll.window():
                 if "the-done-command-" in line:
                     seen.add(line.strip())
-            scroll.scroll_up(1)
+            scroll.scroll_down(1)
 
         self.assertEqual(
             len(seen),

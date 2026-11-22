@@ -163,7 +163,7 @@ The document pane has the focus at the start, and `Up`/`Down` scroll it
 therefore.  `Esc` gives the focus back to the command bar, and the
 history of the input is there again.
 
-### The progress pane is a log under the command that runs now
+### The progress pane is a stack under the command that runs now
 
 **The task that runs now is on top of the pane.**  It is drawn above
 the window of the pane, so the operator sees the command that runs
@@ -174,22 +174,28 @@ above it — and he asked for it again on the same day: *please make
 sure the tool task grow down so that current executed is always on top
 of the window*.)
 
-The list of the tasks that are **done** reads **oldest first, newest
-at the bottom**, and the window sticks to the bottom.  The list
-**grows down**: a task that is done is appended at the bottom of it,
-and the tasks that were done before it do not move.
+The list of the tasks that are **done** is a **stack**: the newest
+completion is on the top of it, and the task that ran before it is
+right below it.  The list **grows down**: a task that is done is pushed
+on the top of the stack, and the tasks that were done before it go
+down.  The window sticks to the **top** of the stack — the current
+position of the work — and the newest completion is on the screen.
 
-`PgUp` walks back into the history, `PgDn` comes forward.
+`PgUp` walks back into the history, `PgDn` comes forward.  `Home` goes
+to the current position and `End` to the oldest task of the run: the
+list is upside down, and its end is the far end of the history.
 
 **The window keeps the operator where he is.**  When a new tool task
-arrives while the operator has scrolled up, the window does not jump: it
-keeps the task the operator is reading.  The operator who has not
+arrives while the operator has scrolled away, the window does not jump:
+it keeps the task the operator is reading.  The operator who has not
 scrolled keeps the newest task.
 
-> The pane used to list the **newest** task first, which made "down" walk
-> *into the past* — the opposite of every scrollable thing the operator
-> knows.  The list became a log; §16.1 records the decision and how to
-> reverse it.
+> The recent tool tasks are shown **upside down**: the operator asked
+> for it on 2026-11-22, later on the same day — *the Recent Tool Task
+> must be shown in the upside-down, so data structure that shows recent
+> tool task must be stack and the current executed command must be on
+> top of the window the previous task must be below currently runned
+> task and so on*.  §16.1 records the decision and how to reverse it.
 
 ## 5. Hiding a pane
 
@@ -1037,28 +1043,40 @@ adds **0 new** failures and fixes **0**.
 ## 16. The decisions
 
 **16.1 The direction of the scroll in the progress pane.**  *Decided
-2026-11-22: the list of the tasks grows down, and the task that runs
-now is pinned on top of the pane.*
+2026-11-22: the recent tool tasks are shown upside down, the task that
+runs now is pinned on top of the pane, and the task that ran before it
+is right below it.*
 
 The operator asked on 2026-11-22:
 
     > please make sure the tool task grow down so that current executed
     > is always on top of the window
 
-Two things are asked for at once, and the pane answers both:
+and again, later on the same day, with the words that say what the list
+is:
 
-* the list of the tasks **grows down** — a task that is done is
-  **appended** at the bottom of the list, the tasks that were done
-  before it do not move, and "down" walks forward in time, the way it
-  does in every scrollable thing the operator knows;
+    > the Recent Tool Task must be shown in the upside-down, so
+    > data structure that shows recent tool task must be stack and the
+    > current executed command must be on top of the window the previous
+    > task must be below currently runned task and so on
+
+Three things are asked for at once, and the pane answers all three:
+
+* the recent tool tasks are shown **upside down** — the structure that
+  carries them is a **stack**: the newest completion is on the top of
+  it, the task that ran before it is right below it, and the one before
+  that is below that;
+* the list **grows down** — a task that is done is **pushed** on the
+  top of the stack, and the tasks that were done before it go down, one
+  line further down for every line the new task takes;
 * the task that **runs now is always on top of the window** — the
   command that runs is the first thing on the screen, and it stays
   there while the operator scrolls the history.
 
 **The task that runs now is pinned.**  It is drawn **above** the window
 of the pane, outside it, and the history that the operator scrolls
-cannot take it away.  The window below it is the log of the tasks that
-are done, and it is stuck to the tail of that log: the newest
+cannot take it away.  The window below it is the stack of the tasks
+that are done, and it is stuck to the **top** of that stack: the newest
 completion is on the screen, and the window scrolls there by itself
 while a command runs.  (The operator asked for that too, on the same
 day: *Recent Tool Tasks must scroll automatically into current position
@@ -1066,18 +1084,20 @@ during command execution*.)
 
 **The price: the tail of a command that is taller than the pane is out
 of reach.**  The pinned task is drawn outside the window, and the keys
-of the pane scroll the log and not the pinned task.  The whole of the
+of the pane scroll the stack and not the pinned task.  The whole of the
 command is in the chat history of the session.
 
-*The road that was not taken:* the list written **newest first**, with
-the task that runs now as its head and the window following that head.
-It was measured — `investigate/tui-autoscroll/` — and the operator
-rejected it: the list grew **up**, and the task that runs now was
-carried by the window, so the history could take it away.
+*The road that was not taken:* the task that runs now inside the list,
+as its head, with the window following that head.  It was measured —
+`investigate/tui-autoscroll/` — and it failed on the one thing that
+matters: the task that runs now was carried by the window, so the
+history could take it away.  The tasks that are **done** are newest
+first all the same; the task that runs now is not one of them.
 
-*To reverse it:* the order of the task list in `progress_view.py` — the
-log becomes newest first — and the pinned task goes into the window of
-the pane.
+*To reverse it:* the order of the stack in `state_bridge.py` — the
+tasks that are done are pushed on the **bottom** of it instead of the
+top — and the window of the pane is stuck to the bottom of it instead
+of the top.
 
 **16.2 The keys of the focus.**  *Decided: `Tab` and `Shift+Tab`, with the
 cycle wrapping around.*  `Tab` is the most discoverable key there is, it

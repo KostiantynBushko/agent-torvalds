@@ -179,7 +179,7 @@ def main() -> int:
 
     print("the state keeps the truth")
     state = a_state_with_a_file_under_the_home()
-    details = state.tool_tasks[-1].details
+    details = state.task_stack.tasks[0].details
     print(f"   the state carries: {details}")
     if HOME not in details:
         failures.append(

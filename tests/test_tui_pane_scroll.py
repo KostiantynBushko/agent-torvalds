@@ -13,11 +13,11 @@ What the tests hold together:
 * **the anchor keeps the operator where he is** -- a new task that
   arrives while the operator is reading an old one does not move his
   window;
-* **the window follows the end of the log** -- the operator who has
-  not scrolled keeps the newest task, and the running task is the last
-  line on the screen;
-* **the list is a log** -- the oldest task first, and the newest at the
-  bottom;
+* **the window follows the current position of the list** -- the
+  operator who has not scrolled keeps the newest task, and the running
+  task is the first line on the screen;
+* **the list of the tasks is a stack** -- the newest task first, and the
+  oldest at the bottom: the recent tool tasks are shown upside down;
 * **the hidden pane leaves the layout**, and its sibling takes the
   space;
 * **the pane that has the focus is marked** -- a brighter border and
@@ -208,8 +208,13 @@ class TestTheProgressPane(unittest.TestCase):
             state.update_tool_end("execute_shell_command", "ok")
         return state
 
-    def test_the_list_of_the_tasks_is_a_log(self):
-        """The oldest task first, and the newest at the bottom."""
+    def test_the_list_of_the_tasks_is_a_stack(self):
+        """The newest task first, and the oldest at the bottom.
+
+        The recent tool tasks are shown upside down: the newest
+        completion is the first one, and the task that ran before it is
+        right below it.
+        """
         state = self._state_with_tasks(3)
         view = ProgressView()
 
@@ -218,9 +223,9 @@ class TestTheProgressPane(unittest.TestCase):
         self.assertIn("command-0", "\n".join(lines))
         self.assertIn("command-2", "\n".join(lines))
         self.assertLess(
-            lines.index(next(line for line in lines if "command-0" in line)),
             lines.index(next(line for line in lines if "command-2" in line)),
-            "the newest task is above the oldest one -- the list is not a log",
+            lines.index(next(line for line in lines if "command-0" in line)),
+            "the newest task is below the oldest one -- the list is not a stack",
         )
 
     def test_every_line_of_a_task_carries_the_anchor_of_the_task(self):
@@ -230,7 +235,7 @@ class TestTheProgressPane(unittest.TestCase):
         lines, anchors = view.content_lines(state, 40)
 
         self.assertEqual(len(lines), len(anchors))
-        task = state.tool_tasks[-1].id
+        task = state.task_stack.tasks[0].id
         self.assertIn(task, anchors, "the task has no anchor")
 
     def test_the_pane_shows_the_content_that_fits(self):
@@ -249,7 +254,10 @@ class TestTheProgressPane(unittest.TestCase):
         scroll.height = 4
 
         panel = ProgressView().render(state, width=60, scroll=scroll)
-        scroll.scroll_up(2)
+        # The stack is upside down: the older tasks are below the
+        # newest one, and the key that walks down the window goes
+        # there.
+        scroll.scroll_down(2)
         panel = ProgressView().render(state, width=60, scroll=scroll)
 
         self.assertIn("▲", panel.subtitle)
