@@ -1,5 +1,6 @@
 """
-The task that runs now stands **on top** of the workflow pane.
+The task that runs now stands **on top** of the workflow pane, and the
+list of the tasks **grows down**.
 
 The operator said on 2026-11-22:
 
@@ -9,15 +10,22 @@ The operator said on 2026-11-22:
     > top and currently running is in the midle of the list or in the
     > bottom
 
+and, on the same day, with the words of the decision:
+
+    > please make sure the tool task grow down so that current executed
+    > is always on top of the window
+
 What the tests hold together:
 
 * **the task that runs now is the first task of the pane** -- and it
   stays there while the operator scrolls the log;
+* **the tasks that are done are a log that grows down** -- the oldest
+  completion first, the newest at the bottom: "down" walks forward in
+  time, and a task that is done is appended at the bottom without
+  moving the tasks that were done before it;
 * **the result of a call closes its own record** -- the workflow runs
   the calls of a turn concurrently, and two calls of the same tool
   carry the same name;
-* **the tasks that are done are a log** -- the oldest completion first,
-  the newest at the bottom: "down" walks forward in time;
 * **the run that is over closes the tasks that still run** -- a task
   that spins on top of the pane for ever is a lie the operator reads.
 
@@ -149,6 +157,40 @@ class TestTheRunningTask(unittest.TestCase):
             "the-one-that-runs",
             drawn,
             "the task that runs now is not on the screen of the pane",
+        )
+        self.assertLess(
+            the_line_of(drawn, "the-one-that-runs"),
+            the_line_of(drawn, "command-9"),
+            "the task that runs now is not on top of the window",
+        )
+
+    def test_the_task_that_runs_now_stays_on_top_when_the_operator_scrolls(self):
+        """The task that runs now is **pinned**.
+
+        The history that the operator scrolls cannot take it away: it
+        is drawn above the window of the pane, and it is on top of it
+        whatever the window shows.
+        """
+        state = TuiState()
+        for index in range(10):
+            state.update_tool_start(
+                "execute_shell_command", {"command": f"command-{index}"}
+            )
+            state.update_tool_end("execute_shell_command", "ok")
+        state.update_tool_start(
+            "execute_shell_command", {"command": "the-one-that-runs"}
+        )
+
+        scroll = PaneScroll()
+        the_pane(state, height=6, scroll=scroll)
+
+        scroll.scroll_end()
+        drawn = the_pane(state, height=6, scroll=scroll)
+
+        self.assertIn(
+            "the-one-that-runs",
+            drawn,
+            "the history took the task that runs now away from the top",
         )
         self.assertLess(
             the_line_of(drawn, "the-one-that-runs"),
@@ -290,6 +332,51 @@ class TestTheLog(unittest.TestCase):
             the_line_of(drawn, "command-0"),
             the_line_of(drawn, "command-2"),
             "the list of the tasks that are done is not a log",
+        )
+
+    def test_the_list_grows_down(self):
+        """A task that is done is appended at the bottom of the list.
+
+        The list grows down: the tasks that were done before it do not
+        move when the new one arrives.
+        """
+        state = TuiState()
+        for index in range(3):
+            state.update_tool_start(
+                "execute_shell_command",
+                {"command": f"command-{index}"},
+                tool_id=f"call-{index}",
+            )
+            state.update_tool_end(
+                "execute_shell_command", "ok", tool_id=f"call-{index}"
+            )
+
+        scroll = PaneScroll()
+        scroll.height = 15
+        ProgressView().render(state, width=60, scroll=scroll)
+        before = list(scroll.anchors)
+
+        state.update_tool_start(
+            "execute_shell_command",
+            {"command": "the-newest-one"},
+            tool_id="call-new",
+        )
+        state.update_tool_end(
+            "execute_shell_command", "ok", tool_id="call-new"
+        )
+        ProgressView().render(state, width=60, scroll=scroll)
+        after = list(scroll.anchors)
+
+        self.assertGreater(
+            len(after),
+            len(before),
+            "the task that is done is not appended to the list",
+        )
+        self.assertEqual(
+            before,
+            after[: len(before)],
+            "the list does not grow down: the tasks that were done "
+            "before it moved",
         )
 
     def test_the_log_is_the_order_of_what_happened(self):

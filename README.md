@@ -350,8 +350,13 @@ describe.  A plain `git clone` leaves the directory empty;
   and `Esc` gives the focus back to the command bar.  The pane that has the
   focus carries a brighter border and the marker `▶` in its title, and the keys
   of that pane scroll it.  The **list of the tasks is a log** — the oldest
-  first, the newest at the bottom — and the window stays on the task the
-  operator is reading when a new one arrives.  The bindings live in the
+  first, the newest at the bottom, and it **grows down**: a task that is
+  done is appended at the bottom of it, and the tasks that were done
+  before it do not move.  The window stays on the task the operator is
+  reading when a new one arrives, and it follows the newest completion
+  while the work goes on.  The **task that runs now is pinned on top of
+  the pane**, so the operator always sees the command that runs.  The
+  bindings live in the
   `[hotkeys]` section of the configuration file, and the operator may replace
   any of them — see [The hot-keys of the TUI](docs/tui/hotkeys.md)
 - The **notice** of the TUI is drawn in the **header**, and not in a pane: a

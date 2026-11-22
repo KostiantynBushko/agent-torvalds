@@ -18,14 +18,19 @@ above the window of the pane -- *pinned* -- so the operator sees the
 command that runs before anything else, and he keeps seeing it while
 he scrolls the log.  The operator asked for it on 2026-11-22: the
 command that runs now was in the middle of the commands, with the
-finished ones above it.
+finished ones above it -- and he asked for it again on the same day,
+in the words of the request: *please make sure the tool task grow
+down so that current executed is always on top of the window*.
 
-**The list of the tasks that are done is a log.**  The oldest
-completion first, the newest at the bottom, and the window stuck to
-the bottom: "down" walks forward in time, the way it does in every
-scrollable thing the operator knows.  The **anchor** of the window
-keeps the operator where he is: a new task does not move the window of
-the operator who is reading an old one.
+**The list of the tasks that are done is a log, and it grows down.**
+The oldest completion first, the newest at the bottom, and the window
+stuck to the bottom: "down" walks forward in time, the way it does in
+every scrollable thing the operator knows.  A task that is done is
+**appended** at the bottom of the list, and the tasks that were done
+before it do not move: the list grows down, and it never grows up.
+The **anchor** of the window keeps the operator where he is: a new
+task does not move the window of the operator who is reading an old
+one.
 
 **The pane that has the focus is marked.**  The border is brighter,
 the title carries the marker ``▶``, and the subtitle says where the
@@ -91,9 +96,9 @@ DETAIL_PREFIX = 5
 DEFAULT_PANE_WIDTH = 50
 
 #: How many tasks the pane shows.  They are the tasks that are **done**:
-#: the oldest of them is the first one on the screen, and the newest is
-#: the last one.  The task that runs now is not one of them -- it is
-#: pinned above them.
+#: the log keeps the newest ones, the oldest of them is the first one
+#: on the screen, and the newest is the last one.  The task that runs
+#: now is not one of them -- it is pinned above them.
 TASKS_SHOWN = 6
 
 #: The words of a detail, and the spaces between them.
@@ -347,7 +352,9 @@ class ProgressView:
         drawn above the window of the pane, so it is on top of the
         window and it stays there while the operator scrolls the log.
         The **log** is the tasks that are done: the oldest completion
-        first, and the newest at the bottom.
+        first, and the newest at the bottom.  The log **grows down**:
+        a task that is done is appended at the bottom of it, and the
+        tasks that were done before it do not move.
 
         The anchor of a line is the id of the task the line belongs to,
         and the anchor is what keeps the operator on the task he is
@@ -402,7 +409,9 @@ class ProgressView:
         running = [task for task in state.tool_tasks if task.status == "running"]
         done = [task for task in state.tool_tasks if task.status != "running"]
         # The log is the order of what happened: the task that is done
-        # first is the oldest one.
+        # first is the oldest one.  The list **grows down**: a task
+        # that is done is appended at the bottom of the log, and the
+        # tasks that were done before it do not move.
         done.sort(key=lambda task: task.end_time or task.start_time)
 
         running_lines, running_anchors = self._task_lines(

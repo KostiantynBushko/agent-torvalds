@@ -48,16 +48,25 @@ All notable changes to this project are documented in this file.
   the method into the application, and **no other file changes**: the
   `\keys` screen, the footer hints and the tests pick it up by themselves.
 
-- **The list of the tasks is a log.**  The oldest task first, the newest at
-  the bottom, and the window stuck to the bottom: "down" walks *forward* in
-  time, the way it does in every scrollable thing the operator knows, and the
-  running task is the last line on the screen, where the eye already is.  The
-  pane listed the newest task first, which made "down" walk *into the past*.
+- **The list of the tasks grows down, and the task that runs now is pinned on
+  top of the pane.**  The operator asked on 2026-11-22: *please make sure the
+  tool task grow down so that current executed is always on top of the
+  window*.  A task that is done is **appended** at the bottom of the list and
+  the tasks that were done before it do not move — the list grows down, and
+  "down" walks forward in time.  The task that runs now is drawn **above** the
+  window of the pane, so the history that the operator scrolls cannot take it
+  away, and the pane does not carry it twice.  The window below it is the log
+  of the tasks that are done and it is stuck to the tail of that log: the
+  newest completion is on the screen, and the window scrolls there by itself
+  while a command runs.  The list written newest first — with the task that
+  runs now as its head — was measured and rejected: it grew **up**, and the
+  history could take the running task away.  §16.1 of `docs/tui/hotkeys.md`
+  records the decision and how to reverse it.
 
 - **The anchor keeps the operator where he is.**  A new tool task is inserted
-  at the end of the log, and the window does not jump: the operator who has
-  scrolled up keeps the task he is reading, and the operator who has not keeps
-  the newest one.
+  at the end the window follows, and the window does not jump: the operator
+  who has scrolled away keeps the task he is reading, and the operator who
+  has not keeps the current one.
 
 - **Six lines of content were cut off, and there was no way to see them.**
   The progress pane showed the newest task first, so the lines that did not
@@ -1317,6 +1326,73 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### The Recent Tool Tasks list grows down, and the task that runs now is pinned on top
+
+- **The operator asked on 2026-11-22**:
+
+  > *please make sure the tool task grow down so that current executed is
+  > always on top of the window*
+
+  Two things are asked for at once: the list of the tasks **grows down**,
+  and the task that **runs now is always on top of the window**.
+
+- **What the pane was.**  The list of the tasks was written **newest
+  first** — the reading of the request *Recent Tool Tasks must scroll
+  automatically into current position during command execution* — the task
+  that runs now was the **head** of it, and the window of the pane
+  followed that head.
+
+- **The list grew up.**  A task that is done was inserted at the **top**
+  of the list of the tasks that are done, and the tasks that were done
+  before it were pushed down.  The probe, against the real pane in the
+  real layout, said:
+
+  ```
+    FAIL  the list of the tasks grows down
+          the lines of the done tasks above the first one: 4 before, 6 after
+  ```
+
+  Four lines were above the first task before the new one arrived, and six
+  after it — and "down" walked *into the past*, the opposite of every
+  scrollable thing the operator knows.
+
+- **The history could take the running task away.**  The task that runs
+  now was carried by the window of the pane, so the window the operator
+  scrolls took it off the screen:
+
+  ```
+    FAIL  the task that runs now stays on top while the operator scrolls
+          the command that runs: line -1
+  ```
+
+  The line is `-1`: the command that runs was **not on the screen** any
+  more.  The operator asked for it to be **always** on top.
+
+- **The task that runs now is pinned.**  It is drawn **above** the window
+  of the pane, outside it, and the history that the operator scrolls
+  cannot take it away.  The pane does not carry it twice.
+
+- **The list of the tasks that are done is a log, and it grows down.**  The
+  oldest completion first, the newest at the bottom: a task that is done
+  is **appended** at the bottom of the list, and the tasks that were done
+  before it do not move.  "Down" walks forward in time again, and the
+  decision of 2026-11-21 stands.
+
+- **The window is at the current position.**  It is stuck to the tail of
+  the log, so the newest completion is on the screen, and the window
+  scrolls there by itself while a command runs.
+
+- **The price: the tail of a command that is taller than the pane is out
+  of reach.**  The pinned task is drawn outside the window, and the keys
+  of the pane scroll the log and not the pinned task.  The whole of the
+  command is in the chat history of the session.
+
+- **The evidence:** `tests/test_tui_current_position.py` and
+  `tests/test_tui_task_order.py`, and `investigate/tui-autoscroll/` — the
+  report and the probe, which draws the real pane in the real layout at
+  the width of the terminal of the operator.  The gate of the repository
+  stays green: the known failures stay known, and no new one comes.
+
 #### The command that runs now is on top of the progress pane
 
 - **The operator asked on 2026-11-22** for the command that runs now to
@@ -1347,17 +1423,22 @@ All notable changes to this project are documented in this file.
   `tool_id` of the call, and the record that is closed is the one of that
   id.  The name is the fallback, for the events that carry no id.
 
-- **The command that runs now is *pinned* on top of the pane.**  It is
-  drawn **above the window** of the pane, so it is on top of the window,
-  and it stays there while the operator scrolls the history.  It cannot
-  live inside the window: the running command would scroll out of the
-  pane as soon as the log is longer than the pane.
+- **The command that runs now is on top of the window.**  It is
+  **pinned** — drawn above the window of the pane, outside it — so it is
+  on top of the window, and it stays there while the operator scrolls
+  the history.  The reason is sound: *the running command would scroll
+  out of the pane as soon as the log is longer than the pane*.
 
-- **The log of the tasks that are done is still a log.**  The oldest
-  completion first, the newest at the bottom, the window stuck to the
-  bottom: "down" walks *forward* in time.  The decision of 2026-11-21
-  (§16.1 of `docs/tui/hotkeys.md`) is not reversed — the running task is
-  not a part of the history.
+  The price is the tail of a command that is taller than the pane: it is
+  out of the reach of the keys of the pane, and the whole of the command
+  is in the chat history of the session.  (See the entry above: *The
+  Recent Tool Tasks list grows down*.)
+
+- **The tasks that are done are a log that grows down.**  The oldest
+  completion first, the newest at the bottom: a task that is done is
+  appended at the bottom of the list, and the tasks that were done before
+  it do not move.  The decision of 2026-11-21 — "down" walks *forward* in
+  time — stands (§16.1 of `docs/tui/hotkeys.md`).
 
 - **Nothing spins for ever.**  When the run is over, the tasks that still
   run are closed: a task that spins on top of the pane for ever is a lie
