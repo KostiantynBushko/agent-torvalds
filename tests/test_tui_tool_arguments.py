@@ -31,6 +31,8 @@ Run with:
 
 from __future__ import annotations
 
+import asyncio
+import io
 import os
 import sys
 from pathlib import Path
@@ -299,3 +301,124 @@ class TestTheState:
         arguments["path"] = "/tmp/other.md"
 
         assert state.task_stack.tasks[0].arguments["path"] == "/tmp/a.md"
+
+
+# ---------------------------------------------------------------------------
+# The call of the workflow
+# ---------------------------------------------------------------------------
+
+
+def a_consumer_with(state: TuiState):
+    """A consumer of the events of the workflow, wired to the state.
+
+    It is the wiring the TUI uses: the consumer of the events, and the
+    adapter that hands the tool calls over to the state.
+    """
+    from components.event_consumer import EventConsumer
+    from components.spinner_controller import SpinnerController
+    from components.state_handler import StateHandler
+    from components.tui.state_bridge import TuiEventAdapter
+
+    console = Console(file=io.StringIO())
+    consumer = EventConsumer(
+        spinner_controller=SpinnerController(console),
+        state_handler=StateHandler(),
+        console=console,
+    )
+    TuiEventAdapter(state).register_with_event_consumer(consumer)
+    return consumer
+
+
+class TestTheCallOfTheWorkflow:
+    """The arguments of the tools the workflow calls reach the pane.
+
+    The other checks of this file feed the state directly.  This one
+    drives the **real** event of the framework -- the ``ToolCall`` the
+    workflow publishes -- through the **real** consumer and the **real**
+    adapter, and reads the pane that comes out of it.
+
+    The seam between the workflow and the pane is where the arguments
+    could be lost, and it is the place the operator looks at: the
+    arguments of every call of the workflow must be on the screen.
+    """
+
+    def test_the_arguments_of_the_event_of_the_workflow_are_on_the_screen(self):
+        from llama_index.core.agent.workflow import ToolCall
+
+        state = TuiState()
+        consumer = a_consumer_with(state)
+
+        asyncio.run(
+            consumer._handle_event(
+                ToolCall(
+                    tool_name="write_file",
+                    tool_kwargs={
+                        "path": "/tmp/notes.md",
+                        "content": "hello",
+                    },
+                    tool_id="call-1",
+                )
+            )
+        )
+
+        text = render(state)
+        assert "write_file" in text, f"the pane shows no tool: {text!r}"
+        assert "path=/tmp/notes.md" in text, f"the pane shows no path: {text!r}"
+        assert "content=hello" in text, f"the pane shows no content: {text!r}"
+
+    def test_the_command_of_the_shell_is_whole_through_the_workflow(self):
+        """The look of the command does not change on the way."""
+        from llama_index.core.agent.workflow import ToolCall
+
+        state = TuiState()
+        consumer = a_consumer_with(state)
+
+        asyncio.run(
+            consumer._handle_event(
+                ToolCall(
+                    tool_name="execute_shell_command",
+                    tool_kwargs={"command": COMMAND},
+                    tool_id="call-1",
+                )
+            )
+        )
+
+        text = render(state)
+        assert "└ cd ~/projects" in text, f"the command is not whole: {text!r}"
+
+    def test_the_arguments_stay_on_the_screen_when_the_call_is_done(self):
+        """The answer of the tool does not take the arguments away."""
+        from llama_index.core.agent.workflow import ToolCall, ToolCallResult
+        from llama_index.core.tools import ToolOutput
+
+        state = TuiState()
+        consumer = a_consumer_with(state)
+
+        asyncio.run(
+            consumer._handle_event(
+                ToolCall(
+                    tool_name="read_file",
+                    tool_kwargs={"path": "/tmp/notes.md"},
+                    tool_id="call-1",
+                )
+            )
+        )
+        asyncio.run(
+            consumer._handle_event(
+                ToolCallResult(
+                    tool_name="read_file",
+                    tool_kwargs={"path": "/tmp/notes.md"},
+                    tool_output=ToolOutput(
+                        tool_name="read_file",
+                        raw_input={"path": "/tmp/notes.md"},
+                        raw_output="the notes",
+                    ),
+                    return_direct=False,
+                    tool_id="call-1",
+                )
+            )
+        )
+
+        text = render(state)
+        assert "read_file" in text, f"the pane shows no tool: {text!r}"
+        assert "/tmp/notes.md" in text, f"the pane shows no path: {text!r}"

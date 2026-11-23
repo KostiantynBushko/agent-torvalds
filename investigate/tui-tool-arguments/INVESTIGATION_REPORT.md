@@ -155,7 +155,7 @@ Every call shows what it was called with.  The command of the shell is
 still shown the way it has been shown — the value alone, whole, split
 to the width of the pane.
 
-The check of the change: `tests/test_tui_tool_arguments.py` — 26
+The check of the change: `tests/test_tui_tool_arguments.py` — 29
 tests — and `investigate/tui-tool-arguments/probe_tool_arguments.py`,
 which drives the real panel from the real state:
 
@@ -165,7 +165,25 @@ which drives the real panel from the real state:
   PASS  the home of the operator is off the screen
   PASS  a long value is folded honestly
   PASS  every line fits the pane
+  PASS  the arguments of the call of the workflow reach the pane
 ```
+
+### The seam between the workflow and the pane
+
+The checks above feed the state directly — the state is the door of
+the pane, and the rule is proven behind it.  The **seam** is the road
+between the workflow and that door: the workflow publishes the event
+of the call, the consumer of the events hands it over, the adapter
+puts it into the state, and the pane draws it.  The arguments could be
+lost on that road, and nothing would notice.
+
+The last check of the probe and the three last tests of the suite walk
+that road with the **real** parts of it: the `ToolCall` event of the
+framework, the real `EventConsumer`, the real `TuiEventAdapter`, and
+the real panel.  The event is broken on purpose — the arguments of
+the event are dropped on the way — and the check and the three tests
+fail, while the other checks keep passing.  A check that cannot fail
+is not a check.
 
 The gate of the repository stays green: 40 known failures, 0 new, 0
 fixed.
@@ -201,7 +219,7 @@ fixed.
 | `components/tui/tool_arguments.py` | the rule — the arguments of a call become the text of the line |
 | `components/tui/state_bridge.py` | the record keeps the arguments of the call, whole |
 | `components/tui/progress_view.py` | the view uses the rule, and the home is hidden in every argument |
-| `tests/test_tui_tool_arguments.py` | the check of the change — 26 tests |
+| `tests/test_tui_tool_arguments.py` | the check of the change — 29 tests |
 | `investigate/tui-tool-arguments/` | this report and the probe |
 | `investigate/tui-home-path-in-progress/probe_home_path.py` | the probe read the field that was renamed — it reads the arguments now |
 | `investigate/tui-autoscroll/probe_autoscroll.py` | the probe read the field that was renamed — it reads the arguments now |

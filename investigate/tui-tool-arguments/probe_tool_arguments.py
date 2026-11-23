@@ -33,6 +33,11 @@ What is asked of the pane:
   5. **Is every line of the pane the width of the pane?**  The detail
      is split to the width the layout really gives the pane.
 
+  6. **Do the arguments of the call of the workflow reach the pane?**
+     The other checks feed the state directly.  This one publishes the
+     **real** event of the framework -- the ``ToolCall`` the workflow
+     publishes -- and reads the pane that comes out of it.
+
 Usage:
     python investigate/tui-tool-arguments/probe_tool_arguments.py
 
@@ -42,6 +47,8 @@ The probe writes nothing and talks to no service.
 """
 from __future__ import annotations
 
+import asyncio
+import io
 import sys
 from pathlib import Path
 
@@ -199,6 +206,51 @@ def check_every_line_fits_the_pane() -> bool:
     return ok
 
 
+def check_the_call_of_the_workflow_reaches_the_pane() -> bool:
+    """The arguments of the tools the workflow calls reach the pane.
+
+    The seam between the workflow and the pane is where the arguments
+    could be lost: the workflow publishes the event of the call, the
+    consumer of the events hands it over, the adapter puts it into the
+    state, and the pane draws it.  The check drives the **real** event
+    of the framework through the **real** consumer and the **real**
+    adapter, and reads the pane that comes out of it.
+    """
+    from llama_index.core.agent.workflow import ToolCall
+
+    from components.event_consumer import EventConsumer
+    from components.spinner_controller import SpinnerController
+    from components.state_handler import StateHandler
+    from components.tui.state_bridge import TuiEventAdapter
+
+    console = Console(file=io.StringIO())
+    consumer = EventConsumer(
+        spinner_controller=SpinnerController(console),
+        state_handler=StateHandler(),
+        console=console,
+    )
+    state = TuiState()
+    TuiEventAdapter(state).register_with_event_consumer(consumer)
+
+    asyncio.run(
+        consumer._handle_event(
+            ToolCall(
+                tool_name="write_file",
+                tool_kwargs={"path": "/tmp/notes.md", "content": "hello"},
+                tool_id="call-1",
+            )
+        )
+    )
+
+    text = the_pane(state, 60)
+    for expected in ("write_file", "path=/tmp/notes.md", "content=hello"):
+        if expected not in text:
+            print(f"  FAIL  the pane does not show {expected!r} of the call "
+                  f"of the workflow: {text!r}")
+            return False
+    return True
+
+
 def main() -> int:
     """Run every check and report what holds."""
     show_the_pane()
@@ -214,6 +266,8 @@ def main() -> int:
          check_a_long_value_is_folded),
         ("every line fits the pane",
          check_every_line_fits_the_pane),
+        ("the arguments of the call of the workflow reach the pane",
+         check_the_call_of_the_workflow_reaches_the_pane),
     )
 
     failed = 0

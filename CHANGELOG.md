@@ -53,7 +53,15 @@ All notable changes to this project are documented in this file.
   order of the tasks.  They read the **arguments** of the call now, the
   way the pane reads them, and every one of the three passes.
 
-- **The evidence:** `tests/test_tui_tool_arguments.py` — 26 tests — and
+- **The seam between the workflow and the pane is checked too.**  The
+  checks of the rule feed the state directly.  The last check of the
+  probe and the three last tests walk the road the workflow walks: the
+  `ToolCall` event of the framework, the real `EventConsumer`, the real
+  `TuiEventAdapter`, and the real panel.  The event is broken on purpose
+  — the arguments are dropped on the way — and the check and the three
+  tests fail while the others keep passing.
+
+- **The evidence:** `tests/test_tui_tool_arguments.py` — 29 tests — and
   `investigate/tui-tool-arguments/`, the report and the probe, which drives
   the real panel from the real state.  The gate of the repository stays
   green: 40 known failures, 0 new, 0 fixed.
