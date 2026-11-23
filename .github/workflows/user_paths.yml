@@ -15,7 +15,7 @@ name: User Paths
 # workflow knows the *shape* of a home, which is what a path carries most
 # of the time.
 #
-# See DEVELOPMENT_RULES.md, Rule 8.
+# See DEVELOPMENT_RULES.md, Rule 7.
 
 on:
   pull_request:

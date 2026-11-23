@@ -15,15 +15,14 @@ All notable changes to this project are documented in this file.
   > *the agent should never ever expose user path to the external
   > resources, like github*
 
-- **The rule is Rule 8** of `DEVELOPMENT_RULES.md` — *Never expose a user
-  path to anything outside the machine*.  Rule 6 forbade the private
-  folder; Rule 8 forbids **every** user path — the home, the name of the
-  account, the working copy, the private folders of the disk — and it
-  forbids it in **every** place the path can leave: the source, the
-  documentation, the message of a commit, the body of a pull request, the
-  body of an issue, the body of a comment, and the answer the agent gives
-  to the operator.  The published form is the generic one: `~`,
-  `/home/<user>`, `operator@example.com`, `<project>`.
+- **The rule is Rule 7** of `DEVELOPMENT_RULES.md` — *Never expose a user
+  path to anything outside the machine*.  It forbids **every** user path —
+  the home, the name of the account, the working copy, the private folders
+  of the disk — and it forbids it in **every** place the path can leave:
+  the source, the documentation, the message of a commit, the body of a
+  pull request, the body of an issue, the body of a comment, and the answer
+  the agent gives to the operator.  The published form is the generic one:
+  `~`, `/home/<user>`, `operator@example.com`, `<project>`.
 
 - **The check is a script** — `scripts/check_no_user_paths.py` — and it
   reads the tracked files, the messages of the commits and the free text
@@ -40,7 +39,7 @@ All notable changes to this project are documented in this file.
   **not** files of the repository: the body of a pull request, the body
   of an issue, the body of a comment, and the commits of a pull request.
   That is where the path of the machine reached the outside before the
-  check existed — Rule 6 was written on 2026-10-29, after the home of
+  check existed — the rule was written on 2026-10-29, after the home of
   the operator was found **in the body of a pull request**, and the fix
   was made in the body, not in a check.
 
@@ -3403,6 +3402,48 @@ All notable changes to this project are documented in this file.
   the reader start two seconds late and asks whether the key still
   arrives.  The gate of the repository stays green: 40 known failures, 0
   new, 0 fixed.
+
+### Changed
+
+#### The rule of the privacy is one rule
+
+- **The operator chose on 2026-11-23** between three ways to hold the rule
+  of the privacy: leave the two rules as they are, reword the first one as
+  a sub-clause of the second one, or **merge them into one**.  The choice
+  was the third one.
+
+- **Rule 6 and Rule 8 are one rule now — Rule 7**, *Never expose a user
+  path to anything outside the machine*.  Rule 6 forbade the private
+  folder of the operator; Rule 8 forbade every user path of the machine.
+  They were one contract in two halves, and the halves had drifted: the
+  shapes of a home were written down **twice** — in
+  `tests/test_no_private_paths.py` and in `scripts/check_no_user_paths.py`
+  — and a pattern changed in one of them left the other one behind.  The
+  rule that is left is the **stronger** one, and it carries what Rule 6 had
+  and Rule 8 did not: the **push-time procedure** (the agent reads the
+  staged content, the commit message and the body of the pull request
+  before it pushes, and it reports what it found), the **published form**
+  of the paths of the product itself, and the **first statement** of the
+  operator, from 2026-10-29.
+
+- **The rules are numbered without a gap**: 1 — the working copy, 2 — the
+  approval of a commit, 3 — the diff before a commit, 4 — the confirmation
+  of a destructive operation, 5 — the timeout of a question, 6 — the
+  persistence of these rules, 7 — the privacy of every user path.  The
+  references to the old number were followed: the checker, the test, the
+  workflow and the CI document name Rule 7 now.
+
+- **The old test is gone** — `tests/test_no_private_paths.py`.  The checker
+  of Rule 7 covers it: it reads the same shapes, it accepts the same
+  placeholders and it adds three of its own (`account`, `operator`,
+  `the-operator`), and it finds the home of the machine it runs on.  One
+  check, one place to maintain.
+
+- **The test that holds the rule to itself reads the title of the rule,
+  not its number** — `tests/test_no_user_paths.py`.  A number is the one
+  part of a rule that a renumbering breaks; the title is what a reader
+  needs.
+
 
 ## [1.0.0] - 2026-10-29
 

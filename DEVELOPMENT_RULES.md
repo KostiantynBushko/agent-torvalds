@@ -8,8 +8,14 @@ survive across sessions and are available to any future agent invocation.
 work happens in the copy the agent is running in, on a branch of its own, and
 the operator's tree is the place where the work is reviewed. The rules that
 carry the contract — the approval, the destructive operations, the timeout
-contract, the privacy of the operator's home folder and the privacy of every
-user path of the machine — stayed.
+contract and the privacy of every user path of the machine — stayed.
+
+**The rule of the privacy is one rule.**  Rule 6 (the private folder of the
+operator) and Rule 8 (every user path of the machine) were one rule in two
+halves, and the halves drifted: the shapes of a home were written down twice,
+and the weaker copy was the one a reader of the first half would run. The two
+are now a single rule — **Rule 7** — and the checker of the rule is the one
+that reads every surface.
 
 ---
 
@@ -71,68 +77,7 @@ question was not answered; act on your own judgement."*
 
 ---
 
-## Rule 6 — Never expose the private folder of the operator
-
-The repository is **public**. The home directory of the operator — the
-name of the account, and the path that carries it — is **private**, and it
-must never be published: not in the source, not in the documentation,
-not in a commit message, not in the body of a pull request, not in a
-comment.
-
-What is published is the **system default**, written the way the
-documentation of a project writes it:
-
-| | |
-|---|---|
-| `/home/<user>/.config/torvalds/config.toml` | `~/.config/torvalds/config.toml` |
-| `/home/<user>/.torvalds/logs/agent.log` | `~/.torvalds/logs/agent.log` |
-| the name of the account | `the-operator` |
-| `<user>@example.com` | `operator@example.com` |
-
-The examples of this rule are written with a **placeholder**, on purpose:
-a rule that names the private folder in order to forbid it has already
-published it.
-
-The same holds for the **name** of the account, on its own: it is
-private even without the path in front of it.
-
-This is not only about the home directory.  Nothing that identifies the
-operator — the account, the machine, the directories of the machine —
-belongs in a public repository.
-
-**In the code, a path that has to work on the machine of the operator is
-computed, not written down.**  A literal path in the source is a path
-that is wrong on every other machine:
-
-```python
-# wrong — it names one operator and one machine
-sys.path.insert(0, '/home/<user>/<project>')
-
-# right — it is the directory of the file itself
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-```
-
-**A check before every push.**  The agent searches the staged content,
-the commit message and the body of the pull request for the home
-directory of the operator before it pushes, and it reports what it
-found.  A finding is fixed, not explained away.
-
-The check is not a habit either — it is a test:
-`tests/test_no_private_paths.py` fails the build when a home directory
-reaches the repository.
-
-The operator stated this on 2026-10-29, after finding the home
-directory of the operator in the body of a pull request.
-
-**Rule 8 says this in full, and further:** this rule forbids the private
-folder in the repository; Rule 8 forbids **every** user path, and it
-forbids it **everywhere** the path can leave the machine.
-
----
-
----
-
-## Rule 7 — These rules are persisted
+## Rule 6 — These rules are persisted
 
 This file **is** the persistence mechanism. It must be kept up to date whenever the
 rules change, and must be read at the start of every session in which the agent
@@ -147,12 +92,13 @@ not repeated here.
 
 ---
 
-## Rule 8 — Never expose a user path to anything outside the machine
+## Rule 7 — Never expose a user path to anything outside the machine
 
-The machine of the operator is private.  **Every** path of it is private:
-the home, the name of the account, the working copy, the folders of the
-disk, the labels of the drives.  A path of the machine must **never**
-leave the machine — **never**, and in no form:
+The repository is **public**, and the machine of the operator is
+**private**.  **Every** path of that machine is private: the home, the
+name of the account, the working copy, the folders of the disk, the
+labels of the drives.  A path of the machine must **never** leave the
+machine — **never**, and in no form:
 
 * not in the source, not in a test, not in a fixture, not in a script,
 * not in the documentation, not in an investigation report,
@@ -175,6 +121,20 @@ writes an example:
 | the name of the account | `the-operator` |
 | `<account>@<host>` | `operator@example.com` |
 
+The paths of the product itself are written the same way:
+
+| | |
+|---|---|
+| `/home/<user>/.config/torvalds/config.toml` | `~/.config/torvalds/config.toml` |
+| `/home/<user>/.torvalds/logs/agent.log` | `~/.torvalds/logs/agent.log` |
+| the name of the account | `the-operator` |
+| `<user>@example.com` | `operator@example.com` |
+
+The examples of this rule are written with a **placeholder**, on purpose:
+a rule that names the private folder in order to forbid it has already
+published it.  The same holds for the **name** of the account, on its
+own: it is private even without the path in front of it.
+
 **A path in the code is computed, not written down.**  A literal path in
 the source is a path that is wrong on every other machine — and a path
 that names one operator:
@@ -187,7 +147,7 @@ WORKSPACE = "/home/<account>/<project>"
 WORKSPACE = str(Path(__file__).resolve().parent)
 ```
 
-**The check is a test, and it reads every surface.**  The checker is
+**The check is a script, and it reads every surface.**  The checker is
 `scripts/check_no_user_paths.py`; it reads the tracked files, the
 messages of the commits and the free text of a pull request, of an issue
 and of a comment.  `tests/test_no_user_paths.py` fails the build when a
@@ -203,12 +163,18 @@ uses the **shape** of a home — `/home/<account>`, `/Users/<account>`,
 `C:\Users\<account>` — and the operator can give that CI the names it
 lacks through `TORVALDS_PRIVATE_NAMES`.
 
+**A check before every push.**  The agent searches the staged content,
+the commit message and the body of the pull request before it pushes, and
+it reports what it found.
+
 **A finding is fixed, not explained away.**  When the check finds a
 path, the path is written the generic way — in the file, in the commit
 message, in the body — and the check is run again.
 
-The operator stated this on 2026-11-23, after finding that the agent may
-expose a user path of the machine in the text, in the code and in the
-commits it generates.  The evidence is the check that came with it —
+The operator stated this on 2026-10-29, after finding the home
+directory of the operator in the body of a pull request, and widened it
+on 2026-11-23, after finding that the agent may expose a user path of
+the machine in the text, in the code and in the commits it generates.
+The evidence is the check that came with it —
 `scripts/check_no_user_paths.py` — and the test that holds it to its own
 rule: `tests/test_no_user_paths.py`.

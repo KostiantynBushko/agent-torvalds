@@ -153,7 +153,7 @@ and commit the result. The diff is the proof that the baseline shrank.
 
 The machine of the operator is private, and every path of it must never
 leave the machine: not in the source, not in a commit message, not in the
-body of a pull request, not in an issue, not in a comment.  This is Rule 8
+body of a pull request, not in an issue, not in a comment.  This is Rule 7
 of `DEVELOPMENT_RULES.md`.
 
 The test gate reads the files of the repository.  A second workflow —

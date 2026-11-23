@@ -2,7 +2,7 @@
 """
 The check that no user path leaves the machine.
 
-Rule 8 of ``DEVELOPMENT_RULES.md`` says it: a path of the machine of the
+Rule 7 of ``DEVELOPMENT_RULES.md`` says it: a path of the machine of the
 operator — the home, the account, the working copy, any directory that
 carries the name of the account — is private, and it must never reach
 anything outside the machine.  Not the source, not a commit message, not
