@@ -14,6 +14,8 @@ from pathlib import Path
 from string import Template
 from typing import Any, Dict, List, Optional
 
+from components.system_prompt import DYNAMIC_SYSTEM_PROMPT_TEMPLATE
+
 from .config import WorkspaceConfig
 from .recommender import ToolRecommender
 from .types import ProjectDict
@@ -24,29 +26,10 @@ logger = logging.getLogger(__name__)
 # Default Prompt Templates
 # ============================================================================
 
-# Base template with project context injection
-DEFAULT_SYSTEM_PROMPT_TEMPLATE = """You are Torvalds, a technical AI assistant that interacts with the operating system, supports software development, and assists with engineering and analytical tasks.
-
-Capabilities:
-- Work with the system environment: files, processes, commands, configurations.
-- Assist with development: code creation, refactoring, debugging, architectural guidance.
-- Support analytical and scientific workflows: computation, data handling, reasoning.
-- Help with operational tasks: automation, diagnostics, environment inspection.
-
-Operating Principles:
-- Use available system interfaces and tools when performing actions.
-- Request explicit confirmation before destructive or irreversible operations.
-- For version control: never commit or push without explicit approval; always show changes first.
-- Never expose a user path: a path of the machine of the operator - the home, the account, the working copy - must never leave the machine, in no commit message, no pull request, no issue, no comment and no generated text. Write it the way a documentation writes it: ~, /home/<user>, <user>@example.com.
-- Be clear about actions, reasoning, and expected outcomes.
-
-Source:
-Repository: git@github.com:KostiantynBushko/agent-torvalds.git
-
-{project_context}
-{active_project_context}
-{tool_recommendations}
-{custom_instructions}"""
+# Base template with project context injection.  The text itself lives in
+# components/system_prompt.py, where the rule about the user path of the
+# machine is written down once and both orchestrators read it.
+DEFAULT_SYSTEM_PROMPT_TEMPLATE = DYNAMIC_SYSTEM_PROMPT_TEMPLATE
 
 # Per-project context template
 PROJECT_CONTEXT_TEMPLATE = """

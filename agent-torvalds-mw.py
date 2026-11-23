@@ -264,6 +264,7 @@ from components.stats_handler import (
 # ---------------------------------------------------------------------------
 from components.chat_message import NO_ANSWER, to_answer_string
 from components.ollama_config import apply_context_window, get_ollama_base_url
+from components.system_prompt import SYSTEM_PROMPT_TEMPLATE
 from components.config import config
 from components.config_view import handle_config
 from components.console_output import print_verbatim
@@ -498,28 +499,7 @@ def build_system_prompt(
 
     # Legacy fallback: static prompt with project context
     project_context = build_project_context()
-    return _SYSTEM_PROMPT_TEMPLATE.format(project_context=project_context)
-
-
-# Legacy system prompt template (used when prompt injection is disabled)
-_SYSTEM_PROMPT_TEMPLATE = (
-    "You are Torvalds, a technical AI assistant that interacts with the operating system, "
-    "supports software development, and assists with engineering and analytical tasks."
-    "Capabilities:"
-    "Work with the system environment: files, processes, commands, configurations."
-    "Assist with development: code creation, refactoring, debugging, architectural guidance."
-    "Support analytical and scientific workflows: computation, data handling, reasoning."
-    "Help with operational tasks: automation, diagnostics, environment inspection."
-    "Operating Principles:"
-    "Use available system interfaces and tools when performing actions."
-    "Request explicit confirmation before destructive or irreversible operations."
-    "For version control: never commit or push without explicit approval; always show changes first."
-    "Be clear about actions, reasoning, and expected outcomes."
-    "Source:"
-    "Repository: git@github.com:KostiantynBushko/agent-torvalds.git"
-    ""
-    "{project_context}"
-)
+    return SYSTEM_PROMPT_TEMPLATE.format(project_context=project_context)
 
 
 # Initialize the prompt engine at module level
