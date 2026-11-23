@@ -47,7 +47,13 @@ class ToolExecutionRecord:
     start_time: float
     end_time: float = 0.0
     duration_ms: float = 0.0
-    details: str = ""
+    #: The **arguments** of the call, as they were given.  The state
+    #: keeps them whole: the pane decides how much of them is shown,
+    #: and how -- the way it decides where the home of the operator is
+    #: hidden.  The arguments of every tool are kept, and not only the
+    #: command of the shell: the operator asked on 2026-11-23 for the
+    #: arguments of every tool call to be on the screen.
+    arguments: Dict[str, Any] = field(default_factory=dict)
     error_message: str = ""
     tool_id: str = ""
 
@@ -409,23 +415,29 @@ class TuiState:
             self.active_tool_args = tool_kwargs
             self._tool_counter += 1
 
-            # The detail is the **whole** path or command, not a cut
-            # of it: the view decides how much of it fits on the
-            # screen, and the screen hides the home of the operator
-            # before it cuts.  A cut here would leave half a home on
-            # the screen.
-            details = ""
-            if tool_name == "execute_shell_command":
-                details = tool_kwargs.get("command", "")
-            elif "file_path" in tool_kwargs:
-                details = tool_kwargs.get("file_path", "")
+            # The arguments of the call are kept as they were given:
+            # the **whole** of them, and not a cut.  The view decides
+            # how much of them fits on the screen, and the screen hides
+            # the home of the operator before it cuts.  A cut here
+            # would leave half a home on the screen.
+            #
+            # The arguments of **every** tool are kept -- the command
+            # of the shell, the path of the file, and everything else
+            # the agent calls a tool with.  The operator asked on
+            # 2026-11-23 for the arguments of every tool call to be
+            # shown in the pane, and not only the ones of the shell.
+            arguments = (
+                dict(tool_kwargs)
+                if isinstance(tool_kwargs, dict)
+                else {}
+            )
 
             record = ToolExecutionRecord(
                 id=f"tool-{self._tool_counter}",
                 name=tool_name,
                 status="running",
                 start_time=time.time(),
-                details=details,
+                arguments=arguments,
                 tool_id=str(tool_id or ""),
             )
             # The task goes on the top of the stack: the newest task is

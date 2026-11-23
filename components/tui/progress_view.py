@@ -6,12 +6,14 @@ Visualizes background workflow execution progress:
 - Real-time tool execution tracking with elapsed timers and status icons
 
 The line under the name of a tool says what the tool works on -- the
-command it runs, the path it reads.  The line carries the **whole**
-of it: a command that is cut is a command the operator cannot read,
-and the part that is cut away is the part that says what the command
-does.  A detail that does not fit on one line is **split** and takes
-the lines it needs: every line is the width of the pane, and nothing
-of the command is lost.
+**arguments of the call**: the command it runs, the path it reads, the
+file it writes.  Every tool call carries its arguments, and not only
+the call of the shell.  The line carries the **whole** of them: a
+command that is cut is a command the operator cannot read, and the
+part that is cut away is the part that says what the command does.  A
+detail that does not fit on one line is **split** and takes the lines
+it needs: every line is the width of the pane, and nothing of the
+command is lost.
 
 **The task that runs now is on top of the pane.**  It is drawn
 above the window of the pane -- *pinned* -- so the operator sees the
@@ -60,6 +62,7 @@ from components.tui.hotkeys import FOCUS_GAP, FOCUS_MARKER
 from components.tui.path_display import hide_home
 from components.tui.pane_scroll import PaneScroll
 from components.tui.state_bridge import TuiState, ToolExecutionRecord
+from components.tui.tool_arguments import format_arguments
 
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -495,10 +498,16 @@ class ProgressView:
             lines.append(self._task_line(task, now, spinner_char))
             anchors.append(task.id)
 
-            if not task.details:
+            # The detail is the **arguments of the call** -- the
+            # command of the shell, the path of the file, and every
+            # other argument of every other tool.  The operator asked
+            # on 2026-11-23 for the arguments of every tool call to be
+            # on the screen, and not only the ones of the shell.
+            details = format_arguments(task.arguments)
+            if not details:
                 continue
 
-            detail = display_detail(task.details, text_width)
+            detail = display_detail(details, text_width)
             for index, detail_line in enumerate(detail.split("\n")):
                 if index == 0:
                     # The branch opens the detail: it stands under the

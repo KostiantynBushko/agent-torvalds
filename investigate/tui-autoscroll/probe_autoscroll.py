@@ -79,6 +79,7 @@ from components.tui.layout_manager import (  # noqa: E402
 )
 from components.tui.progress_view import ProgressView  # noqa: E402
 from components.tui.state_bridge import TuiState  # noqa: E402
+from components.tui.tool_arguments import format_arguments  # noqa: E402
 
 #: The width of the terminal of the operator.
 WIDTH = 229
@@ -193,7 +194,7 @@ def the_id_of_the_task(state: TuiState, command: str) -> str:
         The id of the task, and an empty string when there is none.
     """
     for task in state.task_stack.tasks:
-        if command in task.details:
+        if command in format_arguments(task.arguments):
             return task.id
     return ""
 
@@ -414,7 +415,7 @@ def check_the_window_is_at_the_current_position() -> Tuple[bool, str]:
     # The detail of a command is split over several lines, and the
     # whole of it is never on one line: the first word of it is what
     # the operator reads.
-    words = newest.details.split()
+    words = format_arguments(newest.arguments).split()
     head = words[0] if words else ""
     at_the_position = (
         newest.id in scroll.anchors
