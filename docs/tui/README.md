@@ -37,6 +37,35 @@ This folder holds the documentation of that interface.
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+## The progress pane
+
+The *Workflow & Tool Progress* pane carries the iteration of the run and
+the **recent tool tasks** — the task that runs now is pinned on top of
+the pane, and the tasks that are done are below it, the newest one
+first.
+
+Under the name of every tool is the **arguments of the call** — the
+command of the shell, the path of the file, the text that is written in
+it.  Every tool call shows them, and not only the call of the shell.
+
+| the call | what the pane shows |
+| :--- | :--- |
+| `ls(path="/tmp")` | `/tmp` |
+| `write_file(path="/tmp/a.md", content="hello")` | `path=/tmp/a.md` and `content=hello`, one argument per line |
+| `execute_shell_command(command="git status")` | `git status` |
+
+A call with **one** argument shows the value alone — the name of the
+only argument would only add noise.  A call with **several** names them,
+so that the operator can tell which argument is which.
+
+A value that carries more lines than the pane shows is **folded**: the
+head of it is shown, and the marker says how many lines were left out —
+`… 294 more lines …`.  A body of a file is not a line of the pane, and a
+pane that carries it whole is a pane that carries nothing else.
+
+The home of the operator is hidden in every argument of every tool — the
+path is shown the way a shell writes it, as `~/notes/todo.md`.
+
 ## The commands of the TUI
 
 The TUI is a command-driven interface: every command of the classic

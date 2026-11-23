@@ -245,7 +245,8 @@ class TestThePane:
         state = TuiState()
         state.update_tool_start("read_file", {"file_path": "/tmp/notes.md"})
 
-        assert state.task_stack.tasks[0].details == "/tmp/notes.md"
+        arguments = state.task_stack.tasks[0].arguments
+        assert arguments["file_path"] == "/tmp/notes.md"
 
 
 # ---------------------------------------------------------------------------

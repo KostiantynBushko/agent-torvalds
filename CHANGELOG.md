@@ -6,6 +6,66 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### Every tool call shows its arguments in the progress pane
+
+- **The operator asked on 2026-11-23** for the arguments of every tool call
+  to be on the screen of the *Workflow & Tool Progress* pane — and not only
+  the ones of the shell:
+
+  > *currently only execute shell command shows a list of arguments in
+  > Workflow & Tool Progress window, I think the same must be applied to all
+  > tools call*
+
+- **The rule was written for one tool.**  The line under the name of the tool
+  was built out of two hard coded names — `command` for the shell, and
+  `file_path` for a tool that happens to have one — and every other argument
+  of every other call was thrown away.  The operator saw `✔ write_file (0ms)`
+  and did not see the file that was written, the folder it was written in, or
+  the text that was written in it.
+
+- **The arguments of a call are a property of the call, and not of the
+  tool.**  The rule is a module of its own now —
+  `components/tui/tool_arguments.py` — the way `path_display.py` is the rule
+  that hides the home:
+  - a call with **one** argument shows the **value** alone — the name of the
+    only argument would only add noise, and the command of the operator keeps
+    the look it has had since it is shown whole;
+  - a call with **several** arguments names them — `name=value`, one argument
+    per line, so that the operator can tell which argument is which;
+  - an argument that was **not given** is not shown — a tool that is called
+    with `path=None` was called without a path;
+  - a value that carries **more lines than the pane shows** is **folded**:
+    the head of it is shown, and the marker says how many lines were left out
+    — `… 294 more lines …`.  The body of a file is not a line of the pane,
+    and a pane that carries it whole is a pane that carries nothing else.
+
+- **The state keeps the truth.**  The record of a task carries the
+  **arguments** of the call, as they were given, and not a string that was
+  built out of two names.  The pane decides how much of them is shown, and
+  how — the way it decides where the home of the operator is hidden: the home
+  is hidden on the screen and not in the state, and the arguments are not cut
+  in the state either.
+
+- **The probes of the earlier investigations read the field.**  The
+  record of a task carried a `details` — a string that was built out of
+  two hard coded names — and three probes of the repository read it: the
+  probe of the home, the probe of the autoscroll and the probe of the
+  order of the tasks.  They read the **arguments** of the call now, the
+  way the pane reads them, and every one of the three passes.
+
+- **The seam between the workflow and the pane is checked too.**  The
+  checks of the rule feed the state directly.  The last check of the
+  probe and the three last tests walk the road the workflow walks: the
+  `ToolCall` event of the framework, the real `EventConsumer`, the real
+  `TuiEventAdapter`, and the real panel.  The event is broken on purpose
+  — the arguments are dropped on the way — and the check and the three
+  tests fail while the others keep passing.
+
+- **The evidence:** `tests/test_tui_tool_arguments.py` — 29 tests — and
+  `investigate/tui-tool-arguments/`, the report and the probe, which drives
+  the real panel from the real state.  The gate of the repository stays
+  green: 40 known failures, 0 new, 0 fixed.
+
 #### No user path of the machine ever leaves it
 
 - **The operator stated on 2026-11-23** that the agent may expose a user

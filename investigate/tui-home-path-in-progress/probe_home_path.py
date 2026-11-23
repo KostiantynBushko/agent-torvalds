@@ -179,9 +179,9 @@ def main() -> int:
 
     print("the state keeps the truth")
     state = a_state_with_a_file_under_the_home()
-    details = state.task_stack.tasks[0].details
-    print(f"   the state carries: {details}")
-    if HOME not in details:
+    arguments = state.task_stack.tasks[0].arguments
+    print(f"   the state carries: {arguments}")
+    if not any(HOME in str(value) for value in arguments.values()):
         failures.append(
             "the state does not carry the real path -- the agent has to work "
             "with the path of the machine"

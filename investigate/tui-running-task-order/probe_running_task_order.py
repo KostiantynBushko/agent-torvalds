@@ -42,6 +42,7 @@ if str(ROOT) not in sys.path:
 
 from components.tui.progress_view import ProgressView  # noqa: E402
 from components.tui.state_bridge import TuiEventAdapter, TuiState  # noqa: E402
+from components.tui.tool_arguments import format_arguments  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +148,7 @@ def report(title: str, state: TuiState, truth: str = "") -> None:
     for index, task in enumerate(state.task_stack.tasks):
         print(
             f"  {index}: {task.id:<10} {task.status:<10} {task.name} "
-            f"({task.details})"
+            f"({format_arguments(task.arguments)})"
         )
     print()
     print("the pane, the way the operator sees it:")
@@ -160,7 +161,8 @@ def report(title: str, state: TuiState, truth: str = "") -> None:
         position = state.task_stack.tasks.index(task)
         print(
             f"  -> the task that runs now is task {position} of "
-            f"{len(state.task_stack)}: {task.name} ({task.details})"
+            f"{len(state.task_stack)}: {task.name} "
+            f"({format_arguments(task.arguments)})"
         )
     if not running:
         print("  -> nothing is running.")

@@ -339,6 +339,15 @@ describe.  A plain `git clone` leaves the directory empty;
   the name of the tool says what it works on, and the home of the
   operator is hidden in it — the path is shown the way a shell writes it,
   as `~/notes/todo.md`.
+- The **arguments of every tool call** are on that line.  The line
+  under the name of the tool is the arguments of the **call** — the
+  command of the shell, the path of the file, the text that is written
+  in it — and not only the arguments of the shell.  A call with one
+  argument shows the value alone, and a call with several names them,
+  one argument per line (`path=~/notes.md`, `content=…`).  A value that
+  carries more lines than the pane shows is **folded**: the head of it
+  is shown, and the marker says how many lines were left out
+  (`… 294 more lines …`).
 - The **whole** command of a tool is on that line.  A command that does
   not fit the pane is **split** and takes the lines it needs — a path is
   cut at the separator that fits, and the lines after the first one stand

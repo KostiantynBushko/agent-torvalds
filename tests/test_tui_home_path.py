@@ -136,7 +136,8 @@ class TestThePane:
         """The agent works with the path of the machine, and keeps it."""
         state = a_state_with_a_file(f"{HOME}/notes/todo.md")
 
-        assert state.task_stack.tasks[0].details == f"{HOME}/notes/todo.md"
+        arguments = state.task_stack.tasks[0].arguments
+        assert arguments["file_path"] == f"{HOME}/notes/todo.md"
 
 
 # ---------------------------------------------------------------------------
