@@ -44,8 +44,8 @@ All notable changes to this project are documented in this file.
   was made in the body, not in a check.
 
 - **The agent is told.**  The rule is in the operating instructions of
-  the agent — `project_manager/prompt_engine.py` and the legacy template
-  of `agent-torvalds.py` — so it is in front of the agent at every
+  the agent — the system prompt, which both orchestrators read from
+  `components/system_prompt.py` — so it is in front of the agent at every
   invocation, and not only in a file the agent reads once.
 
 - **What is already published was measured.**  The history carries the
@@ -1192,6 +1192,40 @@ All notable changes to this project are documented in this file.
   and the catalog of the five skills takes **209**.
 
 ### Changed
+
+#### The system prompt is written down once, and both agents read it
+
+- **The multi-window agent told the model about the rule of the user path
+  only half of the time.**  The template of the system prompt lived in
+  each orchestrator, and the two copies drifted: the rule about the user
+  path of the machine was added to the classic agent
+  (`agent-torvalds.py`) and not to the multi-window one
+  (`agent-torvalds-mw.py`).  The fallback of the multi-window agent —
+  the path the operator takes with `--no-prompt-injection` — told the
+  model nothing about it.  The operator found the difference on
+  2026-11-23.
+
+- **The template is in one file now** — `components/system_prompt.py` —
+  and both orchestrators import it.  It is the **same object**, not two
+  equal copies: `SYSTEM_PROMPT_TEMPLATE` is read by `agent-torvalds.py`
+  and by `agent-torvalds-mw.py`.
+
+- **The runtime prompt injection reads it as well.**
+  `project_manager/prompt_engine.py` carried its own copy of the dynamic
+  template; it reads `DYNAMIC_SYSTEM_PROMPT_TEMPLATE` from the shared
+  module now.
+
+- **The rule about the user path is written down once.**  The sentence
+  was in the static template and in the dynamic one; it is
+  `RULE_USER_PATH` in the shared module now, and both templates carry
+  it.  The text of the templates did not change: the module was moved,
+  not rewritten.
+
+- **The evidence:** `tests/test_system_prompt_shared.py` — the two
+  orchestrators read the same object, the rule is in the template both
+  of them fall back to, the two fallbacks are the same text, and no file
+  of the source defines a prompt template of its own.  The check was
+  proved against a deliberate copy: it caught it.
 
 #### The import of one module of the agent does not cost a second
 

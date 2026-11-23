@@ -33,7 +33,9 @@ ROOT = Path(__file__).resolve().parent.parent
 CHECKER_PATH = ROOT / "scripts" / "check_no_user_paths.py"
 RULES_PATH = ROOT / "DEVELOPMENT_RULES.md"
 PROMPT_ENGINE_PATH = ROOT / "project_manager" / "prompt_engine.py"
+PROMPT_TEMPLATE_PATH = ROOT / "components" / "system_prompt.py"
 AGENT_PATH = ROOT / "agent-torvalds.py"
+MW_AGENT_PATH = ROOT / "agent-torvalds-mw.py"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "user_paths.yml"
 
 #: A name that is the account of nobody.  The examples of the tests are
@@ -164,14 +166,27 @@ class TestNothingCarriesAUserPath(unittest.TestCase):
         The agent that writes the text, the code and the commit message
         is the one that has to be told — the rule cannot live only in a
         file the agent reads once.
+
+        The text of the rule lives in one file — the shared prompt — and
+        the orchestrators read it: the classic one, the multi-window one,
+        and the prompt engine that builds the prompt when the runtime
+        injection is on.
         """
-        for path in (PROMPT_ENGINE_PATH, AGENT_PATH):
+        text = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            "Never expose a user path",
+            text,
+            "the shared prompt does not tell the agent about the user path",
+        )
+
+        for path in (PROMPT_ENGINE_PATH, AGENT_PATH, MW_AGENT_PATH):
             with self.subTest(path=path.name):
                 text = path.read_text(encoding="utf-8")
                 self.assertIn(
-                    "user path",
+                    "components.system_prompt",
                     text,
-                    f"{path.name} does not tell the agent about the user path",
+                    f"{path.name} does not read the prompt that tells the "
+                    f"agent about the user path",
                 )
 
     def test_the_workflow_checks_the_text_outside_the_repository(self):
