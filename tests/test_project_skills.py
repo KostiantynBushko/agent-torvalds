@@ -126,7 +126,7 @@ class TestTheSkillsOfTheProject(unittest.TestCase):
 
         The **published** form of a path — ``/home/<user>/...`` — is
         allowed; the private one is not.  The check is the checker of
-        Rule 8, so the two cannot drift apart: a pattern of its own
+        Rule 7, so the two cannot drift apart: a pattern of its own
         would reject the form the rule publishes.
         """
         import importlib.util

@@ -38,7 +38,7 @@ WORKFLOW_PATH = ROOT / ".github" / "workflows" / "user_paths.yml"
 
 #: A name that is the account of nobody.  The examples of the tests are
 #: built at runtime, with it: a path written down in this file would be a
-#: path of a home, and the check of Rule 8 would — rightly — find it here.
+#: path of a home, and the check of Rule 7 would — rightly — find it here.
 FAKE_ACCOUNT = "account-of-the-test"
 
 
@@ -148,9 +148,14 @@ class TestNothingCarriesAUserPath(unittest.TestCase):
         )
 
     def test_the_rule_is_written_down(self):
-        """The rule is in the rules of the development."""
+        """The rule is in the rules of the development.
+
+        The **title** of the rule is asserted, not its number: the rule
+        is read by whoever has to keep it, and the number is the one
+        part of it that a renumbering would break.
+        """
         text = RULES_PATH.read_text(encoding="utf-8")
-        self.assertIn("Rule 8", text)
+        self.assertIn("Never expose a user path", text)
         self.assertIn("user path", text)
 
     def test_the_agent_is_told_the_rule(self):
