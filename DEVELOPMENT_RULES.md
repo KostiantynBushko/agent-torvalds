@@ -209,5 +209,6 @@ message, in the body — and the check is run again.
 
 The operator stated this on 2026-11-23, after finding that the agent may
 expose a user path of the machine in the text, in the code and in the
-commits it generates.  The evidence is in
-`investigate/user-path-exposure/INVESTIGATION_REPORT.md`.
+commits it generates.  The evidence is the check that came with it —
+`scripts/check_no_user_paths.py` — and the test that holds it to its own
+rule: `tests/test_no_user_paths.py`.

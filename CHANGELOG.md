@@ -49,14 +49,14 @@ All notable changes to this project are documented in this file.
   of `agent-torvalds.py` — so it is in front of the agent at every
   invocation, and not only in a file the agent reads once.
 
-- **What is already published was measured** — the probe
-  `investigate/user-path-exposure/probe_user_paths.py` reads the history:
-  **379 of the 507 commits** carry the name of the account of the
-  operator, and two commit messages carry it as well.  The tree of the
-  repository is clean; the history is not.  Removing those leaks is a
-  rewrite of the history and a force-push — Rule 4 asks the operator for
-  the confirmation first, and it has not been given.  **The question is
-  open.**
+- **What is already published was measured.**  The history carries the
+  name of the account of the operator: the tree of **379 of the 507
+  commits** holds it, and the messages of two commits carry it as well —
+  the check reads them on its own: `python
+  scripts/check_no_user_paths.py commits`.  The tree of the repository is
+  clean; the history is not.  Removing those leaks is a rewrite of the
+  history and a force-push — Rule 4 asks the operator for the confirmation
+  first, and it has not been given.  **The question is open.**
 
 #### The panes of the TUI scroll, and they hide
 
@@ -1433,6 +1433,11 @@ All notable changes to this project are documented in this file.
   the probe are in `investigate/tui-hidden-panes/`.  The gate of the
   repository stays green: the known failures stay known, and no new one
   comes.
+
+- **The operator confirmed it in the running application.**  On 2026-11-23,
+  with the fix on the branch: *ok looks like the Ctrl+P and Ctrl+T work*.
+  The two keys hide the panes of the sidebar and bring them back, and the
+  TUI does not fall over when the last of the two is hidden.
 
 #### The recent tool tasks are shown upside down, and the task that runs now is pinned on top
 

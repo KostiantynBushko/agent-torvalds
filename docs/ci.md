@@ -183,8 +183,11 @@ the script in `TORVALDS_PRIVATE_NAMES`.
 The check reads the commits that are **new**, not the whole history: the
 history carries the leaks of the past, and a gate that reads it would be
 red before anyone writes a line of code — the same reason the test gate
-has a baseline.  The audit of the history is the probe:
-`investigate/user-path-exposure/probe_user_paths.py`.
+has a baseline.  The history is audited when the operator asks for it, and
+the audit is a fact and not a gate: the messages of the whole history are
+read by the check itself — `python scripts/check_no_user_paths.py commits`
+— and the trees of the old commits are read with `git grep` over the
+revisions.
 
 ## 8. What is not covered
 
