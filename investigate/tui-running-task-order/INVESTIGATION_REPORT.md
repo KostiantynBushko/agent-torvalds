@@ -13,6 +13,17 @@ that pane.  It was not: it stood in the middle of the list, with the
 finished commands above it — and, when two calls of the same tool ran at
 the same time, the pane reported **the wrong command as running**.
 
+> **A note on the order of the list.**  The list of the tasks that are
+> done is a **stack** today, and the task that ran before the current one
+> is right below it.  The operator decided that later on the same day —
+> *the Recent Tool Task must be shown in the upside-down, so data
+> structure that shows recent tool task must be stack and the current
+> executed command must be on top of the window the previous task must be
+> below currently runned task and so on*.  §16.1 of `docs/tui/hotkeys.md`
+> carries the decision, and `investigate/tui-autoscroll/` carries the
+> measurement of it.  The code quoted in §3 below is the code of the
+> moment: it is the **root cause** of the defect this report is about.
+
 **Probe:** [`probe_running_task_order.py`](probe_running_task_order.py) —
 read-only.  It feeds the real `TuiState` the events the workflow really
 publishes and prints the pane the operator sees.  It writes nothing.

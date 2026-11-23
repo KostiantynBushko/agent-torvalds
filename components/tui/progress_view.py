@@ -18,14 +18,29 @@ above the window of the pane -- *pinned* -- so the operator sees the
 command that runs before anything else, and he keeps seeing it while
 he scrolls the log.  The operator asked for it on 2026-11-22: the
 command that runs now was in the middle of the commands, with the
-finished ones above it.
+finished ones above it -- and he asked for it again on the same day,
+in the words of the request: *please make sure the tool task grow
+down so that current executed is always on top of the window*.
 
-**The list of the tasks that are done is a log.**  The oldest
-completion first, the newest at the bottom, and the window stuck to
-the bottom: "down" walks forward in time, the way it does in every
-scrollable thing the operator knows.  The **anchor** of the window
-keeps the operator where he is: a new task does not move the window of
-the operator who is reading an old one.
+**The recent tool tasks are shown upside down.**  The list of the
+tasks that are done is a **stack**: the newest completion is on the
+top of it, the task that ran before it is right below it, and the one
+before that is below that.  The operator asked for it on 2026-11-22:
+
+*the Recent Tool Task must be shown in the upside-down, so data
+structure that shows recent tool task must be stack and the current
+executed command must be on top of the window the previous task must
+be below currently runned task and so on*
+
+The list **grows down**: a task that is done is pushed on the top of
+the stack, and the tasks that were done before it go down -- one line
+further down for every line the new task takes.  The window is at the
+**current position** of the work: it is stuck to the top of the stack,
+and the newest completion is on the screen while the work goes on.
+
+The **anchor** of the window keeps the operator where he is: a new
+task does not move the window of the operator who is reading an old
+one.
 
 **The pane that has the focus is marked.**  The border is brighter,
 the title carries the marker ``▶``, and the subtitle says where the
@@ -91,9 +106,9 @@ DETAIL_PREFIX = 5
 DEFAULT_PANE_WIDTH = 50
 
 #: How many tasks the pane shows.  They are the tasks that are **done**:
-#: the oldest of them is the first one on the screen, and the newest is
-#: the last one.  The task that runs now is not one of them -- it is
-#: pinned above them.
+#: the stack keeps the newest ones, the newest of them is the first one
+#: on the screen, and the oldest is the last one.  The task that runs
+#: now is not one of them -- it is pinned above them.
 TASKS_SHOWN = 6
 
 #: The words of a detail, and the spaces between them.
@@ -346,8 +361,11 @@ class ProgressView:
         list.  The **running** part is the task that runs now -- it is
         drawn above the window of the pane, so it is on top of the
         window and it stays there while the operator scrolls the log.
-        The **log** is the tasks that are done: the oldest completion
-        first, and the newest at the bottom.
+        The **log** is the stack of the tasks that are done: the newest
+        completion first, and the task that ran before it right below
+        it.  The log **grows down**: a task that is done is pushed on
+        the top of the stack, and the tasks that were done before it go
+        down.
 
         The anchor of a line is the id of the task the line belongs to,
         and the anchor is what keeps the operator on the task he is
@@ -399,17 +417,19 @@ class ProgressView:
         spinner_char = SPINNER_FRAMES[state.spinner_frame % len(SPINNER_FRAMES)]
 
         # The task that runs now, and the tasks that are done.
-        running = [task for task in state.tool_tasks if task.status == "running"]
-        done = [task for task in state.tool_tasks if task.status != "running"]
-        # The log is the order of what happened: the task that is done
-        # first is the oldest one.
-        done.sort(key=lambda task: task.end_time or task.start_time)
+        #
+        # The tasks that are done are read from the **stack**: the
+        # newest completion is the first one, and the task that ran
+        # before it is right below it.  The stack is the structure that
+        # carries the order -- the view does not sort it again.
+        running = state.task_stack.running()
+        done = state.task_stack.done()
 
         running_lines, running_anchors = self._task_lines(
             running, now, spinner_char, text_width
         )
         log_lines, log_anchors = self._task_lines(
-            done[-TASKS_SHOWN:], now, spinner_char, text_width
+            done[:TASKS_SHOWN], now, spinner_char, text_width
         )
 
         if not running and not done:
@@ -571,7 +591,12 @@ class ProgressView:
                 1,
                 available - len(head.lines) - len(running.lines),
             )
-            scroll.set_frame(log.lines, log.anchors, height=height)
+            # The stack is shown upside down, and its current position
+            # is its **beginning**: the window is stuck to the top of
+            # it, and the newest completion is on the screen.
+            scroll.set_frame(
+                log.lines, log.anchors, height=height, follow_end=False
+            )
             lines = head.lines + running.lines + scroll.window()
         else:
             lines = head.lines + running.lines + log.lines

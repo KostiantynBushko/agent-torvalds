@@ -349,9 +349,18 @@ describe.  A plain `git clone` leaves the directory empty;
   panes of the sidebar, `Tab` and `Shift+Tab` move the focus from pane to pane,
   and `Esc` gives the focus back to the command bar.  The pane that has the
   focus carries a brighter border and the marker `▶` in its title, and the keys
-  of that pane scroll it.  The **list of the tasks is a log** — the oldest
-  first, the newest at the bottom — and the window stays on the task the
-  operator is reading when a new one arrives.  The bindings live in the
+  of that pane scroll it.  The **recent tool tasks are shown upside
+  down** — the structure that carries them is a **stack**: the newest
+  completion is on the top of it, the task that ran before it is right
+  below it, and it **grows down**, because a task that is done is pushed
+  on the top of the stack and the tasks that were done before it go
+  down.  The window stays on the task the operator is reading when a
+  new one arrives, and it sits at the **current position** of the work
+  — the top of the stack — while the work goes on.  The **task that
+  runs now is pinned on top of the pane**, so the operator always sees
+  the command that runs, with the task that ran before it right below
+  it.  The
+  bindings live in the
   `[hotkeys]` section of the configuration file, and the operator may replace
   any of them — see [The hot-keys of the TUI](docs/tui/hotkeys.md)
 - The **notice** of the TUI is drawn in the **header**, and not in a pane: a
