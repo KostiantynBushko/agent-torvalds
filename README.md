@@ -346,7 +346,9 @@ describe.  A plain `git clone` leaves the directory empty;
   lines reads as one command.  Nothing of the command is cut away: the
   part of a command that says what it does is the part that matters.
 - The **hot-keys** of the TUI: `Ctrl+T` and `Ctrl+P` show and hide the two
-  panes of the sidebar, `Tab` and `Shift+Tab` move the focus from pane to pane,
+  panes of the sidebar — hiding both takes the sidebar off the screen, and
+  the document pane takes the whole of the body — `Tab` and `Shift+Tab` move
+  the focus from pane to pane,
   and `Esc` gives the focus back to the command bar.  The pane that has the
   focus carries a brighter border and the marker `▶` in its title, and the keys
   of that pane scroll it.  The **recent tool tasks are shown upside

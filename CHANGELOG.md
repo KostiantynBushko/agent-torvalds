@@ -1331,6 +1331,57 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+#### Hiding both panes of the sidebar crashed the TUI
+
+- **The operator reported on 2026-11-23** that the TUI died when both
+  panes of the sidebar were hidden:
+
+  > *it happens when we hide both "Agent Telemetry & State" and "Workflow
+  > & Tool Progress" or vice versa*
+
+  with the stack of the crash:
+
+  ```
+    File ".../rich/console.py", line 1339, in render
+      for render_output in iter_render:
+    File ".../rich/layout.py", line 401, in __rich_console__
+      render_map = self.render(console, options.update_dimensions(width, height))
+    File ".../rich/console.py", line 240, in update_dimensions
+      options = self.copy()
+  RecursionError: maximum recursion depth exceeded
+  ```
+
+- **The cause.**  Rich walks the **visible** children of a partition, and
+  a partition with no visible child is a partition without a content of
+  its own: Rich draws it as *itself*.  The sidebar has two children —
+  the progress pane and the telemetry pane — and the operator had hidden
+  both of them, so the sidebar was a leaf whose content was the sidebar
+  itself.  The layout drew the sidebar, the sidebar drew the layout, and
+  the drawing never ended.
+
+  The rule the layout has to keep is:
+
+  > A partition that is **drawn** and has **children** must have at least
+  > one **visible** child.
+
+- **The fix.**  The sidebar leaves the layout together with its last
+  pane: `apply_pane_visibility()` in `components/tui/layout_manager.py`
+  hides the two panes as they always did, and hides the sidebar with the
+  last of them.  **The document pane takes the whole of the body** — 120
+  cells of a terminal of 120 cells, instead of the 78 it takes while the
+  sidebar is there.  The panes come back with the same keys, in the
+  place they were, and the rule is applied from the state on every frame,
+  so it is idempotent and it survives a resize.
+
+- **The evidence:** `tests/test_tui_hidden_panes.py` — the layout is
+  drawn with every pane of the sidebar hidden, the sidebar leaves the
+  layout with its last pane, the pane that is left takes the whole of
+  the sidebar, **no drawn partition has children that are all hidden**,
+  and the application survives the two keys in any order.  The report and
+  the probe are in `investigate/tui-hidden-panes/`.  The gate of the
+  repository stays green: the known failures stay known, and no new one
+  comes.
+
 #### The recent tool tasks are shown upside down, and the task that runs now is pinned on top
 
 - **The operator asked on 2026-11-22**:

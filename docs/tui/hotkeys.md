@@ -211,6 +211,23 @@ telemetry pane gives the whole sidebar to the progress pane.
 
 The same key brings the pane back, in the place it was.
 
+**When both of them are hidden, the sidebar leaves the screen.**  A Rich
+partition whose children are *all* invisible is a partition without a
+content of its own, and Rich draws such a partition as *itself*: the
+layout draws the sidebar, the sidebar draws the layout, and the operator
+gets a stack of a thousand frames instead of a screen.  The sidebar is
+therefore hidden with its last pane, and **the document pane takes the
+whole of the body**:
+
+| | Before | After `Ctrl+T` and `Ctrl+P` |
+| :--- | :--- | :--- |
+| document pane | 78 × 17 | 120 × 17 |
+| progress pane | 42 × 17 | *not on the screen* |
+| telemetry pane | 42 × 17 | *not on the screen* |
+
+The panes come back with the same keys, in the place they were.  The
+evidence is `investigate/tui-hidden-panes/INVESTIGATION_REPORT.md`.
+
 **The notice of the TUI is not in a pane.**  The messages the TUI gives
 the operator — *"Agent is busy processing"*, *"Working in session …"* —
 are drawn in the **header**, so a notice is visible whatever the
@@ -667,6 +684,30 @@ So hiding the telemetry pane gives the whole sidebar to the progress pane
 — with **no rebuild of the layout tree** and **no new ratios**.  The
 visibility is applied from the state on every frame, so it is idempotent
 and survives a resize.
+
+**The sidebar leaves the layout with its last pane.**  Rich walks the
+*visible* children of a partition, and a partition with no visible child
+is a partition without a content of its own: Rich draws it as *itself*,
+and the layout draws the sidebar, the sidebar draws the layout, and the
+drawing never ends (`RecursionError`).  The rule the layout keeps is:
+
+> A partition that is **drawn** and has **children** must have at least
+> one **visible** child.
+
+`apply_pane_visibility()` in `components/tui/layout_manager.py` is where
+the rule is kept: the two panes of the sidebar hide as they always did,
+and the sidebar hides with the last of them — so the document pane takes
+the whole of the body:
+
+```
+both panes shown     markdown_pane 78×28    progress_pane 42×14    telemetry_pane 42×14
+one pane hidden      markdown_pane 78×28    progress_pane 42×28    telemetry_pane (not in the map)
+both panes hidden    markdown_pane 120×28   progress_pane (not in the map)
+                                                 telemetry_pane (not in the map)
+```
+
+The tests are `tests/test_tui_hidden_panes.py`, and the evidence is
+`investigate/tui-hidden-panes/INVESTIGATION_REPORT.md`.
 
 ### 11.8 The notification moves to the header
 

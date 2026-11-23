@@ -26,6 +26,7 @@ from components.config import config
 from components.config_view import handle_config_markdown
 from components.file_logging import LogFileConfig
 from components.tui.layout_manager import (
+    apply_pane_visibility,
     build_torvalds_layout,
     fit_footer,
     fit_header,
@@ -1367,11 +1368,12 @@ class TuiApp:
 
         A hidden pane leaves the layout, and the space goes to its
         sibling: the whole sidebar to the pane that is left.  The
-        visibility is applied from the state on every frame, so it is
-        idempotent and it survives a resize.
+        sidebar itself leaves the layout when it has no pane left, and
+        the document pane takes the whole of the body -- a Rich
+        partition whose children are all invisible is drawn as itself,
+        and that is an endless recursion.
         """
-        for pane in ("progress_pane", "telemetry_pane"):
-            self.layout[pane].visible = pane not in self.state.hidden_panes
+        apply_pane_visibility(self.layout, self.state.hidden_panes)
 
     def _update_layout_panes(self) -> None:
         """Render and attach panels to the layout partitions."""
