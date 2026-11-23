@@ -9,7 +9,19 @@ Key mappings normalized:
 - "UP", "DOWN", "LEFT", "RIGHT"
 - "PGUP", "PGDN", "HOME", "END"
 - "CTRL_C", "CTRL_D"
+- "CTRL_A" ... "CTRL_Z" -- the control chords.  A terminal sends them
+  as the control byte itself, and the reader names them.
+- "SHIFT_UP", "CTRL_UP", "ALT_UP" ... -- the *modified* keys.  The
+  modifier is a part of the name, because a key with a modifier and the
+  same key without it are two different keys.
+- "F1" ... "F20" -- the function keys
+- "ALT_a" ... -- the Alt chords.  The terminal sends the ESC, and then
+  the key itself.
 - Regular characters (e.g. 'a', 'Z', '1', '\\', ' ')
+
+The name of a key is what a binding is written against, and it is
+always the same word: the modifiers are named in a fixed order -- the
+Ctrl, the Alt, the Shift -- in front of the name of the key.
 
 A paste is not a keystroke: it arrives as one piece of text, and it is
 handed over as one piece — a :class:`PastedText`, which is a string of
@@ -71,6 +83,12 @@ _CSI_FINAL_KEYS = {
     "H": "HOME",
     "F": "END",
     "Z": "SHIFT_TAB",
+    # The function keys of the "CSI" form: "ESC [ 1 ; 5 P" is the
+    # Ctrl+F1, and the final byte is the "P".
+    "P": "F1",
+    "Q": "F2",
+    "R": "F3",
+    "S": "F4",
 }
 
 #: The keys of a control sequence that ends with a tilde.  The number
@@ -86,11 +104,126 @@ _CSI_TILDE_KEYS = {
     "8": "END",
 }
 
+#: The function keys of the tilde form: "ESC [ 15 ~" is the F5, and
+#: "ESC [ 24 ~" is the F12.  The numbers that are not there are the
+#: ones no terminal sends -- the F6 is the "17" and not the "16".
+_FUNCTION_KEYS = {
+    "11": "F1",
+    "12": "F2",
+    "13": "F3",
+    "14": "F4",
+    "15": "F5",
+    "17": "F6",
+    "18": "F7",
+    "19": "F8",
+    "20": "F9",
+    "21": "F10",
+    "23": "F11",
+    "24": "F12",
+    "25": "F13",
+    "26": "F14",
+    "28": "F15",
+    "29": "F16",
+    "31": "F17",
+    "32": "F18",
+    "33": "F19",
+    "34": "F20",
+}
+
+#: The keys of a control sequence that starts with "ESC O" -- the
+#: application cursor mode, and the first four function keys.
+_SS3_KEYS = {
+    "A": "UP",
+    "B": "DOWN",
+    "C": "RIGHT",
+    "D": "LEFT",
+    "H": "HOME",
+    "F": "END",
+    "P": "F1",
+    "Q": "F2",
+    "R": "F3",
+    "S": "F4",
+}
+
 #: The keys of the "CSI u" form, where the key is the first number and
 #: the modifiers follow it.
 _CSI_U_KEYS = {
-    "13;5": "CTRL_ENTER",
+    "13": "ENTER",
 }
+
+#: The bits of the modifier of a key.  The terminal sends the modifier
+#: as the number of the last parameter of the sequence, and the number
+#: is the sum of these bits, plus one.
+MOD_SHIFT = 1
+MOD_ALT = 2
+MOD_CTRL = 4
+
+#: The names of the modifiers, in the order they are written in a name.
+#: The order is fixed, so that the name of a key is always the same
+#: word -- the name of a key is what a binding is written against.
+_MOD_NAMES = ((MOD_CTRL, "CTRL"), (MOD_ALT, "ALT"), (MOD_SHIFT, "SHIFT"))
+
+
+def _modifier_mask(parameter: str) -> int:
+    """The bits of the modifier a control sequence carries.
+
+    The terminal sends the modifier as a number that is the sum of the
+    bits of the modifiers, plus one: "ESC [ 1 ; 5 A" is the Ctrl+Up,
+    and the "5" is the Ctrl.
+
+    Args:
+        parameter: The last parameter of the sequence.
+
+    Returns:
+        The bits of the modifier, and zero when there is none.
+    """
+    try:
+        value = int(parameter)
+    except (TypeError, ValueError):
+        return 0
+    if value <= 1:
+        return 0
+    return value - 1
+
+
+def _name_with_modifiers(name: str, mask: int) -> str:
+    """The name of a key with the modifiers it was pressed with.
+
+    Args:
+        name: The name of the key, without a modifier.
+        mask: The bits of the modifiers.
+
+    Returns:
+        The name of the key, with the modifiers in front of it.
+    """
+    if not mask:
+        return name
+    parts = [label for bit, label in _MOD_NAMES if mask & bit]
+    return "_".join(parts + [name])
+
+
+def _control_key(character: str) -> Optional[str]:
+    """The name of a control character.
+
+    A terminal does not send "Ctrl+T" as a chord of its own: it sends
+    the control byte, 0x14.  The byte is the key, and the reader has
+    to name it -- otherwise a hot-key has nothing to bind.
+
+    The four bytes that are not there are the ones another key already
+    claimed: the 0x08 is the backspace, the 0x09 is the tab, and the
+    0x0A and the 0x0D are the enter.
+
+    Args:
+        character: The character the terminal sent.
+
+    Returns:
+        The name of the control chord, or None when the character is
+        not one.
+    """
+    code = ord(character)
+    if code < 0x01 or code > 0x1A:
+        return None
+    return "CTRL_" + chr(ord("A") + code - 1)
 
 
 class PastedText(str):
@@ -324,6 +457,12 @@ class NonBlockingInputReader:
         if ch == "\x04":
             return "CTRL_D"
 
+        # The other control characters are the Ctrl chords: the
+        # terminal sends them as the control byte itself.
+        control = _control_key(ch)
+        if control is not None:
+            return control
+
         # Printable character
         return ch
 
@@ -489,7 +628,9 @@ class NonBlockingInputReader:
             return "CTRL_C"
         if character == "\x04":
             return "CTRL_D"
-        return None
+        # The other control characters are the Ctrl chords: the
+        # terminal sends them as the control byte itself.
+        return _control_key(character)
 
     def _next_char(self) -> str:
         """
@@ -627,10 +768,30 @@ class NonBlockingInputReader:
             # buffer: the terminal may still be writing the sequence.
             return self._escape_given_up()
 
-        if self._pending[1] != "[":
-            # Not a control sequence: the escape is a key of its own.
+        introducer = self._pending[1]
+
+        if introducer == "O":
+            # The application cursor mode, and the first four function
+            # keys: "ESC O P" is the F1.
+            self._consume(2)
+            final = self._peek_char()
+            if not final:
+                if not self._wait_for_input():
+                    return "ESCAPE"
+                final = self._peek_char()
+                if not final:
+                    return "ESCAPE"
+            self._consume(1)
+            self._escape_started = 0.0
+            return _SS3_KEYS.get(final, "ESCAPE")
+
+        if introducer != "[":
+            # Not a control sequence: the escape is a key of its own,
+            # and the byte behind it is the key of the Alt chord.
             self._consume(2)
             self._escape_started = 0.0
+            if introducer.isprintable():
+                return "ALT_" + ("SPACE" if introducer == " " else introducer)
             return "ESCAPE"
 
         # The escape and the introducer are behind us.
@@ -717,37 +878,59 @@ class NonBlockingInputReader:
             return "ESCAPE"
         self._consume(1)
 
-        if introducer != "[":
-            return "ESCAPE"
+        if introducer == "[":
+            params = ""
+            final = ""
+            while True:
+                c = self._peek_char()
+                if not c:
+                    # The rest of the sequence has not arrived yet: the
+                    # terminal is still writing it.
+                    if not self._wait_for_input(ESCAPE_TIMEOUT):
+                        return "ESCAPE"
+                    continue
+                self._consume(1)
+                if "0" <= c <= "?":
+                    params += c
+                    continue
+                if " " <= c <= "/":
+                    # An intermediate byte: it is part of the sequence and
+                    # it says nothing about the key.
+                    continue
+                final = c
+                break
 
-        params = ""
-        final = ""
-        while True:
-            c = self._peek_char()
-            if not c:
-                # The rest of the sequence has not arrived yet: the
-                # terminal is still writing it.
+            if params == "200" and final == "~":
+                # The marker that opens a paste.
+                return self._collect_paste()
+            return self._decode_csi(params, final)
+
+        if introducer == "O":
+            # The application cursor mode, and the first four function
+            # keys: "ESC O P" is the F1.
+            final = self._peek_char()
+            if not final:
                 if not self._wait_for_input(ESCAPE_TIMEOUT):
                     return "ESCAPE"
-                continue
+                final = self._peek_char()
+                if not final:
+                    return "ESCAPE"
             self._consume(1)
-            if "0" <= c <= "?":
-                params += c
-                continue
-            if " " <= c <= "/":
-                # An intermediate byte: it is part of the sequence and
-                # it says nothing about the key.
-                continue
-            final = c
-            break
+            return _SS3_KEYS.get(final, "ESCAPE")
 
-        if params == "200" and final == "~":
-            # The marker that opens a paste.
-            return self._collect_paste()
-        return self._decode_csi(params, final)
+        if introducer.isprintable():
+            # The Alt chord: the terminal sends the ESC, and then the
+            # key itself.
+            return "ALT_" + ("SPACE" if introducer == " " else introducer)
+
+        return "ESCAPE"
 
     def _decode_csi(self, params: str, final: str) -> Optional[str]:
         """The key of a control sequence, from its parameters.
+
+        The parameters are the numbers of the sequence, and the last of
+        them may be the modifier of the key: "ESC [ 1 ; 5 A" is the
+        Ctrl+Up, and the "5" is the Ctrl.
 
         Args:
             params: The parameter bytes of the sequence.
@@ -756,13 +939,68 @@ class NonBlockingInputReader:
         Returns:
             The key of the sequence, or "ESCAPE" when it is unknown.
         """
-        if final in _CSI_FINAL_KEYS:
-            return _CSI_FINAL_KEYS[final]
+        numbers = [part for part in params.split(";") if part]
+
         if final == "~":
-            return _CSI_TILDE_KEYS.get(params, "ESCAPE")
+            return self._decode_tilde(numbers)
         if final == "u":
-            return _CSI_U_KEYS.get(params, "ESCAPE")
-        return "ESCAPE"
+            return self._decode_csi_u(numbers)
+
+        name = _CSI_FINAL_KEYS.get(final)
+        if name is None:
+            return "ESCAPE"
+
+        # The modifier is the last of the parameters -- and there is one
+        # only when the sequence carries more than one: "ESC [ 1 ; 5 A".
+        mask = _modifier_mask(numbers[-1]) if len(numbers) > 1 else 0
+        return _name_with_modifiers(name, mask)
+
+    def _decode_tilde(self, numbers: List[str]) -> str:
+        """The key of a control sequence that ends with a tilde.
+
+        The number of the key is the one before the modifier: the
+        "ESC [ 3 ; 5 ~" is the Ctrl+Delete, and the "ESC [ 15 ~" is the
+        F5.
+
+        Args:
+            numbers: The numbers of the sequence.
+
+        Returns:
+            The key of the sequence, or "ESCAPE" when it is unknown.
+        """
+        if len(numbers) >= 2:
+            key_number = numbers[-2]
+            mask = _modifier_mask(numbers[-1])
+        elif numbers:
+            key_number = numbers[0]
+            mask = 0
+        else:
+            return "ESCAPE"
+
+        name = _CSI_TILDE_KEYS.get(key_number) or _FUNCTION_KEYS.get(key_number)
+        if name is None:
+            return "ESCAPE"
+        return _name_with_modifiers(name, mask)
+
+    def _decode_csi_u(self, numbers: List[str]) -> str:
+        """The key of a control sequence in the "CSI u" form.
+
+        The key is the first number, and the modifier is the last one:
+        the "ESC [ 13 ; 5 u" is the Ctrl+Enter.
+
+        Args:
+            numbers: The numbers of the sequence.
+
+        Returns:
+            The key of the sequence, or "ESCAPE" when it is unknown.
+        """
+        if not numbers:
+            return "ESCAPE"
+        name = _CSI_U_KEYS.get(numbers[0])
+        if name is None:
+            return "ESCAPE"
+        mask = _modifier_mask(numbers[-1]) if len(numbers) > 1 else 0
+        return _name_with_modifiers(name, mask)
 
     def _collect_paste(self) -> Optional[str]:
         """Collect the text of a paste.

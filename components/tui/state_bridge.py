@@ -9,16 +9,38 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from components.hitl_timeout import NO_TIMEOUT, is_no_timeout, normalize_timeout
+from components.tui.hotkeys import (
+    FOCUS_DOCUMENT,
+    FOCUS_INPUT,
+    FOCUS_PROGRESS,
+    FOCUS_TELEMETRY,
+    PANE_OF_FOCUS,
+    PANES,
+)
+from components.tui.pane_scroll import PaneScroll
 
 logger = logging.getLogger(__name__)
+
+#: How many tasks the stack of the run keeps.  The oldest one falls
+#: off the bottom of the stack when the stack is full: the pane shows
+#: six of them, and the rest of the stack is the history the operator
+#: scrolls.
+MAX_TOOL_TASKS = 15
 
 
 @dataclass
 class ToolExecutionRecord:
-    """Record of a tool execution for progress monitoring."""
+    """Record of a tool execution for progress monitoring.
+
+    The **id of the call** is kept with the record: the workflow runs
+    the calls of a turn concurrently, and two calls of the same tool
+    carry the same name.  The id tells the two apart -- without it the
+    result of one call closes the record of the other one, and the
+    operator is shown a command that is still running as finished.
+    """
     id: str
     name: str
     status: str  # "running", "completed", "error"
@@ -27,6 +49,163 @@ class ToolExecutionRecord:
     duration_ms: float = 0.0
     details: str = ""
     error_message: str = ""
+    tool_id: str = ""
+
+
+class TaskStack:
+    """
+    The stack of the tasks of the run.
+
+    The stack is the structure that shows the **recent tool tasks**.
+    The newest task is on the top, and a task that is done is pushed
+    on the top of it: the task that ran before it is below it now, and
+    the one before that is below that.
+
+    The operator asked for the stack on 2026-11-22 -- the recent tool
+    tasks are shown **upside down**:
+
+    > the Recent Tool Task must be shown in the upside-down, so
+    > data structure that shows recent tool task must be stack and the
+    > current executed command must be on top of the window the previous
+    > task must be below currently runned task and so on
+
+    The stack grows **down** on the screen: a task that is done is
+    pushed on the top of the list, and the tasks that were done before
+    it go down -- one line further down for every line the new task
+    takes.  The list never grows up.
+
+    Args:
+        limit: The number of the tasks the stack keeps.  The oldest one
+            falls off the bottom of the stack when it is full.
+    """
+
+    def __init__(self, limit: int = MAX_TOOL_TASKS) -> None:
+        self._tasks: List[ToolExecutionRecord] = []
+        self._limit = max(1, int(limit))
+
+    # -- the stack ----------------------------------------------------
+
+    def push(self, record: ToolExecutionRecord) -> None:
+        """A task starts: it goes on the top of the stack.
+
+        Args:
+            record: The record of the task.
+        """
+        self._tasks.insert(0, record)
+        self._drop_the_oldest()
+
+    def complete(self, record: ToolExecutionRecord) -> None:
+        """A task is done: it is pushed on the top of the stack.
+
+        The task is the newest one of the log -- the task that ran
+        before it is below it now.
+
+        Args:
+            record: The record of the task.
+        """
+        if not self._remove(record):
+            return
+        self._tasks.insert(0, record)
+        self._drop_the_oldest()
+
+    def _remove(self, record: ToolExecutionRecord) -> bool:
+        """Take a record out of the stack.
+
+        The record is found by its **identity** and not by its value:
+        two records of two calls of the same tool carry the same values
+        as long as the id is not read, and the wrong one would go.
+
+        Args:
+            record: The record to take out.
+
+        Returns:
+            True when the record was on the stack.
+        """
+        for index, other in enumerate(self._tasks):
+            if other is record:
+                del self._tasks[index]
+                return True
+        return False
+
+    def _drop_the_oldest(self) -> None:
+        """The oldest tasks fall off the bottom of the stack."""
+        while len(self._tasks) > self._limit:
+            self._tasks.pop()
+
+    # -- the reading --------------------------------------------------
+
+    @property
+    def tasks(self) -> List[ToolExecutionRecord]:
+        """The whole stack, the newest task first."""
+        return list(self._tasks)
+
+    def running(self) -> List[ToolExecutionRecord]:
+        """The tasks that run now."""
+        return [task for task in self._tasks if task.status == "running"]
+
+    def done(self) -> List[ToolExecutionRecord]:
+        """The tasks that are done, the newest completion first."""
+        return [task for task in self._tasks if task.status != "running"]
+
+    def find_running(
+        self,
+        tool_name: str,
+        tool_id: str = "",
+    ) -> Optional[ToolExecutionRecord]:
+        """The record of the call that runs.
+
+        The id of the call is the truth: the workflow runs the calls of
+        a turn concurrently, and two calls of the same tool carry the
+        same name.  The name is the fallback, for the events that carry
+        no id.
+
+        The stack is walked from the top: the call that started last is
+        the one on the top of it.
+
+        Args:
+            tool_name: The name of the tool.
+            tool_id: The id of the call in the workflow.
+
+        Returns:
+            The record of the call, or ``None`` when the call is not on
+            the screen any more.
+        """
+        if tool_id:
+            for record in self._tasks:
+                if record.tool_id == tool_id and record.status == "running":
+                    return record
+        for record in self._tasks:
+            if record.name == tool_name and record.status == "running":
+                return record
+        return None
+
+    def close_the_running(self) -> None:
+        """Close the tasks that still run when the run is over.
+
+        A task that never reported is closed, and it is pushed on the
+        top of the stack: it is the newest completion of the run, and
+        the stack keeps the newest one on the top.
+        """
+        now = time.time()
+        running = [
+            record for record in self._tasks if record.status == "running"
+        ]
+        # The oldest task first, so that the newest of them ends on the
+        # top of the stack.
+        for record in sorted(running, key=lambda item: item.start_time):
+            record.status = "error"
+            record.end_time = now
+            record.duration_ms = (now - record.start_time) * 1000
+            record.error_message = "the run was over before it reported"
+            self.complete(record)
+
+    def __len__(self) -> int:
+        """The number of the tasks on the stack."""
+        return len(self._tasks)
+
+    def __iter__(self):
+        """The tasks of the stack, the newest first."""
+        return iter(list(self._tasks))
 
 
 class TuiState:
@@ -51,6 +230,10 @@ class TuiState:
         self.scroll_offset: int = 0
         self.total_rendered_lines: int = 0
         self.spinner_frame: int = 0
+        #: The number of lines the document pane shows.  The
+        #: application sets it from the layout: the number is the one
+        #: the layout really uses, and not the one the source guesses.
+        self.document_height: int = 10
 
         # Background workflow & progress state
         self.workflow_iteration: int = 0
@@ -59,7 +242,11 @@ class TuiState:
         #: budget when the agent is built, and it tells it again with
         #: every iteration of the run.
         self.max_iterations: int = 0
-        self.tool_tasks: List[ToolExecutionRecord] = []
+        #: The **stack** of the tasks of the run.  The newest task is
+        #: on the top of it: the recent tool tasks are shown upside
+        #: down, and the command that runs now is on top of the window
+        #: with the task that ran before it right below it.
+        self.task_stack: TaskStack = TaskStack()
         self._tool_counter: int = 0
 
         # Telemetry & metrics state
@@ -136,6 +323,42 @@ class TuiState:
         self.notification_message: Optional[str] = None
         self.notification_expire: float = 0.0
 
+        # -- the hot-keys ------------------------------------------------
+        #
+        # The focus is the **document pane** by default.  The operator
+        # asked on 2026-11-22:
+        #
+        #     I see that focus mark apears only when I hit Tab so it
+        #     does not have default selected window, the default one
+        #     must be markdown document window and the focus mark must
+        #     apears on start up on this window
+        #
+        # Before that, the focus was the command bar and **no pane was
+        # marked at all** until the operator pressed Tab: the TUI did
+        # not say which pane was the selected one, and the mark that
+        # was meant to answer the question appeared only after the
+        # operator had found it himself.
+        #
+        # The price of the mark: the keys of a pane are live while that
+        # pane has the focus.  `Up` and `Down` scroll the document
+        # therefore, and not the history of the command bar.  `Esc`
+        # gives the focus back to the command bar, and the history is
+        # there again.
+        self.focus: str = FOCUS_DOCUMENT
+        # The panes that are hidden.  A hidden pane is not in the focus
+        # cycle, and the space it took goes to its sibling.
+        self.hidden_panes: Set[str] = set()
+        # The scroll of every pane of the sidebar that can be scrolled.
+        # Every pane carries its own: the operator reads the progress
+        # pane and the telemetry pane at the same time, and one window
+        # does not move the other.  The document pane scrolls on
+        # ``scroll_offset`` -- it has carried its own scroll since the
+        # beginning.
+        self.pane_scrolls: Dict[str, PaneScroll] = {
+            FOCUS_PROGRESS: PaneScroll(),
+            FOCUS_TELEMETRY: PaneScroll(),
+        }
+
     # ----------------------------------------------------------------------
     # Thread-Safe State Mutators
     # ----------------------------------------------------------------------
@@ -155,9 +378,31 @@ class TuiState:
             else:
                 self.status_message = "Ready"
                 self.active_tool = None
+                # The run is over, so nothing runs any more.  A tool
+                # that never reported is closed here: the pane shows
+                # the task that runs now on top, and a task that spins
+                # there for ever is a lie the operator reads.
+                self._close_the_tasks_that_run()
 
-    def update_tool_start(self, tool_name: str, tool_kwargs: Dict[str, Any]) -> None:
-        """Record the start of a tool execution."""
+    def _close_the_tasks_that_run(self) -> None:
+        """Close the tasks that still run when the run is over."""
+        self.task_stack.close_the_running()
+
+    def update_tool_start(
+        self,
+        tool_name: str,
+        tool_kwargs: Dict[str, Any],
+        tool_id: str = "",
+    ) -> None:
+        """Record the start of a tool execution.
+
+        Args:
+            tool_name: The name of the tool.
+            tool_kwargs: The arguments of the call.
+            tool_id: The id of the call in the workflow.  The calls of
+                a turn run concurrently, and the id is what tells two
+                calls of the same tool apart.
+        """
         with self._lock:
             self.status_message = f"Calling tool `{tool_name}`..."
             self.active_tool = tool_name
@@ -181,28 +426,50 @@ class TuiState:
                 status="running",
                 start_time=time.time(),
                 details=details,
+                tool_id=str(tool_id or ""),
             )
-            self.tool_tasks.append(record)
-            # Keep history bounded to last 15 tool executions
-            if len(self.tool_tasks) > 15:
-                self.tool_tasks.pop(0)
+            # The task goes on the top of the stack: the newest task is
+            # the first one, and the oldest one falls off the bottom of
+            # the stack when it is full.
+            self.task_stack.push(record)
 
-    def update_tool_end(self, tool_name: str, result: str, is_error: bool = False) -> None:
-        """Record the completion of a tool execution."""
+    def update_tool_end(
+        self,
+        tool_name: str,
+        result: str,
+        is_error: bool = False,
+        tool_id: str = "",
+    ) -> None:
+        """Record the completion of a tool execution.
+
+        The **id of the call** finds the record: the workflow runs the
+        calls of a turn concurrently, and the name of a tool is not
+        enough to tell two calls of the same tool apart.  The name is
+        the fallback, for the events that carry no id.
+
+        Args:
+            tool_name: The name of the tool.
+            result: The result of the call.
+            is_error: Whether the call failed.
+            tool_id: The id of the call in the workflow.
+        """
         with self._lock:
             self.status_message = f"Tool `{tool_name}` completed"
             if self.active_tool == tool_name:
                 self.active_tool = None
 
             now = time.time()
-            for record in reversed(self.tool_tasks):
-                if record.name == tool_name and record.status == "running":
-                    record.status = "error" if is_error else "completed"
-                    record.end_time = now
-                    record.duration_ms = (now - record.start_time) * 1000
-                    if is_error:
-                        record.error_message = result[:60]
-                    break
+            record = self.task_stack.find_running(tool_name, tool_id)
+            if record is not None:
+                record.status = "error" if is_error else "completed"
+                record.end_time = now
+                record.duration_ms = (now - record.start_time) * 1000
+                if is_error:
+                    record.error_message = result[:60]
+                # The task that is done is the newest one of the log:
+                # it is pushed on the top of the stack, and the tasks
+                # that were done before it go down.
+                self.task_stack.complete(record)
 
             self.total_tool_calls += 1
 
@@ -231,8 +498,27 @@ class TuiState:
     def scroll_down(self, lines: int = 5) -> None:
         """Scroll document viewer downwards."""
         with self._lock:
-            max_scroll = max(0, self.total_rendered_lines - 10)
+            max_scroll = self.max_scroll()
             self.scroll_offset = min(max_scroll, self.scroll_offset + lines)
+
+    def scroll_home(self) -> None:
+        """Go to the top of the document."""
+        with self._lock:
+            self.scroll_offset = 0
+
+    def scroll_end(self) -> None:
+        """Go to the bottom of the document."""
+        with self._lock:
+            self.scroll_offset = self.max_scroll()
+
+    def max_scroll(self) -> int:
+        """The largest offset the document may have.
+
+        The number of lines the pane shows is the one the layout really
+        uses: the scroll stops where the last line of the content is on
+        the screen.
+        """
+        return max(0, self.total_rendered_lines - max(1, self.document_height))
 
     def update_workflow_iteration(self, iteration: int, max_iterations: int) -> None:
         """Update the progress of the workflow.
@@ -353,6 +639,105 @@ class TuiState:
             self.chat_session_type = session_type
             self.chat_session_id = session_id
 
+    # ----------------------------------------------------------------------
+    # The hot-keys
+    # ----------------------------------------------------------------------
+
+    def set_focus(self, focus: str) -> None:
+        """Give the focus to a pane.
+
+        Args:
+            focus: The focus — "input", "document", "progress" or
+                "telemetry".
+        """
+        with self._lock:
+            self.focus = focus or FOCUS_INPUT
+
+    def is_pane_visible(self, focus: str) -> bool:
+        """Whether the pane of a focus is on the screen.
+
+        Args:
+            focus: The focus of the pane.
+
+        Returns:
+            True when the pane is visible.
+        """
+        with self._lock:
+            pane = PANE_OF_FOCUS.get(focus, focus)
+            return pane not in self.hidden_panes
+
+    def focus_cycle(self) -> List[str]:
+        """The focus cycle, in the order the operator walks through it.
+
+        A hidden pane is not in the cycle: the operator cannot focus
+        what is not on the screen.
+        """
+        with self._lock:
+            cycle = [FOCUS_INPUT]
+            for pane in PANES:
+                layout_pane = PANE_OF_FOCUS.get(pane, pane)
+                if layout_pane not in self.hidden_panes:
+                    cycle.append(pane)
+            return cycle
+
+    def move_focus(self, step: int = 1) -> str:
+        """Move the focus by a number of panes, and wrap around.
+
+        Args:
+            step: How many panes to move — one forward, one backward.
+
+        Returns:
+            The new focus.
+        """
+        with self._lock:
+            cycle = self.focus_cycle()
+            if not cycle:
+                return self.focus
+            try:
+                index = cycle.index(self.focus)
+            except ValueError:
+                index = 0
+            self.focus = cycle[(index + int(step)) % len(cycle)]
+            return self.focus
+
+    def toggle_pane(self, pane: str) -> bool:
+        """Show or hide a pane.
+
+        The space of a hidden pane goes to its sibling: the sidebar
+        carries one pane instead of two, and the pane that is left
+        takes the whole of it.
+
+        Args:
+            pane: The name of the pane in the layout — "progress_pane"
+                or "telemetry_pane".
+
+        Returns:
+            True when the pane is visible after the change.
+        """
+        with self._lock:
+            if pane in self.hidden_panes:
+                self.hidden_panes.discard(pane)
+            else:
+                self.hidden_panes.add(pane)
+            return pane not in self.hidden_panes
+
+    def scroll_of(self, focus: str) -> PaneScroll:
+        """The scroll of a pane.
+
+        Args:
+            focus: The focus of the pane.
+
+        Returns:
+            The scroll of the pane — a new one when the pane is not
+            known, so that the caller never gets None.
+        """
+        with self._lock:
+            scroll = self.pane_scrolls.get(focus)
+            if scroll is None:
+                scroll = PaneScroll()
+                self.pane_scrolls[focus] = scroll
+            return scroll
+
     def show_notification(self, message: str, duration: float = 3.0) -> None:
         """Display a temporary notification in the status bar."""
         with self._lock:
@@ -402,11 +787,22 @@ class TuiEventAdapter:
         if input_type:
             self._input_type = input_type
 
-    def on_tool_call_start(self, tool_name: str, tool_kwargs: Dict[str, Any]) -> None:
-        self.state.update_tool_start(tool_name, tool_kwargs)
+    def on_tool_call_start(
+        self,
+        tool_name: str,
+        tool_kwargs: Dict[str, Any],
+        tool_id: str = "",
+    ) -> None:
+        self.state.update_tool_start(tool_name, tool_kwargs, tool_id=tool_id)
 
-    def on_tool_call_end(self, tool_name: str, result: str, is_error: bool = False) -> None:
-        self.state.update_tool_end(tool_name, result, is_error)
+    def on_tool_call_end(
+        self,
+        tool_name: str,
+        result: str,
+        is_error: bool = False,
+        tool_id: str = "",
+    ) -> None:
+        self.state.update_tool_end(tool_name, result, is_error, tool_id=tool_id)
 
     def on_stream_token(self, token: str) -> None:
         self.state.append_stream_token(token)
@@ -424,7 +820,11 @@ class TuiEventAdapter:
     async def _handle_tool_call(self, event: Any) -> None:
         tool_name = getattr(event, "tool_name", "")
         tool_kwargs = getattr(event, "tool_kwargs", {}) or {}
-        self.on_tool_call_start(tool_name, tool_kwargs)
+        # The id of the call: the workflow runs the calls of a turn
+        # concurrently, and it is what tells two calls of the same
+        # tool apart.
+        tool_id = getattr(event, "tool_id", "") or ""
+        self.on_tool_call_start(tool_name, tool_kwargs, tool_id=tool_id)
 
     async def _handle_tool_call_result(self, event: Any) -> None:
         tool_name = getattr(event, "tool_name", "")
@@ -435,7 +835,8 @@ class TuiEventAdapter:
         elif hasattr(output, "content"):
             content = str(output.content)
             is_error = content.startswith("Error:") or content.startswith("Traceback")
-        self.on_tool_call_end(tool_name, str(output), is_error)
+        tool_id = getattr(event, "tool_id", "") or ""
+        self.on_tool_call_end(tool_name, str(output), is_error, tool_id=tool_id)
 
     async def _handle_stream(self, event: Any) -> None:
         delta = getattr(event, "delta", "")

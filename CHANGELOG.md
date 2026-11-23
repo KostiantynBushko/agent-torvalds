@@ -6,6 +6,228 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The panes of the TUI scroll, and they hide
+
+- **The operator asked on 2026-11-21** for three things:
+
+  > *scrolling of the "Workflow & Tool Progress"*
+  > *hide/show "Agent Telemetry & State"*
+  > *more will be added so the solution must be easy extended*
+
+  and for the decisions that shape the work: the hot-keys are **separate from
+  the help command**, the keys the **operating system takes are not ours to
+  bind**, the **selected pane has to be highlighted**, and the bindings are
+  **configuration** — in the file the operator already has.
+
+- **The reader names the modified keys.**  There was no key that could carry a
+  hot-key: the terminal sends `Ctrl+T` as the control byte `0x14`, and the
+  reader dropped it — it was not printable.  `Ctrl+Up` arrived as
+  `ESC [ 1 ; 5 A` and the reader said `"UP"`: **the modifier was thrown away**.
+  `F1` … `F12` arrived as `ESC [ 11 ~` and the reader said `"ESCAPE"`, and
+  `Alt+A` arrived as `ESC a` and the reader said `"ESCAPE"` — **the character
+  was lost**.  The reader names `CTRL_A` … `CTRL_Z`, `CTRL_UP`,
+  `SHIFT_DOWN`, `F1` … `F20` and `ALT_a` now.  The four bytes another key
+  already claimed keep their name: `Ctrl+H` is still `BACKSPACE`, `Ctrl+I` is
+  still `TAB`, and `Ctrl+J` and `Ctrl+M` are still `ENTER`.
+
+- **The Shift+Enter is still not a key of the command bar.**  The operator
+  decided on 2026-11-20 that the bar carries no line break key.  The reader
+  may now *name* the sequence, and the application still drops it: the text
+  of the operator never changes by a key nobody can see.
+
+- **The hot-keys live in one table** — `components/tui/hotkeys.py`.  It holds
+  the keys of the command bar and the hot-keys of the panes, and it is **the
+  only list**: the `\keys` screen is rendered from it.  `KEYBOARD_SHORTCUTS`
+  and the `keyboard_shortcuts` flag **left** the command registry — the
+  registry describes the **commands**, and the hot-keys describe the **keys** —
+  and the "Keyboard Navigation" block **left** the `\help` screen.  The
+  `\keys` command is registered like every other command, so it is *named* in
+  the `\help` screen, as a command.
+
+- **A new hot-key is a row and a method.**  The row goes into the registry,
+  the method into the application, and **no other file changes**: the
+  `\keys` screen, the footer hints and the tests pick it up by themselves.
+
+- **The recent tool tasks are shown upside down, and the task that runs now is
+  pinned on top of the pane.**  The operator asked on 2026-11-22: *please
+  make sure the tool task grow down so that current executed is always on top
+  of the window* — and again, later on the same day, with the words that say
+  what the list is: *the Recent Tool Task must be shown in the upside-down,
+  so data structure that shows recent tool task must be stack and the
+  current executed command must be on top of the window the previous task
+  must be below currently runned task and so on*.  The structure that carries
+  the recent tool tasks is a **stack**: the newest completion is on the top
+  of it, the task that ran before it is right below it, and the one before
+  that is below that.  The list **grows down**: a task that is done is pushed
+  on the top of the stack, and the tasks that were done before it go down.
+  The task that runs now is drawn **above** the window of the pane, so the
+  history that the operator scrolls cannot take it away, and the pane does
+  not carry it twice.  The window below it is the stack of the tasks that
+  are done and it is stuck to the **top** of that stack — the current
+  position of the work — so the newest completion is on the screen, and the
+  window scrolls there by itself while a command runs.  §16.1 of
+  `docs/tui/hotkeys.md` records the decision and how to reverse it.
+
+- **The anchor keeps the operator where he is.**  A new tool task is inserted
+  at the end the window follows, and the window does not jump: the operator
+  who has scrolled away keeps the task he is reading, and the operator who
+  has not keeps the current one.
+
+- **Six lines of content were cut off, and there was no way to see them.**
+  The progress pane showed the newest task first, so the lines that did not
+  fit were the lines of the *oldest* task — and the command
+  `git status --short && python -m pytest tests/ -x --tb=short` ran with no
+  way to reach it.  PR #106 made the command whole when it is shown; this is
+  the other half of that work: the command must also be **reachable**.
+
+- **The height is the one the layout really uses** —
+  `layout.map[layout["progress_pane"]].region.height`, less the two lines of
+  the border.  It is the same principle as `progress_pane_width()` in PR
+  #106: *the number is the one the layout really uses*, not the one the source
+  guesses.
+
+- **The pane that has the focus is marked, and not guessed.**  Three marks,
+  together: the **border is brighter** (`cyan` → `bright_cyan`, `magenta` →
+  `bright_magenta`) — and the *content* is never dimmed, a dimmed command is a
+  command the operator cannot read — the **title carries the marker `▶`** in
+  front of the icon, and the **subtitle says where the operator is**
+  (`▲ 10/21 │ ▼ 9 more`).
+
+- **A printable character always goes into the input, and it takes the focus
+  back.**  The operator is never trapped in a pane: he scrolls the progress
+  pane, he types a character, and he is at the command bar again, with the
+  character in the buffer.  The chords are global for the same reason — a
+  chord carries no text, and it cannot eat what is being written.
+
+- **A hidden pane leaves the layout, and its sibling takes the space.**
+  `Layout.visible = False` collapses the pane, and the whole sidebar goes to
+  the pane that is left: the progress pane goes from 42×17 to 42×34.  There is
+  **no rebuild of the layout tree** and **no new ratios**, and the visibility
+  is applied from the state on every frame, so it is idempotent and it
+  survives a resize.
+
+- **The notice of the TUI moved to the header.**  It was drawn in the
+  telemetry pane — and hiding that pane would have **silenced every message
+  the TUI gives the operator**, including the message that says the pane is
+  hidden.  The header grows by one line while a notice is up, the mechanism
+  `fit_footer()` already uses for the footer.
+
+- **The bindings are configuration**, in the `[hotkeys]` section of the file
+  the operator already has — `~/.config/torvalds/config.toml`.  A value
+  replaces the default of its action **and frees the key the action had**; an
+  empty value unbinds the action; a chord the operating system takes, a
+  chord that cannot be read and a chord that two actions ask for are
+  **refused**, with a warning, and the default stands.  **A refusal is never
+  a crash** — the TUI starts, the default stands, and the operator is told
+  which setting of which file was refused and why.  It is the rule the rest of
+  the configuration file already follows: *a broken file is a warning, not a
+  failed boot*.
+
+- **The keys the operating system takes are not ours to bind.**  The reader
+  puts the terminal into *cbreak* mode, and cbreak is **not** raw mode:
+  `ISIG` and `IXON` are left exactly as they were.  The kernel takes
+  `Ctrl+C`, `Ctrl+\` and `Ctrl+Z`; the terminal takes `Ctrl+S` and `Ctrl+Q`
+  — and `Ctrl+S` **freezes the screen** — and the four bytes of the
+  backspace, the tab and the enter; the desktop takes the `Alt` chords.  The
+  letters that are left are `A B E F G K L N O P R T U V X Y`, and the default
+  bindings use two of them — `Ctrl+T` for the *T*elemetry pane and `Ctrl+P`
+  for the *P*rogress pane.  **A test refuses any binding that the terminal,
+  the kernel or the desktop would eat**, so a hot-key that the operating
+  system would swallow can never be added.
+
+- **The TUI says that the configuration file was created.**  The classic
+  agent tells the operator when the template was written; the TUI created the
+  file silently, and the message was lost in the screen the TUI takes over.
+  It is shown in the header now.
+
+- **The evidence:** `tests/test_tui_hotkeys.py` — 44 tests —,
+  `tests/test_tui_pane_scroll.py` — 27 tests —, the extension of
+  `tests/test_tui_input_reader.py`, and `investigate/tui-hotkeys/`, the report
+  and the probe, which drives the real application with the keys the operator
+  presses.  The gate of the repository stays green: 40 known failures, 0 new,
+  0 fixed.
+
+- **The documentation:** `docs/tui/` — the documentation of the multi-window
+  console, and `docs/tui/hotkeys.md`, the hot-keys of the TUI: the operator's
+  guide in the first part, the design and the implementation in the second.
+
+#### The document pane is the selected pane from the first frame
+
+- **The operator asked on 2026-11-22**:
+
+  > *I see that focus mark apears only when I hit Tab so it does not have
+  > default selected window, the default one must be markdown document
+  > window and the focus mark must apears on start up on this window*
+
+  He was right: the focus was the **command bar** by default, and the
+  command bar carries no mark.  So the TUI showed **no mark at all** until
+  the operator pressed `Tab` — and the mark that was meant to answer
+  *which pane is the selected one* appeared only after the operator had
+  found it himself.  The pane that has the focus is marked in three ways
+  (a brighter border, the marker `▶` in front of the icon, and the
+  subtitle that says where the operator is), and none of the three was on
+  the screen at the start.
+
+- **The default focus is the document pane now.**  It is the pane the
+  operator reads the most, and the pane the keys `PgUp`/`PgDn` scroll.  The
+  mark is on the screen from the first frame: the brighter border and the
+  marker `▶` in front of the icon of the pane.
+
+- **The price of the mark, and it is a real one.**  The keys of a pane are
+  live while that pane has the focus, so `Up`/`Down` scroll the document
+  at the start, and not the history of the command bar.  `PgUp`/`PgDn`
+  scroll a **page** of the document, and not six lines.  `Esc` gives the
+  focus back to the command bar, and the history is there again — the rule
+  of §11.4 stands: the operator is never trapped in a pane, and the first
+  printable character brings the focus back to the command bar.
+
+- **The paste takes the focus back too.**  The change above exposed a hole
+  in the rule of §11.4: the text of a paste goes into the input, but the
+  paste was the one path into the input that did **not** take the focus
+  back.  The operator pasted a question of several lines and the arrow keys
+  scrolled the document instead of walking his cursor.  The paste takes the
+  focus back now, the way a printable character and an `Alt` chord do.
+
+- **The evidence:** `tests/test_tui_pane_scroll.py` — 34 tests — three of
+  them for the startup: the document pane has the focus, it carries the
+  marker, and the progress pane carries none.  `tests/test_tui_hotkeys.py`
+  — 49 tests — the cycle of the focus starts in the document pane and
+  wraps around, and a paste takes the focus back.
+  `tests/test_tui_multiline_input.py` — 47 tests — the history of the
+  command bar is walked when the command bar has the focus.  The gate of
+  the repository stays green: 40 known failures, 0 new, 0 fixed.
+
+#### The document pane carries the focus mark too
+
+- **The operator asked on 2026-11-22** for the focus mark on the markdown
+  document view:
+
+  > *I would like to have a focus mark on markdown document view as well,
+  > does it make sence?*
+
+  It makes sense — and the documentation had **already promised it**: §3 of
+  `docs/tui/hotkeys.md` says that the **document pane** is `blue` and
+  `bright_blue` when it is selected.  The implementation never kept that
+  promise: `MarkdownView.render()` was not even asked whether the pane had
+  the focus.  The two panes of the sidebar carried the marker `▶` and the
+  brighter border, and the document pane — the pane the operator reads the
+  most, and the pane the keys `PgUp`/`PgDn` scroll — carried **only** the
+  third of the three marks, the subtitle.
+
+- **The mark is the same mark.**  `FOCUS_MARKER` and `FOCUS_GAP` come from
+  `components/tui/hotkeys.py`, and the marker stands **in front of the icon**
+  of the pane, the way it stands in front of the icon of the progress pane
+  and in front of the icon of the telemetry pane.  The border of the document
+  pane is the brighter one of the two: `blue` → `bright_blue`, and
+  `yellow` → `bright_yellow` while the agent is busy.  The *content* is
+  never dimmed — a dimmed answer is an answer the operator cannot read.
+
+- **The evidence:** `tests/test_tui_pane_scroll.py` — 31 tests — four of
+  them for the document pane: the marker is there when the pane has the
+  focus, it is not there when the pane does not, the border of the focused
+  pane is the brighter one, and the marker stays **in front of the icon**.
+  The gate of the repository stays green: 40 known failures, 0 new, 0 fixed.
+
 #### The command of a tool is shown whole
 
 - **The operator asked on 2026-11-20** for the whole command of a tool on
@@ -1108,6 +1330,186 @@ All notable changes to this project are documented in this file.
   is not there.
 
 ### Fixed
+
+#### Hiding both panes of the sidebar crashed the TUI
+
+- **The operator reported on 2026-11-23** that the TUI died when both
+  panes of the sidebar were hidden:
+
+  > *it happens when we hide both "Agent Telemetry & State" and "Workflow
+  > & Tool Progress" or vice versa*
+
+  with the stack of the crash:
+
+  ```
+    File ".../rich/console.py", line 1339, in render
+      for render_output in iter_render:
+    File ".../rich/layout.py", line 401, in __rich_console__
+      render_map = self.render(console, options.update_dimensions(width, height))
+    File ".../rich/console.py", line 240, in update_dimensions
+      options = self.copy()
+  RecursionError: maximum recursion depth exceeded
+  ```
+
+- **The cause.**  Rich walks the **visible** children of a partition, and
+  a partition with no visible child is a partition without a content of
+  its own: Rich draws it as *itself*.  The sidebar has two children —
+  the progress pane and the telemetry pane — and the operator had hidden
+  both of them, so the sidebar was a leaf whose content was the sidebar
+  itself.  The layout drew the sidebar, the sidebar drew the layout, and
+  the drawing never ended.
+
+  The rule the layout has to keep is:
+
+  > A partition that is **drawn** and has **children** must have at least
+  > one **visible** child.
+
+- **The fix.**  The sidebar leaves the layout together with its last
+  pane: `apply_pane_visibility()` in `components/tui/layout_manager.py`
+  hides the two panes as they always did, and hides the sidebar with the
+  last of them.  **The document pane takes the whole of the body** — 120
+  cells of a terminal of 120 cells, instead of the 78 it takes while the
+  sidebar is there.  The panes come back with the same keys, in the
+  place they were, and the rule is applied from the state on every frame,
+  so it is idempotent and it survives a resize.
+
+- **The evidence:** `tests/test_tui_hidden_panes.py` — the layout is
+  drawn with every pane of the sidebar hidden, the sidebar leaves the
+  layout with its last pane, the pane that is left takes the whole of
+  the sidebar, **no drawn partition has children that are all hidden**,
+  and the application survives the two keys in any order.  The report and
+  the probe are in `investigate/tui-hidden-panes/`.  The gate of the
+  repository stays green: the known failures stay known, and no new one
+  comes.
+
+#### The recent tool tasks are shown upside down, and the task that runs now is pinned on top
+
+- **The operator asked on 2026-11-22**:
+
+  > *please make sure the tool task grow down so that current executed
+  > is always on top of the window*
+
+  and again, later on the same day, with the words that say what the list
+  > is:
+
+  > *the Recent Tool Task must be shown in the upside-down, so data
+  > structure that shows recent tool task must be stack and the current
+  > executed command must be on top of the window the previous task must
+  > be below currently runned task and so on*
+
+  Three things are asked for at once: the recent tool tasks are shown
+  **upside down**, the structure that carries them is a **stack**, and the
+  task that **runs now is always on top of the window**, with the task
+  that ran before it right below it.
+
+- **What the pane was.**  The list of the tasks that are done was a
+  **log**: the oldest completion first, the newest at the bottom, and the
+  window of the pane stuck to the tail of that log.  The task that ran
+  **before** the current one was at the **bottom** of the pane — at the
+  far end of the window, and not below the command that runs.  The
+  operator had to look at the bottom of the pane to find out what ran
+  before the command that runs now.
+
+- **The structure is a stack now.**  `TaskStack` in
+  `components/tui/state_bridge.py` carries the tasks of the run: the
+  newest is on the top, a task that is done is **pushed** on the top of
+  it, and the tasks that were done before it go down.  The view does not
+  sort the list again — the structure carries the order.
+
+- **The task that runs now is pinned.**  It is drawn **above** the window
+  of the pane, outside it, and the history that the operator scrolls
+  cannot take it away.  The pane does not carry it twice.
+
+- **The task that ran before it is right below it.**  The newest
+  completion is the first one of the stack, and the line above it is the
+  task that runs now:
+
+  ```
+      ⠋ execute_shell_command (0.0s)
+        └ the-command-that-runs
+      ✔ execute_shell_command (12ms)
+        └ the-command-that-ran-before
+  ```
+
+- **The list grows down.**  A task that is done is pushed on the top of
+  the stack, and the tasks that were done before it go **down** — one
+  line further down for every line the new task takes.  The list never
+  grows up.
+
+- **The window is at the current position.**  It is stuck to the **top**
+  of the stack, so the newest completion is on the screen, and the window
+  scrolls there by itself while a command runs.
+
+- **The price: the tail of a command that is taller than the pane is out
+  of reach.**  The pinned task is drawn outside the window, and the keys
+  of the pane scroll the stack and not the pinned task.  The whole of the
+  command is in the chat history of the session.  "End" is the oldest
+  task of the run now: the list is upside down, and its end is the far
+  end of the history.
+
+- **The evidence:** `tests/test_tui_current_position.py` and
+  `tests/test_tui_task_order.py`, and `investigate/tui-autoscroll/` — the
+  report and the probe, which draws the real pane in the real layout at
+  the width of the terminal of the operator.  The gate of the repository
+  stays green: the known failures stay known, and no new one comes.
+
+
+#### The command that runs now is on top of the progress pane
+
+- **The operator asked on 2026-11-22** for the command that runs now to
+  stand on top of the workflow window:
+
+  > *I also noticed that sometime the currently executed command in not on
+  > top of the workflow window but instead it could apear somewhere in the
+  > midle of the commands so that completed command (tool) in on top and
+  > currently running is in the midle of the list or in the bottom*
+
+- **The list of the tasks was in the order they started.**  The finished
+  commands stood above the one that was still going — and in the
+  ordinary case, one tool after the other, the command that runs was the
+  **last** line of the list.
+
+- **The pane told the operator the wrong command was running.**  The
+  framework runs the calls of a turn **concurrently**, and it carries a
+  `tool_id` on every `ToolCall` and every `ToolCallResult`.  The TUI
+  looked for the record of the call by **name**, so two calls of the same
+  tool could not be told apart: the result of the first call closed the
+  record of the second one, and the first record spun **for ever**.  The
+  pane showed the spinner on a command that was done, and the tick on the
+  command that still ran.  The stats handler already used the id — *"the
+  workflow runs tool calls concurrently, so the id keeps concurrent calls
+  to the same tool apart"* — the TUI did not.
+
+- **The result closes its own record.**  `ToolExecutionRecord` carries the
+  `tool_id` of the call, and the record that is closed is the one of that
+  id.  The name is the fallback, for the events that carry no id.
+
+- **The command that runs now is on top of the window.**  It is
+  **pinned** — drawn above the window of the pane, outside it — so it is
+  on top of the window, and it stays there while the operator scrolls
+  the history.  The reason is sound: *the running command would scroll
+  out of the pane as soon as the log is longer than the pane*.
+
+  The price is the tail of a command that is taller than the pane: it is
+  out of the reach of the keys of the pane, and the whole of the command
+  is in the chat history of the session.  (See the entry above: *The
+  Recent Tool Tasks list grows down*.)
+
+- **The tasks that are done are a log that grows down.**  The oldest
+  completion first, the newest at the bottom: a task that is done is
+  appended at the bottom of the list, and the tasks that were done before
+  it do not move.  The decision of 2026-11-21 — "down" walks *forward* in
+  time — stands (§16.1 of `docs/tui/hotkeys.md`).
+
+- **Nothing spins for ever.**  When the run is over, the tasks that still
+  run are closed: a task that spins on top of the pane for ever is a lie
+  the operator reads.
+
+- **The evidence:** `tests/test_tui_task_order.py` — 11 tests — and
+  `investigate/tui-running-task-order/`, the report and the probe, which
+  feeds the real state the events the framework really publishes.  Nine
+  of the tests fail against the old pane.  The gate of the repository
+  stays green: 40 known failures, 0 new, 0 fixed.
 
 #### The home of the operator is not on the screen of the progress pane
 

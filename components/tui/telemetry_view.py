@@ -8,11 +8,17 @@ Renders real-time agent telemetry, session metrics, and toolkit state:
 - Running session duration
 """
 import time
+from typing import List, Optional, Tuple
+
+from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from components.tui.hotkeys import FOCUS_GAP, FOCUS_MARKER
+from components.tui.pane_scroll import PaneScroll
 from components.tui.state_bridge import TuiState
+from components.tui.terminal_size import build_console
 
 
 #: The share of the context window below which the context is healthy.
@@ -136,6 +142,11 @@ def _format_size(total_bytes: int) -> str:
     return format_size(total_bytes)
 
 
+#: The cells the panel spends on its border and on its padding: a
+#: border on each side and a cell of padding on each side.
+PANEL_OVERHEAD = 4
+
+
 class TelemetryView:
     """
     Renders the Agent Telemetry and State pane in the bottom-right sidebar.
@@ -143,6 +154,32 @@ class TelemetryView:
 
     #: How many names the row shows before it counts the rest.
     TOOL_NAMES_SHOWN = 2
+
+    def __init__(self, console: Optional[Console] = None):
+        # The capture console renders the content of the pane to text of
+        # its own, so that the lines that do not fit on the screen can
+        # be cut out of it.  The document pane does the same thing.
+        self._capture_console = build_console(
+            color_system="truecolor",
+            force_terminal=True,
+            width=80,
+            height=200,
+        )
+
+    def _lines(self, table: Table, width: int) -> List[str]:
+        """The lines of the content of the pane, at the width of the pane.
+
+        Args:
+            table: The table of the content.
+            width: The number of cells the pane has on the screen.
+
+        Returns:
+            The lines of the content.
+        """
+        self._capture_console.width = max(20, int(width) - PANEL_OVERHEAD)
+        with self._capture_console.capture() as capture:
+            self._capture_console.print(table)
+        return capture.get().splitlines()
 
     def _render_context(self, state: TuiState) -> str:
         """Render the size of the prompt that goes to the model.
@@ -259,51 +296,47 @@ class TelemetryView:
 
         return "\n".join([head] + lines)
 
-    def render(self, state: TuiState) -> Panel:
-        """
-        Render the telemetry panel.
-        
+    def content_rows(self, state: TuiState) -> List[Tuple[str, str]]:
+        """The rows of the pane: the name of the measurement, and its value.
+
         Args:
             state: Current TuiState snapshot
-            
+
         Returns:
-            Rich Panel to place inside layout['telemetry_pane']
+            The rows of the pane, in the order they are shown.
         """
-        table = Table(box=None, show_header=False, expand=True, padding=(0, 0))
-        # The value column is the wider one: the names of the tools are
-        # long, and a name that is cut in half is not a name.  "fold"
-        # breaks a name that does not fit instead of hiding the end of
-        # it behind an ellipsis.
-        table.add_column("Metric", style="dim cyan", ratio=35)
-        table.add_column("Value", style="bold white", ratio=65, overflow="fold")
+        rows: List[Tuple[str, str]] = []
 
         # 1. Mode
-        table.add_row("Mode", state.mode)
+        rows.append(("Mode", state.mode))
 
         # 2. Cache Hit Rate
         cache_total = state.cache_total
         cache_hits = state.cache_hits
         if cache_total > 0:
             cache_pct = (cache_hits / cache_total) * 100
-            table.add_row("Cache Hits", f"{cache_hits}/{cache_total} ({cache_pct:.0f}%)")
+            rows.append(("Cache Hits", f"{cache_hits}/{cache_total} ({cache_pct:.0f}%)"))
         else:
-            table.add_row("Cache Hits", f"{cache_hits} (idle)")
+            rows.append(("Cache Hits", f"{cache_hits} (idle)"))
 
         # 3. Total Tokens & Prompt/Completion breakdown
         if state.total_tokens > 0:
-            tokens_str = f"{state.total_tokens:,} [dim]({state.prompt_tokens:,}p/{state.completion_tokens:,}c)[/dim]"
+            tokens_str = (
+                f"{state.total_tokens:,} "
+                f"[dim]({state.prompt_tokens:,}p/{state.completion_tokens:,}c)[/dim]"
+            )
         else:
             tokens_str = "0"
-        table.add_row("Total Tokens", tokens_str)
+        rows.append(("Total Tokens", tokens_str))
 
         # 4. The size of the prompt that goes to the model
-        table.add_row("Prompt", self._render_context(state))
+        rows.append(("Prompt", self._render_context(state)))
 
         # 5. LLM Invocations
-        table.add_row("LLM Calls", f"{state.llm_call_count}")
+        rows.append(("LLM Calls", f"{state.llm_call_count}"))
 
         # 6. Tool Calls
-        table.add_row("Tool Calls", f"{state.total_tool_calls}")
+        rows.append(("Tool Calls", f"{state.total_tool_calls}"))
 
         # 7. The tools the agent really has
         #
@@ -319,37 +352,85 @@ class TelemetryView:
         # operator picked with --select, every tool in --full, and every
         # tool the retriever indexes.  When nothing is known, the row
         # says so.
-        table.add_row("Tools", self._render_tools(state))
+        rows.append(("Tools", self._render_tools(state)))
 
         # 8. Active Project
         if state.active_project:
             project_str = state.active_project
             if state.project_type:
                 project_str = f"{project_str} ({state.project_type})"
-            table.add_row("Project", project_str)
+            rows.append(("Project", project_str))
         elif state.registered_projects:
-            table.add_row("Projects", f"{len(state.registered_projects)} registered")
+            rows.append(("Projects", f"{len(state.registered_projects)} registered"))
 
         # 9. Active Chat Session
         if state.chat_session_name:
             session_str = state.chat_session_name
             if state.chat_session_type:
                 session_str = f"{session_str} [{state.chat_session_type}]"
-            table.add_row("Chat Session", session_str)
+            rows.append(("Chat Session", session_str))
 
         # 10. Session Time
         elapsed_sec = int(time.time() - state.session_start_time)
-        m, s = divmod(elapsed_sec, 60)
-        h, m = divmod(m, 60)
-        time_str = f"{h:02d}:{m:02d}:{s:02d}"
-        table.add_row("Session Time", time_str)
+        minutes, seconds = divmod(elapsed_sec, 60)
+        hours, minutes = divmod(minutes, 60)
+        rows.append(("Session Time", f"{hours:02d}:{minutes:02d}:{seconds:02d}"))
 
-        # Check for temporary notification banner
-        notification = state.get_notification()
-        if notification:
-            table.add_row(
-                Text.from_markup(f"[bold yellow]Notice:[/bold yellow] [yellow]{notification}[/yellow]")
-            )
+        return rows
+
+    def render(
+        self,
+        state: TuiState,
+        width: Optional[int] = None,
+        scroll: Optional[PaneScroll] = None,
+        focused: bool = False,
+    ) -> Panel:
+        """
+        Render the telemetry panel.
+
+        Args:
+            state: Current TuiState snapshot
+            width: The number of cells the pane has on the screen.  It
+                is used when the content is sliced: the content is
+                rendered to the width the pane really has, and the
+                lines that do not fit are reached with the keys of the
+                pane.
+            scroll: The scroll of the pane.  When it is given, the
+                content is sliced to the window of the scroll.  None
+                means the whole content is shown.
+            focused: Whether the pane has the focus.  The pane that has
+                the focus carries a brighter border and the marker in
+                its title.
+
+        Returns:
+            Rich Panel to place inside layout['telemetry_pane']
+        """
+        table = Table(box=None, show_header=False, expand=True, padding=(0, 0))
+        # The value column is the wider one: the names of the tools are
+        # long, and a name that is cut in half is not a name.  "fold"
+        # breaks a name that does not fit instead of hiding the end of
+        # it behind an ellipsis.
+        table.add_column("Metric", style="dim cyan", ratio=35)
+        table.add_column("Value", style="bold white", ratio=65, overflow="fold")
+
+        for label, value in self.content_rows(state):
+            table.add_row(label, value)
+
+        content = table
+        if scroll is not None and width:
+            height = scroll.height
+            if height > 0:
+                # The content is sliced to the window of the scroll: the
+                # lines that do not fit on the screen are reached with
+                # the keys of the pane.
+                lines = self._lines(table, width)
+                scroll.set_frame(lines, [""] * len(lines), height=height)
+                content = Text.from_ansi("\n".join(scroll.window()))
+
+        # The notification does **not** live in this pane: a notice
+        # that lives in a pane is silenced by the pane that hides it.
+        # The notice is drawn in the header, which is always there.
+        # See components/tui/layout_manager.py.
 
         # The title of the panel carries the icon of the pane.
         #
@@ -369,13 +450,25 @@ class TelemetryView:
         # Below the width of the terminal the title does not fit, the
         # title is cut at the right, and the icon - the first thing in
         # the title - is never the part that is cut.
+        # The pane that has the focus carries the marker in front of
+        # the icon: the operator must see which pane the keys go to.
+        marker = f"{FOCUS_MARKER}{FOCUS_GAP}" if focused else ""
+
+        # The subtitle says where the operator is.
+        subtitle = ""
+        if scroll is not None:
+            position = scroll.subtitle()
+            if position:
+                subtitle = f"[dim]{position}[/dim]"
+
         return Panel(
-            table,
+            content,
             title=(
                 "[bold magenta]"
-                f"{TELEMETRY_ICON}{TITLE_GAP}Agent Telemetry & State"
+                f"{marker}{TELEMETRY_ICON}{TITLE_GAP}Agent Telemetry & State"
                 "[/bold magenta]"
             ),
-            border_style="magenta",
+            subtitle=subtitle,
+            border_style="bright_magenta" if focused else "magenta",
             padding=(0, 1),
         )

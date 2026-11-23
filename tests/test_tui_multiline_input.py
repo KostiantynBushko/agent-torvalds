@@ -310,7 +310,18 @@ class TestTheHotCommands(unittest.TestCase):
         self.assertIn("\\chat-sessions", screen)
         self.assertIn("\\help", screen)
         self.assertIn("\\exit", screen)
-        self.assertIn("PgUp/PgDn", screen)
+
+    def test_the_hints_point_at_the_keys_command(self):
+        """The place where the keys are listed is a command of its own.
+
+        The ``PgUp/PgDn: Scroll`` tail gave way to ``\\keys``: the keys
+        of the TUI are listed by the command that renders them, and not
+        by a tail of the hints.
+        """
+        screen = footer_screen("", width=240)
+
+        self.assertIn("\\keys", screen)
+        self.assertNotIn("PgUp/PgDn", screen)
 
     def test_the_hot_commands_are_hidden_while_there_is_text(self):
         """The width of the bar belongs to what the operator writes."""
@@ -373,17 +384,19 @@ class TestTheReader(unittest.TestCase):
         """There is no Shift+Enter: the bar has no line break key.
 
         The operator decided on 2026-11-20 that the bar carries no
-        Shift+Enter at all.  The sequence the terminals send for it is
-        an escape to the reader, and the application drops it -- so the
-        text of the operator never changes by a key nobody can see.
+        Shift+Enter at all.  The reader **names** the modified keys --
+        it has to, or there is nothing to bind -- but the name of the
+        Shift+Enter is not the name of the Enter: the application
+        drops it, and the text of the operator never changes by a key
+        nobody can see.
         """
         for sequence in (b"\x1b[13;2~", b"\x1b[27;2;13~", b"\x1b[13;2u"):
             keys, _ = keys_from_pty(sequence)
 
             self.assertNotIn(
-                "SHIFT_ENTER",
+                "ENTER",
                 key_values(keys),
-                f"the reader reported a Shift+Enter: {keys!r}",
+                f"the reader reported an Enter: {keys!r}",
             )
 
     def test_the_keys_survive_a_reader_that_starts_late(self):
@@ -416,7 +429,11 @@ class TestTheReader(unittest.TestCase):
         app = TuiApp(agent=None, prompt_handler_fn=None)
 
         app._handle_key("a")
-        app._handle_key("ESCAPE")
+        # Every name the reader gives the sequence of the Shift+Enter.
+        # None of them is a key of the command bar, and the application
+        # drops them all.
+        for name in ("SHIFT_ENTER", "SHIFT_F3", "CTRL_INSERT", "ESCAPE"):
+            app._handle_key(name)
         app._handle_key("b")
 
         self.assertEqual(
@@ -864,15 +881,35 @@ class TestTheCursorWalksTheLines(unittest.TestCase):
         self.assertEqual(app.state.cursor_pos, len("first line") - 1)
 
     def test_the_history_is_still_there_for_a_single_line(self):
-        """A one-line input walks the history, as it always did."""
+        """A one-line input walks the history, as it always did.
+
+        The document pane is the selected pane at the start, and the
+        arrow keys belong to the pane that has the focus.  `Esc` gives
+        the focus back to the command bar, and the history is there
+        again.
+        """
         app = TuiApp(agent=None, prompt_handler_fn=None)
 
         app.state.command_history = ["\\stats", "\\tools"]
+
+        app._handle_key("ESCAPE")
 
         app._handle_key("UP")
         self.assertEqual(app.state.input_buffer, "\\tools")
 
         app._handle_key("UP")
+        self.assertEqual(app.state.input_buffer, "\\stats")
+
+    def test_the_history_is_walked_when_the_command_bar_has_the_focus(self):
+        """`Esc` gives the focus back to the command bar, and the history
+        is there again."""
+        app = TuiApp(agent=None, prompt_handler_fn=None)
+
+        app.state.command_history = ["\\stats"]
+
+        app._handle_key("ESCAPE")
+        app._handle_key("UP")
+
         self.assertEqual(app.state.input_buffer, "\\stats")
 
     def test_the_cursor_stops_at_the_first_line(self):
