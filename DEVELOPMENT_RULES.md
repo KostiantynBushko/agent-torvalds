@@ -4,11 +4,12 @@ These rules govern how a change to this codebase is made — by the operator,
 or by the agent working in it. They are **persisted here** so that they
 survive across sessions and are available to any future agent invocation.
 
-**Last updated:** 2026-11-08 — the rules are written for the working copy: the
+**Last updated:** 2026-11-23 — the rules are written for the working copy: the
 work happens in the copy the agent is running in, on a branch of its own, and
 the operator's tree is the place where the work is reviewed. The rules that
 carry the contract — the approval, the destructive operations, the timeout
-contract and the privacy of the operator's home folder — stayed.
+contract, the privacy of the operator's home folder and the privacy of every
+user path of the machine — stayed.
 
 ---
 
@@ -123,6 +124,10 @@ reaches the repository.
 The operator stated this on 2026-10-29, after finding the home
 directory of the operator in the body of a pull request.
 
+**Rule 8 says this in full, and further:** this rule forbids the private
+folder in the repository; Rule 8 forbids **every** user path, and it
+forbids it **everywhere** the path can leave the machine.
+
 ---
 
 ---
@@ -139,3 +144,70 @@ instructions before performing any modification.
 The history of the work — every change, the reason for it and the evidence
 that it works — is in `CHANGELOG.md` and in the `investigate/` folder. It is
 not repeated here.
+
+---
+
+## Rule 8 — Never expose a user path to anything outside the machine
+
+The machine of the operator is private.  **Every** path of it is private:
+the home, the name of the account, the working copy, the folders of the
+disk, the labels of the drives.  A path of the machine must **never**
+leave the machine — **never**, and in no form:
+
+* not in the source, not in a test, not in a fixture, not in a script,
+* not in the documentation, not in an investigation report,
+* not in the message of a commit,
+* not in the body of a pull request, not in an issue, not in a comment,
+* not in the answer the agent gives to the operator — a report is copied
+  into a pull request more often than anyone thinks,
+* not in a log that is attached to an issue,
+* not in a chat export that is shared.
+
+What is published is the **generic** form — the way a documentation
+writes an example:
+
+| the private form | the published form |
+|---|---|
+| the home of the operator | `~` |
+| `/home/<account>/...` | `/home/<user>/...` |
+| the working copy | `<project>` |
+| a private folder of the disk | `<folder>` |
+| the name of the account | `the-operator` |
+| `<account>@<host>` | `operator@example.com` |
+
+**A path in the code is computed, not written down.**  A literal path in
+the source is a path that is wrong on every other machine — and a path
+that names one operator:
+
+```python
+# wrong — it names one operator and one machine
+WORKSPACE = "/home/<account>/<project>"
+
+# right — it is the directory of the file itself
+WORKSPACE = str(Path(__file__).resolve().parent)
+```
+
+**The check is a test, and it reads every surface.**  The checker is
+`scripts/check_no_user_paths.py`; it reads the tracked files, the
+messages of the commits and the free text of a pull request, of an issue
+and of a comment.  `tests/test_no_user_paths.py` fails the build when a
+path is there.  The workflow `.github/workflows/user_paths.yml` reads the
+bodies that are **not** files of the repository — the body of a pull
+request, the body of an issue, the body of a comment — because that is
+where the path reached the outside before the check existed.
+
+The names of the machine are **computed**, never written down: the
+checker reads the account of the machine it runs on, so the rule does not
+publish the account it forbids.  A CI that has never seen the machine
+uses the **shape** of a home — `/home/<account>`, `/Users/<account>`,
+`C:\Users\<account>` — and the operator can give that CI the names it
+lacks through `TORVALDS_PRIVATE_NAMES`.
+
+**A finding is fixed, not explained away.**  When the check finds a
+path, the path is written the generic way — in the file, in the commit
+message, in the body — and the check is run again.
+
+The operator stated this on 2026-11-23, after finding that the agent may
+expose a user path of the machine in the text, in the code and in the
+commits it generates.  The evidence is in
+`investigate/user-path-exposure/INVESTIGATION_REPORT.md`.

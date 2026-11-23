@@ -20,7 +20,8 @@ The workflow therefore runs a **gate** instead of pytest directly.
 4. [The pinned environment](#4-the-pinned-environment)
 5. [Running it locally](#5-running-it-locally)
 6. [Tightening the baseline](#6-tightening-the-baseline)
-7. [What is not covered](#7-what-is-not-covered)
+7. [The check of the user paths](#7-the-check-of-the-user-paths)
+8. [What is not covered](#8-what-is-not-covered)
 
 ---
 
@@ -148,7 +149,44 @@ python scripts/ci_test_gate.py --write-baseline
 
 and commit the result. The diff is the proof that the baseline shrank.
 
-## 7. What is not covered
+## 7. The check of the user paths
+
+The machine of the operator is private, and every path of it must never
+leave the machine: not in the source, not in a commit message, not in the
+body of a pull request, not in an issue, not in a comment.  This is Rule 8
+of `DEVELOPMENT_RULES.md`.
+
+The test gate reads the files of the repository.  A second workflow —
+`.github/workflows/user_paths.yml` — reads the surfaces that are **not**
+files of the repository: the body of a pull request, the body of an issue,
+the body of a comment, and the commits of a pull request.
+
+```bash
+# what the workflow runs
+python scripts/check_no_user_paths.py files
+python scripts/check_no_user_paths.py commits origin/master..HEAD
+python scripts/check_no_user_paths.py text body.md
+```
+
+The checker finds a path by the **shape** of a home — `/home/<account>`,
+`/Users/<account>`, `C:\Users\<account>` — and by the **identity** of the
+machine it runs on: the account, the home, the private folders of the
+working copy.  The identity is computed at runtime and never written down,
+so the rule does not publish the account it forbids.  The placeholders a
+documentation writes (`/home/user/...`) are left alone.
+
+A CI runner does not know the machine of the operator.  The names that
+only the machine knows can be given to the check through the secret
+`PRIVATE_NAMES` — a comma-separated list — which the workflow hands to
+the script in `TORVALDS_PRIVATE_NAMES`.
+
+The check reads the commits that are **new**, not the whole history: the
+history carries the leaks of the past, and a gate that reads it would be
+red before anyone writes a line of code — the same reason the test gate
+has a baseline.  The audit of the history is the probe:
+`investigate/user-path-exposure/probe_user_paths.py`.
+
+## 8. What is not covered
 
 * **The `menu` and the multi-window orchestrators** are exercised by the
   unit suites, but the agent's end-to-end behaviour against a live Ollama
@@ -161,3 +199,9 @@ and commit the result. The diff is the proof that the baseline shrank.
   A *new* failure in one of them is caught, but a *changed* failure in one
   of them is not distinguished from the known one — the gate compares node
   ids, not assertions.
+* **The history is not rewritten by the check.**  A path that was
+  published in an old commit is still published in it; the check keeps
+  the *new* commits clean, and the audit of the history is a report for
+  the operator, not a gate.  Removing the leaks of the past is a rewrite
+  of the history and a force-push — Rule 4 asks for the confirmation
+  first.

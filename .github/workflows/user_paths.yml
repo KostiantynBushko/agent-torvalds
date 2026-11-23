@@ -1,0 +1,94 @@
+name: User Paths
+
+# The machine of the operator is private, and every path of it must never
+# leave the machine: not in the source, not in a commit message, not in the
+# body of a pull request, not in an issue, not in a comment.
+#
+# The test gate (tests.yml) reads the files of the repository.  This
+# workflow reads the surfaces that are **not** files of the repository —
+# the body of a pull request, the body of an issue, the body of a comment
+# — because that is where the path of the machine reached the outside
+# before the check existed.
+#
+# The names that only the machine knows can be given to the check through
+# the secret PRIVATE_NAMES — a comma-separated list.  Without it the
+# workflow knows the *shape* of a home, which is what a path carries most
+# of the time.
+#
+# See DEVELOPMENT_RULES.md, Rule 8.
+
+on:
+  pull_request:
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
+
+concurrency:
+  group: user-paths-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  user-paths:
+    name: no user path leaves the machine
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          # The full history: the check reads the commits of the pull
+          # request, and it needs the base of the branch to find them.
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: The tracked files carry no user path
+        env:
+          TORVALDS_PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
+        run: python scripts/check_no_user_paths.py files
+
+      - name: The commits of the pull request carry no user path
+        if: github.event_name == 'pull_request'
+        env:
+          TORVALDS_PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
+        run: |
+          python scripts/check_no_user_paths.py commits \
+            "${{ github.event.pull_request.base.sha }}..HEAD"
+
+      - name: The body of the pull request carries no user path
+        if: github.event_name == 'pull_request'
+        env:
+          TORVALDS_PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$BODY" > /tmp/body.md
+          python scripts/check_no_user_paths.py text /tmp/body.md
+
+      - name: The body of the issue carries no user path
+        if: github.event_name == 'issues'
+        env:
+          TORVALDS_PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          printf '%s' "$BODY" > /tmp/body.md
+          python scripts/check_no_user_paths.py text /tmp/body.md
+
+      - name: The comment carries no user path
+        if: github.event_name == 'issue_comment'
+        env:
+          TORVALDS_PRIVATE_NAMES: ${{ secrets.PRIVATE_NAMES }}
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          printf '%s' "$BODY" > /tmp/body.md
+          python scripts/check_no_user_paths.py text /tmp/body.md

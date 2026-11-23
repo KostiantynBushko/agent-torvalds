@@ -6,6 +6,58 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### No user path of the machine ever leaves it
+
+- **The operator stated on 2026-11-23** that the agent may expose a user
+  path in the text, in the code and in the commits it generates, that this
+  is **completely forbidden**, and that the rule has to be strict:
+
+  > *the agent should never ever expose user path to the external
+  > resources, like github*
+
+- **The rule is Rule 8** of `DEVELOPMENT_RULES.md` — *Never expose a user
+  path to anything outside the machine*.  Rule 6 forbade the private
+  folder; Rule 8 forbids **every** user path — the home, the name of the
+  account, the working copy, the private folders of the disk — and it
+  forbids it in **every** place the path can leave: the source, the
+  documentation, the message of a commit, the body of a pull request, the
+  body of an issue, the body of a comment, and the answer the agent gives
+  to the operator.  The published form is the generic one: `~`,
+  `/home/<user>`, `operator@example.com`, `<project>`.
+
+- **The check is a script** — `scripts/check_no_user_paths.py` — and it
+  reads the tracked files, the messages of the commits and the free text
+  of a pull request, of an issue and of a comment.  It finds a path by
+  the **shape** of a home (`/home/<account>`, `/Users/<account>`,
+  `C:\Users\<account>`), which is known everywhere, and by the
+  **identity** of the machine it runs on — the account, the home, the
+  private folders of the working copy — which is **computed** at runtime
+  and never written down.  The placeholders a documentation writes
+  (`/home/user/...`) are left alone.
+
+- **The test fails the build** — `tests/test_no_user_paths.py` — and the
+  workflow `.github/workflows/user_paths.yml` reads the surfaces that are
+  **not** files of the repository: the body of a pull request, the body
+  of an issue, the body of a comment, and the commits of a pull request.
+  That is where the path of the machine reached the outside before the
+  check existed — Rule 6 was written on 2026-10-29, after the home of
+  the operator was found **in the body of a pull request**, and the fix
+  was made in the body, not in a check.
+
+- **The agent is told.**  The rule is in the operating instructions of
+  the agent — `project_manager/prompt_engine.py` and the legacy template
+  of `agent-torvalds.py` — so it is in front of the agent at every
+  invocation, and not only in a file the agent reads once.
+
+- **What is already published was measured** — the probe
+  `investigate/user-path-exposure/probe_user_paths.py` reads the history:
+  **379 of the 507 commits** carry the name of the account of the
+  operator, and two commit messages carry it as well.  The tree of the
+  repository is clean; the history is not.  Removing those leaks is a
+  rewrite of the history and a force-push — Rule 4 asks the operator for
+  the confirmation first, and it has not been given.  **The question is
+  open.**
+
 #### The panes of the TUI scroll, and they hide
 
 - **The operator asked on 2026-11-21** for three things:

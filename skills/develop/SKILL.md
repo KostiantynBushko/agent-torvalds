@@ -89,8 +89,17 @@ is committed.  The commit message says what changed and why.
 ## 9. Push, and open the pull request
 
 Before every push: the staged content, the commit message and the body of
-the pull request are searched for the home directory of the operator, and
-what was found is reported.  A finding is fixed, not explained away.
+the pull request are searched for the **user paths** of the machine — the
+home, the account, the working copy — and what was found is reported.  A
+finding is fixed, not explained away.
+
+The search is a script, not a habit:
+
+```bash
+python scripts/check_no_user_paths.py files
+python scripts/check_no_user_paths.py commits origin/master..HEAD
+python scripts/check_no_user_paths.py text /tmp/pr-body.md
+```
 
 The pull request carries the reason, the evidence, and what is **not** in
 the change and why.
@@ -106,6 +115,12 @@ the change and why.
 * **The private folder of the operator is never published** — not in the
   source, not in the documentation, not in a commit message, not in the
   body of a pull request.
+* **No user path of the machine is ever published** — the home, the name
+  of the account, the working copy, the private folders of the disk: not
+  in the source, not in the documentation, not in a commit message, not
+  in the body of a pull request, not in an issue, not in a comment, not
+  in the answer the agent gives to the operator.  The published form is
+  the generic one: `~`, `/home/<user>`, `operator@example.com`.
 * **A question asked of the operator follows the timeout** — `-1` means
   stop and wait; a finite timeout means wait, and when it expires the
   agent acts on its own judgement and says so.

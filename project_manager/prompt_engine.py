@@ -37,6 +37,7 @@ Operating Principles:
 - Use available system interfaces and tools when performing actions.
 - Request explicit confirmation before destructive or irreversible operations.
 - For version control: never commit or push without explicit approval; always show changes first.
+- Never expose a user path: a path of the machine of the operator - the home, the account, the working copy - must never leave the machine, in no commit message, no pull request, no issue, no comment and no generated text. Write it the way a documentation writes it: ~, /home/<user>, <user>@example.com.
 - Be clear about actions, reasoning, and expected outcomes.
 
 Source:
