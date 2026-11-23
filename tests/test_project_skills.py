@@ -121,16 +121,30 @@ class TestTheSkillsOfTheProject(unittest.TestCase):
                 self.assertIn("description", metadata)
                 self.assertTrue(body.strip())
 
-    def test_no_skill_names_the_home_of_the_operator(self) -> None:
-        """The repository is public: a skill may not carry a private path."""
-        import re
+    def test_no_skill_carries_a_user_path(self) -> None:
+        """The repository is public: a skill may not carry a private path.
 
-        pattern = re.compile(r"/home/[A-Za-z0-9._<>-]+|/Users/[A-Za-z0-9._<>-]+")
+        The **published** form of a path — ``/home/<user>/...`` — is
+        allowed; the private one is not.  The check is the checker of
+        Rule 7, so the two cannot drift apart: a pattern of its own
+        would reject the form the rule publishes.
+        """
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "check_no_user_paths",
+            ROOT / "scripts" / "check_no_user_paths.py",
+        )
+        checker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checker)
+
         for skill in self.skills:
             with self.subTest(skill=skill.name):
-                self.assertIsNone(
-                    pattern.search(skill.body),
-                    f"The skill {skill.name} carries a path of a home directory.",
+                findings = checker.find_user_paths(skill.body)
+                self.assertEqual(
+                    findings,
+                    [],
+                    f"The skill {skill.name} carries a user path: {findings}",
                 )
 
     def test_the_skills_are_reachable_through_the_project_root(self) -> None:
