@@ -1253,6 +1253,105 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+#### A payload is measured, and never printed
+
+- **The operator asked on 2026-11-23** for the arguments of every tool
+  call to be on the screen of the *Workflow & Tool Progress* pane — and
+  read the answer, and found that the second half of it was too much:
+
+  > *not every tool must show everything it takes as an argument, for
+  > example write_file, it would be nice to see the path to the file
+  > but I'm not sure it is ok to print the content it writes*
+
+- **The pane knows two kinds of argument now.**  A **target** — a path, a
+  name, a flag, the command of the shell — is shown **whole**: it is
+  where the work happens, and the operator reads it at a glance.  A
+  **payload** — the body of a file, the message of a commit, the rows of
+  a table, the environment of a command, a password — is **measured**,
+  and never printed:
+
+  ```
+  │  ⠋ write_file (0.0s)              │
+  │    └ path=/tmp/notes.md           │
+  │      content=300 lines, 2.5 KB    │
+  ```
+
+- **A payload is where the secrets are, and where the bulk is.**  A key
+  that is written in a file was on the screen of the pane with the text
+  of the file, and a file of three hundred lines took eight lines of the
+  pane away from the log of everything else.  Nothing is lost: the
+  payload is at the **path** that is shown beside it, and the agent
+  says what it wrote in the document pane.  The measure is honest in the
+  way the marker of a folded value is honest, and it is more exact than
+  the marker: the operator knows how many lines there are and how big
+  they are, and not only that there is more.
+
+- **The command of the shell is not a payload.**  It is the act, and the
+  operator has to see every character of what runs.  A secret that is
+  carried *inside* a command is on the screen, and the pane does not
+  hide that, and it does not pretend otherwise.
+
+- **The names of the payloads are the names the tools use** — taken from
+  the toolkits themselves — and the list is the contract between the
+  tools and the pane: `content`, `message`, `body`, `comment`,
+  `commit_message`, `data`, `env_vars`, `text`, `password`,
+  `sudo_password`, `payload`.
+
+- **The evidence:** `tests/test_tui_tool_arguments.py` — 41 tests — and
+  `investigate/tui-tool-arguments/probe_tool_arguments.py`, which drives
+  the real panel from the real state.  The rule was broken on purpose —
+  the payload is printed again — and the check and the tests fail, while
+  the other checks keep passing.  The gate of the repository stays
+  green: 40 known failures, 0 new, 0 fixed.
+
+#### The body of a tool is measured, and never printed
+
+- **The rule was read against the toolkits, and three bodies were still
+  printed.**  The list of the payload names was written from the tools
+  of the agent, and it was read again on 2026-11-24 against the
+  toolkits themselves — `db-toolkit`, `xlsx-toolkit`,
+  `data-analysis-toolkit`, `git-toolkit`, `MikroTik-RouterOS`,
+  `shodan-toolkit` — and three arguments carry a body under a name that
+  says nothing of it:
+
+  | name | the body | the tool |
+  |---|---|---|
+  | `value` | the content of a cell of a table | `xlsx-toolkit.set_cell_value` |
+  | `description` | the text of an entry of a changelog | `git-toolkit.git_update_changelog` |
+  | `condition` | the condition of a filter of a table | `data-analysis-toolkit.filter_data` |
+
+  The three are **measured** now, the way the body of a file is
+  measured:
+
+  ```
+  │  ⠋ set_cell_value (0.0s)            │
+  │    └ path=/tmp/book.xlsx             │
+  │      cell=B7                         │
+  │      value=1 line, 15 B              │
+  ```
+
+- **The query of the database is not measured.**  The SQL is the act,
+  the way the command of the shell is the act, and it is shown whole —
+  the operator has to see what ran.  A literal inside it — an address,
+  the number of a card — is on the screen with it, and the pane does
+  not pretend otherwise.
+
+- **A value the pane does not know is measured too.**  The arguments of
+  a call come from the model, and they are JSON: a text, a number, a
+  flag, a list, a mapping.  A value of another kind — a table, an
+  object of a toolkit — was printed as it is, and a table of rows was
+  on the screen with its rows.  The pane does not know what is inside
+  such a value, and it says so: the **kind** of it and how much of it
+  there is — `Table, 294 items`.
+
+- **The evidence:** `tests/test_tui_tool_arguments.py` — 49 tests — and
+  `investigate/tui-tool-arguments/probe_tool_arguments.py` — 9 checks.
+  The rule was broken on purpose — the name `value` was taken off the
+  list of the payloads, and the opaque value was printed again — and
+  the two new checks fail, while the other checks keep passing.  The
+  gate of the repository stays green: 40 known failures, 0 new, 0
+  fixed.
+
 #### The system prompt is written down once, and both agents read it
 
 - **The multi-window agent told the model about the rule of the user path
