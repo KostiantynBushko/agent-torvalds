@@ -150,15 +150,58 @@ taken from the toolkits themselves:
 ```python
 # components/tui/tool_arguments.py
 PAYLOAD_ARGUMENTS = frozenset({
-    "body", "comment", "commit_message", "content", "data",
-    "env_vars", "message", "password", "payload", "sudo_password",
-    "text",
+    "body", "comment", "commit_message", "condition", "content",
+    "data", "description", "env_vars", "message", "password",
+    "payload", "sudo_password", "text", "value",
 })
 ```
 
 The list is the whole contract between the tools and the pane: a tool
 that hands over a body under another name is a tool whose body is
 printed, and the name of that argument belongs on this list.
+
+### The bodies that were still printed
+
+The list was written from the tools of the agent, and it was read again
+on 2026-11-24 against the toolkits themselves — `db-toolkit`,
+`xlsx-toolkit`, `data-analysis-toolkit`, `git-toolkit`,
+`MikroTik-RouterOS`, `shodan-toolkit` — and three arguments carry a
+body under a name that says nothing of it:
+
+| name | the body | the tool |
+|---|---|---|
+| `value` | the content of a cell of a table | `xlsx-toolkit.set_cell_value` |
+| `description` | the text of an entry of a changelog | `git-toolkit.git_update_changelog` |
+| `condition` | the condition of a filter of a table | `data-analysis-toolkit.filter_data` |
+
+They are measured now:
+
+```
+│  ⠋ set_cell_value (0.0s)                            │
+│    └ path=/tmp/book.xlsx                             │
+│      cell=B7                                         │
+│      value=1 line, 15 B                              │
+```
+
+**The query of the database is not measured.**  The SQL is the act, the
+way the command of the shell is the act, and it is shown whole — the
+operator has to see what ran.  A literal inside it — an address, the
+number of a card — is on the screen with it, and the pane does not
+pretend otherwise.
+
+### A value the pane does not know
+
+The arguments of a call come from the model, and they are JSON: a text,
+a number, a flag, a list, a mapping.  A value of another kind — a
+table, an object of a toolkit — was printed as it is, and a table of
+rows was on the screen with its rows:
+
+```
+│    └ df_or_path=Table(ssn=[123-45-6789, 987-65-4321]) │
+```
+
+The pane does not know what is inside such a value, and it says so:
+the **kind** of it, and how much of it there is — `Table, 294 items`.
 
 ### The state keeps the truth
 
@@ -224,13 +267,15 @@ A secret that is written in a file is not on the screen either:
 │      content=2 lines, 45 B                           │
 ```
 
-The check of the change: `tests/test_tui_tool_arguments.py` — 41
+The check of the change: `tests/test_tui_tool_arguments.py` — 49
 tests — and `investigate/tui-tool-arguments/probe_tool_arguments.py`,
 which drives the real panel from the real state:
 
 ```
   PASS  every tool shows its arguments
   PASS  the body of a file is off the screen
+  PASS  the body of a tool is off the screen
+  PASS  a value the pane does not know is off the screen
   PASS  the command of the shell is still whole
   PASS  the home of the operator is off the screen
   PASS  a long value is folded honestly
@@ -242,6 +287,12 @@ The rule was broken on purpose — the payload is printed again — and
 the check *the body of a file is off the screen* and the check of the
 seam fail, while the other checks keep passing.  A check that cannot
 fail is not a check.
+
+The two checks of the second round were broken on purpose as well: the
+name `value` was taken off the list of the payloads, and the opaque
+value was printed again.  The check *the body of a tool is off the
+screen* and the check *a value the pane does not know is off the
+screen* fail, and the other checks keep passing.
 
 ### The seam between the workflow and the pane
 
@@ -294,7 +345,7 @@ fixed.
 | `components/tui/tool_arguments.py` | the rule — the arguments of a call become the text of the line |
 | `components/tui/state_bridge.py` | the record keeps the arguments of the call, whole |
 | `components/tui/progress_view.py` | the view uses the rule, and the home is hidden in every argument |
-| `tests/test_tui_tool_arguments.py` | the check of the change — 41 tests |
+| `tests/test_tui_tool_arguments.py` | the check of the change — 49 tests |
 | `investigate/tui-tool-arguments/` | this report and the probe |
 | `investigate/tui-home-path-in-progress/probe_home_path.py` | the probe read the field that was renamed — it reads the arguments now |
 | `investigate/tui-autoscroll/probe_autoscroll.py` | the probe read the field that was renamed — it reads the arguments now |

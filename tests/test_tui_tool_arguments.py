@@ -52,6 +52,7 @@ from components.tui.tool_arguments import (  # noqa: E402
     MAX_VALUE_LINES,
     format_arguments,
     is_a_payload,
+    is_opaque,
     the_folded_marker,
     the_measure_of_a_value,
     the_size_in_bytes,
@@ -76,6 +77,33 @@ THE_CALLS = (
     ("cp", {"src": "/tmp/a.md", "dst": "/tmp/b.md"}),
     ("rm", {"path": "/tmp/old.md"}),
 )
+
+
+class Table:
+    """A value the pane does not know: a table of rows."""
+
+    def __init__(self, rows):
+        self._rows = list(rows)
+
+    def __len__(self):
+        return len(self._rows)
+
+    def __repr__(self):
+        return "Table(ssn=[123-45-6789, 987-65-4321])"
+
+
+class Opaque:
+    """A value the pane does not know, and that has no length."""
+
+    def __repr__(self):
+        return "Opaque(token=sk-live-abc123)"
+
+
+#: A table of rows: it holds the rows of a table of a spreadsheet.
+A_TABLE = Table(["123-45-6789"] * 294)
+
+#: An object of a toolkit: the pane does not know what is inside it.
+AN_OPAQUE_OBJECT = Opaque()
 
 
 def a_state_with(tool_name: str, arguments: dict) -> TuiState:
@@ -252,6 +280,55 @@ class TestThePayload:
         assert the_size_in_bytes(1024) == "1.0 KB"
         assert the_size_in_bytes(1024 * 1024) == "1.0 MB"
 
+    def test_the_value_of_a_cell_is_not_printed(self):
+        """The content of a cell of a table is a body, and it is measured."""
+        detail = format_arguments(
+            {
+                "path": "/tmp/book.xlsx",
+                "sheet_name": "Sheet1",
+                "cell": "B7",
+                "value": "the pin is 4471",
+            }
+        )
+
+        assert "4471" not in detail
+        assert "value=1 line, 15 B" in detail
+        assert "cell=B7" in detail
+
+    def test_the_description_of_a_changelog_is_not_printed(self):
+        """The text of an entry of a changelog is a body, and it is measured."""
+        detail = format_arguments(
+            {
+                "path": "/tmp/repo",
+                "change_type": "Fixed",
+                "description": "token=sk-live-abc123",
+            }
+        )
+
+        assert "sk-live-abc123" not in detail
+        assert "description=1 line, 20 B" in detail
+
+    def test_the_condition_of_a_filter_is_not_printed(self):
+        """The condition of a filter of a table is a body, and it is measured."""
+        detail = format_arguments(
+            {
+                "df_or_path": "/tmp/sales.xlsx",
+                "column": "ssn",
+                "condition": "ssn == '123-45-6789'",
+            }
+        )
+
+        assert "123-45-6789" not in detail
+        assert "condition=1 line, 20 B" in detail
+
+    def test_the_query_of_the_database_is_shown_whole(self):
+        """The query is the act, and it is shown whole."""
+        detail = format_arguments(
+            {"query": "SELECT id FROM users WHERE email = 'a@b.c'"}
+        )
+
+        assert detail == "SELECT id FROM users WHERE email = 'a@b.c'"
+
     def test_the_environment_of_a_command_is_not_printed(self):
         """The keys of an environment are not the values of it."""
         detail = format_arguments(
@@ -260,6 +337,37 @@ class TestThePayload:
 
         assert "sk-live-abc123" not in detail
         assert "env_vars=1 keys" in detail
+
+
+class TestAnOpaqueValue:
+    """A value the pane does not know is measured, and never printed."""
+
+    def test_an_opaque_value_is_not_printed(self):
+        """The rows of a table are not on the screen of the pane."""
+        detail = format_arguments({"df_or_path": A_TABLE, "column": "ssn"})
+
+        assert "123-45-6789" not in detail
+        assert "df_or_path=Table, 294 items" in detail
+
+    def test_an_opaque_value_without_a_length_says_its_kind(self):
+        """The pane says what kind of value it was given, and no more."""
+        detail = format_arguments({"df_or_path": AN_OPAQUE_OBJECT})
+
+        assert "sk-live-abc123" not in detail
+        assert detail == "Opaque"
+
+    def test_a_table_is_opaque(self):
+        assert is_opaque(A_TABLE) is True
+        assert is_opaque(AN_OPAQUE_OBJECT) is True
+
+    def test_a_value_of_the_model_is_not_opaque(self):
+        """A text, a number, a flag, a list and a mapping are read."""
+        assert is_opaque("text") is False
+        assert is_opaque(30) is False
+        assert is_opaque(True) is False
+        assert is_opaque(None) is False
+        assert is_opaque([1, 2]) is False
+        assert is_opaque({"a": 1}) is False
 
 
 # ---------------------------------------------------------------------------

@@ -1304,6 +1304,54 @@ All notable changes to this project are documented in this file.
   the other checks keep passing.  The gate of the repository stays
   green: 40 known failures, 0 new, 0 fixed.
 
+#### The body of a tool is measured, and never printed
+
+- **The rule was read against the toolkits, and three bodies were still
+  printed.**  The list of the payload names was written from the tools
+  of the agent, and it was read again on 2026-11-24 against the
+  toolkits themselves — `db-toolkit`, `xlsx-toolkit`,
+  `data-analysis-toolkit`, `git-toolkit`, `MikroTik-RouterOS`,
+  `shodan-toolkit` — and three arguments carry a body under a name that
+  says nothing of it:
+
+  | name | the body | the tool |
+  |---|---|---|
+  | `value` | the content of a cell of a table | `xlsx-toolkit.set_cell_value` |
+  | `description` | the text of an entry of a changelog | `git-toolkit.git_update_changelog` |
+  | `condition` | the condition of a filter of a table | `data-analysis-toolkit.filter_data` |
+
+  The three are **measured** now, the way the body of a file is
+  measured:
+
+  ```
+  │  ⠋ set_cell_value (0.0s)            │
+  │    └ path=/tmp/book.xlsx             │
+  │      cell=B7                         │
+  │      value=1 line, 15 B              │
+  ```
+
+- **The query of the database is not measured.**  The SQL is the act,
+  the way the command of the shell is the act, and it is shown whole —
+  the operator has to see what ran.  A literal inside it — an address,
+  the number of a card — is on the screen with it, and the pane does
+  not pretend otherwise.
+
+- **A value the pane does not know is measured too.**  The arguments of
+  a call come from the model, and they are JSON: a text, a number, a
+  flag, a list, a mapping.  A value of another kind — a table, an
+  object of a toolkit — was printed as it is, and a table of rows was
+  on the screen with its rows.  The pane does not know what is inside
+  such a value, and it says so: the **kind** of it and how much of it
+  there is — `Table, 294 items`.
+
+- **The evidence:** `tests/test_tui_tool_arguments.py` — 49 tests — and
+  `investigate/tui-tool-arguments/probe_tool_arguments.py` — 9 checks.
+  The rule was broken on purpose — the name `value` was taken off the
+  list of the payloads, and the opaque value was printed again — and
+  the two new checks fail, while the other checks keep passing.  The
+  gate of the repository stays green: 40 known failures, 0 new, 0
+  fixed.
+
 #### The system prompt is written down once, and both agents read it
 
 - **The multi-window agent told the model about the rule of the user path

@@ -70,6 +70,10 @@ text of that line:
   called with ``path=None`` was called without a path;
 * an argument that carries a **payload** keeps its name and is shown as
   its **measure** -- the payload is never printed, not even its head;
+* a value that the pane does not know -- a table, an object of a
+  toolkit -- is shown as its **kind** and as how much of it there is:
+  the arguments of a call come from the model, and the pane does not
+  print what it does not know;
 * a value that is **not** a payload and carries **more lines than the
   pane shows** is **folded**: the head of the value is shown, and a
   marker says how many lines were left out.  The body of a script is
@@ -112,19 +116,29 @@ FOLDED = "… {count} more {word} …"
 #: The list is the whole contract between the tools and the pane: a
 #: tool that hands over a body under another name is a tool whose body
 #: is printed, and the name of that argument belongs on this list.
+#:
+#: Three names were added on 2026-11-24, after the rule was read
+#: against the toolkits themselves: **value** -- the content of a cell
+#: of a table, **description** -- the text of an entry of a changelog
+#: -- and **condition** -- the condition of a filter of a table.  The
+#: three carry a body under a name that says nothing of it, and a body
+#: that is printed is a body that is on the screen.
 PAYLOAD_ARGUMENTS = frozenset(
     {
         "body",
         "comment",
         "commit_message",
+        "condition",
         "content",
         "data",
+        "description",
         "env_vars",
         "message",
         "password",
         "payload",
         "sudo_password",
         "text",
+        "value",
     }
 )
 
@@ -223,6 +237,58 @@ def the_value_of(argument: Any) -> str:
     return str(argument)
 
 
+def is_opaque(value: Any) -> bool:
+    """
+    Is the value one whose inside the pane does not know?
+
+    The arguments of a call come from the model, and they are JSON: a
+    text, a number, a flag, a list, a mapping.  A value of another kind
+    -- a table, an object of a toolkit -- is **opaque**: the pane does
+    not know what is inside it, and it says so instead of printing it.
+
+    A number and a flag are not opaque: there is nothing in them that
+    has to be hidden, and the operator reads them at a glance.
+
+    Args:
+        value: The value of the argument.
+
+    Returns:
+        True when the pane does not know what is inside the value.
+    """
+    if value is None:
+        return False
+    if isinstance(value, (str, bytes, bytearray, bool, int, float)):
+        return False
+    if isinstance(value, (Mapping, list, tuple, set, frozenset)):
+        return False
+    return True
+
+
+def the_measure_of_an_opaque_value(value: Any) -> str:
+    """
+    The measure of a value the pane does not know: its kind, and how
+    much of it there is.
+
+    The pane says what kind of value it was given -- "DataFrame, 294
+    items" -- and not one line of what is inside it.  The kind is what
+    the operator needs: the table that is filtered is known by its
+    name, and the rows of it are the business of the agent and of the
+    document pane.
+
+    Args:
+        value: The value of the argument.
+
+    Returns:
+        The text of the measure.
+    """
+    kind = type(value).__name__
+    try:
+        count = len(value)
+    except TypeError:
+        return kind
+    return f"{kind}, {count} items"
+
+
 def the_lines_of_a_value(
     value: Any,
     lines: int = MAX_VALUE_LINES,
@@ -236,6 +302,9 @@ def the_lines_of_a_value(
     marker says how many lines were left out.  The marker is honest:
     the operator knows that there is more, and how much of it there is.
 
+    A value that the pane does not know is measured and not printed:
+    the kind of it is said, and not one line of what is inside it.
+
     Args:
         value: The value of the argument.
         lines: How many lines of the value the pane shows.
@@ -243,6 +312,12 @@ def the_lines_of_a_value(
     Returns:
         The lines of the value.
     """
+    if is_opaque(value):
+        # The pane does not know what is inside the value: it says the
+        # kind of it and how much of it there is, and prints nothing
+        # of it.
+        return [the_measure_of_an_opaque_value(value)]
+
     text = the_value_of(value)
     limit = max(1, int(lines))
     # The value is split **as far as it is shown**: the lines that are
@@ -306,7 +381,9 @@ def the_measure_of_a_value(value: Any) -> str:
 
     A text is measured in lines and in size, a list in items, and a
     mapping in keys.  A number and a flag are shown as they are: there
-    is nothing in them that has to be hidden.
+    is nothing in them that has to be hidden.  A value of another kind
+    is measured by its kind: the pane does not know what is inside it,
+    and it says so.
 
     Args:
         value: The value of the payload.
@@ -324,7 +401,13 @@ def the_measure_of_a_value(value: Any) -> str:
         return f"{len(value)} keys"
     if isinstance(value, (list, tuple, set, frozenset)):
         return f"{len(value)} items"
-    return the_value_of(value)
+    if value is None:
+        return "none"
+    if isinstance(value, (bool, int, float)):
+        # A number and a flag are shown as they are: there is nothing
+        # in them that has to be hidden.
+        return the_value_of(value)
+    return the_measure_of_an_opaque_value(value)
 
 
 def format_arguments(
