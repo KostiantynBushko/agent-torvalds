@@ -12,6 +12,17 @@ The line under the name of the tool was the **arguments of one tool**:
 the command of the shell, and the `file_path` of a tool that has one.
 Every other call was a name with nothing under it.
 
+The answer to that request was to show **every** argument of **every**
+call.  The operator read the answer, found that the second half of it
+was too much, and said so on the same day:
+
+> not every tool must show everything it takes as an argument, for
+> example write_file, it would be nice to see the path to the file but
+> I'm not sure it is ok to print the content it writes
+
+So the pane knows **two** kinds of argument now: a **target** is shown
+whole, and a **payload** is measured and never printed.
+
 **Status:** implemented, covered by tests and by a probe that fail
 without it.
 
@@ -96,9 +107,58 @@ and used by the view.
   name.
 * **A value that is longer than the pane is folded.**  The head of the
   value is shown, and a marker says how many lines were left out:
-  `… 294 more lines …`.  The body of a file is not a line of the pane,
+  `… 294 more lines …`.  The body of a script is not a line of the pane,
   and a pane that carries it whole is a pane that carries nothing
   else.
+* **An argument that carries a payload is measured, and never printed.**
+  The head of it is not shown either.  The pane says how much of it
+  there is — `300 lines, 2.5 KB` — and not what is in it.
+
+### A payload is a target of its own
+
+The second request of the operator is a rule of its own, and it has two
+halves: a **target** and a **payload**.
+
+* A **target** — a path, a name, a flag, the command of the shell — is
+  shown **whole**.  It is where the work happens, and the operator
+  reads it at a glance.
+* A **payload** — the body of a file, the message of a commit, the rows
+  of a table, the environment of a command, a password — is **measured**
+  and never printed.
+
+A payload is measured for two reasons.  It is where the **secrets** are:
+a key that is written in a file was on the screen of the pane with the
+text of the file, and the pane is the thing that is shared, that is
+scrolled past, and that is read over the shoulder of the operator.  And
+it is where the **bulk** is: a file of three hundred lines took eight
+lines of the pane away from the log of everything else.
+
+Nothing is lost.  The payload is at the **path** that is shown beside
+it, and the agent says what it wrote in the document pane.  The measure
+is honest in the way the marker of a folded value is honest, and it is
+more exact than the marker: the operator knows how many lines there
+are and how big they are, and not only that there is more.
+
+**The command of the shell is not a payload.**  It is the act, and the
+operator has to see every character of what runs.  A secret that is
+carried *inside* a command is on the screen — the pane does not hide
+that, and it does not pretend otherwise.
+
+The names of the payloads are the names the **tools of the agent use**,
+taken from the toolkits themselves:
+
+```python
+# components/tui/tool_arguments.py
+PAYLOAD_ARGUMENTS = frozenset({
+    "body", "comment", "commit_message", "content", "data",
+    "env_vars", "message", "password", "payload", "sudo_password",
+    "text",
+})
+```
+
+The list is the whole contract between the tools and the pane: a tool
+that hands over a body under another name is a tool whose body is
+printed, and the name of that argument belongs on this list.
 
 ### The state keeps the truth
 
@@ -143,7 +203,7 @@ The pane, at a terminal of 160 columns:
 │    └ /tmp/notes.md                                   │
 │  ⠋ write_file (0.0s)                                 │
 │    └ path=/tmp/notes.md                              │
-│      content=hello                                   │
+│      content=300 lines, 2.5 KB                       │
 │  ⠋ mkdir (0.0s)                                      │
 │    └ /tmp/folder                                     │
 │  ⠋ cp (0.0s)                                         │
@@ -153,20 +213,35 @@ The pane, at a terminal of 160 columns:
 
 Every call shows what it was called with.  The command of the shell is
 still shown the way it has been shown — the value alone, whole, split
-to the width of the pane.
+to the width of the pane.  The body of the file is **measured**: the
+path is on the screen, and the text of the file is not.
 
-The check of the change: `tests/test_tui_tool_arguments.py` — 29
+A secret that is written in a file is not on the screen either:
+
+```
+│  ⠋ write_file (0.0s)                                 │
+│    └ path=/tmp/.env                                  │
+│      content=2 lines, 45 B                           │
+```
+
+The check of the change: `tests/test_tui_tool_arguments.py` — 41
 tests — and `investigate/tui-tool-arguments/probe_tool_arguments.py`,
 which drives the real panel from the real state:
 
 ```
   PASS  every tool shows its arguments
+  PASS  the body of a file is off the screen
   PASS  the command of the shell is still whole
   PASS  the home of the operator is off the screen
   PASS  a long value is folded honestly
   PASS  every line fits the pane
   PASS  the arguments of the call of the workflow reach the pane
 ```
+
+The rule was broken on purpose — the payload is printed again — and
+the check *the body of a file is off the screen* and the check of the
+seam fail, while the other checks keep passing.  A check that cannot
+fail is not a check.
 
 ### The seam between the workflow and the pane
 
@@ -219,7 +294,7 @@ fixed.
 | `components/tui/tool_arguments.py` | the rule — the arguments of a call become the text of the line |
 | `components/tui/state_bridge.py` | the record keeps the arguments of the call, whole |
 | `components/tui/progress_view.py` | the view uses the rule, and the home is hidden in every argument |
-| `tests/test_tui_tool_arguments.py` | the check of the change — 29 tests |
+| `tests/test_tui_tool_arguments.py` | the check of the change — 41 tests |
 | `investigate/tui-tool-arguments/` | this report and the probe |
 | `investigate/tui-home-path-in-progress/probe_home_path.py` | the probe read the field that was renamed — it reads the arguments now |
 | `investigate/tui-autoscroll/probe_autoscroll.py` | the probe read the field that was renamed — it reads the arguments now |
