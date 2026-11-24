@@ -17,9 +17,10 @@ The operator asked on 2026-11-23 for the same for every tool:
 The check is in three parts:
 
   * the **rule** -- how the arguments of a call become the text of the
-    line: one argument is shown alone, several arguments are named, and
-    a value that is longer than the pane is folded with a marker that
-    says how much of it was left out;
+    line: one argument is shown alone, several arguments are named, a
+    value that is longer than the pane is folded with a marker that says
+    how much of it was left out, and an argument that carries a
+    **payload** is measured and never printed;
   * the **pane** -- the real panel, with the real state, rendered the
     way the terminal renders it;
   * the **state** -- the arguments are kept as they were given, and the
@@ -50,7 +51,10 @@ from components.tui.state_bridge import TuiState  # noqa: E402
 from components.tui.tool_arguments import (  # noqa: E402
     MAX_VALUE_LINES,
     format_arguments,
+    is_a_payload,
     the_folded_marker,
+    the_measure_of_a_value,
+    the_size_in_bytes,
 )
 
 #: The width the panel is rendered at.
@@ -108,7 +112,7 @@ class TestTheRule:
         """Two arguments are told apart by their names."""
         detail = format_arguments({"path": "/tmp/a.md", "content": "hello"})
 
-        assert detail == "path=/tmp/a.md\ncontent=hello"
+        assert detail == "path=/tmp/a.md\ncontent=1 line, 5 B"
 
     def test_every_argument_is_shown(self):
         detail = format_arguments(
@@ -124,7 +128,7 @@ class TestTheRule:
         detail = format_arguments({"path": None, "content": "hello"})
 
         assert "path" not in detail
-        assert detail == "content=hello"
+        assert detail == "content=1 line, 5 B"
 
     def test_the_order_of_the_arguments_is_the_order_they_were_given_in(self):
         detail = format_arguments({"dst": "/tmp/b.md", "src": "/tmp/a.md"})
@@ -146,36 +150,36 @@ class TestTheRule:
         assert detail == "first\nsecond"
 
     def test_a_value_that_is_longer_than_the_pane_is_folded(self):
-        """A body of a file is not a line of the pane."""
+        """A script that is long is not a line of the pane."""
         value = "\n".join(f"line {number}" for number in range(20))
 
         lines = format_arguments(
-            {"path": "/tmp/a.md", "content": value}
+            {"path": "/tmp/a.md", "command": value}
         ).split("\n")
 
         assert len(lines) == MAX_VALUE_LINES + 2, "the value was not folded"
         assert lines[0] == "path=/tmp/a.md"
-        assert lines[1] == "content=line 0"
+        assert lines[1] == "command=line 0"
         assert lines[-1] == the_folded_marker(20 - MAX_VALUE_LINES)
 
     def test_the_marker_says_how_many_lines_were_left_out(self):
         value = "\n".join(f"line {number}" for number in range(20))
 
-        detail = format_arguments({"content": value})
+        detail = format_arguments({"command": value})
 
         assert f"{20 - MAX_VALUE_LINES} more lines" in detail
 
     def test_one_line_that_was_left_out_is_said_in_the_singular(self):
         value = "\n".join(f"line {number}" for number in range(7))
 
-        detail = format_arguments({"content": value})
+        detail = format_arguments({"command": value})
 
         assert "1 more line …" in detail
 
     def test_a_value_that_fits_is_not_folded(self):
         value = "\n".join(f"line {number}" for number in range(3))
 
-        detail = format_arguments({"content": value})
+        detail = format_arguments({"command": value})
 
         assert "more lines" not in detail
 
@@ -183,13 +187,79 @@ class TestTheRule:
         """The operator knows which argument was folded."""
         value = "\n".join(f"line {number}" for number in range(20))
 
-        detail = format_arguments({"path": "/tmp/a.md", "content": value})
+        detail = format_arguments({"path": "/tmp/a.md", "command": value})
 
-        assert detail.split("\n")[1].startswith("content=")
+        assert detail.split("\n")[1].startswith("command=")
 
     def test_the_arguments_that_are_not_a_mapping_are_not_arguments(self):
         assert format_arguments("path=/tmp") == ""
         assert format_arguments(None) == ""
+
+
+class TestThePayload:
+    """An argument that carries a body is measured, and never printed."""
+
+    def test_a_payload_is_not_printed(self):
+        """The text of a payload is not on the screen of the pane."""
+        detail = format_arguments(
+            {"path": "/tmp/.env", "content": "API_KEY=sk-live-abc123"}
+        )
+
+        assert "sk-live-abc123" not in detail
+        assert "API_KEY" not in detail
+
+    def test_a_payload_is_measured(self):
+        """The measure says how much of the payload there is."""
+        detail = format_arguments({"path": "/tmp/notes.md", "content": "hello"})
+
+        assert detail == "path=/tmp/notes.md\ncontent=1 line, 5 B"
+
+    def test_a_payload_keeps_its_name_when_it_is_the_only_argument(self):
+        """A measure without a name says nothing."""
+        detail = format_arguments({"content": "hello"})
+
+        assert detail == "content=1 line, 5 B"
+
+    def test_the_command_of_the_shell_is_not_measured(self):
+        """The command is the act, and it is shown whole."""
+        detail = format_arguments({"command": "git status"})
+
+        assert detail == "git status"
+
+    def test_the_measure_of_a_text_says_the_lines_and_the_size(self):
+        value = "\n".join(f"line {number}" for number in range(20))
+
+        measure = the_measure_of_a_value(value)
+
+        assert measure.startswith("20 lines, ")
+        assert measure.endswith(" B")
+
+    def test_the_measure_of_an_empty_text_says_nothing(self):
+        assert the_measure_of_a_value("") == "0 lines, 0 B"
+
+    def test_the_measure_of_a_list_says_the_items(self):
+        assert the_measure_of_a_value([1, 2, 3]) == "3 items"
+
+    def test_the_measure_of_a_mapping_says_the_keys(self):
+        assert the_measure_of_a_value({"a": "1", "b": "2"}) == "2 keys"
+
+    def test_the_measure_of_a_number_is_the_number(self):
+        """There is nothing in a number that has to be hidden."""
+        assert the_measure_of_a_value(30) == "30"
+
+    def test_a_size_is_said_in_the_unit_that_fits(self):
+        assert the_size_in_bytes(512) == "512 B"
+        assert the_size_in_bytes(1024) == "1.0 KB"
+        assert the_size_in_bytes(1024 * 1024) == "1.0 MB"
+
+    def test_the_environment_of_a_command_is_not_printed(self):
+        """The keys of an environment are not the values of it."""
+        detail = format_arguments(
+            {"command": "pytest", "env_vars": {"API_KEY": "sk-live-abc123"}}
+        )
+
+        assert "sk-live-abc123" not in detail
+        assert "env_vars=1 keys" in detail
 
 
 # ---------------------------------------------------------------------------
@@ -205,7 +275,14 @@ class TestThePane:
         for tool_name, arguments in THE_CALLS:
             text = render(a_state_with(tool_name, arguments))
 
-            for value in arguments.values():
+            for name, value in arguments.items():
+                if is_a_payload(name):
+                    # A payload is measured, and never printed.
+                    assert f"{name}=" in text, (
+                        f"the pane does not show the measure of the "
+                        f"payload of {tool_name}: {text!r}"
+                    )
+                    continue
                 assert str(value) in text, (
                     f"the pane does not show the arguments of "
                     f"{tool_name}: {text!r}"
@@ -223,7 +300,7 @@ class TestThePane:
         )
 
         assert "path=/tmp/a.md" in text, f"the pane shows no name: {text!r}"
-        assert "content=hi" in text, f"the pane shows no name: {text!r}"
+        assert "content=1 line, 2 B" in text, f"the pane shows no name: {text!r}"
 
     def test_the_command_of_the_shell_is_still_shown_alone(self):
         """The look of the command does not change."""
@@ -252,11 +329,27 @@ class TestThePane:
         """The pane says how much of the value was left out."""
         value = "\n".join(f"line {number}" for number in range(50))
 
-        text = render(a_state_with("write_file", {"path": "/tmp/a.md",
-                                                  "content": value}))
+        text = render(
+            a_state_with("execute_shell_command", {"command": value})
+        )
 
         assert "more lines" in text, f"the value was not folded: {text!r}"
         assert "line 0" in text, f"the head of the value is gone: {text!r}"
+
+    def test_a_payload_is_not_printed_on_the_screen(self):
+        """A secret that is written in a file is not on the screen."""
+        text = render(
+            a_state_with(
+                "write_file",
+                {"path": "/tmp/.env", "content": "API_KEY=sk-live-abc123"},
+            )
+        )
+
+        assert "sk-live-abc123" not in text, (
+            f"the pane shows the secret of the payload: {text!r}"
+        )
+        assert "path=/tmp/.env" in text, f"the pane shows no path: {text!r}"
+        assert "content=" in text, f"the pane shows no measure: {text!r}"
 
     def test_no_line_of_the_pane_is_wider_than_the_pane(self):
         """The detail of every tool is split to the width of the pane."""
@@ -364,7 +457,8 @@ class TestTheCallOfTheWorkflow:
         text = render(state)
         assert "write_file" in text, f"the pane shows no tool: {text!r}"
         assert "path=/tmp/notes.md" in text, f"the pane shows no path: {text!r}"
-        assert "content=hello" in text, f"the pane shows no content: {text!r}"
+        assert "content=1 line, 5 B" in text, f"the pane shows no measure: {text!r}"
+        assert "hello" not in text, f"the pane shows the payload: {text!r}"
 
     def test_the_command_of_the_shell_is_whole_through_the_workflow(self):
         """The look of the command does not change on the way."""
