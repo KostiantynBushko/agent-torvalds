@@ -209,6 +209,53 @@ def progress_pane_width(console_width: int) -> int:
     ]
 
 
+def sidebar_is_visible(hidden_panes: Iterable[str]) -> bool:
+    """
+    Whether the sidebar is on the screen.
+
+    The sidebar carries the progress pane above and the telemetry pane
+    below it.  It is on the screen while it has a pane, and it leaves
+    the layout with its last one: a Rich partition whose children are
+    *all* invisible is a partition without a content of its own, and
+    Rich draws such a partition as *itself*.
+
+    Args:
+        hidden_panes: The names of the panes the operator has hidden.
+
+    Returns:
+        True when the sidebar is on the screen.
+    """
+    hidden = set(hidden_panes)
+    return any(pane not in hidden for pane in SIDEBAR_PANES)
+
+
+def document_pane_width(console_width: int, sidebar_visible: bool = True) -> int:
+    """
+    The number of cells the document pane has on the screen.
+
+    The pane is two thirds of the body while the sidebar is on the
+    screen, and the whole of the body when the sidebar is not: the
+    space of the sidebar goes to the document pane.
+
+    The number is the one the layout really uses.  A check asks the
+    real layout for the region of the pane and compares it with this
+    number: a Rich that divides its layout another way is caught by
+    the check, and not by a pane that wraps its text in the wrong
+    place.
+
+    Args:
+        console_width: The width of the terminal.
+        sidebar_visible: Whether the sidebar is on the screen.
+
+    Returns:
+        The number of cells of the pane.
+    """
+    total = max(0, int(console_width))
+    if not sidebar_visible:
+        return total
+    return _row_cells(total, (DOCUMENT_RATIO, SIDEBAR_RATIO))[0]
+
+
 def build_torvalds_layout() -> Layout:
     """
     Build the hierarchical Rich Layout for Torvalds Multi-Window Console.
@@ -280,9 +327,7 @@ def apply_pane_visibility(layout: Layout, hidden_panes: Iterable[str]) -> None:
     # The sidebar keeps a pane on the screen, or it leaves the layout
     # with them: a partition without a visible child is drawn as
     # itself, and that is an endless recursion.
-    layout["sidebar"].visible = any(
-        pane not in hidden for pane in SIDEBAR_PANES
-    )
+    layout["sidebar"].visible = sidebar_is_visible(hidden)
 
 
 def render_header(
