@@ -1253,6 +1253,30 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+#### A branch is created only with the approval of the operator
+
+- **The operator asked on 2026-11-25** for the development rules to say
+  that the agent never creates a new branch without the explicit approval
+  of the operator.
+
+- **The branch was a step of the work that the agent took on its own.**
+  Rule 1 said that the change is made "on a branch of its own", and the
+  procedure of the `develop` skill carried `git checkout -b
+  feature/<name> <base-branch>` as a step to run.  The name of the branch
+  and the branch it started from were the agent's choice, and the
+  operator heard about them afterwards.
+
+- **The rule is written in Rule 1**, where the branch is described: the
+  agent asks — the name of the branch and the base — and it waits for the
+  answer.  A question that timed out is **not** an approval, and the
+  agent says so.  The rule covers every way a branch comes into being:
+  the shell, the `git_branch_create` tool of the git toolkit, and the
+  release branch of the `release` skill.
+
+- **The procedure follows the rule.**  The third step of the `develop`
+  skill asks first, and the list of the rules that hold at every step
+  carries the approval of the branch next to the approval of the commit.
+
 #### A payload is measured, and never printed
 
 - **The operator asked on 2026-11-23** for the arguments of every tool
