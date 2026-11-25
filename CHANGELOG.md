@@ -1253,6 +1253,41 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+#### The rules file carries no history of itself
+
+- **The operator said on 2026-11-25** that the development rules must not
+  keep a history of the changes to the rules: the history of the work is
+  only in `CHANGELOG.md`.
+
+- **The rules file had become a changelog of itself.**  The note at the top
+  carried a date and a paragraph of what the last change to the rules had
+  been — *"Last updated: 2026-11-23 — the rules are written for the working
+  copy…"* — and it was rewritten on every change to the rules: four
+  times since the file was written, the last of them on 2026-11-25.
+
+- **It contradicted the rule of the same file.**  Rule 6 says that the
+  history of the work "is in `CHANGELOG.md` and in the `investigate/` folder.
+  It is not repeated here" — and the note at the top was the history,
+  repeated.
+
+- **It was already wrong.**  The paragraph about the rule of the privacy
+  spoke of "Rule 6 … and Rule 8" — numbers of rules that are not in the file
+  any more; the rule is Rule 7.  A reader of the rules met a history it
+  could not check, about rules that were not there.
+
+- **The note is gone, and the rule says so.**  The file opens with what it
+  is and what it is for, and nothing else.  Rule 6 now says that the file
+  carries no history of itself: no date, no *last updated* note, no note
+  about what a change to the rules changed.  The rule of the branch, and
+  the rule of the privacy, are the rules themselves — they were never
+  in the note.
+
+- **The description of the file in the wiki followed.**  `wiki/Contributing.md`
+  called it "the development workflow and its history"; it is now "the
+  rules of a change to the codebase".  The wiki is a repository of its own:
+  the line is changed there, on its own branch, and the pointer to it is
+  moved here.
+
 #### A branch is created only with the approval of the operator
 
 - **The operator asked on 2026-11-25** for the development rules to say
