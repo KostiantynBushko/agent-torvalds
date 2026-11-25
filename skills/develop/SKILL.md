@@ -39,6 +39,12 @@ the shape of the thing written down before the code is written.
 
 ## 3. Branch
 
+**Ask first.**  The branch is created only after the operator has approved
+it: the name of the branch and the branch it starts from are put to the
+operator, and the agent waits for the answer.  The agent does not create a
+branch on its own, and it does not create one "to keep the tree clean" — an
+unapproved branch is not a way around the approval of the commit.
+
 ```bash
 git checkout -b feature/<name> <base-branch>
 ```
@@ -106,6 +112,9 @@ the change and why.
 
 ## The rules that hold at every step
 
+* **Never create a branch without the approval for that action.**  The
+  approval is per branch, not per session — the name of the branch and
+  the branch it starts from are named, and the answer is waited for.
 * **Never commit, push, tag or merge without the approval for that
   action.**  The approval is per action, not per session.
 * **Never merge.**  The pull request is opened and reviewed; the operator

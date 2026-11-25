@@ -4,19 +4,6 @@ These rules govern how a change to this codebase is made — by the operator,
 or by the agent working in it. They are **persisted here** so that they
 survive across sessions and are available to any future agent invocation.
 
-**Last updated:** 2026-11-23 — the rules are written for the working copy: the
-work happens in the copy the agent is running in, on a branch of its own, and
-the operator's tree is the place where the work is reviewed. The rules that
-carry the contract — the approval, the destructive operations, the timeout
-contract and the privacy of every user path of the machine — stayed.
-
-**The rule of the privacy is one rule.**  Rule 6 (the private folder of the
-operator) and Rule 8 (every user path of the machine) were one rule in two
-halves, and the halves drifted: the shapes of a home were written down twice,
-and the weaker copy was the one a reader of the first half would run. The two
-are now a single rule — **Rule 7** — and the checker of the rule is the one
-that reads every surface.
-
 ---
 
 ## Rule 1 — The work happens in the working copy
@@ -27,6 +14,21 @@ its own:
 ```bash
 git checkout -b feature/<name> master
 ```
+
+**The branch is created only with the approval of the operator.**  The agent
+does not create a branch on its own — not to start the work, and not to keep
+the operator's tree clean.  It asks, and it names two things: the name of the
+branch, and the branch the work starts from.  Then it waits for the answer.
+
+A question that timed out (Rule 5) is **not** an approval.  The agent says
+that the wait ended without an answer, and it waits for the operator.
+
+The rule holds for every way a branch comes into being — the shell
+(`git checkout -b`), the tool of the git toolkit (`git_branch_create`), and
+the release branch of the release skill.  A branch that exists without the
+approval is a branch the operator did not ask for: the agent says that it
+happened, and it asks what is to be done with it (Rule 4 covers the
+deletion).
 
 The branch is what makes the work reviewable: the changes are inspected, and
 they reach `master` through a pull request or through the operator merging the
@@ -89,6 +91,11 @@ instructions before performing any modification.
 The history of the work — every change, the reason for it and the evidence
 that it works — is in `CHANGELOG.md` and in the `investigate/` folder. It is
 not repeated here.
+
+**The file carries no history of itself.**  There is no date, no *last
+updated* note and no note about what a change to the rules changed.  A change
+to the rules changes the rules; the reason for the change is in the
+changelog.
 
 ---
 

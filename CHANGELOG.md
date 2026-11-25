@@ -1253,6 +1253,65 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+#### The rules file carries no history of itself
+
+- **The operator said on 2026-11-25** that the development rules must not
+  keep a history of the changes to the rules: the history of the work is
+  only in `CHANGELOG.md`.
+
+- **The rules file had become a changelog of itself.**  The note at the top
+  carried a date and a paragraph of what the last change to the rules had
+  been — *"Last updated: 2026-11-23 — the rules are written for the working
+  copy…"* — and it was rewritten on every change to the rules: four
+  times since the file was written, the last of them on 2026-11-25.
+
+- **It contradicted the rule of the same file.**  Rule 6 says that the
+  history of the work "is in `CHANGELOG.md` and in the `investigate/` folder.
+  It is not repeated here" — and the note at the top was the history,
+  repeated.
+
+- **It was already wrong.**  The paragraph about the rule of the privacy
+  spoke of "Rule 6 … and Rule 8" — numbers of rules that are not in the file
+  any more; the rule is Rule 7.  A reader of the rules met a history it
+  could not check, about rules that were not there.
+
+- **The note is gone, and the rule says so.**  The file opens with what it
+  is and what it is for, and nothing else.  Rule 6 now says that the file
+  carries no history of itself: no date, no *last updated* note, no note
+  about what a change to the rules changed.  The rule of the branch, and
+  the rule of the privacy, are the rules themselves — they were never
+  in the note.
+
+- **The description of the file in the wiki followed.**  `wiki/Contributing.md`
+  called it "the development workflow and its history"; it is now "the
+  rules of a change to the codebase".  The wiki is a repository of its own:
+  the line is changed there, on its own branch, and the pointer to it is
+  moved here.
+
+#### A branch is created only with the approval of the operator
+
+- **The operator asked on 2026-11-25** for the development rules to say
+  that the agent never creates a new branch without the explicit approval
+  of the operator.
+
+- **The branch was a step of the work that the agent took on its own.**
+  Rule 1 said that the change is made "on a branch of its own", and the
+  procedure of the `develop` skill carried `git checkout -b
+  feature/<name> <base-branch>` as a step to run.  The name of the branch
+  and the branch it started from were the agent's choice, and the
+  operator heard about them afterwards.
+
+- **The rule is written in Rule 1**, where the branch is described: the
+  agent asks — the name of the branch and the base — and it waits for the
+  answer.  A question that timed out is **not** an approval, and the
+  agent says so.  The rule covers every way a branch comes into being:
+  the shell, the `git_branch_create` tool of the git toolkit, and the
+  release branch of the `release` skill.
+
+- **The procedure follows the rule.**  The third step of the `develop`
+  skill asks first, and the list of the rules that hold at every step
+  carries the approval of the branch next to the approval of the commit.
+
 #### A payload is measured, and never printed
 
 - **The operator asked on 2026-11-23** for the arguments of every tool

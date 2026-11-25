@@ -47,6 +47,10 @@ only in those two files.
    three things that matter.  The entry of `v1.0.0` is the model.
 5. **The commit**, on a branch, reviewed through a pull request:
 
+   The branch is created only after the operator has approved it — the
+   name of the branch and the branch it starts from are named, and the
+   answer is waited for.  A release branch is a branch like any other.
+
    ```bash
    git checkout -b release/v<version> master
    git commit -am "docs: the changelog for v<version>"
