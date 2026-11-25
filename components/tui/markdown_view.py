@@ -18,8 +18,14 @@ from rich.panel import Panel
 from rich.text import Text
 
 from components.tui.hotkeys import FOCUS_GAP, FOCUS_MARKER
+from components.tui.layout_manager import document_pane_width
 from components.tui.state_bridge import TuiState
 from components.tui.terminal_size import build_console
+
+#: The cells the panel of the document pane spends on its border and on
+#: its padding: two for the border, two for the padding.  What is left
+#: of the width of the pane is the width of the content.
+PANEL_OVERHEAD = 4
 
 # Smooth 10-frame braille spinner
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -81,6 +87,7 @@ class MarkdownView:
         state: TuiState,
         max_height: Optional[int] = None,
         focused: bool = False,
+        width: Optional[int] = None,
     ) -> Panel:
         """
         Render the Markdown panel according to current state.
@@ -91,6 +98,11 @@ class MarkdownView:
             focused: Whether the pane has the focus.  The pane that has
                 the focus carries a brighter border and the marker in
                 its title.
+            width: The number of cells the pane has on the screen.  The
+                content is wrapped to it: a pane that grows is a pane
+                whose content is re-wrapped.  None means the width is
+                not known, and the width of the document pane of this
+                console is used.
 
         Returns:
             Rich Panel to place inside layout['markdown_pane']
@@ -136,9 +148,18 @@ class MarkdownView:
             else:
                 content_to_render = WELCOME_MESSAGE
 
-        # Adjust capture console width based on current window width
-        estimated_width = max(40, int(self.console.width * 0.62))
-        self._capture_console.width = estimated_width
+        # The content is wrapped to the width of the pane that carries
+        # it, and not to a share of the width of the terminal: the
+        # document pane is two thirds of the body while the sidebar is
+        # on the screen, and the whole of the body when the operator
+        # has closed both of its panes.  A pane that grows is a pane
+        # whose content is re-wrapped -- and a pane whose content is
+        # wrapped to a width it does not have is a pane with a column
+        # of nothing at its right.
+        pane_width = width
+        if pane_width is None:
+            pane_width = document_pane_width(self.console.width)
+        self._capture_console.width = max(1, pane_width - PANEL_OVERHEAD)
 
         # Render markdown to ANSI lines for buffer slicing
         md_obj = Markdown(content_to_render)
@@ -148,6 +169,13 @@ class MarkdownView:
         rendered_text = capture.get()
         lines = rendered_text.splitlines()
         state.total_rendered_lines = len(lines)
+
+        # The content of the pane is re-wrapped when the width of the
+        # pane changes, and a re-wrapped content has another number of
+        # lines.  The scroll follows it: the operator who was at the
+        # end of the document is at the end of it again, and not on its
+        # last line alone.
+        state.scroll_offset = min(state.scroll_offset, state.max_scroll())
 
         # Slice lines according to scroll offset and visible height
         height_limit = max_height if max_height and max_height > 4 else max(10, self.console.height - 10)

@@ -28,6 +28,7 @@ from components.file_logging import LogFileConfig
 from components.tui.layout_manager import (
     apply_pane_visibility,
     build_torvalds_layout,
+    document_pane_width,
     fit_footer,
     fit_header,
     input_text_width,
@@ -35,6 +36,7 @@ from components.tui.layout_manager import (
     progress_pane_width,
     render_header,
     render_footer,
+    sidebar_is_visible,
     check_terminal_size,
 )
 from components.tui.state_bridge import TuiState, TuiEventAdapter, TuiInputModule
@@ -1409,10 +1411,19 @@ class TuiApp:
             "markdown_pane",
             default=max(10, self.console.height - 10),
         )
+        # The pane is told how wide it is: the content is wrapped to
+        # the width of the pane, and the pane is two thirds of the body
+        # while the sidebar is on the screen -- and the whole of the
+        # body when the operator has closed both of its panes.  A pane
+        # that grows is a pane whose content is re-wrapped.
         markdown_panel = self.markdown_view.render(
             self.state,
             max_height=self.state.document_height,
             focused=self.state.focus == hotkeys.FOCUS_DOCUMENT,
+            width=document_pane_width(
+                self.console.width,
+                sidebar_is_visible(self.state.hidden_panes),
+            ),
         )
         self.layout["markdown_pane"].update(markdown_panel)
 

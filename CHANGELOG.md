@@ -3697,6 +3697,53 @@ All notable changes to this project are documented in this file.
   needs.
 
 
+### Fixed
+
+#### The document pane did not re-render its content when it grew
+
+- **The operator reported on 2026-11-25** that the *Markdown Document
+  Viewer* did not update its content when its width changed after closing
+  both the workflow and the telemetry window.
+
+- **The content was wrapped to a guess.**  The pane renders its content
+  twice — once as Markdown into a console of its own, and once as the
+  panel that goes into the layout — and the first render was told the
+  width of the **terminal** and not the width of the **pane**:
+
+  ```python
+  estimated_width = max(40, int(self.console.width * 0.62))
+  ```
+
+  The number was 62 % of the width of the terminal, and it knew nothing
+  about the sidebar.  The layout divides the body 65/35, and when the
+  operator closes both panes of the sidebar the sidebar leaves the layout
+  and the document pane takes the whole of the body.  The pane grew; the
+  width the text was wrapped at did not: at a terminal of 120 columns the
+  pane offered 116 cells of content and the answer was wrapped at 74 —
+  **42 cells of the pane stood empty**.  The guess was off by a cell the
+  wrong way as well, at 80 columns: the content was wider than the area
+  it was shown in, and Rich folded the last cell of the line onto the
+  next one.
+
+- **The pane is told how wide it is.**  `document_pane_width()` in
+  `components/tui/layout_manager.py` is the number of cells the document
+  pane has on the screen — computed with the same division Rich uses for
+  the body, and the whole width of the terminal when the sidebar has left
+  the layout.  The rule that the sidebar is on the screen while it has a
+  pane is a rule of its own now (`sidebar_is_visible()`), and the
+  application tells the pane its width the way it tells the progress pane
+  and the telemetry pane theirs.  The scroll follows the content that was
+  re-wrapped: the operator who was at the end of the document is at the
+  end of it again, and not on its last line alone.
+
+- **The evidence:** `tests/test_tui_document_pane_width.py` — 11 tests.
+  They measure the width of the pane against the width its content is
+  wrapped at, with the sidebar and without it: the column of nothing at
+  the right of the pane is gone at every width, from 80 columns to 200.
+  The gate of the repository stays green: 40 known failures, 0 new, 0
+  fixed.
+
+
 ## [1.0.0] - 2026-10-29
 
 ### Added
