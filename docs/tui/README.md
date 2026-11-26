@@ -37,6 +37,24 @@ This folder holds the documentation of that interface.
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+## The document pane
+
+The *Markdown Document Viewer* carries the answer of the agent, the
+documents and the output of the commands.
+
+**The answer is written while the operator watches it** — the workflow
+streams it token by token — and **the pane follows the end of it**: the
+newest line of the answer is on the screen, and it stays there while
+the answer is written.
+
+The operator who scrolls up to read a paragraph keeps his place: the
+answer that grows does not drag him back to the end.  `End` brings him
+back to the end, and the window follows the answer from then on.  The
+subtitle of the pane says which of the two it is — `▼ follows the end`.
+
+A **new** document — the output of `\help`, `\tools`, `\projects` —
+opens at its beginning, because the operator has never seen it.
+
 ## The progress pane
 
 The *Workflow & Tool Progress* pane carries the iteration of the run and

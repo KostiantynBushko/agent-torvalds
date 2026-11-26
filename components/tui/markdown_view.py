@@ -168,21 +168,27 @@ class MarkdownView:
 
         rendered_text = capture.get()
         lines = rendered_text.splitlines()
-        state.total_rendered_lines = len(lines)
 
-        # The content of the pane is re-wrapped when the width of the
-        # pane changes, and a re-wrapped content has another number of
-        # lines.  The scroll follows it: the operator who was at the
-        # end of the document is at the end of it again, and not on its
-        # last line alone.
-        state.scroll_offset = min(state.scroll_offset, state.max_scroll())
-
-        # Slice lines according to scroll offset and visible height
+        # The number of lines the pane shows.
         height_limit = max_height if max_height and max_height > 4 else max(10, self.console.height - 10)
-        start_idx = max(0, min(state.scroll_offset, max(0, len(lines) - 1)))
-        end_idx = min(len(lines), start_idx + height_limit)
 
-        sliced_lines = lines[start_idx:end_idx]
+        # The window of the pane is the scroll of the pane, and the
+        # scroll knows where the window is.  The document is a **log
+        # that grows downwards** -- the answer of the agent is written
+        # while the operator watches it -- and the window follows its
+        # end: the newest line of the answer is on the screen.
+        #
+        # The operator who scrolls away leaves the end, and the window
+        # holds his place: the answer that grows does not drag him back
+        # to the end.  He comes back with the keys of the pane, and the
+        # window follows the end from then on.
+        scroll = state.document_scroll
+        scroll.set_frame(lines, height=height_limit, follow_end=True)
+
+        # The lines of the window -- the ones the operator sees.
+        sliced_lines = scroll.window()
+        start_idx = scroll.offset
+        end_idx = start_idx + len(sliced_lines)
         sliced_ansi = "\n".join(sliced_lines)
         pane_renderable = Text.from_ansi(sliced_ansi)
 
@@ -192,6 +198,11 @@ class MarkdownView:
             subtitles.append(f"▲ Line {start_idx}/{len(lines)}")
         if end_idx < len(lines):
             subtitles.append(f"▼ {len(lines) - end_idx} more lines (PgDn)")
+        if scroll.stuck and len(lines) > height_limit:
+            # The window that follows the end of the document moves by
+            # itself.  The operator is told, so that the text he reads
+            # does not surprise him.
+            subtitles.append("▼ follows the end")
         if not subtitles:
             subtitles.append("PgUp/PgDn to scroll")
 

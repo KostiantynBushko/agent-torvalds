@@ -149,6 +149,29 @@ class PaneScroll:
         self.offset = self.maximum_offset
         self._remember()
 
+    def follow_the_end(self) -> None:
+        """The window follows the end of the content from now on.
+
+        The window is stuck to the end: the content that grows
+        afterwards keeps the newest line on the screen.
+
+        The operator who has left the end comes back with the keys of
+        the pane -- ``scroll_end`` puts him at the end, and the window
+        follows the content from then on.
+        """
+        self.stuck = True
+
+    def hold_the_place(self) -> None:
+        """The window keeps the place it has.
+
+        The content that grows afterwards does not move the window: the
+        operator keeps the line he is reading.
+
+        A **new** document opens at its beginning -- the operator has
+        never seen it -- and the window does not follow it.
+        """
+        self.stuck = False
+
     # -- the position -----------------------------------------------------
 
     @property

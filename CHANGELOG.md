@@ -6,6 +6,40 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The document pane follows the end of the answer
+
+- **The operator asked for the auto scroll of the document pane:**
+
+  > auto scroll in "Markdown Document Viewer"
+
+- **The pane had no auto scroll at all.**  The answer of the agent is
+  written while the operator watches it — the workflow streams it token
+  by token, and every token lands in the document of the pane — and the
+  window of the pane stayed where it was.  The operator was shown the
+  **beginning** of an answer that was still being written: the part he
+  had already read, and never the part that was new.
+
+- **The window follows the end of the answer.**  The document pane
+  carries a scroll of its own now — a `PaneScroll`, the machinery the
+  panes of the sidebar carry, and the one that knows whether the
+  operator is at the end of the document or away from it:
+  - the newest line of the answer is on the screen, and it stays there
+    while the answer is written;
+  - the operator who scrolls up keeps the line he is reading — the
+    answer that grows does not drag him back to the end;
+  - the operator who scrolls to the end follows the answer again;
+  - a **new** document — the output of a command — opens at its
+    beginning, because the operator has never seen it.
+
+- **The number of the window is still the number of the state.**
+  `scroll_offset` and `total_rendered_lines` are the offset and the
+  size of the scroll of the pane now, and not a number of their own.
+
+- **The measurement** is in `investigate/tui-document-auto-scroll/`:
+  the probe builds the real state and draws the pane in the real
+  layout, and it says what is on the screen of the operator.  Three of
+  its five checks did not hold before the change, and all five hold now.
+
 #### Every tool call shows its arguments in the progress pane
 
 - **The operator asked on 2026-11-23** for the arguments of every tool call
