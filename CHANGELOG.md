@@ -53,6 +53,16 @@ All notable changes to this project are documented in this file.
   `scroll_offset` and `total_rendered_lines` are the offset and the
   size of the scroll of the pane now, and not a number of their own.
 
+- **The evidence:** `investigate/tui-autoscroll/probe_autoscroll_live.py`
+  — the probe that builds the **real** application, draws the **real**
+  layout with the **real** panes, and streams an answer the way the
+  workflow streams it: token by token.  After every piece it reports
+  the offset of the window, the end of the answer, the height the
+  layout really gives the pane, the subtitle of the pane, and whether
+  the newest line of the answer is on the screen.  The window is at the
+  end of the answer at every piece, and the newest line of the answer
+  is on the screen at every piece.  The probe writes nothing.
+
 #### Every tool call shows its arguments in the progress pane
 
 - **The operator asked on 2026-11-23** for the arguments of every tool call
