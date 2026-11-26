@@ -176,14 +176,16 @@ class MarkdownView:
         # scroll knows where the window is.  The document is a **log
         # that grows downwards** -- the answer of the agent is written
         # while the operator watches it -- and the window of the pane
-        # **holds its place** while the answer is written: the text the
-        # operator reads does not slide away under him.
+        # **follows the end of it**: every line that is written appears
+        # at the bottom of the frame, and the operator watches the
+        # answer as it is written.
         #
-        # The window goes to the end of the answer when the answer is
-        # complete: the operator reads the last lines of it without
-        # scrolling for them.  The operator who scrolled away while
-        # the answer was written keeps his place -- the answer does
-        # not take him away from the paragraph he is reading.
+        # The operator may move the window himself -- `Up`, `Down`,
+        # `Home`, `End` -- and the answer that grows does not move it
+        # back: the window holds the place the operator put it in, and
+        # the text he reads does not slide away under him.  `End` puts
+        # the window at the end of the answer again, and the window
+        # follows the end from then on.
         scroll = state.document_scroll
         scroll.set_frame(lines, height=height_limit, follow_end=True)
 
@@ -202,11 +204,15 @@ class MarkdownView:
             subtitles.append(f"▼ {len(lines) - end_idx} more lines (PgDn)")
         if state.answer_is_writing:
             # The answer is written while the operator watches it, and
-            # the window of the pane does not move: the text he reads
-            # does not slide away under him.  The pane says so, so that
-            # the pane that stands still does not look like a pane that
-            # is broken.
+            # the window of the pane follows the end of it.  The pane
+            # says so, so that the pane that moves is not a pane that
+            # is broken -- and so that the pane that stands still says
+            # that it stands still on purpose.
             subtitles.append("the answer is being written")
+            if scroll.stuck:
+                subtitles.append("the window follows the end")
+            else:
+                subtitles.append("the window holds its place")
         if not subtitles:
             subtitles.append("PgUp/PgDn to scroll")
 

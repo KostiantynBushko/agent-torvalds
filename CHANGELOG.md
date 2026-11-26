@@ -6,11 +6,16 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-#### The document pane goes to the end of the answer
+#### The document pane scrolls itself
 
 - **The operator asked for the auto scroll of the document pane:**
 
   > auto scroll in "Markdown Document Viewer"
+
+- **The operator asked for it again, in plain words:**
+
+  > the markdown viewer must scroll every time it is updated and new
+  > aline apears under window frame
 
 - **The pane had no auto scroll at all.**  The answer of the agent is
   written while the operator watches it — the workflow streams it token
@@ -19,24 +24,26 @@ All notable changes to this project are documented in this file.
   **beginning** of an answer that was still being written: the part he
   had already read, and never the part that was new.
 
-- **The operator asked on 2026-11-26 for a window that does not move by
-  itself.**  The window that follows the end of the answer moves the
-  text under the reader while the answer is written: a paragraph he is
-  reading slides up and away, and he reads the same line twice.
+- **The window follows the end of the answer while it is written.**
+  Every line that is written appears at the bottom of the frame, and
+  the operator watches the answer as it is written.  The document pane
+  carries a scroll of its own now — a `PaneScroll`, the machinery the
+  panes of the sidebar carry, and the one that knows whether the
+  operator is at the end of the document or away from it:
+  - every line of the answer that is written is on the screen;
+  - the newest line of the answer is at the bottom of the frame.
 
-- **The window holds its place while the answer is written.**  The
-  document pane carries a scroll of its own now — a `PaneScroll`, the
-  machinery the panes of the sidebar carry, and the one that knows
-  whether the operator is at the end of the document or away from it:
-  - the text the operator reads does not slide away under him;
-  - the operator may move the window himself — `Up`, `Down`, `Home`,
-    `End` — and the answer that grows does not move it back.
+- **The operator may move the window himself** — `Up`, `Down`, `Home`,
+  `End` — and the answer that grows does not move it back: the window
+  holds the place he put it in, and the text he reads does not slide
+  away under him.  **`End`** puts the window at the end of the answer
+  again, and the window follows the end from then on.
 
-- **The window goes to the end of the answer when the answer is
-  complete.**  The operator reads the last lines of the answer without
-  scrolling for them.  The answer that is complete does not take him
-  away from a paragraph he is reading: the operator who moved the
-  window while the answer was written keeps his place.
+- **When the answer is complete, the window is at the end of it.**  The
+  operator reads the last lines of the answer without scrolling for
+  them.  The answer that is complete does not take him away from a
+  paragraph he is reading: the operator who moved the window while the
+  answer was written keeps his place.
 
 - **A new document opens at its beginning.**  The output of a command
   — `\help`, `\tools`, `\projects` — is a document the operator has never
