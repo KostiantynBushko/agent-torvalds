@@ -1,4 +1,4 @@
-# The document pane follows the end of the answer
+# The document pane and the end of the answer
 
 **The operator asked for the auto scroll of the document pane:**
 
@@ -13,6 +13,12 @@ The pane had **no auto scroll at all**.  The window of the pane stayed
 where it was while the answer grew, and the operator was shown the
 **beginning** of an answer that was still being written -- the part he
 had already read, and never the part that was new.
+
+**The operator asked on 2026-11-26 for a window that does not move by
+itself.**  The window that follows the end of the answer moves the text
+under the reader while the answer is written: a paragraph he is reading
+slides up and away, and he reads the same line twice.  The operator
+wants the text under him to stay where it is.
 
 The measurement is in
 [`probe_document_auto_scroll.py`](probe_document_auto_scroll.py) -- it
@@ -47,36 +53,11 @@ else.  In particular:
 * nothing in the state said whether the operator was **at the end** of
   the document or **away from it**.
 
-The second point is the heart of it.  The panes of the sidebar --
-the progress pane and the telemetry pane -- carry a `PaneScroll`, and
-that scroll knows two things the document pane did not: whether the
-window is **stuck** to the end of the content, and whether the
-operator has **left** the end.
-
-The probe, against the real pane, says:
-
-```
-  FAIL  the pane follows the end of the answer
-        the offset of the window: 0 of 170 lines
-        the newest line of the answer is on the screen: False
-  PASS  the operator keeps his place while the answer grows
-        the line of the paragraph before: 31
-        the line of the paragraph after:  31
-        the offset of the window: 80
-  FAIL  the follow comes back when the operator scrolls to the end
-        the offset of the window: 88 of 170 lines
-        the newest line of the answer is on the screen: False
-  PASS  a new document opens at its beginning
-        the first line of the window: 'THE-TOOLS-OF-THE-AGENT'
-        the offset of the window: 0
-  FAIL  a new run follows the answer that is written
-        the offset of the window: 0 of 49 lines
-        the newest line of the answer is on the screen: False
-```
-
-Three of the five do not hold.  The two that hold are the ones the
-change must **not** break: the operator who scrolls away keeps his
-place, and a new document opens at its beginning.
+The second point is the heart of it.  The panes of the sidebar -- the
+progress pane and the telemetry pane -- carry a `PaneScroll`, and that
+scroll knows two things the document pane did not: whether the window
+is **stuck** to the end of the content, and whether the operator has
+**left** the end.
 
 ## 2. What the change is
 
@@ -88,19 +69,21 @@ as the first of the logs that grow downwards:
 > The end of the list is the **bottom** for a log that grows downwards
 > -- the document pane, and the telemetry pane.
 
-The document pane now uses it, and the three rules follow from it:
+The document pane uses it now, and the two rules of it are the ones the
+operator asked for:
 
-* **the window follows the end** -- the scroll is *stuck* to the end,
-  and the content that grows keeps the newest line on the screen;
-* **the operator keeps his place** -- the operator who scrolls up
-  leaves the end, the scroll is no longer stuck, and the content that
-  grows does not move his window;
-* **the follow comes back** -- the operator who scrolls to the end
-  again is at the end of the answer from then on.
+* **the window holds its place while the answer is written** -- the
+  text the operator reads does not slide away under him.  The operator
+  may move the window himself -- `Up`, `Down`, `Home`, `End` -- and the
+  answer that grows does not move it back;
+* **the window goes to the end of the answer when the answer is
+  complete** -- the operator reads the last lines of the answer without
+  scrolling for them.
 
-**A run follows the answer it writes.**  The window follows the end
-while the answer is written, and it stays at the end when the answer
-is complete.
+The second rule has a **care** in it: the answer that is complete does
+not take the operator away from a paragraph he is reading.  The operator
+who moved the window while the answer was written -- and who is not at
+the end of it -- keeps his place.
 
 **A new document opens at its beginning.**  The output of a command --
 `\help`, `\tools`, `\projects` -- is a document the operator has never
@@ -112,26 +95,47 @@ The three places that knew the old rule now say the new one:
 | --- | --- | --- |
 | `components/tui/state_bridge.py` | `scroll_offset` was a number | the scroll of the pane is a `PaneScroll`, and the number is its offset |
 | `components/tui/markdown_view.py` | the view clamped the number and sliced | the view hands the lines to the scroll, and the scroll says where the window is |
-| `components/tui/tui_app.py` | the answer of the run replaced the document | the answer of the run **is** the document that was already there, and the window stays where it is |
+| `components/tui/tui_app.py` | the answer of the run replaced the document | the answer of the run **is** the document that was already there, and the window goes to the end of it |
 
 ## 3. What it costs
 
-**The window moves on its own.**  The operator reads the answer while
-it is written, and the text he is reading moves up as the answer
-grows.  He leaves the end with the keys of the pane, and the window
-holds his place until he comes back.
+**The newest line of the answer is not on the screen while the answer
+is written.**  The operator reads the beginning of the answer, and the
+pane does not show him the part that is new -- not until the answer is
+complete, and the window goes to the end of it.  The pane says so in
+its subtitle: *the answer is being written*, beside the number of the
+lines that are below the window.
 
-**The number of the window is still there.**  `scroll_offset` and
-`total_rendered_lines` are still the names the state carries -- they
-are the offset and the number of lines of the scroll of the pane now,
-and not a number of their own.
+**The window of the pane does not follow the end of the content.**  The
+scroll of a pane remembers whether the operator is at the end of the
+content, and a scroll that reaches the end follows the content that
+grows afterwards.  While the answer is written, the window does not
+follow: the operator may scroll to the end to follow the answer
+himself, and the answer that grows afterwards does not carry the window
+with it.
 
 ## 4. The evidence
 
-* `tests/test_tui_document_auto_scroll.py` -- the window follows the
-  end, the operator keeps his place, the follow comes back, a new
-  document opens at its beginning, and a new run follows its answer.
+* `tests/test_tui_document_auto_scroll.py` -- 16 tests: the window does
+  not move while the answer is written, the operator moves it himself,
+  the operator keeps his place, the answer that is complete goes to the
+  end, the answer that is complete does not take the operator away, and
+  a new document opens at its beginning.
 * `investigate/tui-document-auto-scroll/probe_document_auto_scroll.py`
-  -- the measurement, and the screen of the operator.
-* The gate of the repository stays green: the known failures stay
-  known, and no new one comes.
+  -- the measurement, and the screen of the operator.  The probe runs on
+  the tree **before** the change as well: the name of the argument of
+  the call that carries the answer is read from the signature of the
+  method, because the probe measures the behaviour and not the API.
+
+  One of the five checks does not hold before the change -- *the window
+  goes to the end when the answer is complete* -- and the other four
+  hold: they are the rules the change must **not** break.  All five
+  hold now.
+
+  ```
+    PASS  the window stays where it is while the answer is written
+    PASS  the window goes to the end when the answer is complete
+    PASS  the operator keeps his place while the answer grows
+    PASS  the operator moves the window himself while the answer is written
+    PASS  a new document opens at its beginning
+  ```

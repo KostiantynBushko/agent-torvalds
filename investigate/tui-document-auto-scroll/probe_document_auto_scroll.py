@@ -7,34 +7,32 @@ The *Markdown Document Viewer* and the end of the answer it is showing.
 
 The pane carries the answer of the agent, and the answer is **written
 while the operator watches it**: the workflow streams the answer token
-by token, and every token lands in the document of the pane.  A pane
-that does not follow the end of the content shows the operator the
-**beginning** of an answer that is still being written -- the part he
-has already read, and never the part that is new.
+by token, and every token lands in the document of the pane.
 
-The pane must answer four things at once:
+The operator asked on 2026-11-26 for a window that **does not move by
+itself**: the text he reads must not slide away under him while the
+answer is written.  The pane answers that with two rules:
 
-* the **window follows the end** -- the newest line of the answer is on
-  the screen, and it stays on the screen while the answer is written;
-* the **operator keeps his place** -- the operator who scrolls up to
-  read a paragraph is not dragged back to the end by the next token;
-* the **follow comes back** -- the operator who scrolls to the end
-  again is at the end of the answer from now on;
-* a **new document opens at its beginning** -- the output of a command
-  (``\\help``, ``\\tools``, ...) is a document the operator has never
-  seen, and it opens at its first line.
+* the window **holds its place** while the answer is written -- the
+  operator may move it himself, and the answer that grows does not move
+  it back;
+* the window **goes to the end of the answer** when the answer is
+  complete -- the operator reads the last lines of it without scrolling
+  for them, and the answer that is complete does not take him away from
+  a paragraph he is reading.
 
 The probe answers five questions:
 
-  1. **Does the pane follow the end of the answer?**
+  1. **Does the window stay where it is while the answer is written?**
 
-  2. **Does the operator keep his place while the answer grows?**
+  2. **Does the window go to the end when the answer is complete?**
 
-  3. **Does the follow come back when the operator scrolls to the end?**
+  3. **Does the operator who scrolls up keep his place?**
 
-  4. **Does a new document open at its beginning?**
+  4. **Does the operator move the window himself while the answer is
+     written?**
 
-  5. **Does a new run follow the answer that is written?**
+  5. **Does a new document open at its beginning?**
 
 Usage:
     python investigate/tui-document-auto-scroll/probe_document_auto_scroll.py
@@ -45,6 +43,7 @@ The probe writes nothing and talks to no service.
 """
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 from typing import List, Tuple
@@ -75,13 +74,16 @@ END_MARKER = "THE-END-OF-THE-ANSWER"
 
 #: The marker of the **newest** line of the answer -- the line the
 #: agent has just written.  It is unique in the document, and the
-#: probe looks for it on the screen: it is the line that must be there
-#: when the pane follows the end.
+#: probe looks for it on the screen.
 NEWEST_MARKER = "THE-NEWEST-LINE-OF-THE-ANSWER"
 
 #: The marker of a line near the end of the answer -- the line the
 #: operator scrolls up to read.
 MIDDLE_MARKER = "THE-PARAGRAPH-THE-OPERATOR-READS"
+
+#: The marker of the **last** line of the answer.  It is the line that
+#: must be on the screen when the answer is complete.
+LAST_MARKER = "THE-LAST-LINE-OF-THE-ANSWER"
 
 #: The heading of a document that is new to the operator.
 NEW_DOCUMENT_HEADING = "THE-TOOLS-OF-THE-AGENT"
@@ -145,6 +147,7 @@ def an_answer(paragraphs: int) -> str:
             f"the operator watches it, and the pane carries it."
         )
     parts.append(END_MARKER)
+    parts.append(LAST_MARKER)
     return "\n\n".join(parts)
 
 
@@ -153,8 +156,7 @@ def a_long_paragraph() -> str:
 
     It is what the agent writes while the operator reads: a paragraph
     that is longer than the pane pushes the end of the answer off the
-    screen, and the window that follows the end is the only way to keep
-    the newest line of the answer on the screen.
+    screen.
 
     Returns:
         The paragraph.
@@ -162,6 +164,46 @@ def a_long_paragraph() -> str:
     return "\n\n".join(
         f"Line {index} of the paragraph the agent is writing." for index in range(40)
     )
+
+
+def a_run_that_is_written(state: TuiState, answer: str = "") -> None:
+    """The operator asks a question, and the answer is written.
+
+    The answer is written in pieces, the way the workflow streams it.
+
+    Args:
+        state: The state of the TUI.
+        answer: The answer of the run.
+    """
+    state.set_busy(True, "a question")
+    state.markdown_content = ""
+    the_window_of(state)
+    for piece in (answer or an_answer(20)).split("\n\n"):
+        state.append_stream_token(piece + "\n\n")
+    # The pane is drawn: the number of lines the document has is the
+    # one of the frame that was drawn, and the window of the pane is
+    # clamped to it.
+    the_window_of(state)
+
+
+def the_answer_is_complete(state: TuiState, answer: str) -> None:
+    """The run is over: the answer of the run is the document of the pane.
+
+    The call is the one the application makes.  The name of the
+    argument is read from the signature of the method, because the
+    probe measures the behaviour of the tree it runs in -- and it must
+    run on the tree **before** the change as well, to say what the
+    change adds.
+
+    Args:
+        state: The state of the TUI.
+        answer: The answer of the run.
+    """
+    parameters = inspect.signature(state.set_markdown_content).parameters
+    if "answer_is_complete" in parameters:
+        state.set_markdown_content(answer, answer_is_complete=True)
+        return
+    state.set_markdown_content(answer)
 
 
 def the_line_of(window: List[str], needle: str) -> int:
@@ -185,33 +227,54 @@ def the_line_of(window: List[str], needle: str) -> int:
 # ---------------------------------------------------------------------------
 
 
-def check_the_pane_follows_the_end_of_the_answer() -> Tuple[bool, str]:
-    """The pane follows the end of the answer.
+def check_the_window_stays_where_it_is() -> Tuple[bool, str]:
+    """The window does not move while the answer is written.
 
-    The answer is written while the operator watches it, and the newest
-    line of it is on the screen.
+    The answer grows, and the window does not follow it: the text the
+    operator reads does not slide away under him.
 
     Returns:
         Whether the check holds, and the report of the measurement.
     """
     state = a_state()
-    state.set_markdown_content(an_answer(20))
-    the_window_of(state)
+    a_run_that_is_written(state)
 
-    # The operator is at the end of the answer -- he read all of it.
-    state.scroll_end()
-    the_window_of(state)
-
-    # The agent writes a paragraph that is longer than the pane.
-    state.append_stream_token(f"\n\n{a_long_paragraph()}\n\n{NEWEST_MARKER}")
+    # The agent writes more of the answer while the operator watches.
+    state.append_stream_token(f"{NEWEST_MARKER}\n\n")
     window = the_window_of(state)
 
-    holds = the_line_of(window, NEWEST_MARKER) >= 0
+    holds = the_line_of(window, NEWEST_MARKER) < 0 and state.scroll_offset == 0
     report = (
         f"the offset of the window: {state.scroll_offset} of "
         f"{state.max_scroll()} lines\n"
         f"the newest line of the answer is on the screen: "
         f"{the_line_of(window, NEWEST_MARKER) >= 0}"
+    )
+    return holds, report
+
+
+def check_the_window_goes_to_the_end_of_the_complete_answer() -> Tuple[bool, str]:
+    """The window goes to the end of the answer when it is complete.
+
+    The operator reads the last lines of the answer without scrolling
+    for them.
+
+    Returns:
+        Whether the check holds, and the report of the measurement.
+    """
+    state = a_state()
+    a_run_that_is_written(state)
+
+    # The run is over: the answer is complete.
+    the_answer_is_complete(state, an_answer(20))
+    window = the_window_of(state)
+
+    holds = the_line_of(window, LAST_MARKER) >= 0
+    report = (
+        f"the offset of the window: {state.scroll_offset} of "
+        f"{state.max_scroll()} lines\n"
+        f"the last line of the answer is on the screen: "
+        f"{the_line_of(window, LAST_MARKER) >= 0}"
     )
     return holds, report
 
@@ -225,8 +288,7 @@ def check_the_operator_keeps_his_place() -> Tuple[bool, str]:
         Whether the check holds, and the report of the measurement.
     """
     state = a_state()
-    state.set_markdown_content(an_answer(20))
-    the_window_of(state)
+    a_run_that_is_written(state)
 
     # The operator reads the end of the answer and scrolls up from there.
     state.scroll_end()
@@ -247,35 +309,31 @@ def check_the_operator_keeps_his_place() -> Tuple[bool, str]:
     return holds, report
 
 
-def check_the_follow_comes_back() -> Tuple[bool, str]:
-    """The follow comes back when the operator scrolls to the end.
+def check_the_operator_moves_the_window() -> Tuple[bool, str]:
+    """The operator moves the window himself while the answer is written.
 
-    The operator scrolls back to the end of the answer, and the window
-    follows it from then on.
+    The window goes where he puts it, and the answer that grows does
+    not move it back.
 
     Returns:
         Whether the check holds, and the report of the measurement.
     """
     state = a_state()
-    state.set_markdown_content(an_answer(20))
+    a_run_that_is_written(state)
     the_window_of(state)
 
-    state.scroll_up(lines=8)
+    # The operator scrolls down to the paragraph he reads.
+    state.scroll_down(lines=5)
+    before = state.scroll_offset
+
+    # The agent writes a paragraph while he reads.
+    state.append_stream_token(f"\n\n{a_long_paragraph()}")
     the_window_of(state)
 
-    # The operator scrolls back to the end.
-    state.scroll_end()
-
-    # The agent writes a paragraph that is longer than the pane.
-    state.append_stream_token(f"\n\n{a_long_paragraph()}\n\n{NEWEST_MARKER}")
-    window = the_window_of(state)
-
-    holds = the_line_of(window, NEWEST_MARKER) >= 0
+    holds = state.scroll_offset == before
     report = (
-        f"the offset of the window: {state.scroll_offset} of "
-        f"{state.max_scroll()} lines\n"
-        f"the newest line of the answer is on the screen: "
-        f"{the_line_of(window, NEWEST_MARKER) >= 0}"
+        f"the offset of the window before: {before}\n"
+        f"the offset of the window after:  {state.scroll_offset}"
     )
     return holds, report
 
@@ -307,50 +365,21 @@ def check_a_new_document_opens_at_its_beginning() -> Tuple[bool, str]:
     return holds, report
 
 
-def check_a_new_run_follows_the_answer() -> Tuple[bool, str]:
-    """A new run follows the answer that is written.
-
-    The operator asks a question, the answer is written, and the pane
-    follows its end.
-
-    Returns:
-        Whether the check holds, and the report of the measurement.
-    """
-    state = a_state()
-
-    # The operator asks a question: the run starts.
-    state.set_busy(True, "a question")
-    state.markdown_content = ""
-    the_window_of(state)
-
-    # The answer is written, token by token, and it is longer than the
-    # pane: the end of it is not on the screen unless the window follows.
-    for index in range(40):
-        state.append_stream_token(f"Paragraph {index} of the answer.\n\n")
-    state.append_stream_token(NEWEST_MARKER)
-    window = the_window_of(state)
-
-    holds = the_line_of(window, NEWEST_MARKER) >= 0
-    report = (
-        f"the offset of the window: {state.scroll_offset} of "
-        f"{state.max_scroll()} lines\n"
-        f"the newest line of the answer is on the screen: "
-        f"{the_line_of(window, NEWEST_MARKER) >= 0}"
-    )
-    return holds, report
-
-
 def show_the_screen_of_the_operator() -> None:
-    """Show the pane as the operator sees it while the answer is written."""
+    """Show the pane as the operator sees it, before and after the answer."""
     print("=" * 78)
     print("The document pane while the answer is written:")
     print("=" * 78)
     state = a_state()
-    state.set_busy(True, "a question")
-    state.markdown_content = ""
-    for index in range(40):
-        state.append_stream_token(f"Paragraph {index} of the answer.\n\n")
-    state.append_stream_token(NEWEST_MARKER)
+    a_run_that_is_written(state)
+    for line in the_window_of(state):
+        print(f"  {line}")
+    print()
+
+    print("=" * 78)
+    print("The document pane when the answer is complete:")
+    print("=" * 78)
+    the_answer_is_complete(state, an_answer(20))
     for line in the_window_of(state):
         print(f"  {line}")
     print()
@@ -361,16 +390,16 @@ def main() -> int:
     show_the_screen_of_the_operator()
 
     checks = (
-        ("the pane follows the end of the answer",
-         check_the_pane_follows_the_end_of_the_answer),
+        ("the window stays where it is while the answer is written",
+         check_the_window_stays_where_it_is),
+        ("the window goes to the end when the answer is complete",
+         check_the_window_goes_to_the_end_of_the_complete_answer),
         ("the operator keeps his place while the answer grows",
          check_the_operator_keeps_his_place),
-        ("the follow comes back when the operator scrolls to the end",
-         check_the_follow_comes_back),
+        ("the operator moves the window himself while the answer is written",
+         check_the_operator_moves_the_window),
         ("a new document opens at its beginning",
          check_a_new_document_opens_at_its_beginning),
-        ("a new run follows the answer that is written",
-         check_a_new_run_follows_the_answer),
     )
 
     failed = 0

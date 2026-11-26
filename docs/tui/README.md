@@ -43,14 +43,18 @@ The *Markdown Document Viewer* carries the answer of the agent, the
 documents and the output of the commands.
 
 **The answer is written while the operator watches it** — the workflow
-streams it token by token — and **the pane follows the end of it**: the
-newest line of the answer is on the screen, and it stays there while
-the answer is written.
+streams it token by token — and **the window of the pane holds its
+place** while it is written: the text the operator reads does not slide
+away under him.  The subtitle of the pane says that the answer is being
+written.
 
-The operator who scrolls up to read a paragraph keeps his place: the
-answer that grows does not drag him back to the end.  `End` brings him
-back to the end, and the window follows the answer from then on.  The
-subtitle of the pane says which of the two it is — `▼ follows the end`.
+The operator may move the window himself — `Up`, `Down`, `Home`, `End` —
+and the answer that grows does not move it back.
+
+**When the answer is complete, the window goes to the end of it**: the
+operator reads the last lines of the answer without scrolling for them.
+The answer that is complete does not take him away from a paragraph he
+is reading.
 
 A **new** document — the output of `\help`, `\tools`, `\projects` —
 opens at its beginning, because the operator has never seen it.

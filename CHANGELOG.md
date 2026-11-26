@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-#### The document pane follows the end of the answer
+#### The document pane goes to the end of the answer
 
 - **The operator asked for the auto scroll of the document pane:**
 
@@ -19,17 +19,28 @@ All notable changes to this project are documented in this file.
   **beginning** of an answer that was still being written: the part he
   had already read, and never the part that was new.
 
-- **The window follows the end of the answer.**  The document pane
-  carries a scroll of its own now — a `PaneScroll`, the machinery the
-  panes of the sidebar carry, and the one that knows whether the
-  operator is at the end of the document or away from it:
-  - the newest line of the answer is on the screen, and it stays there
-    while the answer is written;
-  - the operator who scrolls up keeps the line he is reading — the
-    answer that grows does not drag him back to the end;
-  - the operator who scrolls to the end follows the answer again;
-  - a **new** document — the output of a command — opens at its
-    beginning, because the operator has never seen it.
+- **The operator asked on 2026-11-26 for a window that does not move by
+  itself.**  The window that follows the end of the answer moves the
+  text under the reader while the answer is written: a paragraph he is
+  reading slides up and away, and he reads the same line twice.
+
+- **The window holds its place while the answer is written.**  The
+  document pane carries a scroll of its own now — a `PaneScroll`, the
+  machinery the panes of the sidebar carry, and the one that knows
+  whether the operator is at the end of the document or away from it:
+  - the text the operator reads does not slide away under him;
+  - the operator may move the window himself — `Up`, `Down`, `Home`,
+    `End` — and the answer that grows does not move it back.
+
+- **The window goes to the end of the answer when the answer is
+  complete.**  The operator reads the last lines of the answer without
+  scrolling for them.  The answer that is complete does not take him
+  away from a paragraph he is reading: the operator who moved the
+  window while the answer was written keeps his place.
+
+- **A new document opens at its beginning.**  The output of a command
+  — `\help`, `\tools`, `\projects` — is a document the operator has never
+  seen, and it is read from its first line.
 
 - **The number of the window is still the number of the state.**
   `scroll_offset` and `total_rendered_lines` are the offset and the
@@ -37,8 +48,10 @@ All notable changes to this project are documented in this file.
 
 - **The measurement** is in `investigate/tui-document-auto-scroll/`:
   the probe builds the real state and draws the pane in the real
-  layout, and it says what is on the screen of the operator.  Three of
-  its five checks did not hold before the change, and all five hold now.
+  layout, and it says what is on the screen of the operator.  One of
+  its five checks did not hold before the change — the window does not
+  go to the end of the answer — and the other four hold: they are the
+  rules the change must not break.  All five hold now.
 
 #### Every tool call shows its arguments in the progress pane
 

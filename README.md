@@ -354,13 +354,15 @@ describe.  A plain `git clone` leaves the directory empty;
   under the text of the first one, so that a command that takes several
   lines reads as one command.  Nothing of the command is cut away: the
   part of a command that says what it does is the part that matters.
-- The **document pane follows the end of the answer**.  The answer of the
+- The **document pane goes to the end of the answer**.  The answer of the
   agent is written while the operator watches it — the workflow streams it
-  token by token — and the window of the pane follows the end of the
-  document: the newest line of the answer is on the screen.  The operator
-  who scrolls up keeps the line he is reading; the answer that grows does
-  not drag him back to the end.  A **new** document — the output of a
-  command — opens at its beginning, because the operator has never seen it.
+  token by token — and the window of the pane holds its place while the
+  answer is written: the text the operator reads does not slide away under
+  him.  When the answer is complete, the window goes to the end of it, and
+  the operator reads the last lines of the answer without scrolling for
+  them.  The answer that is complete does not take him away from a
+  paragraph he is reading.  A **new** document — the output of a command
+  — opens at its beginning, because the operator has never seen it.
 - The **hot-keys** of the TUI: `Ctrl+T` and `Ctrl+P` show and hide the two
   panes of the sidebar — hiding both takes the sidebar off the screen, and
   the document pane takes the whole of the body — `Tab` and `Shift+Tab` move

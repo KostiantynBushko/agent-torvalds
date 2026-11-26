@@ -233,17 +233,26 @@ class TuiState:
 
         # The scroll of the document pane.  The pane is a **log that
         # grows downwards** -- the answer of the agent is written while
-        # the operator watches it -- and the window of the pane follows
-        # its end.  The scroll is the one of ``pane_scroll.py``: the
-        # machinery the panes of the sidebar carry, and the one that
-        # knows whether the operator is at the end of the document or
-        # away from it.
+        # the operator watches it -- and the window of the pane is the
+        # scroll of the pane.  The scroll is the one of
+        # ``pane_scroll.py``: the machinery the panes of the sidebar
+        # carry, and the one that knows whether the operator is at the
+        # end of the document or away from it.
         self.document_scroll: PaneScroll = PaneScroll()
         # The pane opens at the **beginning** of the document: the
-        # operator has never seen it.  A run that starts turns the
-        # follow on -- the answer of the run is written while the
-        # operator watches it.
+        # operator has never seen it.
         self.document_scroll.hold_the_place()
+        #: Whether the answer of the agent is being **written** right
+        #: now.  While it is, the window of the pane does not move by
+        #: itself: the text the operator reads does not slide away
+        #: under him.  The window goes to the end of the answer when
+        #: the answer is complete.
+        self.answer_is_writing: bool = False
+        #: Whether the operator has **moved** the window of the
+        #: document pane himself.  The operator who scrolls up to read
+        #: a paragraph keeps his place -- and the answer that is
+        #: complete does not take him away from it.
+        self.operator_moved_the_window: bool = False
 
         # Markdown Document Viewer state
         self.markdown_content: str = ""
@@ -390,10 +399,14 @@ class TuiState:
                 self.current_query = query
                 self.status_message = "Analyzing request..."
                 self.scroll_offset = 0
-                # A run starts: the answer is written while the operator
-                # watches it, and the window of the pane follows its
-                # end.
-                self.document_scroll.follow_the_end()
+                # A run starts: the answer is written while the
+                # operator watches it, and the window of the pane
+                # **keeps its place** -- the text he reads does not
+                # slide away under him.  The window goes to the end of
+                # the answer when the answer is complete.
+                self.answer_is_writing = True
+                self.operator_moved_the_window = False
+                self.document_scroll.hold_the_place()
                 # A new request is a new run: the iteration starts at
                 # zero again, so the panel counts the run that is
                 # running and not the one that ran before it.
@@ -510,26 +523,47 @@ class TuiState:
     def set_markdown_content(
         self,
         content: str,
-        follows_end: bool = False,
+        answer_is_complete: bool = False,
     ) -> None:
         """Set the complete markdown content.
 
         Args:
             content: The document the pane shows.
-            follows_end: Whether the pane keeps the window where it
-                is.  A **new** document -- the output of a command --
-                opens at its beginning: the operator has never seen it,
-                and it is read from its first line.  The **answer of a
-                run** is the document that was already on the screen --
-                it was written while the operator watched it -- and the
-                window stays where it is.
+            answer_is_complete: Whether the content is the **answer of
+                a run**, and the answer is complete.  The window of the
+                pane then goes to the end of the answer: the operator
+                reads the last lines of it without scrolling for them.
+                The operator who scrolled away from the end while the
+                answer was written keeps his place -- he is reading a
+                paragraph, and the answer does not take him away from
+                it.
+
+                A **new** document -- the output of a command -- opens
+                at its beginning: the operator has never seen it, and
+                it is read from its first line.
         """
         with self._lock:
             self.markdown_content = content
-            if follows_end:
+            self.answer_is_writing = False
+            if answer_is_complete:
+                self._go_to_the_end_of_the_answer()
                 return
             self.scroll_offset = 0
             self.document_scroll.hold_the_place()
+
+    def _go_to_the_end_of_the_answer(self) -> None:
+        """The answer is complete: the window goes to the end of it.
+
+        The operator who did not move the window himself is at the
+        beginning of the answer, and the end of it is what he wants to
+        read.  The operator who moved it -- and who is not at the end
+        of it -- is reading a paragraph, and the answer does not take
+        him away from it.
+        """
+        if self.operator_moved_the_window and not self.document_scroll.at_bottom:
+            self.document_scroll.hold_the_place()
+            return
+        self.document_scroll.follow_the_end()
 
     def clear_markdown(self) -> None:
         """Clear document pane content."""
@@ -587,21 +621,39 @@ class TuiState:
         """
         with self._lock:
             self.document_scroll.scroll_up(lines)
+            self._the_operator_moved_the_window()
 
     def scroll_down(self, lines: int = 5) -> None:
         """Scroll document viewer downwards."""
         with self._lock:
             self.document_scroll.scroll_down(lines)
+            self._the_operator_moved_the_window()
 
     def scroll_home(self) -> None:
         """Go to the top of the document."""
         with self._lock:
             self.document_scroll.scroll_home()
+            self._the_operator_moved_the_window()
 
     def scroll_end(self) -> None:
         """Go to the bottom of the document."""
         with self._lock:
             self.document_scroll.scroll_end()
+            self._the_operator_moved_the_window()
+
+    def _the_operator_moved_the_window(self) -> None:
+        """The operator moved the window of the pane himself.
+
+        Two things follow from it.  The window does **not** follow the
+        answer that is being written -- the operator may read a
+        paragraph, and the text he reads must not slide away under
+        him.  And the answer that is complete does not take him away
+        from the paragraph he is reading: the window goes to the end of
+        the answer only when he is not reading somewhere else.
+        """
+        self.operator_moved_the_window = True
+        if self.answer_is_writing:
+            self.document_scroll.hold_the_place()
 
     def max_scroll(self) -> int:
         """The largest offset the document may have.

@@ -1,28 +1,28 @@
 """
-The document pane follows the end of the answer it is showing.
+The document pane and the end of the answer it is showing.
 
 The *Markdown Document Viewer* carries the answer of the agent, and the
 answer is **written while the operator watches it**: the workflow
 streams the answer token by token, and every token lands in the
 document of the pane.
 
-The pane had **no auto scroll**.  The window of the pane stayed where
-it was while the answer grew, and the operator was shown the beginning
-of an answer that was still being written -- the part he had already
-read, and never the part that was new.
+The window of the pane **holds its place** while the answer is
+written: the text the operator reads does not slide away under him.
+The window goes to the end of the answer when the answer is complete:
+the operator reads the last lines of it without scrolling for them.
 
 What the tests hold together:
 
-* **the window follows the end** -- the newest line of the answer is on
-  the screen, and it stays on the screen while the answer is written;
-* **the operator keeps his place** -- the operator who scrolls up to
-  read a paragraph is not dragged back to the end by the next token;
-* **the follow comes back** -- the operator who scrolls to the end
-  again is at the end of the answer from then on;
+* **the window does not move by itself** -- the line the operator reads
+  stays on the screen while the answer is written;
+* **the operator moves the window himself** -- the answer that grows
+  does not drag the window back to the end;
+* **the answer that is complete goes to the end** -- the last lines of
+  the answer are on the screen;
+* **the operator who is reading is not taken away** -- the answer that
+  is complete does not take him away from the paragraph he reads;
 * **a new document opens at its beginning** -- the output of a command
-  is a document the operator has never seen;
-* **a new run follows its answer** -- the answer of a run is written
-  while the operator watches it.
+  is a document the operator has never seen.
 
 Run with:
     pytest tests/test_tui_document_auto_scroll.py -v
@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from rich.console import Console
@@ -58,6 +57,10 @@ NEWEST_MARKER = "THE-NEWEST-LINE-OF-THE-ANSWER"
 
 #: The marker of the line the operator scrolls up to read.
 READ_MARKER = "THE-PARAGRAPH-THE-OPERATOR-READS"
+
+#: The marker of the **last** line of the answer.  It is the line that
+#: must be on the screen when the answer is complete.
+LAST_MARKER = "THE-LAST-LINE-OF-THE-ANSWER"
 
 
 def a_console() -> Console:
@@ -97,6 +100,20 @@ def the_window(state: TuiState) -> list:
     return panel.renderable.plain.split("\n")
 
 
+def the_subtitle(state: TuiState) -> str:
+    """The subtitle of the document pane.
+
+    Args:
+        state: The state of the TUI.
+
+    Returns:
+        The subtitle, as the operator reads it.
+    """
+    view = MarkdownView(a_console())
+    panel = view.render(state, max_height=state.document_height, width=WIDTH)
+    return str(panel.subtitle)
+
+
 def an_answer(paragraphs: int = 20) -> str:
     """An answer that is longer than the pane.
 
@@ -118,6 +135,7 @@ def an_answer(paragraphs: int = 20) -> str:
             f"Paragraph {index}. The answer of the agent is written while "
             f"the operator watches it, and the pane carries it."
         )
+    parts.append(LAST_MARKER)
     return "\n\n".join(parts)
 
 
@@ -125,8 +143,7 @@ def a_long_paragraph() -> str:
     """A paragraph that is longer than the pane.
 
     It is what the agent writes while the operator reads: it pushes the
-    end of the answer off the screen, and the window that follows the
-    end is the only way to keep the newest line on the screen.
+    end of the answer off the screen.
 
     Returns:
         The paragraph.
@@ -134,6 +151,35 @@ def a_long_paragraph() -> str:
     return "\n\n".join(
         f"Line {index} of the paragraph the agent is writing." for index in range(40)
     )
+
+
+def the_pieces_of(answer: str) -> list:
+    """The answer in the pieces the workflow streams it in.
+
+    Args:
+        answer: The answer.
+
+    Returns:
+        The pieces of the answer.
+    """
+    return [piece + "\n\n" for piece in answer.split("\n\n")]
+
+
+def a_run_that_is_written(state: TuiState, answer: str = "") -> None:
+    """The operator asks a question, and the answer is written.
+
+    The answer is written in pieces, the way the workflow streams it:
+    token by token, and every token lands in the document of the pane.
+
+    Args:
+        state: The state of the TUI.
+        answer: The answer of the run.
+    """
+    state.set_busy(True, "a question")
+    state.markdown_content = ""
+    the_window(state)
+    for piece in the_pieces_of(answer or an_answer()):
+        state.append_stream_token(piece)
 
 
 def the_line_of(window, needle: str) -> int:
@@ -152,46 +198,65 @@ def the_line_of(window, needle: str) -> int:
     return -1
 
 
-class TestTheFollowOfTheDocumentPane:
-    """The window follows the end of the answer."""
+class TestTheWindowWhileTheAnswerIsWritten:
+    """The window of the pane holds its place while the answer is written."""
 
-    def test_the_window_follows_the_end_of_the_answer(self):
-        """The newest line of the answer is on the screen."""
+    def test_the_window_does_not_follow_the_end_of_the_answer(self):
+        """The window does not move by itself while the answer is written."""
         state = a_state()
-        state.set_markdown_content(an_answer())
-        the_window(state)
+        a_run_that_is_written(state)
 
-        # The operator read the whole answer: he is at its end.
-        state.scroll_end()
-        the_window(state)
-
-        # The agent writes a paragraph that is longer than the pane.
-        state.append_stream_token(f"\n\n{a_long_paragraph()}\n\n{NEWEST_MARKER}")
-        window = the_window(state)
-
-        assert the_line_of(window, NEWEST_MARKER) >= 0, (
-            "the newest line of the answer is not on the screen: the "
-            f"window is at {state.scroll_offset} of {state.max_scroll()}"
-        )
-
-    def test_the_window_follows_the_end_of_the_answer_of_a_run(self):
-        """The answer of a run is written while the operator watches it."""
-        state = a_state()
-
-        # The operator asks a question: the run starts.
-        state.set_busy(True, "a question")
-        state.markdown_content = ""
-        the_window(state)
-
-        # The answer is written, token by token.
-        for index in range(40):
-            state.append_stream_token(f"Paragraph {index} of the answer.\n\n")
         state.append_stream_token(NEWEST_MARKER)
         window = the_window(state)
 
-        assert the_line_of(window, NEWEST_MARKER) >= 0, (
-            "the newest line of the answer is not on the screen: the "
-            f"window is at {state.scroll_offset} of {state.max_scroll()}"
+        assert the_line_of(window, NEWEST_MARKER) < 0, (
+            "the window followed the end of the answer while it was being "
+            "written: the text the operator reads moves under him"
+        )
+        assert state.scroll_offset == 0, (
+            f"the window moved to {state.scroll_offset} while the answer "
+            f"was written"
+        )
+
+    def test_the_line_the_operator_reads_does_not_move(self):
+        """The paragraph the operator reads stays where he put it."""
+        state = a_state()
+        a_run_that_is_written(state)
+        the_window(state)
+
+        # The operator reads the end of the answer and scrolls up -- the
+        # line he reads is the one just above the end of the answer.
+        state.scroll_end()
+        state.scroll_up(lines=3)
+        before = the_line_of(the_window(state), READ_MARKER)
+        assert before >= 0, "the paragraph the operator reads is not on the screen"
+
+        # The agent writes a paragraph that is longer than the pane.
+        state.append_stream_token(f"\n\n{a_long_paragraph()}")
+        window = the_window(state)
+
+        assert the_line_of(window, READ_MARKER) == before, (
+            "the paragraph the operator reads moved while the answer grew: "
+            f"it was on line {before}, and it is on line "
+            f"{the_line_of(window, READ_MARKER)}"
+        )
+
+    def test_the_operator_may_move_the_window_while_the_answer_is_written(self):
+        """The window goes where the operator puts it."""
+        state = a_state()
+        a_run_that_is_written(state)
+        the_window(state)
+
+        state.scroll_down(lines=3)
+        assert state.scroll_offset == 3
+
+        # The answer that grows does not take the window back.
+        state.append_stream_token(f"\n\n{a_long_paragraph()}")
+        the_window(state)
+
+        assert state.scroll_offset == 3, (
+            f"the window was moved back to {state.scroll_offset} by the "
+            f"answer that grew"
         )
 
     def test_the_operator_keeps_his_place(self):
@@ -215,45 +280,97 @@ class TestTheFollowOfTheDocumentPane:
             "the line the operator reads moved while the answer grew"
         )
 
-    def test_the_follow_comes_back_when_the_operator_scrolls_to_the_end(self):
-        """The operator who comes back to the end follows the answer again."""
+
+class TestTheAnswerThatIsComplete:
+    """The window goes to the end of the answer when the answer is complete."""
+
+    def test_the_window_goes_to_the_end_of_the_answer(self):
+        """The last lines of the answer are on the screen."""
         state = a_state()
-        state.set_markdown_content(an_answer())
-        the_window(state)
+        a_run_that_is_written(state)
 
-        state.scroll_up(lines=8)
-        the_window(state)
-
-        # The operator scrolls back to the end of the answer.
-        state.scroll_end()
-
-        state.append_stream_token(f"\n\n{a_long_paragraph()}\n\n{NEWEST_MARKER}")
+        # The run is over: the answer is the document of the pane.
+        state.set_markdown_content(an_answer(), answer_is_complete=True)
         window = the_window(state)
 
-        assert the_line_of(window, NEWEST_MARKER) >= 0, (
-            "the newest line of the answer is not on the screen: the "
-            f"window is at {state.scroll_offset} of {state.max_scroll()}"
+        assert the_line_of(window, LAST_MARKER) >= 0, (
+            "the last line of the answer is not on the screen: the window "
+            f"is at {state.scroll_offset} of {state.max_scroll()}"
+        )
+        assert state.scroll_offset == state.max_scroll(), (
+            f"the window is at {state.scroll_offset} and not at the end of "
+            f"the answer, which is at {state.max_scroll()}"
         )
 
-    def test_the_follow_comes_back_when_the_operator_scrolls_down_to_the_end(self):
-        """The last line down is the end: the window follows from there."""
+    def test_the_answer_that_is_complete_does_not_take_the_operator_away(self):
+        """The operator who is reading a paragraph keeps his place."""
         state = a_state()
-        state.set_markdown_content(an_answer())
+        a_run_that_is_written(state)
         the_window(state)
 
-        state.scroll_up(lines=8)
-        the_window(state)
+        # The operator reads the end of the answer and scrolls up -- the
+        # line he reads is the one just above the end of the answer.
+        state.scroll_end()
+        state.scroll_up(lines=3)
+        before = state.scroll_offset
 
-        # The operator scrolls down, line by line, to the end.
-        for _ in range(200):
-            state.scroll_down(lines=1)
-
-        state.append_stream_token(f"\n\n{a_long_paragraph()}\n\n{NEWEST_MARKER}")
+        # The run is over: the answer is complete.
+        state.set_markdown_content(an_answer(), answer_is_complete=True)
         window = the_window(state)
 
-        assert the_line_of(window, NEWEST_MARKER) >= 0, (
-            "the newest line of the answer is not on the screen: the "
-            f"window is at {state.scroll_offset} of {state.max_scroll()}"
+        assert state.scroll_offset == before, (
+            f"the window was taken away from the paragraph the operator "
+            f"reads: it was at {before}, and it is at {state.scroll_offset}"
+        )
+        assert the_line_of(window, LAST_MARKER) < 0, (
+            "the window went to the end of the answer while the operator "
+            "was reading a paragraph of it"
+        )
+
+    def test_the_window_goes_to_the_end_when_the_operator_follows_the_answer(self):
+        """The operator who is at the end of the answer is at its end."""
+        state = a_state()
+        a_run_that_is_written(state)
+        the_window(state)
+
+        # The operator scrolls to the end of the answer: he follows it.
+        state.scroll_end()
+
+        # The run is over: the answer is complete.
+        state.set_markdown_content(an_answer(), answer_is_complete=True)
+        window = the_window(state)
+
+        assert the_line_of(window, LAST_MARKER) >= 0, (
+            "the last line of the answer is not on the screen: the window "
+            f"is at {state.scroll_offset} of {state.max_scroll()}"
+        )
+
+
+class TestThePane:
+    """The pane says what it does."""
+
+    def test_the_pane_says_that_the_answer_is_being_written(self):
+        """The operator is told that the answer is still coming."""
+        state = a_state()
+        a_run_that_is_written(state)
+
+        subtitle = the_subtitle(state)
+
+        assert "the answer is being written" in subtitle, (
+            f"the pane does not say that the answer is being written: its "
+            f"subtitle is {subtitle!r}"
+        )
+
+    def test_the_pane_does_not_say_that_it_follows_the_end(self):
+        """The pane does not lie: the window does not follow the end."""
+        state = a_state()
+        a_run_that_is_written(state)
+
+        subtitle = the_subtitle(state)
+
+        assert "follows the end" not in subtitle, (
+            f"the pane says that it follows the end, and its window holds "
+            f"its place: its subtitle is {subtitle!r}"
         )
 
     def test_the_pane_opens_at_the_beginning_of_the_first_document(self):
@@ -266,40 +383,6 @@ class TestTheFollowOfTheDocumentPane:
             f"its first line is {window[0].strip()!r}"
         )
         assert state.scroll_offset == 0
-
-    def test_the_pane_says_that_it_follows_the_end(self):
-        """The operator is told that the window moves by itself."""
-        state = a_state()
-        state.set_markdown_content(an_answer())
-        the_window(state)
-
-        # The operator is at the end of the answer.
-        state.scroll_end()
-        panel = MarkdownView(a_console()).render(
-            state, max_height=state.document_height, width=WIDTH
-        )
-
-        assert "follows the end" in panel.subtitle, (
-            f"the pane does not say that it follows the end: its subtitle "
-            f"is {panel.subtitle!r}"
-        )
-
-    def test_the_pane_does_not_say_that_it_follows_the_end(self):
-        """The pane does not lie: the window that holds its place does
-        not follow the end."""
-        state = a_state()
-        state.set_markdown_content(an_answer())
-        the_window(state)
-
-        state.scroll_up(lines=8)
-        panel = MarkdownView(a_console()).render(
-            state, max_height=state.document_height, width=WIDTH
-        )
-
-        assert "follows the end" not in panel.subtitle, (
-            f"the pane says that it follows the end, and its window holds "
-            f"its place: its subtitle is {panel.subtitle!r}"
-        )
 
     def test_a_new_document_opens_at_its_beginning(self):
         """The output of a command opens at its first line."""
@@ -335,31 +418,6 @@ class TestTheFollowOfTheDocumentPane:
             "the window followed the end of a document that was not the "
             "answer of a run"
         )
-
-    def test_the_answer_of_the_run_keeps_the_window_where_it_is(self):
-        """The answer of a run is the document that was already there."""
-        state = a_state()
-        state.set_busy(True, "a question")
-        state.markdown_content = ""
-        the_window(state)
-
-        for index in range(40):
-            state.append_stream_token(f"Paragraph {index} of the answer.\n\n")
-        the_window(state)
-
-        # The operator scrolls up while the answer is written.
-        state.scroll_up(lines=5)
-        before = state.scroll_offset
-
-        # The run is over: the answer is the document of the pane.
-        state.set_markdown_content(an_answer(), follows_end=True)
-        window = the_window(state)
-
-        assert state.scroll_offset == before, (
-            f"the window moved to {state.scroll_offset} when the answer of "
-            f"the run arrived, and it was at {before}"
-        )
-        assert the_line_of(window, NEWEST_MARKER) < 0
 
 
 class TestTheScrollOfTheDocumentPane:
