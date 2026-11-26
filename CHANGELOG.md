@@ -46,13 +46,6 @@ All notable changes to this project are documented in this file.
   `scroll_offset` and `total_rendered_lines` are the offset and the
   size of the scroll of the pane now, and not a number of their own.
 
-- **The measurement** is in `investigate/tui-document-auto-scroll/`:
-  the probe builds the real state and draws the pane in the real
-  layout, and it says what is on the screen of the operator.  One of
-  its five checks did not hold before the change — the window does not
-  go to the end of the answer — and the other four hold: they are the
-  rules the change must not break.  All five hold now.
-
 #### Every tool call shows its arguments in the progress pane
 
 - **The operator asked on 2026-11-23** for the arguments of every tool call
