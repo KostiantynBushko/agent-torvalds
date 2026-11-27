@@ -42,29 +42,6 @@ This folder holds the documentation of that interface.
 The *Markdown Document Viewer* carries the answer of the agent, the
 documents and the output of the commands.
 
-**The answer is written while the operator watches it** — the workflow
-streams it token by token — and **the window of the pane follows the end
-of it**: every line that is written appears at the bottom of the frame,
-and the operator watches the answer as it is written.  The subtitle of the
-pane says that the answer is being written.
-
-The operator may move the window himself — `Up`, `Down`, `Home`, `End` —
-and the answer that grows does not move it back: the window holds the
-place he put it in, and the text he reads does not slide away under him.
-The subtitle of the pane says that the window holds its place.
-
-**`End` puts the window at the end of the answer again**, and the window
-follows the end from then on: every line of the answer that is written
-after that appears at the bottom of the frame.
-
-**When the answer is complete, the window is at the end of it**: the
-operator reads the last lines of the answer without scrolling for them.
-The answer that is complete does not take him away from a paragraph he
-is reading.
-
-A **new** document — the output of `\help`, `\tools`, `\projects` —
-opens at its beginning, because the operator has never seen it.
-
 ## The progress pane
 
 The *Workflow & Tool Progress* pane carries the iteration of the run and
