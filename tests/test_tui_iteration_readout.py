@@ -356,3 +356,73 @@ class TestTheReadout:
 
         text = _render_text(state)
         assert "3/10" in text, f"the panel does not show the iteration: {text!r}"
+
+
+# ---------------------------------------------------------------------------
+# The status of the pane
+# ---------------------------------------------------------------------------
+
+
+class TestTheStatus:
+    """The status of the pane says what the workflow is doing.
+
+    The operator reported on 2026-11-27 that the pane said "Tool `x`
+    completed" while the workflow was already running the next step.
+    The iteration is published before the request goes out, so the
+    status can say what the workflow is doing instead of what it did.
+    """
+
+    def test_the_status_says_the_model_is_thinking_when_an_iteration_starts(self):
+        """The next step of the workflow is the model being called."""
+        state = TuiState()
+        state.set_busy(True, "a question")
+        state.update_tool_start("execute_shell_command", {"command": "ls"})
+        state.update_tool_end("execute_shell_command", "ok")
+
+        assert state.status_message == "Tool `execute_shell_command` completed"
+
+        state.update_workflow_iteration(2, 10)
+
+        assert state.status_message == "Thinking..."
+
+    def test_the_status_says_the_model_is_thinking_on_the_first_iteration(self):
+        """The first request of the run is a request to the model."""
+        state = TuiState()
+        state.set_busy(True, "a question")
+
+        state.update_workflow_iteration(1, 10)
+
+        assert state.status_message == "Thinking..."
+
+    def test_the_call_that_sets_the_budget_is_not_a_step_of_a_run(self):
+        """The budget is set at the start of the session, not in a run."""
+        state = TuiState()
+        state.set_busy(True, "a question")
+
+        state.update_workflow_iteration(0, 500)
+
+        assert state.status_message == "Analyzing request..."
+
+    def test_the_status_is_not_touched_when_the_run_is_over(self):
+        """A late call does not take the pane away from Ready."""
+        state = TuiState()
+        state.set_busy(True, "a question")
+        state.set_busy(False)
+
+        state.update_workflow_iteration(3, 10)
+
+        assert state.status_message == "Ready"
+
+    def test_the_status_follows_the_run_of_the_agent(self, agent, memory):
+        """The status of the pane is the state of the run, end to end."""
+        state = TuiState()
+        state.set_busy(True, "a question")
+        agent.iteration_observer = (
+            lambda it, budget: state.update_workflow_iteration(it, budget)
+        )
+
+        _run(agent, memory)
+
+        assert state.status_message == "Thinking...", (
+            f"the status does not say what the workflow did last: {state.status_message!r}"
+        )

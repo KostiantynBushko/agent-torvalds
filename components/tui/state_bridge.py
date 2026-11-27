@@ -662,6 +662,12 @@ class TuiState:
         A budget of zero is the *absence* of a budget, not a budget of
         zero: it does not replace a budget that is already known.
 
+        The iteration is published *before* the request goes out, so the
+        status of the pane says what the workflow is doing: the model is
+        being called.  Without this the status kept the last thing that
+        happened -- "Tool `x` completed" -- while the workflow was
+        already running the next step.
+
         Args:
             iteration: The number of the iteration of the run.
             max_iterations: The budget of the run.
@@ -670,6 +676,12 @@ class TuiState:
             self.workflow_iteration = max(0, int(iteration))
             if int(max_iterations) > 0:
                 self.max_iterations = int(max_iterations)
+            # The model is being called: the status says so, and not the
+            # tool that ran before it.  The call that sets the budget at
+            # the start of the session carries zero, and it is not a
+            # step of a run; a run that is over is not a step either.
+            if self.workflow_iteration >= 1 and self.is_busy:
+                self.status_message = "Thinking..."
 
     def update_telemetry_stats(self, stats: Any) -> None:
         """Update telemetry counts from finalized RequestStats."""
