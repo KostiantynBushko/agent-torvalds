@@ -6,6 +6,29 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The document pane scrolls itself
+
+- **The pane had no auto scroll.**  The answer is written while the
+  operator watches it, and the window stayed where it was: he read the
+  beginning of an answer that was still being written.
+
+- **The window follows the end of the answer.**  The pane carries a
+  `PaneScroll`:
+  - it follows the end while the answer is written;
+  - `Up`, `Down`, `Home` and `End` move it, and the answer does not move
+    it back;
+  - a finished answer leaves the window at its last lines;
+  - a new document opens at its beginning.
+
+- **The subtitle says what the operator cannot see.**  It says that the
+  answer is being written and that the window holds its place when he
+  scrolled away from the end, and nothing about the end it follows — the
+  operator asked on 2026-11-27 for that statement to be removed.
+
+- **The evidence:** `investigate/tui-autoscroll/probe_autoscroll_live.py`
+  — the probe that builds the real application and streams a real
+  answer.
+
 #### Every tool call shows its arguments in the progress pane
 
 - **The operator asked on 2026-11-23** for the arguments of every tool call

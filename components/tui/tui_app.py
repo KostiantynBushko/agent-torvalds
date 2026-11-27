@@ -786,7 +786,11 @@ class TuiApp:
             if not response:
                 response = "*No output returned from agent.*"
 
-            self.state.set_markdown_content(response)
+            # The answer of the run is the document that was already
+            # on the screen: it was written while the operator watched
+            # it.  The answer is complete, and the window of the pane
+            # goes to the end of it.
+            self.state.set_markdown_content(response, answer_is_complete=True)
 
             if stats:
                 self.state.update_telemetry_stats(stats)
@@ -808,7 +812,8 @@ class TuiApp:
             log_failure(e)
             provider = provider_of_the_llm(getattr(self.agent, "llm", None))
             self.state.set_markdown_content(
-                f"# Error during execution\n\n{describe(e, provider)}"
+                f"# Error during execution\n\n{describe(e, provider)}",
+                answer_is_complete=True,
             )
             logger.error("Agent execution failed: %s", e)
         finally:
