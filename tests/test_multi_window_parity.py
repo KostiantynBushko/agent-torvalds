@@ -244,7 +244,7 @@ class TestToolSelectionView(unittest.TestCase):
             "Version Control": [tools[1]],
         }
         md = self.view.render_categories_markdown(groups, 2)
-        self.assertIn("| # | Category | Tools | Capabilities |", md)
+        self.assertIn("| # | Category | Tools | Loaded | Capabilities |", md)
         self.assertIn("Mathematics", md)
         self.assertIn("Version Control", md)
         self.assertIn("2 tools across 2 categories", md)
@@ -654,7 +654,19 @@ class TestTuiAppCommandDispatch(unittest.TestCase):
     def test_tool_list_renders(self):
         app, state = self._make_app()
         app._render_tool_list()
-        self.assertIn("Available Tools", state.markdown_content)
+        self.assertIn("Tools", state.markdown_content)
+        self.assertIn("Loaded now", state.markdown_content)
+
+    def test_tool_list_marks_the_loaded_tools(self):
+        """The screen of the tools says which of them the agent holds."""
+        app, state = self._make_app()
+        state.update_tools(["read_file"], scope="selected")
+        state.update_loaded_tools(["read_file"])
+
+        app._render_tool_list()
+
+        self.assertIn("read_file", state.markdown_content)
+        self.assertIn("1 of", state.markdown_content)
 
     def test_tool_select_command_renders_result(self):
         app, state = self._make_app()

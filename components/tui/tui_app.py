@@ -890,10 +890,16 @@ class TuiApp:
     # ------------------------------------------------------------------
 
     def _render_tool_selection_menu(self) -> None:
-        """Render the interactive tool category selection menu."""
+        """Render the tool category menu, with the loaded tools named.
+
+        The menu is the picker of the categories - but the operator
+        wants to know what the agent holds *now*, and the names of the
+        tools that were picked at startup are under the menu.
+        """
         from components.tui.tool_selection_view import (
             discover_all_tools,
             render_categories_markdown,
+            render_loaded_tools_markdown,
         )
 
         try:
@@ -907,8 +913,16 @@ class TuiApp:
         from agent_tool_selection import group_tools_by_category
 
         groups = group_tools_by_category(tools)
+        loaded = list(self.state.loaded_tools)
+        scope = self.state.active_tool_scope
+
+        menu = render_categories_markdown(
+            groups, len(tools), loaded=loaded, scope=scope
+        )
         self.state.set_markdown_content(
-            render_categories_markdown(groups, len(tools))
+            menu
+            + "\n"
+            + render_loaded_tools_markdown(loaded, tools, scope=scope)
         )
         self.state.show_notification(
             "Type your selection in the command bar (e.g. 1,3,5 or 1-4) and press Enter.",
@@ -916,9 +930,10 @@ class TuiApp:
         )
 
     def _render_tool_list(self) -> None:
-        """Render the flat list of every available tool."""
+        """Render every available tool, with the loaded ones marked."""
         from components.tui.tool_selection_view import (
             discover_all_tools,
+            render_loaded_tools_markdown,
             render_tool_list_markdown,
         )
 
@@ -930,7 +945,14 @@ class TuiApp:
             )
             return
 
-        self.state.set_markdown_content(render_tool_list_markdown(tools))
+        loaded = list(self.state.loaded_tools)
+        scope = self.state.active_tool_scope
+
+        self.state.set_markdown_content(
+            render_tool_list_markdown(tools, loaded=loaded, scope=scope)
+            + "\n"
+            + render_loaded_tools_markdown(loaded, tools, scope=scope)
+        )
 
     def _handle_tool_select_command(self, cmd: str) -> None:
         """

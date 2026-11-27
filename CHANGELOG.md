@@ -6,6 +6,45 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+#### The tools that are loaded are named on the screen of the tools
+
+- **The operator asked on 2026-11-27** to see the tools that are
+  loaded, and not only the categories they came from:
+
+  > *the tools are selected on start-up as it is and we can see what
+  > tools was selected by viewing tools using command \tools, since for
+  > now I can see tools in the "Agent Telemetry & State" like this
+  > "Operating System, Project Management +1 more" which is not very
+  > informative*
+
+- **The one place that showed the choice was the telemetry row**, and
+  the row names the **categories** — the operator picked a category, and
+  the row says so.  The names of the tools themselves were nowhere: the
+  screen of `\tools` listed every tool of every toolkit and the screen
+  of `\tool-list` listed them again, and neither of them said which
+  ones the agent holds.
+
+- **The screen of the tools answers two questions at once:**
+  - the **loaded** tools are named one by one, with their category, and
+    the count says how many of them there are;
+  - the list of every **available** tool marks the ones that are held.
+
+- **The mode of the retriever is not a lie.**  Every tool is *indexed*
+  there and only the ones the retriever pulled in for the question that
+  runs now are *held* — so the screen says that, and the tools it
+  pulled in are the ones it marks.  The retriever writes them down: a
+  recording retriever hands out the same tools, in the same order, and
+  tells the console which ones they were.
+
+- **One truth, two screens.**  The loaded tools are measured by the
+  orchestrator and handed over in the state of the console; the screen
+  of the tools and the **Tools** row of the telemetry panel are rendered
+  from the same measurement, so they cannot disagree.
+
+- **The tests:** `tests/test_tui_tools_loaded_view.py` — the marks on
+  the list, the names of the loaded tools, the counts of the menu, the
+  words of the three scopes, and the recorder of the retriever.
+
 #### The document pane scrolls itself
 
 - **The pane had no auto scroll.**  The answer is written while the

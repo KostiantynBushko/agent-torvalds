@@ -208,14 +208,20 @@ COMMAND_SPECS: Tuple[CommandSpec, ...] = (
     # ---- Tool selection -------------------------------------------------
     CommandSpec(
         name="\\tools",
-        description="Open the interactive tool category selection menu.",
+        description=(
+            "Show the tools the agent holds now, and open the interactive "
+            "tool category selection menu."
+        ),
         usage="\\tools",
         category="Tools",
         feature=FEATURE_TUI,
     ),
     CommandSpec(
         name="\\tool-list",
-        description="List every available tool with its description.",
+        description=(
+            "List every available tool with its description, and mark the "
+            "tools the agent holds now."
+        ),
         usage="\\tool-list",
         category="Tools",
         feature=FEATURE_TUI,

@@ -77,7 +77,7 @@ console works in it, and it has commands of its own.
 | `\keys` | Every key of the TUI — the keys of the command bar and the hot-keys of the panes |
 | `\stats` | The request statistics — the tokens, the calls, the errors |
 | `\config` | The effective configuration, and where every value came from |
-| `\tools` / `\tool-list` / `\tool-select` | The tool selection |
+| `\tools` / `\tool-list` / `\tool-select` | The tool selection — the tools the agent holds now, and the tools that are available |
 | `\projects` / `\project-info` / `\project-status` / `\project-summary` | The projects of the workspace |
 | `\chat-sessions` / `\chat-select` / `\chat-info` / `\chat-export` | The chat history |
 | `\clear` | Clear the document pane |

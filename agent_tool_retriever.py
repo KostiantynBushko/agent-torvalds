@@ -8,17 +8,96 @@ on the user's query, reducing context window pollution.
 Category: Infrastructure
 Retriever Keywords: retriever, tool loading, lazy, vector index, semantic
 """
-from typing import List, Optional
+import logging
+from typing import Callable, List, Optional
 
 from llama_index.core import Settings, VectorStoreIndex
 from llama_index.core.callbacks import CallbackManager
-from llama_index.core.objects import ObjectIndex
+from llama_index.core.objects import ObjectIndex, ObjectRetriever
 from llama_index.core.tools import FunctionTool
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.embeddings.ollama import OllamaEmbedding
 import sys
 
 from components.ollama_config import get_ollama_base_url
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# The retriever that writes down what it handed out
+# ---------------------------------------------------------------------------
+
+class RecordingObjectRetriever(ObjectRetriever):
+    """The retriever of the tools, and a note of what it handed out.
+
+    The agent asks the retriever for the tools of every question, and
+    the tools it gets are the tools it holds **for that question**.
+    Nobody is told: the console shows the tools that are loaded, and it
+    cannot show them when nobody wrote them down.
+
+    The recorder writes them down.  It changes nothing of the work of
+    the retriever: the same tools come out of it, in the same order.
+
+    A recorder that breaks must not break the run: the tools are what
+    the agent works with, and a note that cannot be written is a note
+    that is lost.
+    """
+
+    def __init__(
+        self,
+        *args,
+        on_retrieve: Optional[Callable[[List[FunctionTool]], None]] = None,
+        **kwargs,
+    ) -> None:
+        """
+        Args:
+            *args: The arguments of the retriever it wraps.
+            on_retrieve: Called with the tools it handed out.
+            **kwargs: The keyword arguments of the retriever it wraps.
+        """
+        super().__init__(*args, **kwargs)
+        self._on_retrieve = on_retrieve
+
+    def _record(self, tools: List[FunctionTool]) -> None:
+        """Write down the tools that were handed out.
+
+        Args:
+            tools: The tools the retriever returned.
+        """
+        if self._on_retrieve is None:
+            return
+        try:
+            self._on_retrieve(list(tools))
+        except Exception as e:  # a broken observer must not break the run
+            logger.warning(f"The tools the retriever handed out are lost: {e}")
+
+    def retrieve(self, str_or_query_bundle) -> List[FunctionTool]:
+        """Retrieve the tools of a query, and write them down.
+
+        Args:
+            str_or_query_bundle: The query.
+
+        Returns:
+            The tools of the query.
+        """
+        tools = super().retrieve(str_or_query_bundle)
+        self._record(tools)
+        return tools
+
+    async def aretrieve(self, str_or_query_bundle) -> List[FunctionTool]:
+        """Retrieve the tools of a query, and write them down.
+
+        Args:
+            str_or_query_bundle: The query.
+
+        Returns:
+            The tools of the query.
+        """
+        tools = await super().aretrieve(str_or_query_bundle)
+        self._record(tools)
+        return tools
+
 
 # Configure Ollama embedding model. The endpoint follows the same
 # TORVALDS_OLLAMA_HOST / OLLAMA_HOST rules as the chat model.
@@ -264,6 +343,7 @@ def build_tool_retriever(
     include_mikrotik_tools: bool = True,  # NEW: MikroTik RouterOS toolkit
     include_shodan_tools: bool = True,  # NEW: Shodan internet-exposure toolkit
     tools: Optional[List[FunctionTool]] = None,
+    on_retrieve: Optional[Callable[[List[FunctionTool]], None]] = None,
 ) -> tuple:
     """
     Build a tool retriever that loads tools on-demand based on query semantics.
@@ -277,6 +357,9 @@ def build_tool_retriever(
             them hands the list over, so that the toolkits are not
             imported twice and the indexed tools are the very tools the
             caller knows about.
+        on_retrieve: Called with the tools the retriever hands out.  The
+            tools it hands out are the tools the agent holds for that
+            question, and a caller that shows them needs to know them.
 
     Returns:
         tuple: (tool_retriever, all_tools_list)
@@ -313,6 +396,16 @@ def build_tool_retriever(
 
     tool_retriever = tool_index.as_retriever(similarity_top_k=similarity_top_k)
 
+    if on_retrieve is not None:
+        # The retriever that writes down what it handed out.  The tools
+        # it gives out are the tools the agent holds for that question.
+        tool_retriever = RecordingObjectRetriever(
+            retriever=tool_retriever.retriever,
+            object_node_mapping=tool_retriever.object_node_mapping,
+            node_postprocessors=tool_retriever.node_postprocessors,
+            on_retrieve=on_retrieve,
+        )
+
     return tool_retriever, all_tools
 
 
@@ -326,6 +419,7 @@ def create_agent_with_retriever(
     agent_class: type = FunctionAgent,
     tools: Optional[List[FunctionTool]] = None,
     indexed_tools: Optional[List[FunctionTool]] = None,
+    on_retrieve: Optional[Callable[[List[FunctionTool]], None]] = None,
 ) -> FunctionAgent:
     """
     Create a FunctionAgent that uses on-demand tool retrieval.
@@ -358,6 +452,9 @@ def create_agent_with_retriever(
                that has already collected them hands the list over, so
                that the indexed tools are the very tools the caller
                knows about.
+        on_retrieve: Called with the tools the retriever hands out for
+               a question.  They are the tools the agent holds for that
+               question.
 
     Returns:
         FunctionAgent configured with tool_retriever.
@@ -366,6 +463,7 @@ def create_agent_with_retriever(
         llm,
         similarity_top_k=similarity_top_k,
         tools=indexed_tools,
+        on_retrieve=on_retrieve,
     )
 
     agent = agent_class(

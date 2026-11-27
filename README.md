@@ -380,6 +380,11 @@ describe.  A plain `git clone` leaves the directory empty;
   operator selected with `--select` are named — `Operating System, System` — and the
   count says how the agent got the tools: `8 selected`, `134 loaded`, `156 indexed`.
   Nothing on the panel is a list that was written into the source.
+- The **`\tools` screen names the tools themselves**, not only their categories:
+  the tools the agent holds right now are listed one by one, and the list of every
+  available tool marks the ones that are held.  The two come from one measurement —
+  the same one the **Tools** row of the telemetry panel is rendered from — so the
+  screen and the row cannot disagree.
 - **Full feature parity** with the classic orchestrator:
   - Startup tool selection (`--select`) with an interactive category picker
   - Project Management: `--auto-scan`, `--project-path`, workspace config, project context injection
