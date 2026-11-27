@@ -37,11 +37,6 @@ This folder holds the documentation of that interface.
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-## The document pane
-
-The *Markdown Document Viewer* carries the answer of the agent, the
-documents and the output of the commands.
-
 ## The progress pane
 
 The *Workflow & Tool Progress* pane carries the iteration of the run and
