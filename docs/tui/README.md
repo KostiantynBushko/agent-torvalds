@@ -46,8 +46,7 @@ documents and the output of the commands.
 streams it token by token — and **the window of the pane follows the end
 of it**: every line that is written appears at the bottom of the frame,
 and the operator watches the answer as it is written.  The subtitle of the
-pane says that the answer is being written and that the window follows
-the end.
+pane says that the answer is being written.
 
 The operator may move the window himself — `Up`, `Down`, `Home`, `End` —
 and the answer that grows does not move it back: the window holds the

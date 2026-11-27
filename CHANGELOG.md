@@ -53,6 +53,16 @@ All notable changes to this project are documented in this file.
   `scroll_offset` and `total_rendered_lines` are the offset and the
   size of the scroll of the pane now, and not a number of their own.
 
+- **The subtitle of the pane says what the operator cannot see for
+  himself.**  The document pane says that the answer is being written,
+  and it says that the window **holds its place** when the operator
+  scrolled away from the end -- the pane that stands still is a pane
+  that stands still on purpose.  It does **not** say that the window
+  follows the end: the operator asked on 2026-11-27 for the statement
+  to be removed, and he was right -- the window that follows the end is
+  the window he expects, and the statement told him nothing he could
+  not see for himself.
+
 - **The evidence:** `investigate/tui-autoscroll/probe_autoscroll_live.py`
   — the probe that builds the **real** application, draws the **real**
   layout with the **real** panes, and streams an answer the way the

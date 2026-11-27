@@ -205,13 +205,17 @@ class MarkdownView:
         if state.answer_is_writing:
             # The answer is written while the operator watches it, and
             # the window of the pane follows the end of it.  The pane
-            # says so, so that the pane that moves is not a pane that
-            # is broken -- and so that the pane that stands still says
-            # that it stands still on purpose.
+            # says that the answer is being written, so that the pane
+            # that moves is not a pane that is broken.
+            #
+            # The pane says more only when it does not do the obvious
+            # thing.  The window that follows the end needs no word --
+            # the operator asked on 2026-11-27 for the statement to be
+            # removed, and it said nothing he cannot see for himself.
+            # The window that holds its place says so, so that the pane
+            # that stands still is a pane that stands still on purpose.
             subtitles.append("the answer is being written")
-            if scroll.stuck:
-                subtitles.append("the window follows the end")
-            else:
+            if not scroll.stuck:
                 subtitles.append("the window holds its place")
         if not subtitles:
             subtitles.append("PgUp/PgDn to scroll")

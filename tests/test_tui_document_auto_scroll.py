@@ -432,16 +432,26 @@ class TestThePane:
             f"subtitle is {subtitle!r}"
         )
 
-    def test_the_pane_says_that_it_follows_the_end(self):
-        """The pane says that it follows the end of the answer."""
+    def test_the_pane_does_not_say_that_it_follows_the_end(self):
+        """The pane that follows the end says nothing about it.
+
+        The operator asked on 2026-11-27 for the statement to be
+        removed: the window that follows the end is the window the
+        operator expects, and the statement says nothing he cannot see
+        for himself.
+        """
         state = a_state()
         a_run_that_is_written(state)
 
         subtitle = the_subtitle(state)
 
-        assert "the window follows the end" in subtitle, (
-            f"the pane does not say that it follows the end of the answer: "
+        assert "the answer is being written" in subtitle, (
+            f"the pane does not say that the answer is being written: "
             f"its subtitle is {subtitle!r}"
+        )
+        assert "the window follows the end" not in subtitle, (
+            f"the pane says that it follows the end, and the statement "
+            f"is of no use to the operator: its subtitle is {subtitle!r}"
         )
 
     def test_the_pane_says_that_it_holds_its_place(self):
@@ -456,10 +466,6 @@ class TestThePane:
         assert "the window holds its place" in subtitle, (
             f"the pane does not say that it holds its place: its subtitle "
             f"is {subtitle!r}"
-        )
-        assert "the window follows the end" not in subtitle, (
-            f"the pane says that it follows the end, and its window holds "
-            f"its place: its subtitle is {subtitle!r}"
         )
 
     def test_the_pane_opens_at_the_beginning_of_the_first_document(self):
