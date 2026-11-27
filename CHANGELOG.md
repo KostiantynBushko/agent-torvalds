@@ -8,70 +8,26 @@ All notable changes to this project are documented in this file.
 
 #### The document pane scrolls itself
 
-- **The operator asked for the auto scroll of the document pane:**
+- **The pane had no auto scroll.**  The answer is written while the
+  operator watches it, and the window stayed where it was: he read the
+  beginning of an answer that was still being written.
 
-  > auto scroll in "Markdown Document Viewer"
+- **The window follows the end of the answer.**  The pane carries a
+  `PaneScroll`:
+  - it follows the end while the answer is written;
+  - `Up`, `Down`, `Home` and `End` move it, and the answer does not move
+    it back;
+  - a finished answer leaves the window at its last lines;
+  - a new document opens at its beginning.
 
-- **The operator asked for it again, in plain words:**
-
-  > the markdown viewer must scroll every time it is updated and new
-  > aline apears under window frame
-
-- **The pane had no auto scroll at all.**  The answer of the agent is
-  written while the operator watches it — the workflow streams it token
-  by token, and every token lands in the document of the pane — and the
-  window of the pane stayed where it was.  The operator was shown the
-  **beginning** of an answer that was still being written: the part he
-  had already read, and never the part that was new.
-
-- **The window follows the end of the answer while it is written.**
-  Every line that is written appears at the bottom of the frame, and
-  the operator watches the answer as it is written.  The document pane
-  carries a scroll of its own now — a `PaneScroll`, the machinery the
-  panes of the sidebar carry, and the one that knows whether the
-  operator is at the end of the document or away from it:
-  - every line of the answer that is written is on the screen;
-  - the newest line of the answer is at the bottom of the frame.
-
-- **The operator may move the window himself** — `Up`, `Down`, `Home`,
-  `End` — and the answer that grows does not move it back: the window
-  holds the place he put it in, and the text he reads does not slide
-  away under him.  **`End`** puts the window at the end of the answer
-  again, and the window follows the end from then on.
-
-- **When the answer is complete, the window is at the end of it.**  The
-  operator reads the last lines of the answer without scrolling for
-  them.  The answer that is complete does not take him away from a
-  paragraph he is reading: the operator who moved the window while the
-  answer was written keeps his place.
-
-- **A new document opens at its beginning.**  The output of a command
-  — `\help`, `\tools`, `\projects` — is a document the operator has never
-  seen, and it is read from its first line.
-
-- **The number of the window is still the number of the state.**
-  `scroll_offset` and `total_rendered_lines` are the offset and the
-  size of the scroll of the pane now, and not a number of their own.
-
-- **The subtitle of the pane says what the operator cannot see for
-  himself.**  The document pane says that the answer is being written,
-  and it says that the window **holds its place** when the operator
-  scrolled away from the end -- the pane that stands still is a pane
-  that stands still on purpose.  It does **not** say that the window
-  follows the end: the operator asked on 2026-11-27 for the statement
-  to be removed, and he was right -- the window that follows the end is
-  the window he expects, and the statement told him nothing he could
-  not see for himself.
+- **The subtitle says what the operator cannot see.**  It says that the
+  answer is being written and that the window holds its place when he
+  scrolled away from the end, and nothing about the end it follows — the
+  operator asked on 2026-11-27 for that statement to be removed.
 
 - **The evidence:** `investigate/tui-autoscroll/probe_autoscroll_live.py`
-  — the probe that builds the **real** application, draws the **real**
-  layout with the **real** panes, and streams an answer the way the
-  workflow streams it: token by token.  After every piece it reports
-  the offset of the window, the end of the answer, the height the
-  layout really gives the pane, the subtitle of the pane, and whether
-  the newest line of the answer is on the screen.  The window is at the
-  end of the answer at every piece, and the newest line of the answer
-  is on the screen at every piece.  The probe writes nothing.
+  — the probe that builds the real application and streams a real
+  answer.
 
 #### Every tool call shows its arguments in the progress pane
 
