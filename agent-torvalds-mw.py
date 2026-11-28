@@ -67,7 +67,7 @@ import sys
 import uuid
 import platform
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from llama_index.core.callbacks import CallbackManager
 from llama_index.core.agent.workflow import FunctionAgent
@@ -741,6 +741,29 @@ def _selected_tool_groups(tools: List[FunctionTool]) -> List[str]:
 # Agent factory
 # ---------------------------------------------------------------------------
 
+def _the_tools_the_agent_holds(
+    skill_tools: List[FunctionTool],
+    retrieved: List[FunctionTool],
+) -> List[str]:
+    """
+    The names of the tools the agent holds right now.
+
+    The skill tools are always there - the model cannot ask for a skill
+    it cannot see - and the tools the retriever handed out for the
+    question that runs now are held as well.
+
+    Args:
+        skill_tools: The tools of the skills.
+        retrieved: The tools the retriever handed out.
+
+    Returns:
+        The names of the tools.
+    """
+    names = [tool.metadata.name for tool in skill_tools]
+    names.extend(tool.metadata.name for tool in retrieved)
+    return names
+
+
 def create_agent(
     use_retriever: bool = True,
     top_k: int = SIMILARITY_TOP_K,
@@ -749,6 +772,7 @@ def create_agent(
     system_prompt: Optional[str] = None,
     callback_manager: Optional[CallbackManager] = None,
     indexed_tools: Optional[List[FunctionTool]] = None,
+    on_loaded_tools: Optional[Callable[[List[str]], None]] = None,
 ):
     """
     Create and configure the Torvalds FunctionAgent.
@@ -776,6 +800,11 @@ def create_agent(
                        indexed tools are the very tools the caller knows
                        about - the multi-window console, which names them
                        in its telemetry panel.
+        on_loaded_tools: Called with the names of the tools the agent can
+                       call right now.  The tools the operator picked at
+                       startup are held from the first second, and in the
+                       mode of the retriever the tools it hands out for a
+                       question are held as well.
 
     Returns:
         FunctionAgent instance.
@@ -829,6 +858,14 @@ def create_agent(
         if not is_tui:
             console.print(f"[dim]Using on-demand tool retrieval (top_k={top_k})[/dim]")
 
+        # The tools the agent holds for the question that runs now: the
+        # skill tools and the ones the retriever handed out.
+        on_retrieve = None
+        if on_loaded_tools is not None:
+            on_retrieve = lambda retrieved: on_loaded_tools(
+                _the_tools_the_agent_holds(skill_tools, retrieved)
+            )
+
         agent = create_agent_with_retriever(
             llm=llm,
             memory=chat_memory,
@@ -839,7 +876,14 @@ def create_agent(
             agent_class=HITLFunctionAgent,
             tools=skill_tools,
             indexed_tools=indexed_tools,
+            on_retrieve=on_retrieve,
         )
+
+        if on_loaded_tools is not None:
+            # The skill tools are there before the first question is
+            # asked: the screen of the tools must not say that the
+            # agent holds nothing.
+            on_loaded_tools([tool.metadata.name for tool in skill_tools])
     else:
         if tools is None:
             if not is_tui:
@@ -861,6 +905,11 @@ def create_agent(
             system_prompt=prompt,
             callback_manager=callback_manager,
         )
+
+        if on_loaded_tools is not None:
+            # Every tool of the inventory is held by the agent, and the
+            # skill tools are held as well.
+            on_loaded_tools([tool.metadata.name for tool in tools])
 
     # The agent needs to know the HITL and the context guard configuration.
     # It is applied here (and re-applied per request) so the agent asks the
@@ -1899,6 +1948,10 @@ async def main():
         tools=None if use_retriever else inventory,
         indexed_tools=inventory if use_retriever else None,
         system_prompt=system_prompt,
+        # The tools the agent can call right now.  The screen of the
+        # tools shows them next to the tools that are available, and it
+        # must not guess which of the two it is showing.
+        on_loaded_tools=lambda names: tui_state.update_loaded_tools(names),
     )
 
     # The tools the agent really has, for the telemetry panel.  The row

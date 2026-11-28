@@ -297,6 +297,22 @@ class TuiState:
         # the operator picked a category, and the name of one tool out
         # of its eleven says nothing about the other ten.
         self.active_tool_groups: List[str] = []
+        # The tools the agent can call **right now**.  The inventory
+        # above is what the agent can *reach*; this is what it *holds*.
+        #
+        # The two are the same when the operator picked the tools at
+        # startup with ``--select``: the agent holds exactly what was
+        # picked.  They are the same when every tool was loaded
+        # upfront.  They are not the same in the mode of the retriever:
+        # every tool is indexed there, and the agent holds the ones it
+        # pulled in for the question it is answering - plus the skill
+        # tools, which are always there.
+        #
+        # The orchestrator measures it, and the tool screens of the
+        # console show the tools that are loaded next to the tools that
+        # are available: a screen that guesses which of the two it is
+        # showing is a screen that lies.
+        self.loaded_tools: List[str] = []
         self.memory_msg_count: int = 0
         self.last_stats: Optional[Any] = None
 
@@ -757,6 +773,23 @@ class TuiState:
             self.active_tools = list(tools or [])
             self.active_tool_scope = str(scope or "")
             self.active_tool_groups = list(groups or [])
+
+    def update_loaded_tools(self, tools: Optional[List[str]] = None) -> None:
+        """Update the tools the agent can call right now.
+
+        The orchestrator measures them: the tools the operator picked
+        at startup are held by the agent from the first second, and in
+        the mode of the retriever the tools the retriever handed out
+        for the question that runs now are held as well.
+
+        An empty list means "nothing is known" - not "the agent has no
+        tool".  The screen that shows them says so.
+
+        Args:
+            tools: The names of the tools the agent holds.
+        """
+        with self._lock:
+            self.loaded_tools = list(tools or [])
 
     def update_project_context(
         self,

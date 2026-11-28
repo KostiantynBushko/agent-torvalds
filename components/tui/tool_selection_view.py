@@ -13,15 +13,26 @@ terminal while the TUI is running.
 This module provides:
   - :func:`render_categories_markdown` — renders the category menu as
     Markdown so it can be displayed inside the document pane.
-  - :func:`select_tools_interactive_tui` — runs the selection flow against an
-    arbitrary input/output pair, so the TUI can drive it through its own
+  - :func:`render_tool_list_markdown` — renders the flat list of every
+    available tool, with the tools that are loaded marked.
+  - :func:`render_loaded_tools_markdown` — renders the tools the agent can
+    call right now.
+  - :func:`select_tools_interactive_tui` — runs the selection flow against
+    an arbitrary input/output pair, so the TUI can drive it through its own
     command bar.
+
+The screens answer **two** questions at once: what the agent *can* reach, and
+what it *holds* right now.  The two are not the same: every tool of every
+toolkit is reachable in the mode of the retriever, and only the tools the
+retriever pulled in for the question that runs now are held.  The loaded set
+is measured by the orchestrator and handed over in the state of the console -
+the screens never guess which of the two they are showing.
 
 Category: Infrastructure
 """
 
 import sys
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 from llama_index.core.tools import FunctionTool
 
@@ -32,6 +43,54 @@ from agent_tool_selection import (
     group_tools_by_category,
     parse_tool_selection,
 )
+
+
+# ---------------------------------------------------------------------------
+# The scope of the tools, in the words of the screen
+# ---------------------------------------------------------------------------
+
+#: How the agent got its tools, said the way the operator reads it.  The
+#: key is the scope the orchestrator measures - the word the telemetry
+#: panel uses - and the value is the sentence the screen of the tools
+#: shows.
+SCOPE_PHRASES = {
+    "selected": (
+        "The session was started with `--select`: these are the tools the "
+        "agent can call."
+    ),
+    "loaded": (
+        "Every tool was loaded upfront: these are the tools the agent can "
+        "call."
+    ),
+    "indexed": (
+        "Every tool is indexed and reached on demand: the agent holds the "
+        "ones it pulled in for the question that runs now."
+    ),
+}
+
+#: What the screen says when the scope is not one of the three the
+#: orchestrator measures.
+SCOPE_PHRASE_UNKNOWN = "These are the tools the agent can call right now."
+
+#: The mark of a tool the agent holds.
+LOADED_MARK = "✓"
+
+#: The mark of a tool the agent does not hold.
+NOT_LOADED_MARK = "—"
+
+
+def scope_phrase(scope: str) -> str:
+    """
+    Say how the agent got its tools.
+
+    Args:
+        scope: The scope the orchestrator measured - "selected",
+            "loaded" or "indexed".
+
+    Returns:
+        The sentence the screen shows.
+    """
+    return SCOPE_PHRASES.get(str(scope or ""), SCOPE_PHRASE_UNKNOWN)
 
 
 # ---------------------------------------------------------------------------
@@ -53,13 +112,84 @@ def discover_all_tools() -> List[FunctionTool]:
     return _discover_tools()
 
 
+def _categories_by_name(tools: Sequence[FunctionTool]) -> Dict[str, str]:
+    """
+    The category of every tool, by its name.
+
+    Args:
+        tools: The tools of the inventory.
+
+    Returns:
+        A mapping of tool name -> category.  A tool that is not in the
+        inventory is not in the mapping: the skill tools are not there,
+        and a category that was guessed for them would be wrong.
+    """
+    return {
+        tool.metadata.name: _extract_category(tool.metadata.description or "")
+        for tool in tools
+    }
+
+
 # ---------------------------------------------------------------------------
 # Markdown rendering
 # ---------------------------------------------------------------------------
 
+def render_loaded_tools_markdown(
+    loaded: Sequence[str],
+    tools: Sequence[FunctionTool],
+    scope: str = "",
+) -> str:
+    """
+    Render the tools the agent can call right now.
+
+    The operator picked the tools at startup and the telemetry panel
+    names the categories they came from - "Operating System, Project
+    Management".  The names of the tools are what the operator asked
+    for here: the name of one tool out of the eleven of a category says
+    what the agent can do, and the name of the category does not.
+
+    Args:
+        loaded: The names of the tools the agent holds.
+        tools: The tools of the inventory, for the categories.
+        scope: How the agent got them - "selected", "loaded" or
+            "indexed".
+
+    Returns:
+        str: Markdown document naming the tools that are loaded.
+    """
+    names = list(loaded or [])
+    categories = _categories_by_name(tools)
+
+    lines = [
+        f"## Loaded now ({len(names)})",
+        "",
+        scope_phrase(scope),
+        "",
+    ]
+
+    if not names:
+        lines.append(
+            "No tool is loaded right now.  The agent reaches for the tools "
+            "it needs when it needs them."
+        )
+        lines.append("")
+        return "\n".join(lines)
+
+    lines.append("| Tool | Category |")
+    lines.append("| ---: | :--- |")
+    for name in names:
+        category = categories.get(name) or NOT_LOADED_MARK
+        lines.append(f"| `{name}` | {category} |")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def render_categories_markdown(
     groups: dict,
     total_tools: int,
+    loaded: Optional[Sequence[str]] = None,
+    scope: str = "",
 ) -> str:
     """
     Render the tool category menu as Markdown for the document pane.
@@ -67,10 +197,24 @@ def render_categories_markdown(
     Args:
         groups: Mapping of category name -> list of tools.
         total_tools: Total number of tools across all categories.
+        loaded: The names of the tools the agent holds right now.  The
+            menu names how many of the tools of a category are held.
+        scope: How the agent got its tools - "selected", "loaded" or
+            "indexed".
 
     Returns:
         str: Markdown document describing the selectable categories.
     """
+    loaded_names = set(loaded or [])
+    loaded_of = {
+        category: sum(
+            1
+            for tool in tools
+            if tool.metadata.name in loaded_names
+        )
+        for category, tools in groups.items()
+    }
+
     lines = [
         "# 🧰 Startup Tool Selection",
         "",
@@ -78,13 +222,34 @@ def render_categories_markdown(
         "",
         f"**Total:** {total_tools} tools across {len(groups)} categories.",
         "",
-        "| # | Category | Tools | Capabilities |",
-        "| :--- | :--- | ---: | :--- |",
     ]
+
+    if loaded_names:
+        # The count is of the tools of the inventory that are held.  A
+        # tool that is held and is not in the inventory - a skill tool -
+        # is named in the list of the loaded tools, and it is not
+        # counted against the tools of the menu.
+        held = sum(
+            1
+            for tools_of_category in groups.values()
+            for tool in tools_of_category
+            if tool.metadata.name in loaded_names
+        )
+        lines.extend([
+            f"**Loaded now:** {held} of {total_tools} tools.",
+            "",
+        ])
+
+    lines.extend([
+        "| # | Category | Tools | Loaded | Capabilities |",
+        "| :--- | :--- | ---: | ---: | :--- |",
+    ])
 
     for idx, (category, tools) in enumerate(groups.items(), start=1):
         summary = _build_category_description(tools)
-        lines.append(f"| {idx} | {category} | {len(tools)} | {summary} |")
+        held = loaded_of.get(category, 0)
+        mark = f"{held}/{len(tools)}" if loaded_names else NOT_LOADED_MARK
+        lines.append(f"| {idx} | {category} | {len(tools)} | {mark} | {summary} |")
 
     lines.extend([
         "",
@@ -100,28 +265,56 @@ def render_categories_markdown(
     return "\n".join(lines)
 
 
-def render_tool_list_markdown(tools: Sequence[FunctionTool]) -> str:
+def render_tool_list_markdown(
+    tools: Sequence[FunctionTool],
+    loaded: Optional[Sequence[str]] = None,
+    scope: str = "",
+) -> str:
     """
     Render a flat numbered list of tools as Markdown.
 
+    The list carries the tools that are loaded next to the tools that
+    are only available: the operator picked the tools at startup, and
+    the screen says which of the ones on it the agent holds.
+
     Args:
         tools: Tools to list.
+        loaded: The names of the tools the agent holds right now.
+        scope: How the agent got its tools - "selected", "loaded" or
+            "indexed".
 
     Returns:
         str: Markdown document listing every tool with its short description.
     """
+    loaded_names = set(loaded or [])
+    loaded_count = sum(
+        1 for tool in tools if tool.metadata.name in loaded_names
+    )
+
     lines = [
-        "# 🧰 Available Tools",
+        "# 🧰 Tools",
         "",
-        "| # | Tool | Description |",
-        "| ---: | :--- | :--- |",
+        f"**Loaded now: {loaded_count} of {len(tools)} available.**",
+        "",
+        scope_phrase(scope),
+        "",
+        "## All available",
+        "",
+        "| # | Tool | Description | Loaded |",
+        "| ---: | --- | :--- | :---: |",
     ]
 
     for idx, tool in enumerate(tools, start=1):
         description = tool.metadata.description or ""
         short = _extract_short_description(description)
-        lines.append(f"| {idx} | `{tool.metadata.name}` | {short} |")
+        mark = (
+            LOADED_MARK
+            if tool.metadata.name in loaded_names
+            else NOT_LOADED_MARK
+        )
+        lines.append(f"| {idx} | `{tool.metadata.name}` | {short} | {mark} |")
 
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -244,7 +437,9 @@ def is_tool_selection_command(cmd: str) -> bool:
 __all__ = [
     "discover_all_tools",
     "render_categories_markdown",
+    "render_loaded_tools_markdown",
     "render_tool_list_markdown",
+    "scope_phrase",
     "select_tools_interactive_tui",
     "is_tool_selection_command",
 ]
